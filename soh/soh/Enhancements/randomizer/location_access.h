@@ -22,7 +22,7 @@ class Region;
 
 class EventAccess {
   public:
-    explicit EventAccess(bool* event_, ConditionFn condition_function_)
+    explicit EventAccess(LogicVal event_, ConditionFn condition_function_)
         : event(event_), condition_function(condition_function_) {
     }
 
@@ -37,15 +37,15 @@ class EventAccess {
     bool CheckConditionAtAgeTime(bool& age, bool& time);
 
     void EventOccurred() {
-        *event = true;
+        logic->Set(event, true);
     }
 
     bool GetEvent() const {
-        return *event;
+        return logic->Get(event);
     }
 
   private:
-    bool* event;
+    LogicVal event;
     ConditionFn condition_function;
 };
 
