@@ -969,17 +969,20 @@ void Settings::CreateOptions() {
               "Shadow Temple Bongo Bongo without Lens of Truth",
               "Bongo Bongo can be defeated without the use of Lens of Truth, as the hands give a pretty good idea of "
               "where the eye is.");
-    OPT_TRICK(RT_SHADOW_UMBRELLA, RCQUEST_BOTH, RA_SHADOW_TEMPLE, { Tricks::Tag::EXPERT },
+    OPT_TRICK(RT_SHADOW_UMBRELLA_HOVER, RCQUEST_BOTH, RA_SHADOW_TEMPLE, { Tricks::Tag::EXPERT },
               "Shadow Temple Stone Umbrella Skip",
               "A very precise Hover Boots movement from off of the lower chest can get you on top of the crushing "
               "spikes without needing to pull the block. Applies to both Vanilla and Master Quest.");
+    OPT_TRICK(RT_SHADOW_UMBRELLA_CLIP, RCQUEST_BOTH, RA_SHADOW_TEMPLE, { Tricks::Tag::NOVICE, Tricks::Tag::GLITCH },
+              "Shadow Temple Stone Umbrella Clip",
+              "Backflipping as the falling spikes fall clips above without needing any other requirements. "
+              "Applies to both Vanilla and Master Quest.");
     OPT_TRICK(RT_SHADOW_UMBRELLA_GS, RCQUEST_BOTH, RA_SHADOW_TEMPLE, { Tricks::Tag::EXPERT },
               "Shadow Temple Falling Spikes GS with Hover Boots",
               "After killing the Skulltula, a very precise Hover Boots movement from off of the lower chest can get "
               "you on top of the crushing spikes without needing to pull the block. From there, another very precise "
               "Hover Boots movement can be used to obtain the token without needing the Hookshot. Applies to both "
-              "Vanilla and Master Quest. For obtaining the chests in this room with just Hover Boots, be sure to "
-              "enable \"Shadow Temple Stone Umbrella Skip\".");
+              "Vanilla and Master Quest.");
     OPT_TRICK(RT_SHADOW_FREESTANDING_KEY, RCQUEST_VANILLA, RA_SHADOW_TEMPLE, { Tricks::Tag::NOVICE },
               "Shadow Temple Freestanding Key with Bombchu",
               "Release the Bombchu with good timing so that it explodes near the bottom of the pot.");
