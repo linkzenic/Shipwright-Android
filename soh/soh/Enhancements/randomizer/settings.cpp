@@ -361,9 +361,7 @@ void Settings::CreateOptions() {
     // OPT_TRICK(RT_FLAME_STORAGE, RCQUEST_BOTH, RA_NONE, {Tricks::Tag::ADVANCED, Tricks::Tag::EXPERIMENTAL,
     // Tricks::Tag::GLITCH}, "Flame Storage", "Enables locations requiring flame storage."); OPT_TRICK(RT_GROUND_CLIP,
     // RCQUEST_BOTH, RA_NONE, {Tricks::Tag::ADVANCED, Tricks::Tag::EXPERIMENTAL, Tricks::Tag::GLITCH}, "Ground Clip",
-    // "Enables locations requiring ground clips."); OPT_TRICK(RT_GROUND_JUMP, RCQUEST_BOTH, RA_NONE,
-    // {Tricks::Tag::ADVANCED, Tricks::Tag::EXPERIMENTAL, Tricks::Tag::GLITCH}, "Ground Jump", "Enables locations
-    // requiring ground jumps."); OPT_TRICK(RT_HESS, RCQUEST_BOTH, RA_NONE, {Tricks::Tag::ADVANCED,
+    // "Enables locations requiring ground clips."); OPT_TRICK(RT_HESS, RCQUEST_BOTH, RA_NONE, {Tricks::Tag::ADVANCED,
     // Tricks::Tag::EXPERIMENTAL, Tricks::Tag::GLITCH}, "HESS", "Enables locations requiring a Hyper Extended Super
     // Slide."); OPT_TRICK(RT_HOOKSHOT_CLIP, RCQUEST_BOTH, RA_NONE, {Tricks::Tag::ADVANCED, Tricks::Tag::EXPERIMENTAL,
     // Tricks::Tag::GLITCH}, "Hookshot Clip", "Enables locations requiring Hookshot clips.");
@@ -417,6 +415,13 @@ void Settings::CreateOptions() {
               "- Retrieving DMT Gold Skulltula beside bomb flower\n"
               "- Hitting switch through wall in Spirit Temple's big mirror room with Bow, Slingshot, or Hookshot\n"
               "- Hitting switch through wall in Spirit Trial with Bow or Slingshot");
+    OPT_TRICK(RT_GROUND_JUMP, RCQUEST_BOTH, RA_NONE, { Tricks::Tag::NOVICE, Tricks::Tag::GLITCH }, "Ground Jump",
+              "Enables requiring ground jumps.");
+    OPT_TRICK(RT_GROUND_JUMP_HARD, RCQUEST_BOTH, RA_NONE, { Tricks::Tag::INTERMEDIATE, Tricks::Tag::GLITCH },
+              "Hard Ground Jumps",
+              "Enables ground jumps which require some precision outside of setting up jump:\n- While using Hover "
+              "Boots in Forest Temple Courtyard to reach upper ledge\n- While using Hover Boots in Shadow Temple "
+              "invisible spike room to reach door\n- Jumping past second step in Ice Cavern");
     OPT_TRICK(RT_KF_ADULT_GS, RCQUEST_BOTH, RA_KOKIRI_FOREST, { Tricks::Tag::NOVICE },
               "Adult Kokiri Forest GS with Hover Boots",
               "Can be obtained without Hookshot by using the Hover Boots off of one of the roots.");
