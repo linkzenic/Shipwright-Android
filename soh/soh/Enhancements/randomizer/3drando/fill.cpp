@@ -472,6 +472,8 @@ bool AddCheckToLogic(LocationAccess& locPair, GetAccessibleLocationsStruct& gals
 
 void ProcessRegion(Region* region, GetAccessibleLocationsStruct& gals, RandomizerGet ignore, bool stopOnBeatable,
                    bool addToPlaythrough) {
+    RandomizerRegion previousRegionKey = logic->CurrentRegionKey;
+    logic->CurrentRegionKey = region->randomizerRegionKey;
 
     if (gals.haveTimeAccess) {
         region->ApplyTimePass();
@@ -516,9 +518,12 @@ void ProcessRegion(Region* region, GetAccessibleLocationsStruct& gals, Randomize
     for (size_t k = 0; k < region->locations.size(); k++) {
         if (AddCheckToLogic(region->locations[k], gals, ignore, stopOnBeatable, region, addToPlaythrough)) {
             Rando::Context::GetInstance()->playthroughBeatable = true;
+            logic->CurrentRegionKey = previousRegionKey;
             return;
         }
     }
+
+    logic->CurrentRegionKey = previousRegionKey;
 }
 
 // Return any of the targetLocations that are accessible in logic

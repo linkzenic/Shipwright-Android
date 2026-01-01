@@ -100,7 +100,7 @@ void RegionTable_Init_JabuJabusBelly() {
         LOCATION(RC_JABU_JABUS_BELLY_COMPASS_CHEST, logic->CanKillEnemy(RE_SHABOM)),
     }, {
         //Exits
-        Entrance(RR_JABU_JABUS_BELLY_MAIN, []{return Here(RR_JABU_JABUS_BELLY_COMPASS_ROOM, []{return logic->CanKillEnemy(RE_SHABOM);});}),
+        Entrance(RR_JABU_JABUS_BELLY_MAIN, []{return AnyAgeTime([]{return logic->CanKillEnemy(RE_SHABOM);});}),
     });
 
     areaTable[RR_JABU_JABUS_BELLY_BLUE_TENTACLE] = Region("Jabu Jabus Belly Blue Tentacle", SCENE_JABU_JABU, {
@@ -128,7 +128,7 @@ void RegionTable_Init_JabuJabusBelly() {
     }, {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_B1_NORTH,      []{return true;}),
-        Entrance(RR_JABU_JABUS_BELLY_ABOVE_BIGOCTO, []{return logic->Get(LOGIC_JABU_RUTO_IN_1F) && Here(RR_JABU_JABUS_BELLY_BIGOCTO_LEDGE, []{return logic->CanKillEnemy(RE_BIG_OCTO);});}),
+        Entrance(RR_JABU_JABUS_BELLY_ABOVE_BIGOCTO, []{return logic->Get(LOGIC_JABU_RUTO_IN_1F) && AnyAgeTime([]{return logic->CanKillEnemy(RE_BIG_OCTO);});}),
     });
 
     areaTable[RR_JABU_JABUS_BELLY_ABOVE_BIGOCTO] = Region("Jabu Jabus Belly Above Bigocto", SCENE_JABU_JABU, {
@@ -180,7 +180,7 @@ void RegionTable_Init_JabuJabusBelly() {
     }, {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_ENTRYWAY, []{return true;}),
-        Entrance(RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM,  []{return Here(RR_JABU_JABUS_BELLY_MQ_BEGINNING, []{return logic->CanUse(RG_FAIRY_SLINGSHOT);});}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM,  []{return AnyAgeTime([]{return logic->CanUse(RG_FAIRY_SLINGSHOT);});}),
     });
 
     areaTable[RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM] = Region("Jabu Jabus Belly MQ Lift Room", SCENE_JABU_JABU, {
@@ -233,9 +233,9 @@ void RegionTable_Init_JabuJabusBelly() {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM,            []{return true;}),
         Entrance(RR_JABU_JABUS_BELLY_MQ_WATER_SWITCH_ROOM,    []{return true;}),
-        Entrance(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR,      []{return logic->CanUse(RG_BOOMERANG) && logic->HasExplosives() && Here(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM, []{return logic->CanUse(RG_FAIRY_SLINGSHOT);});}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR,      []{return logic->CanUse(RG_BOOMERANG) && logic->HasExplosives() && AnyAgeTime([]{return logic->CanUse(RG_FAIRY_SLINGSHOT);});}),
         Entrance(RR_JABU_JABUS_BELLY_MQ_INVISIBLE_KEESE_ROOM, []{return logic->Get(LOGIC_JABU_NORTH_TENTACLE);}),
-        Entrance(RR_JABU_JABUS_BELLY_MQ_PAST_OCTO,            []{return logic->Get(LOGIC_JABU_WEST_TENTACLE) && Here(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM, []{return logic->CanKillEnemy(RE_BIG_OCTO);}) && logic->CanUse(RG_FAIRY_SLINGSHOT);}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_PAST_OCTO,            []{return logic->Get(LOGIC_JABU_WEST_TENTACLE) && AnyAgeTime([]{return logic->CanKillEnemy(RE_BIG_OCTO);}) && logic->CanUse(RG_FAIRY_SLINGSHOT);}),
     });
 
     areaTable[RR_JABU_JABUS_BELLY_MQ_WATER_SWITCH_ROOM] = Region("Jabu Jabus Belly MQ Water Switch Room", SCENE_JABU_JABU, {}, {
@@ -250,14 +250,14 @@ void RegionTable_Init_JabuJabusBelly() {
     }, {
         //Exits
         //without swim, jump from rang chest to the other side
-        Entrance(RR_JABU_JABUS_BELLY_MQ_BEGINNING,  []{return Here(RR_JABU_JABUS_BELLY_MQ_WATER_SWITCH_ROOM, []{return logic->CanKillEnemy(RE_LIZALFOS);});}),
-        Entrance(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM, []{return (logic->IsAdult || logic->HasItem(RG_BRONZE_SCALE)) && Here(RR_JABU_JABUS_BELLY_MQ_WATER_SWITCH_ROOM, []{return logic->CanKillEnemy(RE_LIZALFOS);});}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_BEGINNING,  []{return AnyAgeTime([]{return logic->CanKillEnemy(RE_LIZALFOS);});}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM, []{return (logic->IsAdult || logic->HasItem(RG_BRONZE_SCALE)) && AnyAgeTime([]{return logic->CanKillEnemy(RE_LIZALFOS);});}),
     });
 
     //Includes Like Like room
     areaTable[RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR] = Region("Jabu Jabus Belly MQ Forked Corridor", SCENE_JABU_JABU, {
         //Events
-        EventAccess(LOGIC_JABU_NORTH_TENTACLE, []{return Here(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR, []{return logic->BlastOrSmash();}) && logic->CanUse(RG_BOOMERANG);}),
+        EventAccess(LOGIC_JABU_NORTH_TENTACLE, []{return AnyAgeTime([]{return logic->BlastOrSmash();}) && logic->CanUse(RG_BOOMERANG);}),
     }, {
         //Locations
         //Implies CanKillEnemy(RE_LIKE_LIKE)
@@ -271,7 +271,7 @@ void RegionTable_Init_JabuJabusBelly() {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM,        []{return logic->CanUse(RG_BOOMERANG);}),
         //If some mode lets an age use sticks and not sling, and other use sling and not sticks, this needs changing
-        Entrance(RR_JABU_JABUS_BELLY_MQ_WEST_FORKED_ROOMS, []{return Here(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR, []{return logic->CanUse(RG_BOOMERANG);}) && (Here(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR, []{return logic->CanUse(RG_FAIRY_SLINGSHOT) && logic->CanUse(RG_STICKS);}) || Here(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR, []{return logic->HasFireSource();}));}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_WEST_FORKED_ROOMS, []{return AnyAgeTime([]{return logic->CanUse(RG_BOOMERANG);}) && (AnyAgeTime([]{return logic->CanUse(RG_FAIRY_SLINGSHOT) && logic->CanUse(RG_STICKS);}) || AnyAgeTime([]{return logic->HasFireSource();}));}),
     });
 
     areaTable[RR_JABU_JABUS_BELLY_MQ_WEST_FORKED_ROOMS] = Region("Jabu Jabus Belly MQ West Forked Rooms", SCENE_JABU_JABU, {
@@ -279,7 +279,7 @@ void RegionTable_Init_JabuJabusBelly() {
         EventAccess(LOGIC_JABU_WEST_TENTACLE, []{return logic->CanKillEnemy(RE_TENTACLE, ED_BOOMERANG);}),
     }, {
         //Locations
-        LOCATION(RC_JABU_JABUS_BELLY_MQ_GS_TAILPASARAN_ROOM, Here(RR_JABU_JABUS_BELLY_MQ_WEST_FORKED_ROOMS, []{return logic->HasExplosives();}) && logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA, ED_BOOMERANG)),
+        LOCATION(RC_JABU_JABUS_BELLY_MQ_GS_TAILPASARAN_ROOM, AnyAgeTime([]{return logic->HasExplosives();}) && logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA, ED_BOOMERANG)),
     }, {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_MQ_FORKED_CORRIDOR, []{return true;}),
@@ -294,10 +294,10 @@ void RegionTable_Init_JabuJabusBelly() {
                                                                    //We can cheese the gap with hovers
                                                                     ((logic->CanUse(RG_HOVER_BOOTS) ||
                                                                    //Otherwise we have to kill the enemies to raise the platform. This persists so we can do it as the other age.
-                                                                        Here(RR_JABU_JABUS_BELLY_MQ_INVISIBLE_KEESE_ROOM, []{return (ctx->GetTrickOption(RT_LENS_JABU_MQ) || logic->CanUse(RG_LENS_OF_TRUTH)) &&
-                                                                                                                                                                                           logic->CanKillEnemy(RE_STINGER, ED_BOOMERANG, false, 2, false, true) && 
-                                                                                                                                                                                           //we can hit the keese farthest from the water with irons and hookshot, but we won't be able to see it while doing so
-                                                                                                                                                                                           (logic->CanKillEnemy(RE_KEESE, ED_LONGSHOT, false) || (ctx->GetTrickOption(RT_LENS_JABU_MQ) && logic->CanUse(RG_HOOKSHOT) && logic->CanUse(RG_IRON_BOOTS)));}))
+                                                                        AnyAgeTime([]{return (ctx->GetTrickOption(RT_LENS_JABU_MQ) || logic->CanUse(RG_LENS_OF_TRUTH)) &&
+                                                                                                                                              logic->CanKillEnemy(RE_STINGER, ED_BOOMERANG, false, 2, false, true) && 
+                                                                                                                                              //we can hit the keese farthest from the water with irons and hookshot, but we won't be able to see it while doing so
+                                                                                                                                              (logic->CanKillEnemy(RE_KEESE, ED_LONGSHOT, false) || (ctx->GetTrickOption(RT_LENS_JABU_MQ) && logic->CanUse(RG_HOOKSHOT) && logic->CanUse(RG_IRON_BOOTS)));}))
                                                                    //If we kill the enemies, we then need to cross the water using the platform. Note that adult cannot do so while swimming because MQ jank.
                                                                         && ((logic->IsChild && logic->HasItem(RG_BRONZE_SCALE)) || (logic->IsAdult && logic->CanUse(RG_IRON_BOOTS)))))),
     }, {
@@ -321,7 +321,7 @@ void RegionTable_Init_JabuJabusBelly() {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM,  []{return logic->CanUse(RG_BOOMERANG) && logic->CanUse(RG_FAIRY_SLINGSHOT);}),
         //you take both fall damage and tentacle damage, unless the tentacle is down. need better damage logic
-        Entrance(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM, []{return logic->TakeDamage() && Here(RR_JABU_JABUS_BELLY_MQ_PAST_OCTO, []{return logic->CanKillEnemy(RE_BIG_OCTO);});}),
+        Entrance(RR_JABU_JABUS_BELLY_MQ_HOLES_ROOM, []{return logic->TakeDamage() && AnyAgeTime([]{return logic->CanKillEnemy(RE_BIG_OCTO);});}),
     });
 
     areaTable[RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM_EAST_LEDGE] = Region("Jabu Jabus Belly MQ Lift Room East Ledge", SCENE_JABU_JABU, {}, {
@@ -346,7 +346,7 @@ void RegionTable_Init_JabuJabusBelly() {
     }, {
         //Exits
         Entrance(RR_JABU_JABUS_BELLY_MQ_LIFT_ROOM_EAST_LEDGE, []{return true;}),
-        Entrance(RR_JABU_JABUS_BELLY_BOSS_ENTRYWAY,           []{return Here(RR_JABU_JABUS_BELLY_MQ_EAST_ROOM, []{return logic->CanUse(RG_FAIRY_SLINGSHOT);});}),
+        Entrance(RR_JABU_JABUS_BELLY_BOSS_ENTRYWAY,           []{return AnyAgeTime([]{return logic->CanUse(RG_FAIRY_SLINGSHOT);});}),
     });
 
 #pragma endregion
