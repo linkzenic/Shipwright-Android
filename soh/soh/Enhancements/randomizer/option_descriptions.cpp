@@ -103,6 +103,8 @@ void Settings::CreateOptionDescriptions() {
         "\n"
         "Random Number - A random number and set of trials will be required.";
     mOptionDescriptions[RSK_TRIAL_COUNT] = "Set the number of trials required to enter Ganon's Tower.";
+    mOptionDescriptions[RSK_MEDALLION_LOCKED_TRIALS] =
+        "Doors to trials will be barred until their corresponding medallion is acquired.";
     mOptionDescriptions[RSK_MQ_DUNGEON_RANDOM] =
         "Sets the number of Master Quest Dungeons that are shuffled into the pool.\n"
         "\n"

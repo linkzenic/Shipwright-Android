@@ -279,6 +279,7 @@ void Settings::CreateOptions() {
         }
     });
     OPT_U8(RSK_TRIAL_COUNT, "Ganon's Trials Count", {NumOpts(0, 6)}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("GanonTrialCount"), mOptionDescriptions[RSK_TRIAL_COUNT], WIDGET_CVAR_SLIDER_INT, 6, true);
+    OPT_BOOL(RSK_MEDALLION_LOCKED_TRIALS, "Medallion Locked Trials", CVAR_RANDOMIZER_SETTING("MedallionLockedTrials"), mOptionDescriptions[RSK_MEDALLION_LOCKED_TRIALS]);
     OPT_U8(RSK_STARTING_AGE, "Starting Age", {"Child", "Adult", "Random"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("StartingAge"), mOptionDescriptions[RSK_STARTING_AGE], WIDGET_CVAR_COMBOBOX, RO_AGE_CHILD);
     OPT_U8(RSK_SELECTED_STARTING_AGE, "Selected Starting Age", {"Child", "Adult"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("SelectedStartingAge"), mOptionDescriptions[RSK_STARTING_AGE], WIDGET_CVAR_COMBOBOX, RO_AGE_CHILD);
     OPT_BOOL(RSK_SHUFFLE_ENTRANCES, "Shuffle Entrances");
@@ -2167,7 +2168,6 @@ void Settings::CreateOptions() {
         }
     }
     mOptionGroups[RSG_TRICKS] = OptionGroup::SubGroup("Logical Tricks", tricksOption);
-    // TODO: Glitches
     mOptionGroups[RSG_MENU_SECTION_LOGIC] = OptionGroup::SubGroup("Logic",
                                                                   {
                                                                       &mOptions[RSK_LOGIC_RULES],
@@ -2219,6 +2219,7 @@ void Settings::CreateOptions() {
                                   &mOptions[RSK_RAINBOW_BRIDGE_TOKEN_COUNT],
                                   &mOptions[RSK_GANONS_TRIALS],
                                   &mOptions[RSK_TRIAL_COUNT],
+                                  &mOptions[RSK_MEDALLION_LOCKED_TRIALS],
                               },
                               WidgetContainerType::SECTION);
     mOptionGroups[RSG_MENU_COLUMN_AREA_ACCESS] =
@@ -2519,6 +2520,7 @@ void Settings::CreateOptions() {
                                                                &mOptions[RSK_BRIDGE_OPTIONS],
                                                                &mOptions[RSK_GANONS_TRIALS],
                                                                &mOptions[RSK_TRIAL_COUNT],
+                                                               &mOptions[RSK_MEDALLION_LOCKED_TRIALS],
                                                            });
     mOptionGroups[RSG_WORLD] = OptionGroup("World Settings", {
                                                                  &mOptions[RSK_STARTING_AGE],
