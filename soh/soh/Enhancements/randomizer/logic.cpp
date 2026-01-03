@@ -566,14 +566,11 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
                     killed = killed || CanUse(RG_BIGGORON_SWORD) || CanUse(RG_STICKS);
                     [[fallthrough]];
                 case ED_BOMB_THROW:
-                    killed = killed || CanUse(RG_BOMB_BAG);
+                    killed = killed || CanUse(RG_BOMB_BAG) || CanUse(RG_DINS_FIRE);
                     [[fallthrough]];
                 case ED_BOOMERANG:
-                    // RANDOTODO test dins and chu range in a practical example
-                    killed = killed || CanUse(RG_DINS_FIRE);
-                    [[fallthrough]];
                 case ED_HOOKSHOT:
-                    // RANDOTODO test dins and chu range in a practical example
+                    // RANDOTODO test chu range in a practical example
                     killed = killed || CanUse(RG_HOOKSHOT) || (wallOrFloor && CanUse(RG_BOMBCHU_5));
                     [[fallthrough]];
                 case ED_LONGSHOT:
@@ -657,7 +654,7 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
                     [[fallthrough]];
                 case ED_BOOMERANG:
                 case ED_HOOKSHOT:
-                    // RANDOTODO test dins and chu range in a practical example
+                    // RANDOTODO test chu range in a practical example
                     killed = killed || (wallOrFloor && CanUse(RG_BOMBCHU_5));
                     [[fallthrough]];
                 case ED_LONGSHOT:
@@ -738,12 +735,11 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
                     killed = killed || CanUse(RG_BIGGORON_SWORD) || CanUse(RG_STICKS);
                     [[fallthrough]];
                 case ED_BOMB_THROW:
-                    // RANDOTODO test dins and chu range in a practical example
                     killed = killed || (!inWater && CanUse(RG_BOMB_BAG));
                     [[fallthrough]];
                 case ED_BOOMERANG:
                 case ED_HOOKSHOT:
-                    // RANDOTODO test dins, bomb and chu range in a practical example
+                    // RANDOTODO test chu range in a practical example
                     killed = killed || CanUse(RG_HOOKSHOT) || (wallOrFloor && CanUse(RG_BOMBCHU_5));
                     [[fallthrough]];
                 case ED_LONGSHOT:
@@ -831,6 +827,35 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
         case RE_OCTOROK:
             return CanReflectNuts() || HookshotOrBoomerang() || CanUse(RG_FAIRY_BOW) || CanUse(RG_FAIRY_SLINGSHOT) ||
                    CanUse(RG_BOMB_BAG) || (wallOrFloor && CanUse(RG_BOMBCHU_5));
+        case RE_WALLTULA:
+            switch (distance) {
+                case ED_CLOSE:
+                case ED_SHORT_JUMPSLASH:
+                    killed = CanUse(RG_KOKIRI_SWORD);
+                    [[fallthrough]];
+                case ED_MASTER_SWORD_JUMPSLASH:
+                    killed = killed || CanUse(RG_MASTER_SWORD);
+                    [[fallthrough]];
+                case ED_LONG_JUMPSLASH:
+                    killed = killed || CanUse(RG_BIGGORON_SWORD) || CanUse(RG_STICKS);
+                    [[fallthrough]];
+                case ED_BOMB_THROW:
+                    killed = killed || (!inWater && CanUse(RG_BOMB_BAG)) || CanUse(RG_DINS_FIRE);
+                    [[fallthrough]];
+                case ED_BOOMERANG:
+                    killed = killed || CanUse(RG_BOOMERANG);
+                    [[fallthrough]];
+                case ED_HOOKSHOT:
+                    killed = killed || CanUse(RG_HOOKSHOT) || CanUse(RG_BOMBCHU_5) || CanUse(RG_MEGATON_HAMMER);
+                    [[fallthrough]];
+                case ED_LONGSHOT:
+                    killed = killed || CanUse(RG_LONGSHOT);
+                    [[fallthrough]];
+                case ED_FAR:
+                    killed = killed || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW);
+                    break;
+            }
+            return killed;
         default:
             SPDLOG_ERROR("CanKillEnemy reached `default`.");
             assert(false);
@@ -889,6 +914,7 @@ bool Logic::CanPassEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             return true; // CanUse(RG_HOOKSHOT) || CanUse(RG_SUNS_SONG);
         case RE_IRON_KNUCKLE:
         case RE_BIG_OCTO:
+        case RE_WALLTULA: // consistent with RT_SPIRIT_WALL
             return false;
         case RE_GREEN_BUBBLE:
             return TakeDamage() || CanUse(RG_NUTS) || CanUse(RG_BOOMERANG) || CanUse(RG_HOOKSHOT);
@@ -935,9 +961,10 @@ bool Logic::CanAvoidEnemy(RandomizerEnemy enemy, bool grounded, uint8_t quantity
         case RE_WALLMASTER:
         case RE_ANUBIS:
         case RE_PURPLE_LEEVER:
+        case RE_WALLTULA:
             return true;
         case RE_BEAMOS:
-            return !grounded || CanUse(RG_NUTS) ||
+            return !grounded || CanUse(RG_NUTS) || CanUse(RG_DINS_FIRE) ||
                    (quantity == 1 && (CanUse(RG_FAIRY_BOW) || CanUse(RG_FAIRY_SLINGSHOT)));
         case RE_MAD_SCRUB:
             return !grounded || CanUse(RG_NUTS);
@@ -948,8 +975,10 @@ bool Logic::CanAvoidEnemy(RandomizerEnemy enemy, bool grounded, uint8_t quantity
         case RE_BLUE_BUBBLE:
             // RANDOTODO Trick to use shield hylian shield as child to stun these guys
             return !grounded || CanUse(RG_NUTS) || HookshotOrBoomerang() || CanStandingShield();
+        case RE_TORCH_SLUG:
+            return !grounded || CanUse(RG_NUTS) || CanUse(RG_HOOKSHOT) || CanUse(RG_DINS_FIRE);
         default:
-            SPDLOG_ERROR("CanPassEnemy reached `default`.");
+            SPDLOG_ERROR("CanAvoidEnemy reached `default`.");
             assert(false);
             return false;
     }
@@ -1378,6 +1407,10 @@ bool Logic::HasFireSource() {
 
 bool Logic::HasFireSourceWithTorch() {
     return HasFireSource() || CanUse(RG_STICKS);
+}
+
+bool Logic::SunlightArrows() {
+    return ctx->GetOption(RSK_SUNLIGHT_ARROWS) && CanUse(RG_LIGHT_ARROWS);
 }
 
 // Is this best off signaling what you have already traded, or what step you are currently on?
@@ -2400,6 +2433,110 @@ bool Logic::IsFireLoopLocked() {
     return ctx->GetOption(RSK_KEYSANITY).Is(RO_DUNGEON_ITEM_LOC_ANYWHERE) ||
            ctx->GetOption(RSK_KEYSANITY).Is(RO_DUNGEON_ITEM_LOC_OVERWORLD) ||
            ctx->GetOption(RSK_KEYSANITY).Is(RO_DUNGEON_ITEM_LOC_ANY_DUNGEON);
+}
+
+bool Logic::IsReverseAccessPossible() {
+    // If we ever allow dungeon entrances to connect to boss rooms directly in dungeon chains, or for 1 boss door to
+    // lead to another dungeons boss door, add RSK_MIX_DUNGEON_ENTRANCES to the final condition
+    // RANDOTODO Check for Age-Locked Boss entrances + decoupled + Ganon's tower when it is shuffled
+    return !ctx->GetOption(RSK_SHUFFLE_BOSS_ENTRANCES).Is(RO_BOSS_ROOM_ENTRANCE_SHUFFLE_OFF) &&
+           ((ctx->GetOption(RSK_DECOUPLED_ENTRANCES) &&
+             ctx->GetOption(RSK_SHUFFLE_BOSS_ENTRANCES).Is(RO_BOSS_ROOM_ENTRANCE_SHUFFLE_FULL)) ||
+            (ctx->GetOption(RSK_MIX_BOSS_ENTRANCES) &&
+             (ctx->GetOption(RSK_MIX_OVERWORLD_ENTRANCES) || ctx->GetOption(RSK_MIX_INTERIOR_ENTRANCES))));
+}
+
+bool Logic::SpiritSunOnFloorToStatue() {
+    return /*CanClimbHigh() &&*/ (HasExplosives() || (ctx->GetOption(RSK_SUNLIGHT_ARROWS) && CanUse(RG_LIGHT_ARROWS)));
+}
+
+bool Logic::SpiritExplosiveKeyLogic() {
+    return SmallKeys(SCENE_SPIRIT_TEMPLE, HasExplosives() ? 1 : 2);
+}
+
+bool Logic::SpiritWestToSkull() {
+    return (IsAdult && ctx->GetTrickOption(RT_SPIRIT_STATUE_JUMP)) || CanUse(RG_HOVER_BOOTS) || CanUse(RG_SCARECROW);
+}
+
+bool Logic::SpiritSunBlockSouthLedge() {
+    // It's also possible to do a backwalk hover + backflip if you equip hovers as you start the backwalk to accelerate
+    // faster
+    return true /*str0 || IsAdult || CanKillEnemy(RE_BEAMOS) || BunnyHovers() ||
+            (CanUse(RG_HOOKSHOT) && (HasFireSource() ||
+                                     (SpiritSunBlockTorch && (logic->CanUse(STICKS) ||
+            (ctx->GetTrickOption(RT_SPIRIT_SUN_CHEST) && logic->CanUse(RG_FAIRY_BOW))))))*/
+        ;
+}
+
+bool Logic::SpiritEastToSwitch() {
+    return (IsAdult && ctx->GetTrickOption(RT_SPIRIT_STATUE_JUMP)) || CanUse(RG_HOVER_BOOTS) ||
+           (CanUse(RG_ZELDAS_LULLABY) && CanUse(RG_HOOKSHOT));
+}
+
+// Combines crossing the ledge directly and the jump from the hand
+bool Logic::MQSpiritWestToPots() {
+    return (IsAdult && ctx->GetTrickOption(RT_SPIRIT_STATUE_JUMP)) || CanUse(RG_HOVER_BOOTS) || CanUse(RG_SONG_OF_TIME);
+}
+
+bool Logic::MQSpiritStatueToSunBlock() {
+    return (IsAdult || ctx->GetTrickOption(RT_SPIRIT_MQ_SUN_BLOCK_SOT) ||
+            CanUse(RG_SONG_OF_TIME) /* || CanBunnyJump()*/) /* && str0*/;
+}
+
+bool Logic::MQSpiritStatueSouthDoor() {
+    return HasFireSource() || (ctx->GetTrickOption(RT_SPIRIT_MQ_FROZEN_EYE) && CanUse(RG_FAIRY_BOW) &&
+                               CanUse(RG_SONG_OF_TIME) /* && CanClimb()*/);
+}
+
+bool Logic::MQSpirit4KeyColossus() {
+    // !QUANTUM LOGIC!
+    // We only need 4 keys and the ability to reach both hands for adult to logically be able to drop down onto Desert
+    // Colossus This is because there are only 3 keys that can be wasted without opening up either this lock to East
+    // hand, or the West Hand lock through Sun Block Room and both directions allow you to drop onto colossus
+    // logic->CanKillEnemy(RE_FLOORMASTER) is implied
+    return CanAvoidEnemy(RE_BEAMOS, true, 4) && CanUse(RG_SONG_OF_TIME) &&
+           CanJumpslash() && /*(str0 || SunlightArrows) &&*/
+           (ctx->GetTrickOption(RT_LENS_SPIRIT_MQ) || CanUse(RG_LENS_OF_TRUTH)) && CanKillEnemy(RE_IRON_KNUCKLE) &&
+           CanUse(RG_HOOKSHOT);
+}
+
+bool Logic::MQSpirit4KeyWestHand() {
+    // !QUANTUM LOGIC!
+    // Continuing from MQSpirit4KeyColossus, if we also have a longshot, we can go from the East hand to the West hand,
+    // meaning we always have access to East Hand
+    return CanUse(RG_LONGSHOT) && MQSpirit4KeyColossus();
+}
+// This version of the function handles Shared Access for child, based on what adult could do if they existed
+bool Logic::CouldMQSpirit4KeyWestHand() {
+    return CanAvoidEnemy(RE_BEAMOS, true, 4) && CanUse(RG_SONG_OF_TIME) &&
+           (HasItem(RG_MASTER_SWORD) || HasItem(RG_BIGGORON_SWORD) || HasItem(RG_MEGATON_HAMMER)) &&
+           /*(str0 || SunlightArrows) &&*/
+           (ctx->GetTrickOption(RT_LENS_SPIRIT_MQ) || CanUse(RG_LENS_OF_TRUTH)) && HasItem(RG_LONGSHOT);
+}
+
+// !QUANTUM LOGIC!
+// With 3 keys, you cannot lock adult out of leaving spirit onto the hands and jumping down, as you would have to
+// open the west hand door and then adult could climb through sun block room to jump down from there
+// This requires that adult can complete both routes
+// If we have the longshot, we can also guarantee access to the outer west hand as you can longshot from the east hand
+// to the west Implies CanKillEnemy(RE_IRON_KNUCKLE)
+bool Logic::OuterWestHandLogic() {
+    return HasExplosives() /* && CanClimbHigh() && str0*/ &&
+           SmallKeys(SCENE_SPIRIT_TEMPLE, HasItem(RG_LONGSHOT) ? 3 : 5);
+}
+
+bool Logic::OuterWestHandMQLogic() {
+    return MQSpiritStatueToSunBlock() && SmallKeys(SCENE_SPIRIT_TEMPLE, CouldMQSpirit4KeyWestHand() ? 4 : 7);
+}
+
+bool Logic::StatueRoomMQKeyLogic() {
+    // !QUANTUM LOGIC!
+    // If child enters in reverse, then they have access to Certain Access to Broken Wall room in 6 keys,
+    // the ability to hit switches and the ability to climb because only child can reach the initial child lock
+    // without opening the Statue room to Broken Wall Room lock first
+    // if adult can ever cross crawlspaces this becomes more complicated.
+    return SmallKeys(SCENE_SPIRIT_TEMPLE,
+                     IsChild && Get(LOGIC_REVERSE_SPIRIT_CHILD) && CanHitSwitch() /* && CanClimbHigh()*/ ? 6 : 7);
 }
 
 void Logic::Reset(bool resetSaveContext /*= true*/) {

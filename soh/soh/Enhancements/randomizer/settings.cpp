@@ -1342,10 +1342,15 @@ void Settings::CreateOptions() {
               "Allows the following possible without Tunics:\n- Enter Water Temple. The area below the center pillar "
               "still requires Zora Tunic. Applies to MQ also.\n- Enter Fire Temple. Volvagia still requires Goron "
               "Tunic. Applies to MQ also, and includes child access to first floor with dungeon shuffle.");
-    OPT_TRICK(RT_RUSTED_SWITCHES, RCQUEST_BOTH, RA_NONE, { Tricks::Tag::NOVICE },
-              "Hammer Rusted Switches Through Walls",
-              "Applies to:\n- Fire Temple Highest Goron Chest.\n- Water Trial\n- MQ Fire Temple Lizalfos Maze.\n- MQ "
-              "Spirit Trial.");
+    OPT_TRICK(RT_RUSTED_SWITCHES, RCQUEST_BOTH, RA_NONE, { Tricks::Tag::NOVICE }, "Hammer Through Collision",
+              "Applies to:\n"
+              "- Hitting Fire Temple Highest Goron Chest's Rusted Switch in the SoT Block without Song of Time.\n"
+              "- Hitting the rusted switch in Water Trial through the Ice."
+              "- Hitting MQ Fire Temple Lizalfos Maze's Rusted Switch in the wall.\n"
+              "- Having Adult hammer the rock in the west side crawlspace of MQ Spirit so child can get through "
+              "without bombchus."
+              "- MQ Spirit Trial's Rusted Switch between the thrones without hitting the eye target to drop an Iron "
+              "Knuckle.\n");
     OPT_TRICK(RT_FLAMING_CHESTS, RCQUEST_BOTH, RA_NONE, { Tricks::Tag::INTERMEDIATE }, "Flaming Chests",
               "The chests encircled in flames in Gerudo Training Ground and in Spirit Temple can be opened by running "
               "into the flames while Link is invincible after taking damage.");
@@ -2022,18 +2027,18 @@ void Settings::CreateOptions() {
               "Removes the requirements for the Lens of Truth in Spirit Temple.");
     OPT_TRICK(RT_SPIRIT_CHILD_CHU, RCQUEST_VANILLA, RA_SPIRIT_TEMPLE, { Tricks::Tag::NOVICE },
               "Spirit Temple Child Side Bridge with Bombchu", "A carefully-timed Bombchu can hit the switch.");
-    OPT_TRICK(RT_SPIRIT_LOBBY_GS, RCQUEST_VANILLA, RA_SPIRIT_TEMPLE, { Tricks::Tag::NOVICE },
-              "Spirit Temple Main Room GS with Boomerang",
-              "Standing on the highest part of the arm of the statue, a precise Boomerang throw can kill and obtain "
-              "this Gold Skulltula. You must throw the Boomerang slightly off to the side so that it curves into the "
-              "Skulltula, as aiming directly at it will clank off of the wall in front.");
+    OPT_TRICK(RT_SPIRIT_WEST_LEDGE, RCQUEST_BOTH, RA_SPIRIT_TEMPLE, { Tricks::Tag::NOVICE },
+              "Spirit Temple Statue Room West Ledge Checks with Boomerang",
+              "By carefully walking onto the upper arm of the statue, it's possible to get a good angle on the "
+              "Gold Skulltula (In Vanilla) and the farthest pot (In MQ) to collect the checks with Boomerang. "
+              "The nearest pot in MQ can be reached from the forearm and is always in logic.");
     OPT_TRICK(RT_SPIRIT_LOWER_ADULT_SWITCH, RCQUEST_VANILLA, RA_SPIRIT_TEMPLE, { Tricks::Tag::ADVANCED },
               "Spirit Temple Lower Adult Switch with Bombs",
               "A bomb can be used to hit the switch on the ceiling, but it must be thrown from a particular distance "
               "away and with precise timing.");
     OPT_TRICK(
-        RT_SPIRIT_LOBBY_JUMP, RCQUEST_BOTH, RA_SPIRIT_TEMPLE, { Tricks::Tag::INTERMEDIATE },
-        "Spirit Temple Main Room Jump from Hands to Upper Ledges",
+        RT_SPIRIT_STATUE_JUMP, RCQUEST_BOTH, RA_SPIRIT_TEMPLE, { Tricks::Tag::INTERMEDIATE },
+        "Spirit Temple Statue Room Jump from Hands to Upper Ledges",
         "A precise jump to obtain the following as adult without needing one of Hover Boots, or Hookshot (in Vanilla) "
         "or Song of Time (in MQ): - Spirit Temple Statue Room Northeast Chest - Spirit Temple GS Lobby - Spirit Temple "
         "MQ Central Chamber Top Left Pot (Left) - Spirit Temple MQ Central Chamber Top Left Pot (Right)");
