@@ -8,36 +8,6 @@
 // On Mac, not using aligned resource names was causing crashes in release builds
 
 // objects
-#define dgChristmasGreenTreasureChestFrontTex "__OTR__objects/object_box/gChristmasGreenTreasureChestFrontTex"
-static const ALIGN_ASSET(2) char gChristmasGreenTreasureChestFrontTex[] = dgChristmasGreenTreasureChestFrontTex;
-
-#define dgChristmasGreenTreasureChestSideAndTopTex "__OTR__objects/object_box/gChristmasGreenTreasureChestSideAndTopTex"
-static const ALIGN_ASSET(2) char gChristmasGreenTreasureChestSideAndTopTex[] = dgChristmasGreenTreasureChestSideAndTopTex;
-
-#define dgChristmasRedTreasureChestFrontTex "__OTR__objects/object_box/gChristmasRedTreasureChestFrontTex"
-static const ALIGN_ASSET(2) char gChristmasRedTreasureChestFrontTex[] = dgChristmasRedTreasureChestFrontTex;
-
-#define dgChristmasRedTreasureChestSideAndTopTex "__OTR__objects/object_box/gChristmasRedTreasureChestSideAndTopTex"
-static const ALIGN_ASSET(2) char gChristmasRedTreasureChestSideAndTopTex[] = dgChristmasRedTreasureChestSideAndTopTex;
-
-#define dgGoldTreasureChestFrontTex "__OTR__objects/object_box/gGoldTreasureChestFrontTex"
-static const ALIGN_ASSET(2) char gGoldTreasureChestFrontTex[] = dgGoldTreasureChestFrontTex;
-
-#define dgGoldTreasureChestSideAndTopTex "__OTR__objects/object_box/gGoldTreasureChestSideAndTopTex"
-static const ALIGN_ASSET(2) char gGoldTreasureChestSideAndTopTex[] = dgGoldTreasureChestSideAndTopTex;
-
-#define dgKeyTreasureChestFrontTex "__OTR__objects/object_box/gKeyTreasureChestFrontTex"
-static const ALIGN_ASSET(2) char gKeyTreasureChestFrontTex[] = dgKeyTreasureChestFrontTex;
-
-#define dgKeyTreasureChestSideAndTopTex "__OTR__objects/object_box/gKeyTreasureChestSideAndTopTex"
-static const ALIGN_ASSET(2) char gKeyTreasureChestSideAndTopTex[] = dgKeyTreasureChestSideAndTopTex;
-
-#define dgSkullTreasureChestFrontTex "__OTR__objects/object_box/gSkullTreasureChestFrontTex"
-static const ALIGN_ASSET(2) char gSkullTreasureChestFrontTex[] = dgSkullTreasureChestFrontTex;
-
-#define dgSkullTreasureChestSideAndTopTex "__OTR__objects/object_box/gSkullTreasureChestSideAndTopTex"
-static const ALIGN_ASSET(2) char gSkullTreasureChestSideAndTopTex[] = dgSkullTreasureChestSideAndTopTex;
-
 #define dgChestBodyHeartDL "__OTR__objects/object_box/gChestBodyHeartDL"
 static const ALIGN_ASSET(2) char gChestBodyHeartDL[] = dgChestBodyHeartDL;
 
