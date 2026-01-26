@@ -1736,6 +1736,11 @@ void EntranceShuffler::ApplyEntranceOverrides() {
         entrance->SetAsShuffled();
     }
 }
+
+const Entrance* EntranceShuffler::GetEntranceByIndex(int16_t index) {
+    auto iter = entranceMap.find(index);
+    return iter != entranceMap.end() ? iter->second : nullptr;
+}
 } // namespace Rando
 
 extern "C" EntranceOverride* Randomizer_GetEntranceOverrides() {
