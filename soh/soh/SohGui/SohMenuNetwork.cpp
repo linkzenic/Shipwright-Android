@@ -5,6 +5,7 @@
 #include "soh/OTRGlobals.h"
 #include <soh/Network/Sail/Sail.h>
 #include <soh/Network/CrowdControl/CrowdControl.h>
+#include <soh/Network/Anchor/Anchor.h>
 
 namespace SohGui {
 
@@ -27,6 +28,10 @@ void SohMenu::AddMenuNetwork() {
         .Options(TextOptions().Color(Colors::Orange));
     return;
 #endif
+
+    // Anchor
+    path = { "Network", "Anchor", SECTION_COLUMN_1 };
+    AddSidebarEntry("Network", path.sidebarName, 3);
 
     // Sail
     path = { "Network", "Sail", SECTION_COLUMN_1 };

@@ -479,7 +479,7 @@ void InitTrickNames() {
     };
 
     trickNameTable[RG_PROGRESSIVE_HOOKSHOT] = {
-        Text{ "Progressive Grappling Hook", "Lance-chaîne (prog.)", "Enterhaken (prog.)" }, // "Garra progresiva"
+        Text{ "Progressive Switch Hook", "Crochet Echange (prog.)", "Wechselhaken (prog.)" }, // "Gancho intercambiador progresivo"
         Text{ "Progressive Clawshot", "Grappin-griffe (prog.)", "Greifhaken (prog.)" },     // "Zarpa progresiva"
         Text{ "Progressive Gripshot", "Grappince (prog.)", "Tauschhaken (prog.)" },         // "Enganchador progresivo"
         Text{ "Progressive Rope", "Corde (prog.)", "Giftwurm (prog.)" },                    // "Cuerda progresivo"
@@ -891,6 +891,116 @@ void InitTrickNames() {
         Text{ "Chicken Wing", "Chicken Wing", "Chicken Wing" }, // "Chicken Wing"
         Text{ "Roc's Leg", "Roc's Leg", "Roc's Leg" },          // "Roc's Leg"
         Text{ "Roc's Fapper", "Roc's Fapper", "Roc's Fapper" }, // "Roc's Fapper"
+    };
+    trickNameTable[RG_ROCS_CAPE] = {
+        Text{ "Bird Blanket", "Couverture d'Oiseau", "Vogeldecke" },
+        Text{ "Roc's Towel", "Serviette de Roc", "Roc's Handtuch" },
+        Text{ "Gliding Cloth", "Tissu Planant", "Gleittuch" },
+    };
+    trickNameTable[RG_PROGRESSIVE_ROCS] = {
+        Text{ "Bird Thing", "Truc d'Oiseau", "Vogel-Ding" },
+        Text{ "Roc's Stuff", "Affaires de Roc", "Roc's Zeug" },
+        Text{ "Flight Upgrade", "Amélioration de Vol", "Flug-Upgrade" },
+    };
+    trickNameTable[RG_WHIP] = {
+        Text{ "Long Rope", "Longue Corde", "Langes Seil" },
+        Text{ "Indiana's Tool", "Outil d'Indiana", "Indianas Werkzeug" },
+        Text{ "Snake Charmer", "Charmeur de Serpent", "Schlangenbeschwörer" },
+    };
+    trickNameTable[RG_SPINNER] = {
+        Text{ "Beyblade", "Toupie", "Kreisel" },
+        Text{ "Rail Rider", "Cavalier de Rail", "Schienenreiter" },
+        Text{ "Spinny Thing", "Truc Tournant", "Drehteil" },
+    };
+    trickNameTable[RG_BOMB_ARROWS] = {
+        Text{ "Explosive Tips", "Pointes Explosives", "Explosive Spitzen" },
+        Text{ "Boom Bow", "Arc Boom", "Boom-Bogen" },
+        Text{ "Fire Arrows+", "Flèches de Feu+", "Feuerpfeile+" },
+    };
+    trickNameTable[RG_FIRE_ROD] = {
+        Text{ "Flame Stick", "Bâton de Flamme", "Flammenstock" },
+        Text{ "Hot Wand", "Baguette Chaude", "Heißer Zauberstab" },
+        Text{ "Burn Staff", "Bâton Brûlant", "Brennstab" },
+    };
+    trickNameTable[RG_ICE_ROD] = {
+        Text{ "Frost Stick", "Bâton de Givre", "Froststock" },
+        Text{ "Cold Wand", "Baguette Froide", "Kalter Zauberstab" },
+        Text{ "Freeze Staff", "Bâton Gelant", "Gefrierstab" },
+    };
+    trickNameTable[RG_LIGHT_ROD] = {
+        Text{ "Glow Stick", "Bâton Lumineux", "Leuchtstab" },
+        Text{ "Bright Wand", "Baguette Brillante", "Heller Zauberstab" },
+        Text{ "Shine Staff", "Bâton Éclatant", "Scheinstab" },
+    };
+    trickNameTable[RG_DEKU_LEAF] = {
+        Text{ "Big Leaf", "Grande Feuille", "Großes Blatt" },
+        Text{ "Wind Fan", "Éventail de Vent", "Windfächer" },
+        Text{ "Korok Glider", "Planeur Korok", "Korok-Gleiter" },
+    };
+    trickNameTable[RG_TIME_GATE] = {
+        Text{ "Temporal Portal", "Portail Temporel", "Zeitportal" },
+        Text{ "Chrono Door", "Porte Chrono", "Chrono-Tür" },
+        Text{ "Time Machine", "Machine à Temps", "Zeitmaschine" },
+    };
+    trickNameTable[RG_BEETLE] = {
+        Text{ "Flying Bug", "Insecte Volant", "Fliegender Käfer" },
+        Text{ "Remote Drone", "Drone Télécommandé", "Ferndrohne" },
+        Text{ "Sky Scout", "Éclaireur du Ciel", "Himmelsspäher" },
+    };
+    trickNameTable[RG_SWITCH_HOOK] = {
+        Text{ "Swap Shot", "Tir Échangeur", "Tauschschuss" },
+        Text{ "Trade Hook", "Crochet d'Échange", "Tauschhaken" },
+        Text{ "Teleport Grapple", "Grappin Téléporteur", "Teleport-Greifer" },
+    };
+    trickNameTable[RG_MOGMA_MITTS] = {
+        Text{ "Digging Gloves", "Gants de Fouille", "Grabhandschuhe" },
+        Text{ "Mole Hands", "Mains de Taupe", "Maulwurfshände" },
+        Text{ "Tunnel Mitts", "Mitaines de Tunnel", "Tunnelhandschuhe" },
+    };
+    trickNameTable[RG_GUST_JAR] = {
+        Text{ "Wind Pot", "Pot de Vent", "Windtopf" },
+        Text{ "Air Vacuum", "Aspirateur d'Air", "Luftsauger" },
+        Text{ "Blow Jar", "Jarre Soufflante", "Blaskrug" },
+    };
+    trickNameTable[RG_BALL_AND_CHAIN] = {
+        Text{ "Heavy Flail", "Fléau Lourd", "Schwerer Flegel" },
+        Text{ "Iron Ball", "Boule de Fer", "Eisenkugel" },
+        Text{ "Crushing Weight", "Poids Écrasant", "Zerdrückendes Gewicht" },
+    };
+    trickNameTable[RG_CANE_OF_SOMARIA] = {
+        Text{ "Block Maker", "Créateur de Bloc", "Blockmacher" },
+        Text{ "Magic Staff", "Bâton Magique", "Magischer Stab" },
+        Text{ "Platform Wand", "Baguette de Plateforme", "Plattformstab" },
+    };
+    trickNameTable[RG_SHOVEL] = {
+        Text{ "Digging Tool", "Outil de Fouille", "Grabwerkzeug" },
+        Text{ "Dirt Mover", "Déplaceur de Terre", "Erdbeweger" },
+        Text{ "Hole Maker", "Creuseur de Trou", "Lochmacher" },
+    };
+    trickNameTable[RG_DOMINION_ROD] = {
+        Text{ "Control Staff", "Bâton de Contrôle", "Kontrollstab" },
+        Text{ "Statue Mover", "Déplaceur de Statue", "Statuenbeweger" },
+        Text{ "Puppet Wand", "Baguette de Marionnette", "Marionettenstab" },
+    };
+    trickNameTable[RG_DEMISE_DESTRUCTION] = {
+        Text{ "Evil Blade", "Lame Maléfique", "Böse Klinge" },
+        Text{ "Dark Sword", "Épée Sombre", "Dunkles Schwert" },
+        Text{ "Chaos Edge", "Tranchant du Chaos", "Chaosschneide" },
+    };
+    trickNameTable[RG_ZONAI_PERMAFROST] = {
+        Text{ "Ancient Ice", "Glace Ancienne", "Uraltes Eis" },
+        Text{ "Frozen Relic", "Relique Gelée", "Gefrorenes Relikt" },
+        Text{ "Eternal Frost", "Givre Éternel", "Ewiger Frost" },
+    };
+    trickNameTable[RG_HYLIAS_GRACE] = {
+        Text{ "Goddess Gift", "Don de la Déesse", "Göttin-Geschenk" },
+        Text{ "Divine Blessing", "Bénédiction Divine", "Göttlicher Segen" },
+        Text{ "Sacred Light", "Lumière Sacrée", "Heiliges Licht" },
+    };
+    trickNameTable[RG_DESIRE_SENSOR] = {
+        Text{ "Want Detector", "Détecteur de Désir", "Wunschdetektor" },
+        Text{ "Wish Finder", "Trouveur de Souhait", "Wunschfinder" },
+        Text{ "Need Radar", "Radar de Besoin", "Bedarfsradar" },
     };
     trickNameTable[RG_DEATH_MOUNTAIN_CRATER_BEAN_SOUL] = {
         // TODO_TRANSLATE

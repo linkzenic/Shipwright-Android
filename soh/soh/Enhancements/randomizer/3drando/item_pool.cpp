@@ -14,9 +14,314 @@ std::vector<RandomizerGet> itemPool = {};
 std::vector<RandomizerGet> lesserPool = {};
 std::vector<RandomizerGet> plentifulPool = {};
 std::vector<RandomizerGet> junkPool = {};
-const std::array<RandomizerGet, 13> JunkPoolItems = {
-    RG_BOMBS_5,  RG_BOMBS_10,  RG_BOMBS_20,  RG_DEKU_NUTS_5, RG_DEKU_STICK_1, RG_DEKU_SEEDS_30, RG_RECOVERY_HEART,
-    RG_ARROWS_5, RG_ARROWS_10, RG_ARROWS_30, RG_BLUE_RUPEE,  RG_RED_RUPEE,    RG_DEKU_NUTS_10,
+const std::array<RandomizerGet, 16> JunkPoolItems = {
+    RG_BOMBS_5,        RG_BOMBS_10,   RG_BOMBS_20,     RG_DEKU_NUTS_5, RG_DEKU_STICK_1, RG_DEKU_SEEDS_30,
+    RG_RECOVERY_HEART, RG_ARROWS_5,   RG_ARROWS_10,    RG_ARROWS_30,   RG_BLUE_RUPEE,   RG_RED_RUPEE,
+    RG_PURPLE_RUPEE,   RG_HUGE_RUPEE, RG_DEKU_NUTS_10, RG_ICE_TRAP,
+};
+const std::array<RandomizerGet, 84> alwaysItems = {
+    RG_BIGGORON_SWORD,
+    RG_BOOMERANG,
+    RG_LENS_OF_TRUTH,
+    RG_MEGATON_HAMMER,
+    RG_IRON_BOOTS,
+    RG_GORON_TUNIC,
+    RG_ZORA_TUNIC,
+    RG_HOVER_BOOTS,
+    RG_MIRROR_SHIELD,
+    RG_STONE_OF_AGONY,
+    RG_FIRE_ARROWS,
+    RG_ICE_ARROWS,
+    RG_LIGHT_ARROWS,
+    RG_DINS_FIRE,
+    RG_FARORES_WIND,
+    RG_NAYRUS_LOVE,
+    RG_GREG_RUPEE,
+    RG_PROGRESSIVE_HOOKSHOT, // 2 progressive hookshots
+    RG_PROGRESSIVE_HOOKSHOT,
+    RG_DEKU_SHIELD,
+    RG_HYLIAN_SHIELD,
+    RG_PROGRESSIVE_STRENGTH, // 3 progressive strength upgrades
+    RG_PROGRESSIVE_STRENGTH,
+    RG_PROGRESSIVE_STRENGTH,
+    RG_PROGRESSIVE_SCALE, // 2 progressive scales
+    RG_PROGRESSIVE_SCALE,
+    RG_PROGRESSIVE_BOW, // 3 progressive Bows
+    RG_PROGRESSIVE_BOW,
+    RG_PROGRESSIVE_BOW,
+    RG_PROGRESSIVE_SLINGSHOT, // 3 progressive bullet bags
+    RG_PROGRESSIVE_SLINGSHOT,
+    RG_PROGRESSIVE_SLINGSHOT,
+    RG_PROGRESSIVE_BOMB_BAG, // 3 progressive bomb bags
+    RG_PROGRESSIVE_BOMB_BAG,
+    RG_PROGRESSIVE_BOMB_BAG,
+    RG_PROGRESSIVE_WALLET, // 2 progressive wallets
+    RG_PROGRESSIVE_WALLET,
+    RG_PROGRESSIVE_MAGIC_METER, // 2 progressive magic meters
+    RG_PROGRESSIVE_MAGIC_METER,
+    RG_DOUBLE_DEFENSE,
+    RG_PROGRESSIVE_STICK_UPGRADE, // 2 stick upgrades
+    RG_PROGRESSIVE_STICK_UPGRADE,
+    RG_PROGRESSIVE_NUT_UPGRADE, // 2 nut upgrades
+    RG_PROGRESSIVE_NUT_UPGRADE,
+    RG_RECOVERY_HEART, // 6 recovery hearts
+    RG_RECOVERY_HEART,
+    RG_RECOVERY_HEART,
+    RG_RECOVERY_HEART,
+    RG_RECOVERY_HEART,
+    RG_RECOVERY_HEART,
+    RG_BOMBS_5, // 2
+    RG_BOMBS_5,
+    RG_BOMBS_10,
+    RG_BOMBS_20,
+    RG_ARROWS_5,
+    RG_ARROWS_10, // 5
+    RG_ARROWS_10,
+    RG_ARROWS_10,
+    RG_TREASURE_GAME_HEART,
+    // Custom Items (24 items for second inventory page)
+    RG_PROGRESSIVE_ROCS,  // First gives Feather, second gives Cape
+    RG_WHIP,
+    RG_SPINNER,
+    RG_BOMB_ARROWS,
+    RG_FIRE_ROD,
+    RG_DEMISE_DESTRUCTION,
+    RG_DEKU_LEAF,
+    RG_TIME_GATE,
+    RG_BEETLE,
+    RG_SWITCH_HOOK,
+    RG_ICE_ROD,
+    RG_ZONAI_PERMAFROST,
+    RG_MOGMA_MITTS,
+    RG_GUST_JAR,
+    RG_BALL_AND_CHAIN,
+    RG_PROGRESSIVE_ROCS,  // Second progressive Roc's item
+    RG_LIGHT_ROD,
+    RG_HYLIAS_GRACE,
+    RG_PENDING_2,
+    RG_PENDING_1,
+    RG_PENDING_3,
+    RG_CANE_OF_SOMARIA,
+    RG_SHOVEL,
+    RG_DOMINION_ROD,
+    RG_DESIRE_SENSOR,
+};
+const std::array<RandomizerGet, 44> easyItems = {
+    RG_BIGGORON_SWORD,
+    RG_KOKIRI_SWORD,
+    RG_MASTER_SWORD,
+    RG_BOOMERANG,
+    RG_LENS_OF_TRUTH,
+    RG_MEGATON_HAMMER,
+    RG_IRON_BOOTS,
+    RG_GORON_TUNIC,
+    RG_ZORA_TUNIC,
+    RG_HOVER_BOOTS,
+    RG_MIRROR_SHIELD,
+    RG_FIRE_ARROWS,
+    RG_LIGHT_ARROWS,
+    RG_DINS_FIRE,
+    RG_PROGRESSIVE_HOOKSHOT,
+    RG_PROGRESSIVE_STRENGTH,
+    RG_PROGRESSIVE_SCALE,
+    RG_PROGRESSIVE_WALLET,
+    RG_PROGRESSIVE_MAGIC_METER,
+    RG_PROGRESSIVE_STICK_UPGRADE,
+    RG_PROGRESSIVE_NUT_UPGRADE,
+    RG_PROGRESSIVE_BOW,
+    RG_PROGRESSIVE_SLINGSHOT,
+    RG_PROGRESSIVE_BOMB_BAG,
+    RG_DOUBLE_DEFENSE,
+    RG_HEART_CONTAINER, // 16 Heart Containers
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_PIECE_OF_HEART, // 3 heart pieces
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+};
+const std::array<RandomizerGet, 43> normalItems = {
+    // 35 pieces of heart
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    RG_PIECE_OF_HEART,
+    // 8 heart containers
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+    RG_HEART_CONTAINER,
+};
+const std::array<RandomizerGet, 2> DT_Vanilla = {
+    RG_RECOVERY_HEART,
+    RG_RECOVERY_HEART,
+};
+const std::array<RandomizerGet, 3> DT_MQ = {
+    RG_DEKU_SHIELD,
+    RG_DEKU_SHIELD,
+    RG_PURPLE_RUPEE,
+};
+const std::array<RandomizerGet, 1> DC_Vanilla = {
+    RG_RED_RUPEE,
+};
+const std::array<RandomizerGet, 2> DC_MQ = {
+    RG_HYLIAN_SHIELD,
+    RG_BLUE_RUPEE,
+};
+const std::array<RandomizerGet, 7> JB_MQ = {
+    RG_DEKU_NUTS_5, RG_DEKU_NUTS_5, RG_DEKU_NUTS_5, RG_DEKU_NUTS_5, RG_RECOVERY_HEART, RG_DEKU_SHIELD, RG_DEKU_STICK_1,
+};
+const std::array<RandomizerGet, 3> FoT_Vanilla = {
+    RG_RECOVERY_HEART,
+    RG_ARROWS_10,
+    RG_ARROWS_30,
+};
+const std::array<RandomizerGet, 1> FoT_MQ = {
+    RG_ARROWS_5,
+};
+const std::array<RandomizerGet, 1> FiT_Vanilla = {
+    RG_HUGE_RUPEE,
+};
+const std::array<RandomizerGet, 2> FiT_MQ = {
+    RG_BOMBS_20,
+    RG_HYLIAN_SHIELD,
+};
+const std::array<RandomizerGet, 4> SpT_Vanilla = {
+    RG_DEKU_SHIELD,
+    RG_DEKU_SHIELD,
+    RG_RECOVERY_HEART,
+    RG_BOMBS_20,
+};
+const std::array<RandomizerGet, 3> SpT_MQ = {
+    RG_PURPLE_RUPEE,
+    RG_PURPLE_RUPEE,
+    RG_ARROWS_30,
+};
+const std::array<RandomizerGet, 1> ShT_Vanilla = {
+    RG_ARROWS_30,
+};
+const std::array<RandomizerGet, 3> ShT_MQ = {
+    RG_ARROWS_5,
+    RG_ARROWS_5,
+    RG_RED_RUPEE,
+};
+const std::array<RandomizerGet, 7> BW_Vanilla = {
+    RG_RECOVERY_HEART, RG_BOMBS_10, RG_HUGE_RUPEE, RG_DEKU_NUTS_5, RG_DEKU_NUTS_10, RG_DEKU_SHIELD, RG_HYLIAN_SHIELD,
+};
+const std::array<RandomizerGet, 4> GTG_Vanilla = {
+    RG_ARROWS_30,
+    RG_ARROWS_30,
+    RG_ARROWS_30,
+    RG_HUGE_RUPEE,
+};
+const std::array<RandomizerGet, 5> GTG_MQ = {
+    RG_TREASURE_GAME_GREEN_RUPEE, RG_TREASURE_GAME_GREEN_RUPEE, RG_ARROWS_10, RG_GREEN_RUPEE, RG_PURPLE_RUPEE,
+};
+const std::array<RandomizerGet, 4> GC_Vanilla = {
+    RG_BLUE_RUPEE,
+    RG_BLUE_RUPEE,
+    RG_BLUE_RUPEE,
+    RG_ARROWS_30,
+};
+const std::array<RandomizerGet, 5> GC_MQ = {
+    RG_ARROWS_10, RG_ARROWS_10, RG_BOMBS_5, RG_RED_RUPEE, RG_RECOVERY_HEART,
+};
+const std::array<RandomizerGet, 11> normalBottles = {
+    RG_EMPTY_BOTTLE,
+    RG_BOTTLE_WITH_MILK,
+    RG_BOTTLE_WITH_RED_POTION,
+    RG_BOTTLE_WITH_GREEN_POTION,
+    RG_BOTTLE_WITH_BLUE_POTION,
+    RG_BOTTLE_WITH_FAIRY,
+    RG_BOTTLE_WITH_FISH,
+    RG_BOTTLE_WITH_BUGS,
+    RG_BOTTLE_WITH_POE,
+    RG_BOTTLE_WITH_BIG_POE,
+    RG_BOTTLE_WITH_BLUE_FIRE,
+};
+const std::array<RandomizerGet, 28> normalRupees = {
+    RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,
+    RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_BLUE_RUPEE,
+    RG_BLUE_RUPEE,   RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,
+    RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE,
+    RG_PURPLE_RUPEE, RG_HUGE_RUPEE,   RG_HUGE_RUPEE,   RG_HUGE_RUPEE,
+};
+const std::array<RandomizerGet, 28> shopsanityRupees = {
+    RG_BLUE_RUPEE,   RG_BLUE_RUPEE,   RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,
+    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,    RG_RED_RUPEE,
+    RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE,
+    RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_PURPLE_RUPEE, RG_HUGE_RUPEE,   RG_HUGE_RUPEE,
+    RG_HUGE_RUPEE,   RG_HUGE_RUPEE,   RG_HUGE_RUPEE,   RG_HUGE_RUPEE,
+};
+const std::array<RandomizerGet, 19> dekuScrubItems = {
+    RG_DEKU_NUTS_5,  RG_DEKU_NUTS_5,    RG_DEKU_NUTS_5,    RG_DEKU_NUTS_5,    RG_DEKU_NUTS_5,
+    RG_DEKU_STICK_1, RG_BOMBS_5,        RG_BOMBS_5,        RG_BOMBS_5,        RG_BOMBS_5,
+    RG_BOMBS_5,      RG_RECOVERY_HEART, RG_RECOVERY_HEART, RG_RECOVERY_HEART, RG_RECOVERY_HEART,
+    RG_BLUE_RUPEE,   RG_BLUE_RUPEE,     RG_BLUE_RUPEE,     RG_BLUE_RUPEE,
+};
+const std::array<RandomizerGet, 12> songList = {
+    RG_ZELDAS_LULLABY, RG_EPONAS_SONG,       RG_SUNS_SONG,          RG_SARIAS_SONG,
+    RG_SONG_OF_TIME,   RG_SONG_OF_STORMS,    RG_MINUET_OF_FOREST,   RG_PRELUDE_OF_LIGHT,
+    RG_BOLERO_OF_FIRE, RG_SERENADE_OF_WATER, RG_NOCTURNE_OF_SHADOW, RG_REQUIEM_OF_SPIRIT,
+};
+const std::array<RandomizerGet, 10> tradeItems = {
+    RG_POCKET_EGG,
+    // RG_POCKET_CUCCO,
+    RG_COJIRO,
+    RG_ODD_MUSHROOM,
+    RG_POACHERS_SAW,
+    RG_BROKEN_SWORD,
+    RG_PRESCRIPTION,
+    RG_EYEBALL_FROG,
+    RG_EYEDROPS,
+    RG_CLAIM_CHECK,
 };
 // RANDOTODO should probably check the same thing as check matches contents at some point
 const std::map<RandomizerGet, std::vector<RandomizerGet>*> poolForItem = {
@@ -398,6 +703,34 @@ void GenerateItemPool() {
 
     if (ctx->GetOption(RSK_ROCS_FEATHER)) {
         AddItemToPool(RG_ROCS_FEATHER, 2, 1, 1, 1);
+    }
+
+    // Skijer's Custom Items (Second Inventory Page) - 24 items
+    if (ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS)) {
+        AddItemToPool(RG_PROGRESSIVE_ROCS, 3, 2, 2, 2);  // Progressive: Feather then Cape
+        AddItemToPool(RG_WHIP, 2, 1, 1, 1);
+        AddItemToPool(RG_SPINNER, 2, 1, 1, 1);
+        AddItemToPool(RG_BOMB_ARROWS, 2, 1, 1, 1);
+        AddItemToPool(RG_FIRE_ROD, 2, 1, 1, 1);
+        AddItemToPool(RG_DEMISE_DESTRUCTION, 2, 1, 1, 1);
+        AddItemToPool(RG_DEKU_LEAF, 2, 1, 1, 1);
+        AddItemToPool(RG_TIME_GATE, 2, 1, 1, 1);
+        AddItemToPool(RG_BEETLE, 2, 1, 1, 1);
+        AddItemToPool(RG_SWITCH_HOOK, 2, 1, 1, 1);
+        AddItemToPool(RG_ICE_ROD, 2, 1, 1, 1);
+        AddItemToPool(RG_ZONAI_PERMAFROST, 2, 1, 1, 1);
+        AddItemToPool(RG_MOGMA_MITTS, 2, 1, 1, 1);
+        AddItemToPool(RG_GUST_JAR, 2, 1, 1, 1);
+        AddItemToPool(RG_BALL_AND_CHAIN, 2, 1, 1, 1);
+        AddItemToPool(RG_LIGHT_ROD, 2, 1, 1, 1);
+        AddItemToPool(RG_HYLIAS_GRACE, 2, 1, 1, 1);
+        AddItemToPool(RG_PENDING_2, 2, 1, 1, 1);
+        AddItemToPool(RG_PENDING_1, 2, 1, 1, 1);
+        AddItemToPool(RG_PENDING_3, 2, 1, 1, 1);
+        AddItemToPool(RG_CANE_OF_SOMARIA, 2, 1, 1, 1);
+        AddItemToPool(RG_SHOVEL, 2, 1, 1, 1);
+        AddItemToPool(RG_DOMINION_ROD, 2, 1, 1, 1);
+        AddItemToPool(RG_DESIRE_SENSOR, 2, 1, 1, 1);
     }
 
     int bronzeScale = ctx->GetOption(RSK_SHUFFLE_SWIM) ? 1 : 0;

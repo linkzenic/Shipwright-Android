@@ -1389,6 +1389,32 @@ std::unordered_map<ItemID, RandomizerGet> ItemIDtoRandomizerGetMap{
     { ITEM_GORON_RUBY, RG_GORON_RUBY },
     { ITEM_ZORA_SAPPHIRE, RG_ZORA_SAPPHIRE },
     { ITEM_SWORD_MASTER, RG_MASTER_SWORD },
+    // Custom Items
+    { ITEM_ROCS_FEATHER_SKIJER, RG_ROCS_FEATHER },
+    { ITEM_ROCS_CAPE, RG_ROCS_CAPE },
+    { ITEM_HYLIAS_GRACE, RG_HYLIAS_GRACE },
+    { ITEM_ZONAI_PERMAFROST, RG_ZONAI_PERMAFROST },
+    { ITEM_DEMISE_DESTRUCTION, RG_DEMISE_DESTRUCTION },
+    { ITEM_DEKU_LEAF, RG_DEKU_LEAF },
+    { ITEM_SWITCH_HOOK, RG_SWITCH_HOOK },
+    { ITEM_MOGMA_MITTS, RG_MOGMA_MITTS },
+    { ITEM_GUST_JAR, RG_GUST_JAR },
+    { ITEM_BALL_AND_CHAIN, RG_BALL_AND_CHAIN },
+    { ITEM_WHIP, RG_WHIP },
+    { ITEM_SPINNER, RG_SPINNER },
+    { ITEM_CANE_OF_SOMARIA, RG_CANE_OF_SOMARIA },
+    { ITEM_DOMINION_ROD, RG_DOMINION_ROD },
+    { ITEM_DESIRE_SENSOR, RG_DESIRE_SENSOR },
+    { ITEM_TIME_GATE, RG_TIME_GATE },
+    { ITEM_BOMB_ARROWS, RG_BOMB_ARROWS },
+    { ITEM_ROD_FIRE, RG_FIRE_ROD },
+    { ITEM_ROD_ICE, RG_ICE_ROD },
+    { ITEM_ROD_LIGHT, RG_LIGHT_ROD },
+    { ITEM_BEETLE, RG_BEETLE },
+    { ITEM_SHOVEL, RG_SHOVEL },
+    { ITEM_PENDING_1, RG_PENDING_1 },
+    { ITEM_PENDING_2, RG_PENDING_2 },
+    { ITEM_PENDING_3, RG_PENDING_3 },
 };
 
 extern "C" RandomizerGet RetrieveRandomizerGetFromItemID(ItemID itemID) {
@@ -2430,6 +2456,40 @@ extern "C" uint8_t Randomizer_GenerateRandomizer() {
 
 extern "C" void Randomizer_ShowRandomizerMenu() {
     SohGui::ShowRandomizerSettingsMenu();
+}
+
+extern "C" u8 Randomizer_SceneHasMajorItem(s16 sceneNum) {
+    auto ctx = Rando::Context::GetInstance();
+    if (!ctx) {
+        return 0;
+    }
+
+    auto& locationTable = Rando::StaticData::GetLocationTable();
+    for (size_t i = 0; i < RC_MAX; i++) {
+        RandomizerCheck rc = static_cast<RandomizerCheck>(i);
+        Rando::Location& loc = locationTable[rc];
+        if (loc.GetRandomizerCheck() == RC_UNKNOWN_CHECK) {
+            continue;
+        }
+        if (loc.GetScene() != static_cast<SceneID>(sceneNum)) {
+            continue;
+        }
+
+        Rando::ItemLocation* itemLoc = ctx->GetItemLocation(rc);
+        if (itemLoc == nullptr) {
+            continue;
+        }
+
+        RandomizerCheckStatus status = itemLoc->GetCheckStatus();
+        if (status == RCSHOW_COLLECTED || status == RCSHOW_SAVED) {
+            continue;
+        }
+
+        if (itemLoc->GetPlacedItem().IsMajorItem()) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 extern "C" void EntranceTracker_SetCurrentGrottoID(s16 entranceIndex) {

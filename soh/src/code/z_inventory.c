@@ -200,7 +200,6 @@ void* gItemIcons[] = {
     gRocsFeatherTex,
 };
 
-// Used to map item IDs to inventory slots
 u8 gItemSlots[] = {
     SLOT_STICK,       SLOT_NUT,          SLOT_BOMB,        SLOT_BOW,         SLOT_ARROW_FIRE,  SLOT_DINS_FIRE,
     SLOT_SLINGSHOT,   SLOT_OCARINA,      SLOT_OCARINA,     SLOT_BOMBCHU,     SLOT_HOOKSHOT,    SLOT_HOOKSHOT,

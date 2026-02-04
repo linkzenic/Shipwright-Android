@@ -4462,6 +4462,7 @@ typedef enum {
     RG_MAGIC_DOUBLE, // Added for refactor of GetItemEntries
     RG_PROGRESSIVE_OCARINA,
     RG_PROGRESSIVE_GORONSWORD,
+    RG_PROGRESSIVE_ROCS,
     RG_EMPTY_BOTTLE,
     RG_BOTTLE_WITH_MILK,
     RG_BOTTLE_WITH_RED_POTION,
@@ -4712,9 +4713,32 @@ typedef enum {
     RG_BACK_TOWER_KEY,
     RG_HYLIA_LAB_KEY,
     RG_FISHING_HOLE_KEY,
-
-    // Custom Items
+    // Custom Items (24 items for second inventory page)
     RG_ROCS_FEATHER,
+    RG_WHIP,
+    RG_SPINNER,
+    RG_BOMB_ARROWS,
+    RG_FIRE_ROD,
+    RG_DEMISE_DESTRUCTION,
+    RG_DEKU_LEAF,
+    RG_TIME_GATE,
+    RG_BEETLE,
+    RG_SWITCH_HOOK,
+    RG_ICE_ROD,
+    RG_ZONAI_PERMAFROST,
+    RG_MOGMA_MITTS,
+    RG_GUST_JAR,
+    RG_BALL_AND_CHAIN,
+    RG_ROCS_CAPE,
+    RG_LIGHT_ROD,
+    RG_HYLIAS_GRACE,
+    RG_PENDING_2,
+    RG_PENDING_1,
+    RG_PENDING_3,
+    RG_CANE_OF_SOMARIA,
+    RG_SHOVEL,
+    RG_DOMINION_ROD,
+    RG_DESIRE_SENSOR,
 
     // Logic Only
     RG_STICKS,
@@ -6665,6 +6689,7 @@ typedef enum {
     RSK_LOCK_OVERWORLD_DOORS,
     RSK_SHUFFLE_GRASS,
     RSK_ROCS_FEATHER,
+    RSK_SKIJER_CUSTOM_ITEMS,
     RSK_MAX
 } RandomizerSettingKey;
 

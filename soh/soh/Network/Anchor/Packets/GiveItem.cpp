@@ -10,6 +10,8 @@
 
 extern "C" {
 #include "functions.h"
+#include "mods/extended_inventory.h"
+#include "mods/items/custom_items.h"
 extern PlayState* gPlayState;
 }
 
@@ -53,6 +55,25 @@ void Anchor::HandlePacket_GiveItem(nlohmann::json payload) {
     AnchorClient& client = clients[clientId];
     u16 modId = payload["modId"].get<u16>();
     u16 getItemId = payload["getItemId"].get<u16>();
+
+    // Check if this is a custom item (range 0x9C-0xB5)
+    if (modId == MOD_NONE && getItemId >= 0x9C && getItemId <= 0xB5) {
+        // Handle custom items using ExtInv_SetItemById to properly map item ID to slot
+        // This uses the gPage2Items[] array to find the correct slot for each item
+        ExtInv_SetItemById(getItemId);
+
+        // Play item fanfare sound
+        Audio_PlayFanfare(NA_BGM_ITEM_GET | 0x900);
+
+        // Create notification
+        Notification::Emit({
+            .prefix = client.name,
+            .message = "found",
+            .suffix = SohUtils::GetItemName(getItemId),
+        });
+        return;
+    }
+
 
     GetItemEntry getItemEntry;
     if (modId == MOD_NONE) {

@@ -788,6 +788,10 @@ void Settings::CreateOptionDescriptions() {
     mOptionDescriptions[RSK_ROCS_FEATHER] =
         "Adds Roc's Feather to the item pool. Roc's Feather is a custom item granting the player a jump on demand. "
         "The jump can also be used when already in mid-air. Roc's Feather is not considered by logic.";
+    mOptionDescriptions[RSK_SKIJER_CUSTOM_ITEMS] =
+        "Adds Skijer's 24 custom items to the item pool (Second Inventory Page). These include: Whip, Spinner, "
+        "Bomb Arrows, Fire/Ice/Light Rods, Deku Leaf, Time Gate, Beetle, Switch Hook, Mogma Mitts, Gust Jar, "
+        "Ball and Chain, Cane of Somaria, Dominion Rod, Shovel, and more. These items are not considered by logic.";
     mOptionDescriptions[RSK_SLINGBOW_BREAK_BEEHIVES] =
         "Allows Slingshot and Bow to break beehives when Beehive Shuffle is turned on.";
     mOptionDescriptions[RSK_LOGIC_RULES] =

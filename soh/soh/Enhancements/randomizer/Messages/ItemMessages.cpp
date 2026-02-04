@@ -11,12 +11,23 @@
 #include "soh/ShipInit.hpp"
 #include "z64item.h"
 #include <soh/ResourceManagerHelpers.h>
+#include "soh/Enhancements/randomizer/randomizerTypes.h"
 
 extern "C" {
 #include <variables.h>
 #include <macros.h>
 extern PlayState* gPlayState;
 }
+
+// Forward declaration for custom item messages from randomizer.cpp
+struct CustomItemMessageEntry {
+    s16 rgId;
+    ItemID itemId;
+    const char* english;
+    const char* german;
+    const char* french;
+};
+extern const CustomItemMessageEntry* GetCustomItemMessage(s16 rgId);
 
 static const char* const englishIceTrapMessages[] = {
     "You are a #FOOL#!",
@@ -375,14 +386,25 @@ void BuildTriforcePieceMessage(CustomMessage& msg) {
 
 void BuildCustomItemMessage(Player* player, CustomMessage& msg) {
     int16_t rgid;
-    msg = CustomMessage("You found [[article]][[color]][[name]]%w!",
-                        "Du erhältst [[article]][[color]][[name]]%w gefunden!",
-                        "Vous avez trouvé [[article]][[color]][[name]]%w!", TEXTBOX_TYPE_BLUE);
     if (player->getItemEntry.objectId != OBJECT_INVALID) {
         rgid = player->getItemEntry.getItemId;
     } else {
         rgid = player->getItemId;
     }
+
+    // Check if this is a custom item with a detailed message
+    const CustomItemMessageEntry* customMsg = GetCustomItemMessage(rgid);
+    if (customMsg != nullptr) {
+        // Use the detailed custom message
+        msg = CustomMessage(customMsg->english, customMsg->german, customMsg->french, TEXTBOX_TYPE_BLUE);
+        msg.AutoFormat();
+        return;
+    }
+
+    // Fall back to generic "You found X!" message for other items
+    msg = CustomMessage("You found [[article]][[color]][[name]]%w!",
+                        "Du erhältst [[article]][[color]][[name]]%w gefunden!",
+                        "Vous avez trouvé [[article]][[color]][[name]]%w!", TEXTBOX_TYPE_BLUE);
     CustomMessage name =
         CustomMessage(Rando::StaticData::RetrieveItem(static_cast<RandomizerGet>(rgid)).GetName(), TEXTBOX_TYPE_BLUE);
     CustomMessage article = CustomMessage(
@@ -496,6 +518,17 @@ void BuildSmallKeyMessage(uint16_t* textId, bool* loadFromMessageTable) {
     msg.LoadIntoFont();
 }
 
+// Time Gate custom item - "Travel through time?" Yes/No prompt
+void BuildTimeGateMessage(uint16_t* textId, bool* loadFromMessageTable) {
+    CustomMessage msg = CustomMessage(
+        "Travel through time?&\x1B%gYes&No%w",
+        "Durch die Zeit reisen?&\x1B%gJa&Nein%w",
+        "Voyager dans le temps?&\x1B%gOui&Non%w");
+    msg.Format();
+    msg.LoadIntoFont();
+    *loadFromMessageTable = false;
+}
+
 void RegisterItemMessages() {
     COND_ID_HOOK(OnOpenText, TEXT_RANDOMIZER_CUSTOM_ITEM, IS_RANDO, BuildItemMessage);
     COND_ID_HOOK(OnOpenText, TEXT_ITEM_DUNGEON_MAP, DUNGEON_ITEMS_CAN_BE_OUTSIDE_DUNGEON(RSK_SHUFFLE_MAPANDCOMPASS),
@@ -512,4 +545,10 @@ void RegisterItemMessages() {
                  BuildSmallKeyMessage);
 }
 
+// Time Gate message registration (always available, not rando-dependent)
+void RegisterTimeGateMessage() {
+    COND_ID_HOOK(OnOpenText, 0x9213, true, BuildTimeGateMessage);
+}
+
 static RegisterShipInitFunc initFunc(RegisterItemMessages, { "IS_RANDO" });
+static RegisterShipInitFunc initTimeGate(RegisterTimeGateMessage);

@@ -146,9 +146,32 @@ typedef enum {
     /* 0x1B */ SLOT_BOOTS_KOKIRI,
     /* 0x1C */ SLOT_BOOTS_IRON,
     /* 0x1D */ SLOT_BOOTS_HOVER,
-    /* 0x1E */ SLOT_SHIELD_DEKU,
-    /* 0x1F */ SLOT_SHIELD_HYLIAN,
-    /* 0x20 */ SLOT_SHIELD_MIRROR,
+    // Custom item slots (Page 2 of inventory menu)
+    /* 0x1E */ SLOT_ROCS_FEATHER_SKIJER,
+    /* 0x1F */ SLOT_ROCS_CAPE,
+    /* 0x20 */ SLOT_HYLIAS_GRACE,
+    /* 0x21 */ SLOT_ZONAI_PERMAFROST,
+    /* 0x22 */ SLOT_DEMISE_DESTRUCTION,
+    /* 0x23 */ SLOT_DEKU_LEAF,
+    /* 0x24 */ SLOT_SWITCH_HOOK,
+    /* 0x25 */ SLOT_MOGMA_MITTS,
+    /* 0x26 */ SLOT_GUST_JAR,
+    /* 0x27 */ SLOT_BALL_AND_CHAIN,
+    /* 0x28 */ SLOT_WHIP,
+    /* 0x29 */ SLOT_SPINNER,
+    /* 0x2A */ SLOT_CANE_OF_SOMARIA,
+    /* 0x2B */ SLOT_DOMINION_ROD,
+    /* 0x2C */ SLOT_TIME_GATE,
+    /* 0x2D */ SLOT_BOW_AND_BOMBS,
+    /* 0x2E */ SLOT_ROD_FIRE,
+    /* 0x2F */ SLOT_ROD_ICE,
+    /* 0x30 */ SLOT_ROD_LIGHT,
+    /* 0x31 */ SLOT_BEETLE,
+    /* 0x32 */ SLOT_SHOVEL,
+    // AssignableTunicsAndBoots enhancement slots (moved after custom items to avoid conflicts)
+    /* 0x33 */ SLOT_SHIELD_DEKU,
+    /* 0x34 */ SLOT_SHIELD_HYLIAN,
+    /* 0x35 */ SLOT_SHIELD_MIRROR,
     /* 0xFF */ SLOT_NONE = 0xFF
 } InventorySlot;
 
@@ -309,7 +332,34 @@ typedef enum {
     /* 0x99 */ ITEM_STICK_UPGRADE_30,
     /* 0x9A */ ITEM_NUT_UPGRADE_30,
     /* 0x9B */ ITEM_NUT_UPGRADE_40,
-    /*      */ ITEM_ROCS_FEATHER,
+    /* 0x9C */ ITEM_ROCS_FEATHER,
+    // Custom items (for second inventory page) - start at 0x9D
+    /* 0x9D */ ITEM_ROCS_FEATHER_SKIJER,
+    /* 0x9E */ ITEM_ROCS_CAPE,
+    /* 0x9F */ ITEM_DESIRE_SENSOR,
+    /* 0xA0 */ ITEM_HYLIAS_GRACE,
+    /* 0xA1 */ ITEM_ZONAI_PERMAFROST,
+    /* 0xA2 */ ITEM_DEMISE_DESTRUCTION,
+    /* 0xA3 */ ITEM_DEKU_LEAF,
+    /* 0xA4 */ ITEM_SWITCH_HOOK,
+    /* 0xA5 */ ITEM_MOGMA_MITTS,
+    /* 0xA6 */ ITEM_GUST_JAR,
+    /* 0xA7 */ ITEM_BALL_AND_CHAIN,
+    /* 0xA8 */ ITEM_WHIP,
+    /* 0xA9 */ ITEM_SPINNER,
+    /* 0xAA */ ITEM_CANE_OF_SOMARIA,
+    /* 0xAB */ ITEM_DOMINION_ROD,
+    /* 0xAC */ ITEM_TIME_GATE,
+    /* 0xAD */ ITEM_BOMB_ARROWS,
+    /* 0xAE */ ITEM_ROD_FIRE,
+    /* 0xAF */ ITEM_ROD_ICE,
+    /* 0xB0 */ ITEM_ROD_LIGHT,
+    /* 0xB1 */ ITEM_BEETLE,
+    /* 0xB2 */ ITEM_SHOVEL,
+    /* 0xB3 */ ITEM_PENDING_1,
+    /* 0xB4 */ ITEM_PENDING_2,
+    /* 0xB5 */ ITEM_UNUSED_B5,
+    /* 0xB6 */ ITEM_PENDING_3,
     /* 0xFC */ ITEM_LAST_USED = 0xFC,
     /* 0xFE */ ITEM_NONE_FE = 0xFE,
     /* 0xFF */ ITEM_NONE = 0xFF
@@ -461,7 +511,7 @@ typedef enum {
     /* 0x7B */ GI_BULLET_BAG_50,
     /* 0x7C */ GI_ICE_TRAP, // freezes link when opened from a chest
     /* 0x7D */ GI_TEXT_0,   // no model appears over Link, shows text id 0 (pocket egg)
-    /* 0x84 */ GI_MAX
+    /* 0x7E */ GI_MAX
 } GetItemID;
 
 typedef enum {
@@ -595,7 +645,8 @@ typedef enum {
     /* 0x7C */ GID_TRIFORCE_PIECE,
     /* 0x7D */ GID_ROCS_FEATHER,
     /* 0x7E */ GID_FISHING_POLE,
-    /* 0x7F */ GID_MAXIMUM
+    /* 0x7F */ GID_ROCS_FEATHER_SKIJER,
+    /* 0x80 */ GID_MAXIMUM
 
 } GetItemDrawID;
 
