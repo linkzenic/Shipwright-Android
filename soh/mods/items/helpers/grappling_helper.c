@@ -136,43 +136,51 @@ s32 Grapple_AnalyzeSurface(PlayState* play, CollisionPoly* poly, s32 bgId, Vec3f
     ExpandBBox(&bMin, &bMax, &vtxList[idxB]);
     ExpandBBox(&bMin, &bMax, &vtxList[idxC]);
 
-    // Walk neighbor polygons: similar normal AND (shared vertex OR within distance)
-    for (u16 i = 0; i < colHeader->numPolygons; i++) {
-        CollisionPoly* other = &colHeader->polyList[i];
-        u16 oA, oB, oC;
-        s32 shared;
-        Vec3f otherCenter;
-        f32 distSq;
+    // Determine if hit surface is a ceiling (wider neighbor search for cylinders)
+    {
+        f32 nx, ny, nz;
+        f32 neighborDist;
+        CollisionPoly_GetNormalF(poly, &nx, &ny, &nz);
+        neighborDist = (ny < -0.5f) ? (GRAPPLE_NEIGHBOR_DIST * 2.0f) : GRAPPLE_NEIGHBOR_DIST;
 
-        if (other == poly)
-            continue;
+        // Walk neighbor polygons: similar normal AND (shared vertex OR within distance)
+        for (u16 i = 0; i < colHeader->numPolygons; i++) {
+            CollisionPoly* other = &colHeader->polyList[i];
+            u16 oA, oB, oC;
+            s32 shared;
+            Vec3f otherCenter;
+            f32 distSq;
 
-        // Must have similar surface normal (facing same direction)
-        if (!NormalsAreSimilar(poly, other))
-            continue;
-
-        oA = COLPOLY_VTX_INDEX(other->flags_vIA);
-        oB = COLPOLY_VTX_INDEX(other->flags_vIB);
-        oC = other->vIC;
-
-        // Check if shares at least 1 vertex with hit poly
-        shared = (oA == idxA || oA == idxB || oA == idxC || oB == idxA || oB == idxB || oB == idxC || oC == idxA ||
-                  oC == idxB || oC == idxC);
-
-        if (!shared) {
-            // Check proximity: is the other poly center close to hit poly center?
-            GetPolyCenterF(vtxList, oA, oB, oC, &otherCenter);
-            dx = otherCenter.x - hitCenter.x;
-            dy = otherCenter.y - hitCenter.y;
-            dz = otherCenter.z - hitCenter.z;
-            distSq = dx * dx + dy * dy + dz * dz;
-            if (distSq > GRAPPLE_NEIGHBOR_DIST * GRAPPLE_NEIGHBOR_DIST)
+            if (other == poly)
                 continue;
-        }
 
-        ExpandBBox(&bMin, &bMax, &vtxList[oA]);
-        ExpandBBox(&bMin, &bMax, &vtxList[oB]);
-        ExpandBBox(&bMin, &bMax, &vtxList[oC]);
+            // Must have similar surface normal (facing same direction)
+            if (!NormalsAreSimilar(poly, other))
+                continue;
+
+            oA = COLPOLY_VTX_INDEX(other->flags_vIA);
+            oB = COLPOLY_VTX_INDEX(other->flags_vIB);
+            oC = other->vIC;
+
+            // Check if shares at least 1 vertex with hit poly
+            shared = (oA == idxA || oA == idxB || oA == idxC || oB == idxA || oB == idxB || oB == idxC || oC == idxA ||
+                      oC == idxB || oC == idxC);
+
+            if (!shared) {
+                // Check proximity: is the other poly center close to hit poly center?
+                GetPolyCenterF(vtxList, oA, oB, oC, &otherCenter);
+                dx = otherCenter.x - hitCenter.x;
+                dy = otherCenter.y - hitCenter.y;
+                dz = otherCenter.z - hitCenter.z;
+                distSq = dx * dx + dy * dy + dz * dz;
+                if (distSq > neighborDist * neighborDist)
+                    continue;
+            }
+
+            ExpandBBox(&bMin, &bMax, &vtxList[oA]);
+            ExpandBBox(&bMin, &bMax, &vtxList[oB]);
+            ExpandBBox(&bMin, &bMax, &vtxList[oC]);
+        }
     }
 
     // Calculate dimensions
@@ -189,14 +197,29 @@ s32 Grapple_AnalyzeSurface(PlayState* play, CollisionPoly* poly, s32 bgId, Vec3f
     // Calculate aspect ratio (how elongated the shape is)
     aspectRatio = (dy > 0.1f) ? (dz / dy) : 10.0f;
 
-    // Check graspable: elongated shape (beam/bar/ledge) with reasonable cross-section
-    // More permissive: accept if either elongated OR has good proportions
-    outTarget->isGraspable =
-        // Traditional beam/bar check (relaxed thresholds)
-        ((dz >= GRAPPLE_MIN_LENGTH) && (dx >= GRAPPLE_MIN_THICKNESS) && (dx <= GRAPPLE_MAX_CROSS_SECTION) &&
-         (dy <= GRAPPLE_MAX_CROSS_SECTION) && (dx + dy <= GRAPPLE_MAX_CROSS_SUM)) ||
-        // Elongated shape check (high aspect ratio)
-        ((dz >= GRAPPLE_MIN_LENGTH) && (aspectRatio >= GRAPPLE_ASPECT_RATIO) && (dx <= GRAPPLE_MAX_CROSS_SECTION));
+    // Check if this is a ceiling surface (normal pointing mostly downward)
+    {
+        s32 isCeiling = (outTarget->surfaceNormal.y < -0.5f);
+
+        if (isCeiling) {
+            // Ceiling surfaces: more lenient detection for beams/bars/cylinders
+            // Hookshottable ceiling surfaces are always graspable
+            // Otherwise, any elongated shape or reasonable cross-section counts
+            outTarget->isGraspable =
+                outTarget->isHookshottable ||
+                ((dz >= GRAPPLE_MIN_LENGTH * 0.5f) && (dx <= GRAPPLE_MAX_CROSS_SECTION * 1.5f)) ||
+                ((dz >= GRAPPLE_MIN_LENGTH * 0.5f) && (aspectRatio >= GRAPPLE_ASPECT_RATIO * 0.75f));
+        } else {
+            // Standard wall/floor: elongated shape (beam/bar/ledge)
+            outTarget->isGraspable =
+                // Traditional beam/bar check (relaxed thresholds)
+                ((dz >= GRAPPLE_MIN_LENGTH) && (dx >= GRAPPLE_MIN_THICKNESS) && (dx <= GRAPPLE_MAX_CROSS_SECTION) &&
+                 (dy <= GRAPPLE_MAX_CROSS_SECTION) && (dx + dy <= GRAPPLE_MAX_CROSS_SUM)) ||
+                // Elongated shape check (high aspect ratio)
+                ((dz >= GRAPPLE_MIN_LENGTH) && (aspectRatio >= GRAPPLE_ASPECT_RATIO) &&
+                 (dx <= GRAPPLE_MAX_CROSS_SECTION));
+        }
+    }
 
     return outTarget->isGraspable;
 }

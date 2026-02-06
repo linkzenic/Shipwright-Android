@@ -50,6 +50,12 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 #include "mods/items/logic/custom_items.c"
 // Note: custom_items_common.c is already included by logic/custom_items.c
 
+// ============================================================================
+// TRANSFORMATION MASKS IMPLEMENTATION - Uses VANILLA MM code with hooks
+// ============================================================================
+#include "mods/transformation_masks/transformation_masks.h"
+#include "mods/transformation_masks/mm_router.c" // All MM code in one router
+
 // Some player animations are played at this reduced speed, for reasons yet unclear.
 // This is called "adjusted" for now.
 #define PLAYER_ANIM_ADJUSTED_SPEED (2.0f / 3.0f)
@@ -3487,6 +3493,18 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                 }
             } else if (itemAction >= PLAYER_IA_MASK_KEATON && itemAction <= PLAYER_IA_MASK_TRUTH) {
                 // Handle wearable masks (ONLY actual masks, not Lens or custom items)
+
+                // TRANSFORMATION MASKS: Check if this mask should trigger transformation
+                if (TransformMasks_IsEnabled()) {
+                    TransformMaskId maskType = TransformMasks_GetMaskType(item);
+                    if (maskType != TRANSFORM_MASK_NONE) {
+                        // This is a transformation mask - handle transformation instead of wearing
+                        TransformMasks_HandleMaskUse(play, this, item);
+                        return; // Don't do normal mask wearing
+                    }
+                }
+
+                // Normal mask wearing behavior
                 if (this->currentMask != PLAYER_MASK_NONE) {
                     this->currentMask = PLAYER_MASK_NONE;
                 } else {
@@ -10951,6 +10969,9 @@ void Player_Init(Actor* thisx, PlayState* play2) {
 
     Map_SavePlayerInitialInfo(play);
     MREG(64) = 0;
+
+    // TRANSFORMATION MASKS: Initialize system
+    TransformMasks_Init(play, this);
 }
 
 void Player_ApproachZeroBinang(s16* pValue) {
@@ -12449,6 +12470,9 @@ void Player_Update(Actor* thisx, PlayState* play) {
 
         // CUSTOM ITEMS: Update standalone system (completely separate from vanilla)
         CustomItems_Update(this, play);
+
+        // TRANSFORMATION MASKS: Update system
+        TransformMasks_Update(play, this);
     }
 
     MREG(52) = this->actor.world.pos.x;
@@ -12580,7 +12604,34 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
         }
 
         if (this->currentMask != PLAYER_MASK_BUNNY || !CVarGetInteger(CVAR_ENHANCEMENT("HideBunnyHood"), 0)) {
-            gSPDisplayList(POLY_OPA_DISP++, sMaskDlists[this->currentMask - 1]);
+            // Check for MM transformation mask replacement
+            Gfx* maskDL = TransformMasks_GetMaskDL(this->currentMask);
+            u8 isMmMask = (maskDL != NULL);
+
+            if (maskDL == NULL) {
+                maskDL = sMaskDlists[this->currentMask - 1];
+            }
+
+            // MM masks need matrix correction - they're designed for MM Link's head
+            // which has different orientation than OOT Link's head
+            if (isMmMask) {
+                Matrix_Push();
+                Matrix_RotateY(DEG_TO_RAD(-90), MTXMODE_APPLY);
+                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                Matrix_RotateX(DEG_TO_RAD(180), MTXMODE_APPLY);
+                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                Matrix_Translate(0.0f, -2000.0f, 0.0f, MTXMODE_APPLY); // Move forward to face
+                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            }
+
+            gSPDisplayList(POLY_OPA_DISP++, maskDL);
+
+            if (isMmMask) {
+                Matrix_Pop();
+            }
         }
 
         if (CVarGetInteger(CVAR_GENERAL("FixIceTrapWithBunnyHood"), 1))
@@ -12635,6 +12686,12 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     Vec3f pos;
     Vec3s rot;
     f32 scale;
+
+    // Transformation Masks: If transformed, draw MM form instead of OOT Link
+    if (TransformMasks_IsTransformed()) {
+        TransformMasks_Draw(play, this);
+        return; // Skip OOT Link draw - MM form is already drawn
+    }
 
     if (LINK_AGE_IN_YEARS == YEARS_CHILD) {
         pos.x = 2.0f;

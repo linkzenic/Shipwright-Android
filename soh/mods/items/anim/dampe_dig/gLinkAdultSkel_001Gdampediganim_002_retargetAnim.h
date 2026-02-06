@@ -1,0 +1,3 @@
+
+
+extern LinkAnimationHeader gLinkAdultSkel_001Gdampediganim_002_retargetAnim;

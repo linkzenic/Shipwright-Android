@@ -8,7 +8,7 @@
 #include "soh/OTRGlobals.h"
 
 #define LIGHTS_BUFFER_SIZE 32
-//#define LIGHTS_BUFFER_SIZE 1024 // Kill me
+// #define LIGHTS_BUFFER_SIZE 1024 // Kill me
 
 typedef struct {
     /* 0x000 */ s32 numOccupied;

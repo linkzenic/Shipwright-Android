@@ -11,6 +11,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "mods/extended_inventory.h"
+#include "mods/transformation_masks/transformation_masks.h"
 #include "mods/extended_inventory.c"
 
 u8 gAmmoItems[] = {
@@ -461,11 +462,18 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
         if (pauseCtx->cursorSpecialPos == 0) {
             pauseCtx->cursorColorSet = 4;
 
-            // Page switching logic - Only use L button to switch pages
+            // Page switching logic
+            // If NGCKaleidoSwitcher is enabled, L button is used for tab switching, so only A button changes page
+            // If disabled, both L and A buttons can change the inventory page
+            bool ngcMode = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
             bool inputL = CHECK_BTN_ALL(input->press.button, BTN_L);
+            bool inputA = CHECK_BTN_ALL(input->press.button, BTN_A);
 
-            // Switch page if L button is pressed anywhere on the inventory page
-            if (ExtInv_CanSwitchPage() && inputL) {
+            // A button only switches page if not currently in item cycling mode
+            bool canUseAForPageSwitch = inputA && !IsItemCycling();
+
+            // Switch page if: (L button pressed AND NGCKaleidoSwitcher is off) OR (A button pressed AND not cycling)
+            if (ExtInv_CanSwitchPage() && ((inputL && !ngcMode) || canUseAForPageSwitch)) {
                 // Switch to next/previous page using modular system
                 ExtInv_SwitchPage();
                 Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
@@ -721,8 +729,12 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                     if (CHECK_BTN_ANY(input->press.button, buttonsToCheck)) {
                         if (CHECK_AGE_REQ_SLOT(inventorySlot) && (cursorItem != ITEM_SOLD_OUT) &&
                             (cursorItem != ITEM_NONE)) {
-                            if (GameInteractor_Should(VB_EQUIP_ITEM_TO_C_BUTTON, true, play, cursorSlot, cursorItem)) {
-                                KaleidoScope_SetupItemEquip(play, cursorItem, cursorSlot,
+                            // Use inventorySlot (real slot 0-47) instead of cursorSlot (visual slot 0-23)
+                            // This allows items from page 1 and page 2 with the same relative position to be equipped
+                            // simultaneously
+                            if (GameInteractor_Should(VB_EQUIP_ITEM_TO_C_BUTTON, true, play, inventorySlot,
+                                                      cursorItem)) {
+                                KaleidoScope_SetupItemEquip(play, cursorItem, inventorySlot,
                                                             pauseCtx->itemVtx[index].v.ob[0] * 10,
                                                             pauseCtx->itemVtx[index].v.ob[1] * 10);
                             }

@@ -22,6 +22,7 @@
 #define WHIP_STATE_ATTACHED 4   // Attached to surface/actor, preparing swing
 #define WHIP_STATE_SWINGING 5   // Pendulum swing active
 #define WHIP_STATE_RETRACTING 6 // Rope returning to Link
+#define WHIP_STATE_LAUNCHED 7   // Post-release momentum coast (keeps whip active briefly)
 
 // =============================================================================
 // Range (matches longshot: 26 frames * 20.0f speed = 520 units)
@@ -34,24 +35,30 @@
 // =============================================================================
 // Swing Physics
 // =============================================================================
-#define WHIP_GRAVITY 0.012f           // Angular acceleration from gravity
-#define WHIP_DAMPING 0.995f           // Angular velocity damping per frame
+#define WHIP_GRAVITY 0.018f           // Angular acceleration from gravity
+#define WHIP_DAMPING 0.998f           // Angular velocity damping per frame
 #define WHIP_INPUT_FORCE 0.006f       // Stick input angular acceleration
 #define WHIP_MAX_ANGLE 1.2f           // Max swing angle radians (~69 deg)
-#define WHIP_RELEASE_BOOST 1.3f       // Velocity multiplier on release
+#define WHIP_RELEASE_BOOST 2.0f       // Velocity multiplier on release
 #define WHIP_ROPE_LENGTH_MIN 80.0f    // Min rope length for swing
 #define WHIP_ROPE_LENGTH_MAX 520.0f   // Max rope = range
 #define WHIP_FIXED_ROPE_LENGTH 136.0f // Fixed swing length = 2 adult Links (68 * 2)
+#define WHIP_MAX_RELEASE_SPEED 25.0f  // Max horizontal speed on swing release
+#define WHIP_MIN_LAUNCH_VY 1.0f       // Minimum upward velocity on release
+#define WHIP_SWING_BOUNCE 0.3f        // Velocity retention factor on angle clamp bounce
+#define WHIP_YAW_TURN_RATE 256        // s16 units per frame at full stick (~1.4 deg/frame)
+#define WHIP_LAUNCH_COAST_FRAMES 10   // Frames to preserve momentum after release
 
 // =============================================================================
 // Combat
 // =============================================================================
-#define WHIP_DAMAGE 2               // Half heart (boomerang-level)
-#define WHIP_STUN_FRAMES 60         // 1 second stun for paralyze
-#define WHIP_PULL_SPEED 15.0f       // Speed to pull enemies to Link
-#define WHIP_PULL_ARRIVE_DIST 50.0f // Distance to consider pull complete
-#define WHIP_RAGE_DURATION 90       // 3 seconds at 30fps
-#define WHIP_RAGE_SPEED_MULT 1.5f   // Speed multiplier during rage
+#define WHIP_DAMAGE 2                 // Half heart (boomerang-level)
+#define WHIP_STUN_FRAMES 60           // 1 second stun for paralyze
+#define WHIP_PULL_SPEED 15.0f         // Speed to pull enemies to Link
+#define WHIP_PULL_ARRIVE_DIST 50.0f   // Distance to consider pull complete
+#define WHIP_PULL_HEIGHT_OFFSET 30.0f // Y offset when pulling enemy toward Link
+#define WHIP_RAGE_DURATION 90         // 3 seconds at 30fps
+#define WHIP_RAGE_SPEED_MULT 1.5f     // Speed multiplier during rage
 
 // =============================================================================
 // Collision
@@ -59,6 +66,19 @@
 #define WHIP_COL_RADIUS 12
 #define WHIP_COL_HEIGHT 8
 #define WHIP_ARRIVE_DIST 30.0f // Distance to consider tip returned
+
+// =============================================================================
+// Grapple Actor Detection
+// =============================================================================
+#define WHIP_GRAPPLE_ACTOR_RADIUS 40.0f   // Proximity to snap onto graspable actor
+#define WHIP_GRAPPLE_ACTOR_Y_OFFSET 30.0f // Y offset above actor origin for attach point
+#define WHIP_ENEMY_DETECT_RADIUS 25.0f    // Proximity for direct enemy hit detection
+
+// =============================================================================
+// Player Geometry
+// =============================================================================
+#define WHIP_PLAYER_EYE_HEIGHT 50.0f // Y offset from player origin to eye level
+#define WHIP_FLOOR_THRESHOLD 5.0f    // Ground contact tolerance during swing
 
 // Boomerang damage flag
 #ifndef DMG_BOOMERANG

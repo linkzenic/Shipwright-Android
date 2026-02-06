@@ -11,6 +11,8 @@
  *   - Breaks ice walls and armored enemies
  *   - Can activate heavy switches
  *   - Uses skeletal animation for swing poses
+ *   - Destroys Goron City pot (drops ALL rewards at once)
+ *   - Destroys Shadow Temple pots (drops collectibles/keys)
  */
 
 #include "z64.h"
@@ -25,6 +27,9 @@
 #include "variables.h"
 #include "overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
 #include "overlays/actors/ovl_Bg_Jya_Ironobj/z_bg_jya_ironobj.h"
+#include "overlays/actors/ovl_Bg_Spot18_Basket/z_bg_spot18_basket.h"
+#include "overlays/actors/ovl_Bg_Haka_Tubo/z_bg_haka_tubo.h"
+#include "objects/object_haka_objects/object_haka_objects.h"
 
 // =============================================================================
 // Static Data
@@ -135,11 +140,137 @@ static void BallChain_CheckHit(Vec3f* pos) {
     }
 }
 
+// Helper: Drop all Goron Pot (Bg_Spot18_Basket) rewards and destroy
+static void BallChain_DestroyGoronPot(PlayState* play, Actor* actor) {
+    static s16 sDropAngles[] = { -0x0FA0, 0x0320, 0x0FA0 };
+    Vec3f dropPos;
+    EnItem00* collectible;
+    s32 i;
+
+    dropPos.x = actor->world.pos.x;
+    dropPos.y = actor->world.pos.y + 170.0f;
+    dropPos.z = actor->world.pos.z;
+
+    // Drop ALL rewards (bombs, rupees, heart piece) at once
+    // unk_218=0: Bombs
+    for (i = 0; i < 3; i++) {
+        collectible = Item_DropCollectible(play, &dropPos, ITEM00_BOMBS_A);
+        if (collectible != NULL) {
+            collectible->actor.velocity.y = 11.0f;
+            collectible->actor.world.rot.y = sDropAngles[i] + 0x2000;
+        }
+    }
+    // unk_218=1: Green rupees
+    for (i = 0; i < 3; i++) {
+        collectible = Item_DropCollectible(play, &dropPos, ITEM00_RUPEE_GREEN);
+        if (collectible != NULL) {
+            collectible->actor.velocity.y = 11.0f;
+            collectible->actor.world.rot.y = sDropAngles[i] + 0x4000;
+        }
+    }
+    // unk_218=2: Heart piece (if not collected) + rupees
+    if (!Flags_GetCollectible(play, (actor->params & 0x3F))) {
+        collectible = Item_DropCollectible(play, &dropPos, ((actor->params & 0x3F) << 8) | ITEM00_HEART_PIECE);
+        if (collectible != NULL) {
+            collectible->actor.velocity.y = 11.0f;
+            collectible->actor.world.rot.y = sDropAngles[1];
+        }
+    } else {
+        collectible = Item_DropCollectible(play, &dropPos, ITEM00_RUPEE_PURPLE);
+        if (collectible != NULL) {
+            collectible->actor.velocity.y = 11.0f;
+            collectible->actor.world.rot.y = sDropAngles[1];
+        }
+    }
+    collectible = Item_DropCollectible(play, &dropPos, ITEM00_RUPEE_RED);
+    if (collectible != NULL) {
+        collectible->actor.velocity.y = 11.0f;
+        collectible->actor.world.rot.y = sDropAngles[0] + 0x6000;
+    }
+    collectible = Item_DropCollectible(play, &dropPos, ITEM00_RUPEE_BLUE);
+    if (collectible != NULL) {
+        collectible->actor.velocity.y = 11.0f;
+        collectible->actor.world.rot.y = sDropAngles[2] + 0x6000;
+    }
+
+    Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+    Audio_PlaySoundGeneral(NA_SE_EV_POT_BROKEN, &actor->world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+
+    // Kill the child lid actor if present
+    if (actor->child != NULL) {
+        actor->child->parent = NULL;
+        Actor_Kill(actor->child);
+    }
+    Actor_Kill(actor);
+}
+
+// Helper: Destroy Shadow Temple pot (Bg_Haka_Tubo) with rewards
+static void BallChain_DestroyShadowPot(PlayState* play, Actor* actor) {
+    static Vec3f sZeroVector = { 0.0f, 0.0f, 0.0f };
+    BgHakaTubo* pot = (BgHakaTubo*)actor;
+    Vec3f pos, spawnPos;
+    EnItem00* collectible;
+    s32 i;
+    s32 collectibleParams;
+    f32 rnd;
+
+    pos.x = actor->world.pos.x;
+    pos.z = actor->world.pos.z;
+    pos.y = actor->world.pos.y + 80.0f;
+
+    // Explosion effect
+    EffectSsBomb2_SpawnLayered(play, &pos, &sZeroVector, &sZeroVector, 100, 45);
+    SoundSource_PlaySfxAtFixedWorldPos(play, &actor->world.pos, 50, NA_SE_EV_BOX_BREAK);
+    EffectSsHahen_SpawnBurst(play, &pos, 20.0f, 0, 350, 100, 50, OBJECT_HAKA_OBJECTS, 40, gEffFragments2DL);
+
+    // Drop collectibles
+    spawnPos.x = actor->world.pos.x;
+    spawnPos.y = actor->world.pos.y + 200.0f;
+    spawnPos.z = actor->world.pos.z;
+
+    if (actor->room == 12) {
+        // 3 spinning pots room - drop rupees (simulating all 3 pots destroyed)
+        Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+        for (i = 0; i < 9; i++) {
+            collectible = Item_DropCollectible(play, &spawnPos, i % 3);
+            if (collectible != NULL) {
+                collectible->actor.velocity.y = 15.0f;
+                collectible->actor.world.rot.y = actor->shape.rot.y + (i * 0x1C71);
+            }
+        }
+    } else {
+        // Small key pot
+        if (Flags_GetCollectible(play, actor->params) != 0) {
+            // Key already collected - drop heart
+            if (!CVarGetInteger(CVAR_ENHANCEMENT("NoHeartDrops"), 0)) {
+                collectible = Item_DropCollectible(play, &spawnPos, ITEM00_HEART);
+                if (collectible != NULL) {
+                    collectible->actor.velocity.y = 15.0f;
+                    collectible->actor.world.rot.y = actor->shape.rot.y;
+                }
+            }
+            Sfx_PlaySfxCentered(NA_SE_SY_TRE_BOX_APPEAR);
+        } else {
+            // Drop small key
+            collectible = Item_DropCollectible(play, &spawnPos, ((actor->params & 0x3F) << 8) | ITEM00_SMALL_KEY);
+            if (collectible != NULL) {
+                collectible->actor.velocity.y = 15.0f;
+                collectible->actor.world.rot.y = actor->shape.rot.y;
+            }
+            Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+        }
+    }
+
+    Actor_Kill(actor);
+}
+
 static void BallChain_CheckDestructibles(PlayState* play, Vec3f* ballPos) {
     Actor* actor;
     Actor* next;
     f32 dist;
     f32 checkRadius = BALLCHAIN_COL_RADIUS + 40.0f;
+    f32 potCheckRadius = BALLCHAIN_COL_RADIUS + 80.0f; // Larger radius for pots
 
     for (actor = play->actorCtx.actorLists[ACTORCAT_BG].head; actor != NULL; actor = next) {
         next = actor->next;
@@ -150,9 +281,16 @@ static void BallChain_CheckDestructibles(PlayState* play, Vec3f* ballPos) {
                 BgIceShelter_BreakInstantly(actor, play);
             }
         }
+        // Shadow Temple spinning pot
+        else if (actor->id == ACTOR_BG_HAKA_TUBO) {
+            dist = Math_Vec3f_DistXYZ(ballPos, &actor->world.pos);
+            if (dist < potCheckRadius) {
+                BallChain_DestroyShadowPot(play, actor);
+            }
+        }
     }
 
-    // Iron objects are in ACTORCAT_PROP
+    // Iron objects and Goron pot are in ACTORCAT_PROP
     for (actor = play->actorCtx.actorLists[ACTORCAT_PROP].head; actor != NULL; actor = next) {
         next = actor->next;
 
@@ -160,6 +298,13 @@ static void BallChain_CheckDestructibles(PlayState* play, Vec3f* ballPos) {
             dist = Math_Vec3f_DistXYZ(ballPos, &actor->world.pos);
             if (dist < checkRadius) {
                 BgJyaIronobj_DestroyInstantly(actor, play);
+            }
+        }
+        // Goron City spinning pot
+        else if (actor->id == ACTOR_BG_SPOT18_BASKET) {
+            dist = Math_Vec3f_DistXYZ(ballPos, &actor->world.pos);
+            if (dist < potCheckRadius) {
+                BallChain_DestroyGoronPot(play, actor);
             }
         }
     }
@@ -206,6 +351,9 @@ static void BallChain_Stop(Player* p, PlayState* play) {
     bcSpinAngle = 0;
     sBallChainThrownFirstFrame = 0;
     BallChain_ResetPose(p);
+    // Stop looping sounds
+    Audio_StopSfxById(NA_SE_IT_SWORD_SWING);
+    Audio_StopSfxById(NA_SE_PL_WALK_GROUND);
     ItemEquip_PlayUnequipSFX(play, p);
 }
 

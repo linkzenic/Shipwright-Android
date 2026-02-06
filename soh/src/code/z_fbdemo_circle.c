@@ -8,7 +8,7 @@ Gfx sCircleNullDList[] = {
     gsSPEndDisplayList(),
 };
 
-//#include "code/fbdemo_circle/z_fbdemo_circle.c"
+// #include "code/fbdemo_circle/z_fbdemo_circle.c"
 #include "code/fbdemo_circle/z_fbdemo_circle.h"
 
 Gfx sTransCircleDL[] = {

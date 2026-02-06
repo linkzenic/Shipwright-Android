@@ -524,7 +524,7 @@ u32 gObjectTableSize = ARRAY_COUNT(gObjectTable);
 #define DEFINE_OBJECT_NULL(_0, _1)
 #define DEFINE_OBJECT_UNSET(_0)
 
-//#include "tables/object_table.h"
+// #include "tables/object_table.h"
 
 #undef DEFINE_OBJECT
 #undef DEFINE_OBJECT_NULL

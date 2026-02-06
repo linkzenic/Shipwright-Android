@@ -9,6 +9,8 @@
 #include "z64.h"
 #include <string.h>
 #include "items/custom_icons.c"
+#include "transformation_masks/transformation_masks.h"
+#include "transformation_masks/assets/mm_asset_loader.h"
 extern void* gItemIcons[];
 extern uint8_t gItemSlots[];
 extern const unsigned char gItemIconRocsFeatherTex[];
@@ -37,6 +39,14 @@ extern const unsigned char gItemIconPending1Tex[];
 extern const unsigned char gItemIconPending2Tex[];
 extern const unsigned char gItemIconPending3Tex[];
 static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTimer = 0 };
+
+// Cached MM mask icons (loaded once from mm.o2r)
+static void* sCachedDekuMaskIcon = NULL;
+static u8 sDekuMaskIconLoaded = 0;
+static void* sCachedStoneMaskIcon = NULL;
+static u8 sStoneMaskIconLoaded = 0;
+static void* sCachedFierceMaskIcon = NULL;
+static u8 sFierceMaskIconLoaded = 0;
 // Page 2 item layout (slots 24-47)
 // Note: ITEM_ROCS_FEATHER_SKIJER at slot 24 is progressive - becomes ITEM_ROCS_CAPE when upgraded (shares slot)
 // Slot 15 (actual slot 39) now has ITEM_DESIRE_SENSOR instead of ITEM_ROCS_CAPE
@@ -52,11 +62,11 @@ const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,      ITEM
 // Age requirements for page 2 items
 // Roc's items (slot 0/24) = AGE_REQ_NONE (both adult and child can use Feather AND Cape)
 // Desire Sensor (slot 15/39) = AGE_REQ_NONE (both adult and child can use)
-const uint8_t gPage2ItemAgeReqs[24] = { AGE_REQ_NONE,  AGE_REQ_ADULT, AGE_REQ_ADULT, AGE_REQ_ADULT, AGE_REQ_NONE,
-                                        AGE_REQ_NONE,  AGE_REQ_CHILD, AGE_REQ_NONE,  AGE_REQ_ADULT, AGE_REQ_CHILD,
-                                        AGE_REQ_NONE,  AGE_REQ_NONE,  AGE_REQ_ADULT, AGE_REQ_CHILD, AGE_REQ_ADULT,
-                                        AGE_REQ_NONE,  AGE_REQ_NONE,  AGE_REQ_NONE,  AGE_REQ_ADULT, AGE_REQ_ADULT,
-                                        AGE_REQ_ADULT, AGE_REQ_ADULT, AGE_REQ_NONE,  AGE_REQ_NONE };
+const uint8_t gPage2ItemAgeReqs[24] = { AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_ADULT, AGE_REQ_NONE,
+                                        AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_ADULT, AGE_REQ_CHILD,
+                                        AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_ADULT,
+                                        AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE,
+                                        AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE };
 ExtendedInventoryState* ExtInv_GetState(void) {
     return &sExtInvState;
 }
@@ -195,6 +205,38 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     }
 }
 void* ExtInv_GetItemIcon(uint16_t itemId) {
+    // Override vanilla mask icons with MM mask icons
+    // Skull Mask -> Deku Mask
+    if (itemId == ITEM_MASK_SKULL && TransformMasks_DekuReplacesSkull()) {
+        if (!sDekuMaskIconLoaded) {
+            sCachedDekuMaskIcon = MmAssets_LoadDekuMaskIcon();
+            sDekuMaskIconLoaded = 1;
+        }
+        if (sCachedDekuMaskIcon != NULL) {
+            return sCachedDekuMaskIcon;
+        }
+    }
+    // Spooky Mask -> Stone Mask
+    if (itemId == ITEM_MASK_SPOOKY && TransformMasks_StoneReplacesSpooky()) {
+        if (!sStoneMaskIconLoaded) {
+            sCachedStoneMaskIcon = MmAssets_LoadStoneMaskIcon();
+            sStoneMaskIconLoaded = 1;
+        }
+        if (sCachedStoneMaskIcon != NULL) {
+            return sCachedStoneMaskIcon;
+        }
+    }
+    // Gerudo Mask -> Fierce Deity Mask
+    if (itemId == ITEM_MASK_GERUDO && TransformMasks_FierceReplacesGerudo()) {
+        if (!sFierceMaskIconLoaded) {
+            sCachedFierceMaskIcon = MmAssets_LoadFierceMaskIcon();
+            sFierceMaskIconLoaded = 1;
+        }
+        if (sCachedFierceMaskIcon != NULL) {
+            return sCachedFierceMaskIcon;
+        }
+    }
+
     if (itemId < 156) {
         return gItemIcons[itemId];
     }

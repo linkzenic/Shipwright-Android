@@ -21,6 +21,8 @@ void Handle_Pending2(Player* this, PlayState* play) {
     ItemInput_Update(&input, ITEM_PENDING_2, this, play);
     if (!input.wasEquipped)
         return;
+    if (ItemInput_IsBlocked(this, play))
+        return;
 
     // TODO: Implement item logic
 }

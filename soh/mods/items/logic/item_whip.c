@@ -27,15 +27,6 @@
 #include "assets/objects/gameplay_keep/gameplay_keep.h"
 
 // =============================================================================
-// Internal Constants
-// =============================================================================
-#define WHIP_GRAPPLE_ACTOR_RADIUS 40.0f
-#define WHIP_GRAPPLE_ACTOR_Y_OFFSET 30.0f
-#define WHIP_MAX_HORIZ_SPEED 15.0f
-#define WHIP_MAX_VERT_SPEED 12.0f
-#define WHIP_YAW_TURN_RATE 256 // s16 units per frame at full stick (~1.4 deg/frame)
-
-// =============================================================================
 // Static Data
 // =============================================================================
 static u8 sWhipColInitialized = 0;
@@ -179,6 +170,28 @@ static Actor* Whip_FindGrappleActor(PlayState* play, Vec3f* tipPos) {
 }
 
 // =============================================================================
+// Direct Actor Proximity Check (catches enemies AT collider misses)
+// =============================================================================
+static Actor* Whip_FindNearbyEnemy(PlayState* play, Vec3f* pos, f32 radius) {
+    Actor* actor;
+    Actor* next;
+    s32 i;
+    s32 categories[] = { ACTORCAT_ENEMY, ACTORCAT_BOSS };
+
+    for (i = 0; i < 2; i++) {
+        for (actor = play->actorCtx.actorLists[categories[i]].head; actor != NULL; actor = next) {
+            next = actor->next;
+            if (actor->update == NULL)
+                continue;
+            if (Math_Vec3f_DistXYZ(pos, &actor->world.pos) < radius) {
+                return actor;
+            }
+        }
+    }
+    return NULL;
+}
+
+// =============================================================================
 // Stop / Start
 // =============================================================================
 static void Whip_Stop(Player* p, PlayState* play) {
@@ -196,6 +209,8 @@ static void Whip_Stop(Player* p, PlayState* play) {
     whipRopeLength = 0.0f;
     sWhipAnimState = -1;
     p->actor.gravity = -1.0f;
+    // Stop looping swing sound
+    Audio_StopSfxById(WHIP_SFX_SWING);
     ItemEquip_PlayUnequipSFX(play, p);
 }
 
@@ -214,7 +229,7 @@ static void Whip_Start(Player* p, PlayState* play) {
         // Use actor world.pos (body center) instead of focus.pos (head) for better aim
         f32 targetY = p->focusActor->world.pos.y + (p->focusActor->shape.yOffset * p->focusActor->scale.y);
         f32 dx = p->focusActor->world.pos.x - p->actor.world.pos.x;
-        f32 dy = targetY - (p->actor.world.pos.y + 50.0f);
+        f32 dy = targetY - (p->actor.world.pos.y + WHIP_PLAYER_EYE_HEIGHT);
         f32 dz = p->focusActor->world.pos.z - p->actor.world.pos.z;
         f32 hDist = sqrtf(dx * dx + dz * dz);
 
@@ -277,7 +292,7 @@ static void WhipStateEquip(Player* p, PlayState* play, ItemInputState* in) {
             // Use actor world.pos (body center) instead of focus.pos (head) for better aim
             f32 targetY = p->focusActor->world.pos.y + (p->focusActor->shape.yOffset * p->focusActor->scale.y);
             f32 dx = p->focusActor->world.pos.x - p->actor.world.pos.x;
-            f32 dy = targetY - (p->actor.world.pos.y + 50.0f);
+            f32 dy = targetY - (p->actor.world.pos.y + WHIP_PLAYER_EYE_HEIGHT);
             f32 dz = p->focusActor->world.pos.z - p->actor.world.pos.z;
             f32 hDist = sqrtf(dx * dx + dz * dz);
             whipExtendYaw = Math_Atan2S(dx, dz);
@@ -395,7 +410,28 @@ static void WhipStateExtending(Player* p, PlayState* play) {
         }
     }
 
-    // Check 4: Timer expired
+    // Check 4: Direct enemy proximity (catches enemies without AC colliders)
+    {
+        Actor* nearEnemy = Whip_FindNearbyEnemy(play, &whipTipPos, WHIP_ENEMY_DETECT_RADIUS);
+        if (nearEnemy != NULL) {
+            WhipDisarmType disarmType;
+
+            if (Whip_IsParalyzeTarget(nearEnemy)) {
+                Whip_ApplyParalyze(nearEnemy, p, play);
+                return;
+            }
+            if (Whip_IsDisarmTarget(nearEnemy, &disarmType)) {
+                Whip_ApplyDisarm(nearEnemy, disarmType, play);
+                whipState = WHIP_STATE_RETRACTING;
+                return;
+            }
+            Whip_ApplyBoomerangDamage(nearEnemy, p, play);
+            whipState = WHIP_STATE_RETRACTING;
+            return;
+        }
+    }
+
+    // Check 5: Timer expired
     whipTimer--;
     if (whipTimer <= 0) {
         whipState = WHIP_STATE_RETRACTING;
@@ -421,7 +457,7 @@ static void WhipStateHitEnemy(Player* p, PlayState* play) {
     whipTipPos = whipPullTarget->world.pos;
 
     dx = p->actor.world.pos.x - whipPullTarget->world.pos.x;
-    dy = (p->actor.world.pos.y + 30.0f) - whipPullTarget->world.pos.y;
+    dy = (p->actor.world.pos.y + WHIP_PULL_HEIGHT_OFFSET) - whipPullTarget->world.pos.y;
     dz = p->actor.world.pos.z - whipPullTarget->world.pos.z;
     dist = sqrtf(dx * dx + dy * dy + dz * dz);
 
@@ -474,6 +510,7 @@ static void WhipStateAttached(Player* p, PlayState* play) {
 static void WhipStateSwinging(Player* p, PlayState* play, ItemInputState* in) {
     f32 angAccel, stickInputX, stickInputY;
     f32 sinA, cosA, swingDirX, swingDirZ;
+    f32 releaseVel;
 
     // Disable normal player physics
     p->actor.gravity = 0.0f;
@@ -515,16 +552,19 @@ static void WhipStateSwinging(Player* p, PlayState* play, ItemInputState* in) {
 
     // Integrate
     whipSwingVel = (whipSwingVel + angAccel) * WHIP_DAMPING;
+    releaseVel = whipSwingVel; // Save velocity BEFORE angle clamp for release
     whipSwingAngle += whipSwingVel;
 
-    // Clamp
+    // Clamp angle with soft bounce (preserve energy instead of zeroing)
     if (whipSwingAngle > WHIP_MAX_ANGLE) {
         whipSwingAngle = WHIP_MAX_ANGLE;
-        whipSwingVel = 0.0f;
+        if (whipSwingVel > 0.0f)
+            whipSwingVel = -whipSwingVel * WHIP_SWING_BOUNCE;
     }
     if (whipSwingAngle < -WHIP_MAX_ANGLE) {
         whipSwingAngle = -WHIP_MAX_ANGLE;
-        whipSwingVel = 0.0f;
+        if (whipSwingVel < 0.0f)
+            whipSwingVel = -whipSwingVel * WHIP_SWING_BOUNCE;
     }
 
     // Calculate player position from pendulum
@@ -550,49 +590,76 @@ static void WhipStateSwinging(Player* p, PlayState* play, ItemInputState* in) {
     func_8002F974(&p->actor, WHIP_SFX_SWING);
 
     // Ground contact check: if Link touches the floor, unequip
-    if (p->actor.world.pos.y <= p->actor.floorHeight + 5.0f) {
+    if (p->actor.world.pos.y <= p->actor.floorHeight + WHIP_FLOOR_THRESHOLD) {
         p->actor.world.pos.y = p->actor.floorHeight;
         p->actor.gravity = -1.0f;
         Whip_Stop(p, play);
         return;
     }
 
-    // C-button press: release with momentum jump
-    if (in->isPressed) {
-        f32 omega = whipSwingVel;
-        f32 cosTheta = cosf(whipSwingAngle);
-        f32 sinTheta = sinf(whipSwingAngle);
-        f32 horizSpeed, vertSpeed;
+    // Any button press: release with full linear momentum conservation
+    {
+        u16 pressed = play->state.input[0].press.button;
+        u8 anyRelease = in->isPressed || (pressed & (BTN_A | BTN_B | BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT | BTN_CUP));
 
-        // Tangential velocity decomposed into horizontal and vertical
-        horizSpeed = cosTheta * omega * whipRopeLength * WHIP_RELEASE_BOOST;
-        vertSpeed = sinTheta * omega * whipRopeLength * WHIP_RELEASE_BOOST;
+        if (anyRelease) {
+            // Use pre-clamp velocity for true momentum
+            f32 omega = releaseVel;
+            f32 cosTheta = cosf(whipSwingAngle);
+            f32 sinTheta = sinf(whipSwingAngle);
+            f32 tangentialSpeed = omega * whipRopeLength * WHIP_RELEASE_BOOST;
+            f32 hSpeed = cosTheta * tangentialSpeed; // Signed horizontal speed
 
-        // Horizontal momentum
-        p->actor.speedXZ = fabsf(horizSpeed);
-        if (p->actor.speedXZ > WHIP_MAX_HORIZ_SPEED) {
-            p->actor.speedXZ = WHIP_MAX_HORIZ_SPEED;
+            // Set velocity components directly for reliable momentum
+            p->actor.velocity.x = hSpeed * swingDirX;
+            p->actor.velocity.z = hSpeed * swingDirZ;
+            p->actor.velocity.y = sinTheta * tangentialSpeed;
+
+            // Also set speed/direction systems for ongoing movement
+            p->actor.speedXZ = fabsf(hSpeed);
+            if (p->actor.speedXZ > WHIP_MAX_RELEASE_SPEED) {
+                f32 scale = WHIP_MAX_RELEASE_SPEED / p->actor.speedXZ;
+                p->actor.velocity.x *= scale;
+                p->actor.velocity.z *= scale;
+                p->actor.speedXZ = WHIP_MAX_RELEASE_SPEED;
+            }
+            p->linearVelocity = p->actor.speedXZ;
+
+            // Face the momentum direction
+            if (hSpeed >= 0.0f) {
+                p->actor.shape.rot.y = whipSwingYaw;
+            } else {
+                p->actor.shape.rot.y = whipSwingYaw + 0x8000;
+            }
+            p->actor.world.rot.y = p->actor.shape.rot.y;
+            p->yaw = p->actor.shape.rot.y;
+
+            // Minimum upward nudge so Link doesn't just drop
+            if (p->actor.velocity.y < WHIP_MIN_LAUNCH_VY) {
+                p->actor.velocity.y = WHIP_MIN_LAUNCH_VY;
+            }
+
+            // Enter coast state: keep whip active briefly so engine doesn't
+            // reset momentum before position integration picks it up
+            p->actor.gravity = -1.0f;
+            whipState = WHIP_STATE_LAUNCHED;
+            whipTimer = WHIP_LAUNCH_COAST_FRAMES;
+            sWhipAnimState = -1;
+            return;
         }
+    }
+}
 
-        // Face release direction
-        if (horizSpeed >= 0.0f) {
-            p->actor.shape.rot.y = whipSwingYaw;
-        } else {
-            p->actor.shape.rot.y = whipSwingYaw + 0x8000;
-        }
-        p->actor.world.rot.y = p->actor.shape.rot.y;
-        p->yaw = p->actor.shape.rot.y;
-
-        // Vertical launch (minimum upward boost to feel like a jump)
-        p->actor.velocity.y = vertSpeed;
-        if (p->actor.velocity.y < 4.0f)
-            p->actor.velocity.y = 4.0f;
-        if (p->actor.velocity.y > WHIP_MAX_VERT_SPEED)
-            p->actor.velocity.y = WHIP_MAX_VERT_SPEED;
-
-        p->actor.gravity = -1.0f;
+// =============================================================================
+// State: Launched (coast — preserve momentum for a few frames after release)
+// =============================================================================
+static void WhipStateLaunched(Player* p, PlayState* play) {
+    // Do NOT zero speedXZ or linearVelocity — let momentum carry forward.
+    // Gravity is already set to -1.0f, so the player falls naturally.
+    // The engine uses speedXZ + world.rot.y for horizontal movement in air.
+    whipTimer--;
+    if (whipTimer <= 0) {
         Whip_Stop(p, play);
-        return;
     }
 }
 
@@ -649,8 +716,10 @@ void Handle_Whip(Player* p, PlayState* play) {
         return;
     }
     if (in.otherButtonPressed) {
-        if (whipActive)
+        // Don't interrupt the post-release coast — momentum must persist
+        if (whipActive && whipState != WHIP_STATE_LAUNCHED) {
             Whip_Stop(p, play);
+        }
         return;
     }
 
@@ -679,6 +748,9 @@ void Handle_Whip(Player* p, PlayState* play) {
             break;
         case WHIP_STATE_RETRACTING:
             WhipStateRetracting(p, play);
+            break;
+        case WHIP_STATE_LAUNCHED:
+            WhipStateLaunched(p, play);
             break;
         default:
             whipState = WHIP_STATE_EQUIP;
@@ -727,6 +799,9 @@ s32 Player_UpperAction_Whip(Player* p, PlayState* play) {
             case WHIP_STATE_SWINGING:
                 // Swinging uses joint override from WhipStateSwinging, no anim needed
                 break;
+            case WHIP_STATE_LAUNCHED:
+                // Post-release: let lower body handle falling animation
+                return 0;
         }
     }
 

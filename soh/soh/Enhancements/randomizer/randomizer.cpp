@@ -159,9 +159,15 @@ static const CustomItemMessageEntry customItemMessages[] = {
 
     // Tool Items
     { RG_SWITCH_HOOK, static_cast<ItemID>(ITEM_SWITCH_HOOK),
-      "You got the %ySwitch Hook%w!&Swap places with objects.&Pull yourself or swap targets!",
-      "Du hast den %yWechselhaken%w!&Tausche mit Objekten den Platz.&Ziehe dich heran oder tausche!",
-      "Vous obtenez le %yCrochet Echange%w!&Echangez de place avec les objets.&Tirez ou échangez!" },
+      "You got the %cSwitch Hook%w!&A magical hook that swaps&your position with targets.^Hold %y[C]%w to aim,&release "
+      "to fire.&%cC-Up%w = First-person mode^Swap places with pots, crates,&and certain enemies!&Non-swappable targets "
+      "take damage.",
+      "Du hast den %cWechselhaken%w!&Ein magischer Haken der deine&Position mit Zielen tauscht.^Halte %y[C]%w zum "
+      "Zielen,&lass los zum Feuern.&%cC-Oben%w = Erste-Person^Tausche Plätze mit Töpfen, Kisten&und bestimmten "
+      "Feinden!&Nicht-tauschbare Ziele nehmen Schaden.",
+      "Vous obtenez le %cCrochet Échange%w!&Un crochet magique qui échange&votre position avec les cibles.^Maintenez "
+      "%y[C]%w pour viser,&relâchez pour tirer.&%cC-Haut%w = Première personne^Échangez avec des pots, caisses,&et "
+      "certains ennemis!&Les cibles non-échangeables subissent des dégâts." },
 
     { RG_MOGMA_MITTS, static_cast<ItemID>(ITEM_MOGMA_MITTS),
       "You got the %yMogma Mitts%w!&Claws of the underground.&Climb any wall! Uses %gMagic%w.",
@@ -202,9 +208,17 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Rouge%w!^%rNote%w: Votre vitesse est réduite&tant qu'il est équipé." },
 
     { RG_WHIP, static_cast<ItemID>(ITEM_WHIP),
-      "You got the %yWhip%w!&A long lash for combat.&Snag items and stun foes!",
-      "Du hast die %yPeitsche%w erhalten!&Ein langer Riemen.&Schnapp dir Items und betäube!",
-      "Vous obtenez le %yFouet%w!&Une lanière de combat.&Prenez des objets et étourdissez!" },
+      "You got the %yWhip%w!&A versatile tool for combat&and exploration.^Press %y[C]%w to lash forward.&It latches "
+      "onto beams and bars&for pendulum swinging.^%ySwinging%w: Use the stick to&control the pendulum.&Release to "
+      "launch with momentum!^%yCombat%w: Paralyze enemies,&pull shields, and disarm.&Also grabs items!",
+      "Du hast die %yPeitsche%w!&Ein vielseitiges Werkzeug für&Kampf und Erkundung.^Drücke %y[C]%w zum Schlagen.&Hakt "
+      "sich an Balken und Stangen&zum Pendelschwingen ein.^%ySchwingen%w: Nutze den Stick um&das Pendel zu "
+      "steuern.&Lass los für Schwung-Start!^%yKampf%w: Lähme Feinde,&ziehe Schilde weg und entwaffne.&Greift auch "
+      "Items!",
+      "Vous obtenez le %yFouet%w!&Un outil polyvalent pour le combat&et l'exploration.^Appuyez sur %y[C]%w pour "
+      "fouetter.&S'accroche aux poutres et barres&pour se balancer en pendule.^%yBalancement%w: Utilisez le stick&pour "
+      "contrôler le pendule.&Relâchez pour vous lancer!^%yCombat%w: Paralysez les ennemis,&tirez les boucliers et "
+      "désarmez.&Attrape aussi des objets!" },
 
     { RG_SPINNER, static_cast<ItemID>(ITEM_SPINNER),
       "You got the %ySpinner%w!&Ancient technology from the&desert sands.^Press %y[C]%w to ride it&and glide around. "

@@ -291,10 +291,19 @@ void ObjLightswitch_Off(ObjLightswitch* this, PlayState* play) {
             if (this->collider.base.acFlags & AC_HIT) {
                 ObjLightswitch_SetupTurnOn(this);
                 ObjLightswitch_SetSwitchFlag(this, play);
-                // Remember if we've been activated by a Light Arrow, so we can
+                // Remember if we've been activated by a Light Arrow (or Light Rod), so we can
                 // prevent the switch from immediately turning back off
                 if (sunLightArrowsEnabledOnSunSwitchLoad) {
+                    // Check if hit by Light Arrow actor OR by light damage (Light Rod)
+                    u8 hitByLightSource = 0;
                     if (this->collider.base.ac != NULL && this->collider.base.ac->id == ACTOR_EN_ARROW) {
+                        hitByLightSource = 1;
+                    } else if (this->collider.elements[0].info.acHitInfo != NULL &&
+                               (this->collider.elements[0].info.acHitInfo->toucher.dmgFlags & 0x2000)) {
+                        // 0x2000 = DMG_ARROW_LIGHT - also accept Light Rod hits
+                        hitByLightSource = 1;
+                    }
+                    if (hitByLightSource) {
                         sunSwitchActivatedByLightArrow = true;
                     }
                 }
@@ -366,7 +375,15 @@ void ObjLightswitch_On(ObjLightswitch* this, PlayState* play) {
             }
             // If hit by sunlight after already being turned on, then behave as if originally activated by sunlight
             if (sunLightArrowsEnabledOnSunSwitchLoad && (this->collider.base.acFlags & AC_HIT)) {
-                if (this->collider.base.ac != NULL && this->collider.base.ac->id != ACTOR_EN_ARROW) {
+                // Check if NOT hit by Light Arrow or Light Rod (i.e., hit by real sunlight)
+                u8 hitByLightSource = 0;
+                if (this->collider.base.ac != NULL && this->collider.base.ac->id == ACTOR_EN_ARROW) {
+                    hitByLightSource = 1;
+                } else if (this->collider.elements[0].info.acHitInfo != NULL &&
+                           (this->collider.elements[0].info.acHitInfo->toucher.dmgFlags & 0x2000)) {
+                    hitByLightSource = 1;
+                }
+                if (!hitByLightSource) {
                     sunSwitchActivatedByLightArrow = false;
                 }
             }
@@ -380,7 +397,15 @@ void ObjLightswitch_On(ObjLightswitch* this, PlayState* play) {
         case OBJLIGHTSWITCH_TYPE_2:
             // If hit by sunlight after already being turned on, then behave as if originally activated by sunlight
             if (sunLightArrowsEnabledOnSunSwitchLoad && (this->collider.base.acFlags & AC_HIT)) {
-                if (this->collider.base.ac != NULL && this->collider.base.ac->id != ACTOR_EN_ARROW) {
+                // Check if NOT hit by Light Arrow or Light Rod (i.e., hit by real sunlight)
+                u8 hitByLightSource = 0;
+                if (this->collider.base.ac != NULL && this->collider.base.ac->id == ACTOR_EN_ARROW) {
+                    hitByLightSource = 1;
+                } else if (this->collider.elements[0].info.acHitInfo != NULL &&
+                           (this->collider.elements[0].info.acHitInfo->toucher.dmgFlags & 0x2000)) {
+                    hitByLightSource = 1;
+                }
+                if (!hitByLightSource) {
                     sunSwitchActivatedByLightArrow = false;
                 }
             }

@@ -1,112 +1,154 @@
-![Ship of Harkinian](docs/shiptitle.darkmode.png#gh-dark-mode-only)
-![Ship of Harkinian](docs/shiptitle.lightmode.png#gh-light-mode-only)
+# Not Enough Items
+### A Custom Items Mod for Ship of Harkinian
 
-## Website
+---
 
-Official Website: https://www.shipofharkinian.com/
+## About
 
-## Discord
+**Not Enough Items** is a fan-made mod for [Ship of Harkinian](https://www.shipofharkinian.com/) that brings **Custom items** from various Zelda titles into Ocarina of Time.
 
-Official Discord: https://discord.com/invite/shipofharkinian
+| | |
+|---|---|
+| **Version** | Copper Charlie |
+| **Status** | Alpha 3 |
+| **Author** | Skijer |
+| **Platforms** | Windows, Linux, macOS |
 
-If you're having any trouble after reading through this `README`, feel free to ask for help in the Support text channels. Please keep in mind that we do not condone piracy.
+> **Disclaimer:** This is an unofficial fan project. Not affiliated with Nintendo or the Ship of Harkinian team.
 
-# Quick Start
+---
 
-The Ship does not include any copyrighted assets.  You are required to provide a supported copy of the game.
+## Features
 
-### 1. Verify your ROM dump
-You can verify you have dumped a supported copy of the game by using the compatibility checker at https://ship.equipment/. If you'd prefer to manually validate your ROM dump, you can cross-reference its `sha1` hash with the hashes [here](docs/supportedHashes.json).
+### Custom Items
+Items from across the Zelda franchise, fully integrated into OoT's gameplay:
 
-### 2. Download The Ship of Harkinian from [Releases](https://github.com/HarbourMasters/Shipwright/releases)
+- **Randomizer Integration** - All items work with SoH's randomizer
+- **Anchor Compatible** - Multiplayer support with Anchor
+- **Copper Charlie Features** - Full compatibility with the latest SoH version
 
-### 3. Launch the Game!
-#### Windows
-* Extract the zip
-* Launch `soh.exe`
+### Extended Inventory
+- 2-page inventory system (48 total slots)
+- **L or A Button** to switch pages in pause menu
+- Page 1: Vanilla OoT items
+- Page 2: Custom items
 
-#### Linux
-* Place your supported copy of the game in the same folder as the appimage.
-* Execute `soh.appimage`.  You may have to `chmod +x` the appimage via terminal.
+---
 
-#### macOS
-* Run `soh.app`. When prompted, select your supported copy of the game.
-* You should see a notification saying `Processing OTR`, then, once the process is complete, you should get a notification saying `OTR Successfully Generated`, then the game should start.
+## Item List
 
-#### Nintendo Switch
-* Run one of the PC releases to generate an `oot.o2r` and/or `oot-mq.o2r` file. After launching the game on PC, you will be able to find these files in the same directory as `soh.exe` or `soh.appimage`. On macOS, these files can be found in `/Users/<username>/Library/Application Support/com.shipofharkinian.soh/`
-* Copy the files to your sd card
+### Traversal Items
+| Item | Origin | Description |
+|------|--------|-------------|
+| **Roc's Feather** | Oracle Games | High jump with sparkle effects |
+| **Roc's Cape** | Four Swords Adventures | Double jump upgrade for Roc's Feather |
+| **Deku Leaf** | The Wind Waker | Glider and wind gust attack |
+| **Whip** | Spirit Tracks | Grappling hook with pendulum swinging |
+| **Spinner** | Twilight Princess | Rideable vehicle with homing dash attack |
+
+### Combat Items
+| Item | Origin | Description |
+|------|--------|-------------|
+| **Ball and Chain** | Twilight Princess | Chargeable heavy projectile, breaks walls |
+| **Fire Rod** | A Link Between Worlds | Magic rod with 4 fire attack types |
+| **Ice Rod** | A Link Between Worlds | Magic rod with 4 ice attack types, freezes enemies |
+| **Light Rod** | A Link Between Worlds | Magic rod with 4 light attack types, stuns enemies |
+| **Bomb Arrows** | Twilight Princess | Bow + bomb combo projectile |
+| **Demise Destruction** | A Link to the Past | AoE spell with lightning, heavy damage |
+
+### Utility Items
+| Item | Origin | Description |
+|------|--------|-------------|
+| **Switch Hook** | Oracle of Ages | Swap positions with objects and enemies |
+| **Gust Jar** | The Minish Cap | Suction and projectile device |
+| **Cane of Somaria** | A Link to the Past | Create hookable and swappable blocks |
+| **Dominion Rod** | Twilight Princess | Remote control enemies and statues |
+| **Beetle** | Skyward Sword | Remote-controlled scout, carries items |
+| **Shovel** | Link's Awakening | Dig for buried items and hidden grottos |
+| **Mogma Mitts** | Skyward Sword | Climb any wall using magic |
+
+### Special Items
+| Item | Origin | Description |
+|------|--------|-------------|
+| **Time Gate** | Hyrule Warriors | Swap between Child/Adult Link (48 MP) |
+| **Desire Sensor** | Monster Hunter | Detect major items in current scene |
+| **Hylia's Grace** | Zelda II | Fairy transformation with free flight |
+| **Zonai Permafrost** | Tears of the Kingdom | Time freeze - stops all actors for 30s |
+
+---
+
+## Quick Start
+
+### Requirements
+- Git and build tools (CMake, Visual Studio 2022 / GCC / Clang)
+- Any OoT ROM compatible with Ship of Harkinian
+- Windows, Linux, or macOS
+
+### Installation
+
+**1. Clone the repository**
+```bash
+git clone https://github.com/YOUR_USERNAME/Shipwright.git
+cd Shipwright
 ```
-sdcard
-└── switch
-    └── soh
-        ├── oot-mq.o2r
-        ├── oot.o2r
-        ├── soh.nro
-        └── soh.o2r
-```
-* Launch via Atmosphere's `Game+R` launcher method.
 
-### 4. Play!
+**2. Build the project**
 
-Congratulations, you are now sailing with the Ship of Harkinian! Have fun!
+Follow the standard [SoH building instructions](docs/BUILDING.md) for your platform.
 
-# Configuration
+**3. Launch the game**
+- Windows: Run `soh.exe`
+- Linux: Run `soh.appimage`
+- macOS: Run `soh.app`
 
-### Default keyboard configuration
-| N64 | A | B | Z | Start | Analog stick | C buttons | D-Pad |
-| - | - | - | - | - | - | - | - |
-| Keyboard | X | C | Z | Space | WASD | Arrow keys | TFGH |
+### Verify Your ROM
+Use the [compatibility checker](https://ship.equipment/) to verify your ROM is supported.
 
-### Other shortcuts
-| Keys | Action |
-| - | - |
-| ESC | Toggle menu |
-| F2 | Toggle capture mouse input |
-| F5 | Save state |
-| F6 | Change state |
-| F7 | Load state |
-| F9 | Toggle Text-to-Speech (Windows and Mac only) |
-| F11 | Fullscreen |
-| Tab | Toggle Alternate assets |
-| Ctrl+R | Reset |
+---
 
-# Project Overview
-Ship of Harkinian (SOH) is built atop a custom library dubbed libultraship (LUS). Back in the N64 days, there was an SDK distributed to developers named libultra; LUS is designed to mimic the functionality of libultra on modern hardware. In addition, we are dependant on the source code provided by the OOT decompilation project.
+## Roadmap
 
-In order for the game to function, you will require a **legally acquired** ROM for Ocarina of Time. Click [here](https://ship.equipment/) to check the compatibility of your specific rom. Any copyrighted assets are extracted from the ROM and reformatted as a .o2r archive file which the code uses.
+### Beta (Planned)
+- **Transformation Masks** from Majora's Mask
+  - Deku Mask
+  - Goron Mask
+  - Zora Mask
+  - Fierce Deity Mask
+- **9 Additional Equipment Slots**
 
-### Graphics Backends
-Currently, there are three rendering APIs supported: DirectX11 (Windows), OpenGL (all platforms), and Metal (MacOS). You can change which API to use in the `Settings` menu of the menubar, which requires a restart.  If you're having an issue with crashing, you can change the API in the `shipofharkinian.json` file by finding the line `gfxbackend:""` and changing the value to `sdl` for OpenGL. DirectX 11 is the default on Windows.
+---
 
-# Custom Assets
+## Documentation
 
-Custom assets are packed in `.otr` archive files. To use custom assets, place them in the `mods` folder.
+- [Controls Guide](soh/mods/items/CONTROLS.md) - Detailed controls for all 21 items
+- [Technical Structure](soh/mods/items/STRUCTURE.md) - Developer documentation
 
-If you're interested in creating and/or packing your own custom asset `.otr` files, check out the following tools:
-* [**retro - OTR generator**](https://github.com/HarbourMasters64/retro)
-* [**fast64 - Blender plugin**](https://github.com/HarbourMasters/fast64)
+---
 
-# Development
-### Building
+## Community & Support
 
-If you want to manually compile SoH, please consult the [building instructions](docs/BUILDING.md).
+- **Discord:** [Ship of Harkinian Discord](https://discord.com/invite/shipofharkinian)
+- **Issues:** Report bugs via GitHub Issues
 
-### Playtesting
-If you want to playtest a continuous integration build, you can find them at the links below. Keep in mind that these are for playtesting only, and you will likely encounter bugs and possibly crashes. 
+---
 
-* [Windows](https://nightly.link/HarbourMasters/Shipwright/workflows/generate-builds/develop/soh-windows.zip)
-* [macOS](https://nightly.link/HarbourMasters/Shipwright/workflows/generate-builds/develop/soh-mac.zip)
-* [Linux](https://nightly.link/HarbourMasters/Shipwright/workflows/generate-builds/develop/soh-linux.zip)
+## Credits
 
-### Further Reading
-More detailed documentation can be found in the 'docs' directory, including the aforementioned [building instructions](docs/BUILDING.md).
+- **Skijer** - Mod Author
+- **TheLynk** - Logic Author
+- **Ship of Harkinian Team** - Base project
+- **OoT Decompilation Project** - Source code foundation
+- **libultraship Team** - Engine framework
 
-* [Credits](docs/CREDITS.md)
-* [Custom Music](docs/CUSTOM_MUSIC.md)
-* [Controller Mapping](docs/GAME_CONTROLLER_DB.md)
-* [Modding](docs/MODDING.md)
-* [Versioning](docs/VERSIONING.md)
+---
+
+## License
+
+This project is built upon Ship of Harkinian. See the original SoH repository for license details.
+
+The Ship does not include any copyrighted assets. You are required to provide a supported copy of the game.
+
+---
 
 <a href="https://github.com/Kenix3/libultraship/">
   <picture>

@@ -2,7 +2,7 @@
  * item_hylias_grace.c - Hylia's Grace (fairy transformation)
  *
  * Controls:
- *   C Button:     Activate (consumes magic)
+ *   C Button:     Activate (consumes magic + fairy in bottle)
  *   A (flying):   Ascend (drains timer faster)
  *   B (flying):   Descend
  *   L (flying):   Sprint (drains timer faster)
@@ -16,7 +16,7 @@
  * vanilla's 0.83f) to compensate. Timer-based chaining via R_UPDATE_RATE
  * ensures reliable state transitions without relying on animDone.
  *
- * 1 minute cooldown after transformation ends
+ * No cooldown - can be used again immediately
  */
 
 #include "z64.h"
@@ -241,9 +241,8 @@ static void HGrace_Stop(Player* p, PlayState* play) {
     hgFairy = NULL;
     sFairyPosValid = 0;
 
-    if (wasFairy) {
-        hgCooldown = HGRACE_COOLDOWN;
-    }
+    // No cooldown - free to use again immediately
+    (void)wasFairy;
 }
 
 static void HGrace_Start(Player* p, PlayState* play) {
@@ -632,7 +631,7 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
 
         hgActive = 0;
         hgState = HGRACE_STATE_IDLE;
-        hgCooldown = HGRACE_COOLDOWN;
+        // No cooldown
     }
 }
 
@@ -665,8 +664,7 @@ void Handle_HyliasGrace(Player* p, PlayState* play) {
             return;
         if (ItemInput_IsBlocked(p, play))
             return;
-        if (hgCooldown > 0)
-            return;
+        // No cooldown - can use immediately after previous use
         if (in.isPressed)
             HGrace_Start(p, play);
         return;

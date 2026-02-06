@@ -8,6 +8,7 @@
 #include "functions.h"
 #include "variables.h"
 #include "libultraship/bridge.h"
+#include "transformation_masks/transformation_masks.h"
 
 typedef struct {
     u32 frameCount;
@@ -74,6 +75,11 @@ u8 ItemInput_CheckOtherButtons(u16 equippedButton, Input* input) {
 }
 
 u8 ItemInput_IsBlockedEx(Player* player, PlayState* play, u8 skipOptionalBlockers) {
+    // Block all custom items while transformed (Player2 active)
+    // In the future, specific items can be allowed for specific masks
+    if (TransformMasks_IsTransformed())
+        return 1;
+
     if (player->stateFlags1 & ITEM_BLOCK_STATE1)
         return 1;
     if (player->stateFlags1 & PLAYER_STATE1_START_CHANGING_HELD_ITEM)

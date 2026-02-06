@@ -9,6 +9,7 @@
  *   - Consumes magic over time (1 MP per interval)
  *   - Auto-deactivates when magic depleted
  *   - Re-press to reactivate when magic available
+ *   - Forces white gauntlets visible on both adult and child Link
  */
 
 #include "z64.h"
@@ -25,6 +26,9 @@
 // Global flag - accessed by z_bgcheck.c and z_player.c via extern
 u8 gMogmaMittsClimbActive = 0;
 
+// Global flag to force white gauntlets visible - accessed by z_player_lib.c via extern
+u8 gMogmaMittsForceGauntlets = 0;
+
 // Equip state for ItemEquip_Update callbacks
 static ItemEquipState sMittsEquipState = { 0 };
 static s8 sMittsPrevInvinc = 0;
@@ -37,6 +41,7 @@ static void Mitts_Activate(Player* p, PlayState* play) {
     mmActive = 1;
     mmDrainTick = 0;
     gMogmaMittsClimbActive = 1;
+    gMogmaMittsForceGauntlets = 1; // Force white gauntlets visible
     Audio_PlayActorSound2(&p->actor, NA_SE_SY_LOCK_ON);
 }
 
@@ -44,6 +49,7 @@ static void Mitts_Deactivate(void) {
     mmActive = 0;
     mmDrainTick = 0;
     gMogmaMittsClimbActive = 0;
+    gMogmaMittsForceGauntlets = 0;
 }
 
 // ============================================================================
@@ -102,11 +108,18 @@ void Handle_MogmaMitts(Player* this, PlayState* play) {
         return;
     }
 
+    // Track if we're about to trigger onEquip callback
+    u8 wasEquippedBefore = sMittsEquipState.isEquipped;
+
     // Equip state management with callbacks
     ItemEquip_Update(&sMittsEquipState, &input, Mitts_OnEquip, Mitts_OnUnequip, this, play);
 
-    // Button press: toggle on/off
-    if (input.isPressed) {
+    // Skip toggle logic on the frame when onEquip callback just fired
+    // (it already activated the item, don't want to immediately toggle it off)
+    u8 justEquipped = (!wasEquippedBefore && sMittsEquipState.isEquipped);
+
+    // Button press: toggle on/off (only if not just equipped this frame)
+    if (input.isPressed && !justEquipped) {
         if (mmActive) {
             // Toggle off
             Mitts_Deactivate();

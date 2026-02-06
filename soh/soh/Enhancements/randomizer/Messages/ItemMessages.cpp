@@ -520,8 +520,8 @@ void BuildSmallKeyMessage(uint16_t* textId, bool* loadFromMessageTable) {
 
 // Time Gate custom item - "Travel through time?" Yes/No prompt
 void BuildTimeGateMessage(uint16_t* textId, bool* loadFromMessageTable) {
-    CustomMessage msg = CustomMessage("Travel through time?&\x1B%gYes&No%w", "Durch die Zeit reisen?&\x1B%gJa&Nein%w",
-                                      "Voyager dans le temps?&\x1B%gOui&Non%w");
+    CustomMessage msg = CustomMessage("Travel through time?\x1B%g&&Yes&No%w", "Durch die Zeit reisen?\x1B%g&&Ja&Nein%w",
+                                      "Voyager dans le temps?\x1B%g&&Oui&Non%w");
     msg.Format();
     msg.LoadIntoFont();
     *loadFromMessageTable = false;

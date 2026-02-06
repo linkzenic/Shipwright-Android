@@ -1,0 +1,1 @@
+extern s16 gLinkAdultSkel_001Gdampediganim_002_retargetAnimData[];

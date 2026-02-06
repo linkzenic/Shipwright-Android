@@ -23,11 +23,17 @@
 // Effects
 #define ROCSCAPE_SHOCKWAVE_Y_OFFSET 10.0f
 
-// Sound
-#define ROCSCAPE_SOUND_JUMP NA_SE_VO_LI_AUTO_JUMP_KID
-#define ROCSCAPE_SOUND_DOUBLE NA_SE_VO_LI_AUTO_JUMP_KID
+// Sound (age-related)
+#define ROCSCAPE_SOUND_JUMP_ADULT NA_SE_VO_LI_AUTO_JUMP
+#define ROCSCAPE_SOUND_JUMP_CHILD NA_SE_VO_LI_AUTO_JUMP_KID
+#define ROCSCAPE_SOUND_DOUBLE_ADULT NA_SE_VO_LI_AUTO_JUMP
+#define ROCSCAPE_SOUND_DOUBLE_CHILD NA_SE_VO_LI_AUTO_JUMP_KID
 
-// State alias
+// CVar for MM animations (shared with Roc's Feather)
+#define ROCS_MM_ANIM_CVAR "gEnhancements.RocsItemsUseMmAnims"
+
+// State aliases
 #define rcJumpCount gCustomItemState.rocsJumpCount
+#define rcMmAnimTimer gCustomItemState.rocsMmAnimTimer
 
 #endif // ITEM_ROCSCAPE_H

@@ -117,6 +117,8 @@ static void Beetle_Stop(Player* p, PlayState* play) {
     beetleActive = 0;
     beetleState = BEETLE_STATE_IDLE;
     beetleGrabbed = NULL;
+    // Stop looping fly sound
+    Audio_StopSfxById(BEETLE_SFX_FLY);
     ItemEquip_PlayUnequipSFX(play, p);
 }
 
@@ -204,9 +206,12 @@ static u8 Beetle_CheckActorCollision(Player* p, PlayState* play) {
     u8 shouldReturn = 0;
 
     if (hitActor != NULL) {
-        if (hitActor->id == ACTOR_EN_ITEM00 || hitActor->id == ACTOR_EN_SI) {
+        if (hitActor->id == ACTOR_EN_ITEM00 || hitActor->id == ACTOR_EN_SI ||
+            (hitActor->id == ACTOR_EN_G_SWITCH && (hitActor->params & 0x0F) == ENGSWITCH_SILVER_RUPEE)) {
             beetleGrabbed = hitActor;
             if (hitActor->id == ACTOR_EN_SI) {
+                hitActor->flags |= ACTOR_FLAG_HOOKSHOT_ATTACHED;
+            } else if (hitActor->id == ACTOR_EN_G_SWITCH) {
                 hitActor->flags |= ACTOR_FLAG_HOOKSHOT_ATTACHED;
             }
         } else {
@@ -262,6 +267,11 @@ static void Beetle_DropGrabbedActor(Player* p) {
         beetleGrabbed->bgCheckFlags &= ~0x03;
     } else if (beetleGrabbed->id == ACTOR_EN_SI) {
         beetleGrabbed->flags &= ~ACTOR_FLAG_HOOKSHOT_ATTACHED;
+    } else if (beetleGrabbed->id == ACTOR_EN_G_SWITCH) {
+        // Silver rupee - drop near Link so it can be collected
+        beetleGrabbed->flags &= ~ACTOR_FLAG_HOOKSHOT_ATTACHED;
+        beetleGrabbed->gravity = -2.0f;
+        beetleGrabbed->bgCheckFlags &= ~0x03;
     }
     beetleGrabbed = NULL;
 }

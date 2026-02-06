@@ -20,8 +20,12 @@
 #define SHOVEL_FAIRY_CHANCE 1
 
 // Animation
-#define SHOVEL_ANIM_DURATION 30
+#define SHOVEL_ANIM_DURATION 50
+#define SHOVEL_DIG_FRAME 25
 #define SHOVEL_HOLE_LIFETIME 300
+
+// Animation extern (defined in anim/dampe_dig/)
+extern LinkAnimationHeader gLinkAdultSkel_001Gdampediganim_002_retargetAnim;
 
 // Scene
 #ifndef SCENE_GRAVEYARD

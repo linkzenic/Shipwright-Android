@@ -19,7 +19,7 @@
 #undef DEFINE_EFFECT_SS_UNSET
 
 // Effect SS Overlay Table definition
-//#define DEFINE_EFFECT_SS(name, _1)         \
+// #define DEFINE_EFFECT_SS(name, _1)         \
 //    {                                      \
 //        (uintptr_t)_ovl_##name##SegmentRomStart, \
 //        (uintptr_t)_ovl_##name##SegmentRomEnd,   \

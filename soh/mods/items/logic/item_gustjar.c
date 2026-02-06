@@ -66,6 +66,8 @@ static void GustJar_Unequip(PlayState* play, Player* player) {
     gCustomItemState.gustJarProjectileActive = 0;
     gCustomItemState.gustJarAmmoType = 0;
     gCustomItemState.gustJarButtonMask = 0;
+    // Stop looping wind sound
+    Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
     ItemEquip_PlayUnequipSFX(play, player);
 }
 static s16 GustJar_GetAimAngle(PlayState* play, Player* player) {
@@ -226,6 +228,11 @@ void Handle_GustJar(Player* this, PlayState* play) {
             GustJar_Unequip(play, this);
         return;
     }
+    if (ItemInput_IsBlocked(this, play)) {
+        if (gCustomItemState.gustJarEquipped)
+            GustJar_Unequip(play, this);
+        return;
+    }
     gCustomItemState.gustJarButtonMask = input.equippedButton;
     if (ItemInput_CheckDamage(this, &prevInvincibility)) {
         GustJar_Unequip(play, this);
@@ -236,8 +243,14 @@ void Handle_GustJar(Player* this, PlayState* play) {
     if (!gCustomItemState.gustJarEquipped) {
         if (btnPressed) {
             GustJar_Equip(play, this);
+            // Continue processing if first person was activated, so FirstPerson_Update
+            // gets called on the same frame as FirstPerson_Init (prevents visual glitch)
+            if (!gCustomItemState.gustJarFirstPersonActive) {
+                return;
+            }
+        } else {
+            return;
         }
-        return;
     }
     if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_CUP)) {
         if (gCustomItemState.gustJarAimMode == 2) {
@@ -418,14 +431,7 @@ void Handle_GustJar(Player* this, PlayState* play) {
         if (gCustomItemState.gustJarMode == 1) {
             gCustomItemState.gustJarMode = 2;
         }
-        if (gSaveContext.magic <= 0) {
-            gCustomItemState.gustJarMode = 1;
-            wasSuctionActive = 0;
-            return;
-        }
-        if (play->gameplayFrames % 10 == 0) {
-            ItemMagic_Consume(play, 1);
-        }
+        // Free use - no magic cost
         func_8002F974(&this->actor, NA_SE_EV_WIND_TRAP - SFX_FLAG);
         GustJar_SpawnSuctionFX(play, &nozzle, aimYaw, aimPitch);
         wasSuctionActive = 1;

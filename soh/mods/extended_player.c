@@ -25,6 +25,8 @@ extern s32 Player_UpperAction_Beetle(Player* this, PlayState* play);
 extern s32 Player_UpperAction_BombArrows(Player* this, PlayState* play);
 extern s32 Player_UpperAction_CaneOfSomaria(Player* this, PlayState* play);
 extern s32 Player_UpperAction_DekuLeaf(Player* this, PlayState* play);
+extern s32 Player_UpperAction_Shovel(Player* this, PlayState* play);
+extern s32 Player_UpperAction_SwitchHook(Player* this, PlayState* play);
 
 // External custom item init functions (not declared in custom_items.h)
 extern void Player_InitHyliasGraceIA(PlayState* play, Player* this);
@@ -156,7 +158,7 @@ uint8_t ExtPlayer_GetActionModelGroup(int32_t itemAction) {
         case PLAYER_IA_DEKU_LEAF:
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_SWITCH_HOOK:
-            return PLAYER_MODELGROUP_DEFAULT;
+            return PLAYER_MODELGROUP_HOOKSHOT;
         case PLAYER_IA_MOGMA_MITTS:
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_GUST_JAR:
@@ -228,7 +230,7 @@ ItemActionUpdateFunc ExtPlayer_GetItemActionUpdateFunc(int32_t itemAction) {
         case PLAYER_IA_DEKU_LEAF:
             return Player_UpperAction_DekuLeaf;
         case PLAYER_IA_SWITCH_HOOK:
-            return func_8083485C;
+            return Player_UpperAction_SwitchHook;
         case PLAYER_IA_MOGMA_MITTS:
             return func_8083485C;
         case PLAYER_IA_GUST_JAR:
@@ -257,7 +259,7 @@ ItemActionUpdateFunc ExtPlayer_GetItemActionUpdateFunc(int32_t itemAction) {
         case PLAYER_IA_BEETLE:
             return Player_UpperAction_Beetle;
         case PLAYER_IA_SHOVEL:
-            return func_8083485C;
+            return Player_UpperAction_Shovel;
         case PLAYER_IA_PENDING_1:
             return func_8083485C;
         case PLAYER_IA_PENDING_2:

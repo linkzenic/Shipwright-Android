@@ -187,6 +187,20 @@ CustomItemState gCustomItemState = { .timer1 = 0,
                                      .desireSensorState = 0,
                                      .desireSensorTimer = 0,
                                      .desireSensorResult = 0,
+                                     // Switch Hook
+                                     .switchHookActive = 0,
+                                     .switchHookState = 0,
+                                     .switchHookFirstPerson = 0,
+                                     .switchHookProjPos = { 0, 0, 0 },
+                                     .switchHookProjYaw = 0,
+                                     .switchHookProjPitch = 0,
+                                     .switchHookTimer = 0,
+                                     .switchHookTarget = NULL,
+                                     .switchHookLinkStartPos = { 0, 0, 0 },
+                                     .switchHookTargetStartPos = { 0, 0, 0 },
+                                     .switchHookSwapTimer = 0,
+                                     .switchHookButtonMask = 0,
+                                     .switchHookVortexTimer = 0,
                                      .sharedProjectilePos = { 0, 0, 0 } };
 
 s32 CustomItems_IsBlocked(Player* p, PlayState* play) {
@@ -230,11 +244,11 @@ static void CustomItems_CleanupUnequipped(Player* p, PlayState* play) {
         Handle_Beetle(p, play);
     if (gCustomItemState.bombArrowActive && !IsItemEquipped(ITEM_BOMB_ARROWS))
         Handle_BombArrows(p, play);
-    if (gCustomItemState.fireRodFirstPerson && !IsItemEquipped(ITEM_ROD_FIRE))
+    if ((gCustomItemState.fireRodActive || gCustomItemState.fireRodFirstPerson) && !IsItemEquipped(ITEM_ROD_FIRE))
         Handle_FireRod(p, play);
-    if (gCustomItemState.iceRodFirstPerson && !IsItemEquipped(ITEM_ROD_ICE))
+    if ((gCustomItemState.iceRodActive || gCustomItemState.iceRodFirstPerson) && !IsItemEquipped(ITEM_ROD_ICE))
         Handle_IceRod(p, play);
-    if (gCustomItemState.lightRodFirstPerson && !IsItemEquipped(ITEM_ROD_LIGHT))
+    if ((gCustomItemState.lightRodActive || gCustomItemState.lightRodFirstPerson) && !IsItemEquipped(ITEM_ROD_LIGHT))
         Handle_LightRod(p, play);
     if (gCustomItemState.dominionRodActive && !IsItemEquipped(ITEM_DOMINION_ROD))
         Handle_DominionRod(p, play);
@@ -252,6 +266,8 @@ static void CustomItems_CleanupUnequipped(Player* p, PlayState* play) {
         Handle_Whip(p, play);
     if (gCustomItemState.desireSensorActive && !IsItemEquipped(ITEM_DESIRE_SENSOR))
         Handle_DesireSensor(p, play);
+    if (gCustomItemState.switchHookActive && !IsItemEquipped(ITEM_SWITCH_HOOK))
+        Handle_SwitchHook(p, play);
 }
 
 void CustomItems_Update(Player* p, PlayState* play) {
@@ -275,6 +291,12 @@ void CustomItems_Update(Player* p, PlayState* play) {
     // Beetle flying blocks all other custom items
     if (gCustomItemState.beetleActive && (gCustomItemState.beetleState == 2 || gCustomItemState.beetleState == 3)) {
         Handle_Beetle(p, play);
+        return;
+    }
+
+    // Switch Hook blocks all other custom items while active
+    if (gCustomItemState.switchHookActive) {
+        Handle_SwitchHook(p, play);
         return;
     }
 
@@ -374,6 +396,9 @@ void CustomItems_Update(Player* p, PlayState* play) {
             case ITEM_DESIRE_SENSOR:
                 Handle_DesireSensor(p, play);
                 break;
+            case ITEM_SWITCH_HOOK:
+                Handle_SwitchHook(p, play);
+                break;
             default:
                 break;
         }
@@ -415,43 +440,59 @@ s32 CustomItems_OverrideDraw(Player* p, PlayState* play) {
         CustomItems_DrawTimeGate(p, play);
         CustomItems_DrawTimeGatePortal(p, play);
     }
+    if (gCustomItemState.switchHookActive) {
+        CustomItems_DrawSwitchHookInHand(p, play);
+        CustomItems_DrawSwitchHook(p, play);
+    }
 
     // Draw reticle for items using first-person aiming mode
-    // Bomb Arrows - red reticle (255, 0, 0)
+    // Color scheme: RED = expel/attack, BLUE = pull/suck, GREEN = control
+
+    // Bomb Arrows - RED (expel)
     if (gCustomItemState.bombArrowActive && gCustomItemState.bombArrowFirstPersonActive) {
-        CustomItems_DrawBombArrowsReticle(p, play);
+        FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Gust Jar - cyan reticle (0, 255, 255)
+    // Gust Jar - BLUE when sucking (mode 2), RED when shooting/idle
     if (gCustomItemState.gustJarFirstPersonActive) {
-        FirstPerson_DrawReticle(p, play, 0.0f, 0, 255, 255);
+        if (gCustomItemState.gustJarMode == 2) {
+            // Suction mode - BLUE (pull)
+            FirstPerson_DrawReticle(p, play, 0.0f, 0, 100, 255);
+        } else {
+            // Shoot/idle mode - RED (expel)
+            FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
+        }
     }
-    // Ball and Chain - orange reticle (255, 150, 0)
+    // Ball and Chain - RED (expel)
     if (gCustomItemState.ballAndChainFirstPersonActive) {
-        FirstPerson_DrawReticle(p, play, 0.0f, 255, 150, 0);
+        FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Beetle - green reticle (0, 255, 0) - only during aiming state
+    // Beetle - GREEN (control) - only during aiming state
     if (gCustomItemState.beetleFirstPersonActive && gCustomItemState.beetleState == 1) {
         FirstPerson_DrawReticle(p, play, 0.0f, 0, 255, 0);
     }
-    // Fire Rod - orange-red reticle (255, 100, 0)
+    // Fire Rod - RED (expel)
     if (gCustomItemState.fireRodFirstPerson) {
-        FirstPerson_DrawReticle(p, play, 0.0f, 255, 100, 0);
+        FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Ice Rod - cyan reticle (0, 200, 255)
+    // Ice Rod - RED (expel)
     if (gCustomItemState.iceRodFirstPerson) {
-        FirstPerson_DrawReticle(p, play, 0.0f, 0, 200, 255);
+        FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Light Rod - golden-yellow reticle (255, 255, 0)
+    // Light Rod - RED (expel)
     if (gCustomItemState.lightRodFirstPerson) {
-        FirstPerson_DrawReticle(p, play, 0.0f, 255, 255, 0);
+        FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Whip - red reticle (255, 0, 0)
+    // Whip - RED (expel)
     if (gCustomItemState.whipFirstPersonActive) {
         FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Dominion Rod - red reticle (255, 50, 50)
+    // Dominion Rod - GREEN (control)
     if (gCustomItemState.dominionRodFirstPersonActive) {
-        CustomItems_DrawDominionRodReticle(p, play);
+        FirstPerson_DrawReticle(p, play, 0.0f, 0, 255, 0);
+    }
+    // Switch Hook - BLUE (pull/swap)
+    if (gCustomItemState.switchHookFirstPerson) {
+        FirstPerson_DrawReticle(p, play, 0.0f, 0, 100, 255);
     }
 
     return 0;

@@ -19,6 +19,7 @@
 #define WHIP_STATE_ATTACHED 4
 #define WHIP_STATE_SWINGING 5
 #define WHIP_STATE_RETRACTING 6
+#define WHIP_STATE_LAUNCHED 7
 
 // Visual constants
 #define WHIP_BODY_SEGMENT 15.0f // World units per body segment
@@ -32,31 +33,30 @@
 // =============================================================================
 // SNAKE BODY SEGMENT — Hexagonal tube along Z axis
 // =============================================================================
-// 12 vertices: bottom ring (z=-500) and top ring (z=500), radius 300
-// At scale 0.015: ~9 units diameter, ~15 units long
+// 12 vertices: bottom ring (z=-500) and top ring (z=500), radius 100 (1/3 original)
+// At scale 0.015: ~3 units diameter, ~15 units long
 static Vtx sWhipBodyVtx[] = {
-    // Bottom ring (z=-500)
-    { { { 300, 0, -500 }, 0, { 0, 0 }, { 127, 0, 0, 255 } } },        // [0]
-    { { { 150, 260, -500 }, 0, { 0, 0 }, { 64, 110, 0, 255 } } },     // [1]
-    { { { -150, 260, -500 }, 0, { 0, 0 }, { -64, 110, 0, 255 } } },   // [2]
-    { { { -300, 0, -500 }, 0, { 0, 0 }, { -127, 0, 0, 255 } } },      // [3]
-    { { { -150, -260, -500 }, 0, { 0, 0 }, { -64, -110, 0, 255 } } }, // [4]
-    { { { 150, -260, -500 }, 0, { 0, 0 }, { 64, -110, 0, 255 } } },   // [5]
+    // Bottom ring (z=-500) — orange snake cross-section vertex colors (radius 100, 1/3 original)
+    { { { 100, 0, -500 }, 0, { 0, 0 }, { 230, 90, 20, 255 } } },    // [0] side — orange
+    { { { 50, 87, -500 }, 0, { 0, 0 }, { 160, 55, 10, 255 } } },    // [1] dorsal — dark orange
+    { { { -50, 87, -500 }, 0, { 0, 0 }, { 160, 55, 10, 255 } } },   // [2] dorsal — dark orange
+    { { { -100, 0, -500 }, 0, { 0, 0 }, { 230, 90, 20, 255 } } },   // [3] side — orange
+    { { { -50, -87, -500 }, 0, { 0, 0 }, { 245, 160, 60, 255 } } }, // [4] belly — light orange
+    { { { 50, -87, -500 }, 0, { 0, 0 }, { 245, 160, 60, 255 } } },  // [5] belly — light orange
     // Top ring (z=500)
-    { { { 300, 0, 500 }, 0, { 0, 0 }, { 127, 0, 0, 255 } } },        // [6]
-    { { { 150, 260, 500 }, 0, { 0, 0 }, { 64, 110, 0, 255 } } },     // [7]
-    { { { -150, 260, 500 }, 0, { 0, 0 }, { -64, 110, 0, 255 } } },   // [8]
-    { { { -300, 0, 500 }, 0, { 0, 0 }, { -127, 0, 0, 255 } } },      // [9]
-    { { { -150, -260, 500 }, 0, { 0, 0 }, { -64, -110, 0, 255 } } }, // [10]
-    { { { 150, -260, 500 }, 0, { 0, 0 }, { 64, -110, 0, 255 } } },   // [11]
+    { { { 100, 0, 500 }, 0, { 0, 0 }, { 230, 90, 20, 255 } } },    // [6] side
+    { { { 50, 87, 500 }, 0, { 0, 0 }, { 160, 55, 10, 255 } } },    // [7] dorsal
+    { { { -50, 87, 500 }, 0, { 0, 0 }, { 160, 55, 10, 255 } } },   // [8] dorsal
+    { { { -100, 0, 500 }, 0, { 0, 0 }, { 230, 90, 20, 255 } } },   // [9] side
+    { { { -50, -87, 500 }, 0, { 0, 0 }, { 245, 160, 60, 255 } } }, // [10] belly
+    { { { 50, -87, 500 }, 0, { 0, 0 }, { 245, 160, 60, 255 } } },  // [11] belly
 };
 
-static Gfx sWhipBodyDL[] = {
+Gfx gWhipBodyDL[] = {
     gsDPPipeSync(),
-    gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE),
+    gsDPSetCombineMode(G_CC_SHADE, G_CC_SHADE),
     gsSPClearGeometryMode(G_LIGHTING | G_CULL_BACK | G_CULL_FRONT | G_TEXTURE_GEN),
     gsSPSetGeometryMode(G_SHADING_SMOOTH),
-    gsDPSetPrimColor(0, 0, 230, 90, 20, 255), // Orange-red
     gsSPVertex(sWhipBodyVtx, 12, 0),
     // 6 side quads = 12 triangles
     gsSP2Triangles(0, 6, 7, 0, 0, 7, 1, 0),
@@ -75,30 +75,28 @@ static Gfx sWhipBodyDL[] = {
 // Plus small green eye triangles on upper front surface
 static Vtx sWhipHeadVtx[] = {
     // [0] Mouth tip
-    { { { 0, 20, 500 }, 0, { 0, 0 }, { 0, 0, 127, 255 } } },
+    { { { 0, 20, 500 }, 0, { 0, 0 }, { 240, 100, 25, 255 } } },
     // [1-4] Base rectangle (widest point at z=0)
-    { { { -250, 120, 0 }, 0, { 0, 0 }, { -90, 90, 0, 255 } } },  // [1] top-left
-    { { { 250, 120, 0 }, 0, { 0, 0 }, { 90, 90, 0, 255 } } },    // [2] top-right
-    { { { 250, -80, 0 }, 0, { 0, 0 }, { 90, -60, 0, 255 } } },   // [3] bottom-right
-    { { { -250, -80, 0 }, 0, { 0, 0 }, { -90, -60, 0, 255 } } }, // [4] bottom-left
+    { { { -250, 120, 0 }, 0, { 0, 0 }, { 160, 55, 10, 255 } } },  // [1] top-left — dark orange dorsal
+    { { { 250, 120, 0 }, 0, { 0, 0 }, { 160, 55, 10, 255 } } },   // [2] top-right — dark orange dorsal
+    { { { 250, -80, 0 }, 0, { 0, 0 }, { 245, 160, 60, 255 } } },  // [3] bottom-right — light orange ventral
+    { { { -250, -80, 0 }, 0, { 0, 0 }, { 245, 160, 60, 255 } } }, // [4] bottom-left — light orange ventral
     // [5] Back tip (connects to body)
-    { { { 0, 10, -250 }, 0, { 0, 0 }, { 0, 0, -127, 255 } } },
-    // [6-11] Eye vertices (green triangles on upper front)
-    { { { -100, 100, 300 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } }, // [6] left eye top
-    { { { -140, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },  // [7] left eye outer
-    { { { -80, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },   // [8] left eye inner
-    { { { 100, 100, 300 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },  // [9] right eye top
-    { { { 140, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },   // [10] right eye outer
-    { { { 80, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },    // [11] right eye inner
+    { { { 0, 10, -250 }, 0, { 0, 0 }, { 200, 75, 15, 255 } } },
+    // [6-11] Eye vertices (bright green)
+    { { { -100, 100, 300 }, 0, { 0, 0 }, { 0, 230, 0, 255 } } }, // [6] left eye top
+    { { { -140, 80, 270 }, 0, { 0, 0 }, { 0, 230, 0, 255 } } },  // [7] left eye outer
+    { { { -80, 80, 270 }, 0, { 0, 0 }, { 0, 230, 0, 255 } } },   // [8] left eye inner
+    { { { 100, 100, 300 }, 0, { 0, 0 }, { 0, 230, 0, 255 } } },  // [9] right eye top
+    { { { 140, 80, 270 }, 0, { 0, 0 }, { 0, 230, 0, 255 } } },   // [10] right eye outer
+    { { { 80, 80, 270 }, 0, { 0, 0 }, { 0, 230, 0, 255 } } },    // [11] right eye inner
 };
 
-static Gfx sWhipHeadDL[] = {
+Gfx gWhipHeadDL[] = {
     gsDPPipeSync(),
-    gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE),
+    gsDPSetCombineMode(G_CC_SHADE, G_CC_SHADE),
     gsSPClearGeometryMode(G_LIGHTING | G_CULL_BACK | G_CULL_FRONT | G_TEXTURE_GEN),
     gsSPSetGeometryMode(G_SHADING_SMOOTH),
-    // Orange-red head body
-    gsDPSetPrimColor(0, 0, 220, 80, 15, 255),
     gsSPVertex(sWhipHeadVtx, 12, 0),
     // Front pyramid (mouth)
     gsSP2Triangles(0, 2, 1, 0, 0, 3, 2, 0),
@@ -106,9 +104,7 @@ static Gfx sWhipHeadDL[] = {
     // Back pyramid (body connection)
     gsSP2Triangles(5, 1, 2, 0, 5, 2, 3, 0),
     gsSP2Triangles(5, 3, 4, 0, 5, 4, 1, 0),
-    // Green eyes
-    gsDPPipeSync(),
-    gsDPSetPrimColor(0, 0, 0, 255, 0, 255),
+    // Green eyes (color from vertex data)
     gsSP2Triangles(6, 7, 8, 0, 9, 10, 11, 0),
     gsSPEndDisplayList(),
 };
@@ -125,7 +121,7 @@ static Vtx sWhipTailVtx[] = {
     { { { 0, -180, 0 }, 0, { 0, 0 }, { 0, -127, 0, 255 } } },     // [5] Bottom
 };
 
-static Gfx sWhipTailDL[] = {
+Gfx gWhipTailDL[] = {
     gsDPPipeSync(),
     gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE),
     gsSPClearGeometryMode(G_LIGHTING | G_CULL_BACK | G_CULL_FRONT | G_TEXTURE_GEN),
@@ -179,7 +175,7 @@ static void Whip_DrawSnakeBody(PlayState* play, Vec3f* start, Vec3f* end, f32 sa
 
         gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
                   G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_OPA_DISP++, sWhipBodyDL);
+        gSPDisplayList(POLY_OPA_DISP++, gWhipBodyDL);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -206,7 +202,7 @@ static void Whip_DrawSnakeHead(PlayState* play, Vec3f* headPos, Vec3f* fromPos) 
 
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sWhipHeadDL);
+    gSPDisplayList(POLY_OPA_DISP++, gWhipHeadDL);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -229,7 +225,7 @@ static void Whip_DrawSnakeHeadAtSurface(PlayState* play, Vec3f* pos, Vec3f* norm
 
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sWhipHeadDL);
+    gSPDisplayList(POLY_OPA_DISP++, gWhipHeadDL);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -245,7 +241,7 @@ static void Whip_DrawTailCrystal(PlayState* play, Vec3f* pos) {
 
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sWhipTailDL);
+    gSPDisplayList(POLY_OPA_DISP++, gWhipTailDL);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -273,7 +269,7 @@ static void Whip_DrawEquippedWhip(PlayState* play, Vec3f* handPos, Player* playe
 
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sWhipHeadDL);
+    gSPDisplayList(POLY_OPA_DISP++, gWhipHeadDL);
 
     // Short body segments between head and handle
     for (i = 0; i < WHIP_EQUIP_BODY_COUNT; i++) {
@@ -289,7 +285,7 @@ static void Whip_DrawEquippedWhip(PlayState* play, Vec3f* handPos, Player* playe
 
         gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
                   G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_OPA_DISP++, sWhipBodyDL);
+        gSPDisplayList(POLY_OPA_DISP++, gWhipBodyDL);
     }
 
     // Purple crystal handle at hand
@@ -303,7 +299,7 @@ static void Whip_DrawEquippedWhip(PlayState* play, Vec3f* handPos, Player* playe
 
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, sWhipTailDL);
+    gSPDisplayList(POLY_OPA_DISP++, gWhipTailDL);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

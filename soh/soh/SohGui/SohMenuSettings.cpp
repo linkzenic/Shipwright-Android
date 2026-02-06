@@ -11,6 +11,7 @@
 extern "C" {
 #include "include/z64audio.h"
 #include "variables.h"
+#include "transformation_masks/assets/mm_asset_loader.h"
 }
 
 namespace SohGui {
@@ -514,6 +515,130 @@ void SohMenu::AddMenuSettings() {
         .WindowName("Mod Menu")
         .HideInSearch(true)
         .Options(WindowButtonOptions().Tooltip("Enables the separate Mod Menu Window."));
+
+    // Skijer's NEI - Custom Items and Transformation Masks
+    path.sidebarName = "Skijer's NEI";
+    path.column = SECTION_COLUMN_1;
+    AddSidebarEntry("Settings", path.sidebarName, 3);
+
+    AddWidget(path, "Transformation Masks", WIDGET_SEPARATOR_TEXT);
+
+    // Option 1: Extra Mask Effects - custom effects per mask (no dependencies)
+    AddWidget(path, "Extra Mask Effects", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.TransformMasks.ExtraEffects")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip("Enables custom visual effects according to the mask being worn.\n"
+                                           "Each mask has unique visual enhancements."));
+
+    // Option 2: Enable Transformation Masks - requires mm.o2r
+    AddWidget(path, "Enable Transformation Masks", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.TransformMasks.Enabled")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.TransformMasks.Enabled", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.\n"
+                                                "Download 2Ship, extract your MM ROM, then copy mm.o2r here.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Allows you to transform with certain masks like in Majora's Mask.\n"
+                                           "Goron and Zora Masks become transformation masks with unique abilities.\n\n"
+                                           "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
+
+    // Option 3: Instant Transform - requires Extra Mask Effects AND mm.o2r
+    AddWidget(path, "Instant Transform", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.TransformMasks.InstantTransform")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.TransformMasks.InstantTransform", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
+            } else if (!CVarGetInteger("gMods.TransformMasks.ExtraEffects", 0)) {
+                CVarSetInteger("gMods.TransformMasks.InstantTransform", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Enable Extra Mask Effects first.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Skip the transformation cutscene animation.\n"
+                                           "Transform instantly when equipping a transformation mask.\n\n"
+                                           "REQUIRES: Extra Mask Effects + mm.o2r"));
+
+    AddWidget(path, "MM Mask Replacements (Visual Only)", WIDGET_SEPARATOR_TEXT);
+
+    // Option 4: Deku Replaces Skull - requires ONLY mm.o2r (independent)
+    AddWidget(path, "Deku Mask replaces Skull Mask", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.TransformMasks.DekuReplacesSkull")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.TransformMasks.DekuReplacesSkull", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "[!] REQUIRES mm.o2r\n\n"
+                                                "Download 2Ship2Harkinian, extract your MM ROM,\n"
+                                                "then copy mm.o2r to the Ship folder.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Replaces Skull Mask icon, name and model with Deku Mask from MM.\n\n"
+                                           "VISUAL ONLY - No gameplay effect yet.\n"
+                                           "Future: Will enable Deku form transformation.\n\n"
+                                           "[!] REQUIRES: mm.o2r from 2Ship2Harkinian"));
+
+    // Option 5: Stone Replaces Spooky - requires ONLY mm.o2r (independent)
+    AddWidget(path, "Stone Mask replaces Spooky Mask", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.TransformMasks.StoneReplacesSpooky")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.TransformMasks.StoneReplacesSpooky", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "[!] REQUIRES mm.o2r\n\n"
+                                                "Download 2Ship2Harkinian, extract your MM ROM,\n"
+                                                "then copy mm.o2r to the Ship folder.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Replaces Spooky Mask icon, name and model with Stone Mask from MM.\n\n"
+                                           "VISUAL ONLY - No gameplay effect yet.\n"
+                                           "Future: Enemies won't detect you while wearing it.\n\n"
+                                           "[!] REQUIRES: mm.o2r from 2Ship2Harkinian"));
+
+    // Option 6: Fierce Deity Replaces Gerudo - requires ONLY mm.o2r (independent)
+    AddWidget(path, "Fierce Deity Mask replaces Gerudo Mask", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.TransformMasks.FierceReplacesGerudo")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.TransformMasks.FierceReplacesGerudo", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "[!] REQUIRES mm.o2r\n\n"
+                                                "Download 2Ship2Harkinian, extract your MM ROM,\n"
+                                                "then copy mm.o2r to the Ship folder.";
+            }
+        })
+        .Options(
+            CheckboxOptions().Tooltip("Replaces Gerudo Mask icon, name and model with Fierce Deity Mask from MM.\n\n"
+                                      "VISUAL ONLY - No gameplay effect yet.\n"
+                                      "Future: Will enable Fierce Deity form transformation.\n\n"
+                                      "[!] REQUIRES: mm.o2r from 2Ship2Harkinian"));
+
+    AddWidget(path, "Developer Tests", WIDGET_SEPARATOR_TEXT);
+
+    // Roc's Items MM Animations - requires mm.o2r
+    AddWidget(path, "Roc's Items Use MM Animations", WIDGET_CVAR_CHECKBOX)
+        .CVar("gEnhancements.RocsItemsUseMmAnims")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gEnhancements.RocsItemsUseMmAnims", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Use MM animations for Roc's Feather and Roc's Cape jumps.\n"
+                                           "Roc's Feather: Backflip on ground jump.\n"
+                                           "Roc's Cape: Backflip on ground jump, roll jump on double jump.\n\n"
+                                           "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 }
 
 } // namespace SohGui

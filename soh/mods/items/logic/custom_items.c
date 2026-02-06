@@ -26,6 +26,9 @@
 #include "../custom_items_common.c"
 #include "../objects/object_custom_items.c"
 
+// MM Animation Loader (must be before item_rocscape.c which uses it)
+#include "mods/anim_translator/mm_anim_loader.c"
+
 // Item implementations
 #include "item_rocsfeather.c"
 #include "item_rocscape.c"
@@ -52,3 +55,6 @@
 #include "item_dominionrod.c"
 #include "item_cane_of_somaria.c"
 #include "item_time_gate.c"
+
+// Transformation Masks: REMOVED - now included directly in z_player.c
+// (transformation_masks.c includes mask_goron.c internally)

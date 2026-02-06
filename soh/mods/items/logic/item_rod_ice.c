@@ -167,8 +167,9 @@ static void IceRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* start
 }
 
 static void IceRod_UpdateCollider(ColliderCylinder* col, Vec3f* pos, f32 scale, PlayState* play) {
-    col->dim.radius = (s16)(scale * 1.5f + 2.0f);
-    col->dim.height = (s16)(scale * 2.0f + 3.0f);
+    // Use larger collider sizes for better hit detection
+    col->dim.radius = (s16)(scale * 5.0f + ICE_ROD_PROJ_RADIUS);
+    col->dim.height = (s16)(scale * 8.0f + ICE_ROD_PROJ_HEIGHT);
     col->dim.pos.x = (s16)pos->x;
     col->dim.pos.y = (s16)pos->y;
     col->dim.pos.z = (s16)pos->z;
@@ -180,6 +181,22 @@ static u8 IceRod_CheckHit(ColliderCylinder* col, Vec3f* pos, PlayState* play, Pl
         // Spawn ice burst effect on hit
         EffectSsIcePiece_SpawnBurst(play, pos, 1.0f);
         Audio_PlayActorSound2(&p->actor, ICE_ROD_SFX_ICE_EXPLODE);
+
+        // Force freeze on hit actor (works on all enemies regardless of their ice damage handling)
+        if (col->base.at != NULL && col->base.at->update != NULL) {
+            Actor* hitActor = col->base.at;
+            if (hitActor->category == ACTORCAT_ENEMY || hitActor->category == ACTORCAT_BOSS) {
+                // Set freeze timer to pause the actor
+                hitActor->freezeTimer = ICE_ROD_FREEZE_DURATION;
+                // Apply blue color filter for frozen appearance (0x4000 = blue tint)
+                Actor_SetColorFilter(hitActor, 0x4000, 255, 0x2000, ICE_ROD_FREEZE_DURATION);
+                // Spawn ice visual effect on the frozen enemy
+                EffectSsEnIce_SpawnFlyingVec3f(play, hitActor, &hitActor->world.pos, 150, 150, 150, 250, 235, 245, 255,
+                                               1.0f);
+                Audio_PlayActorSound2(hitActor, NA_SE_PL_FREEZE_S);
+            }
+        }
+
         col->base.atFlags &= ~AT_HIT;
         return 1;
     }
@@ -221,6 +238,7 @@ static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
     if (iceRodProjTimer == 0 && iceRodProjScale < 0.1f) {
         iceRodProjActive = 0;
         sIceRodTargetScale = 2.0f;
+        Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
         return;
     }
 
@@ -331,15 +349,32 @@ static void IceRod_UpdateIceWave(Player* p, PlayState* play) {
         // Update colliders for all ice effects
         for (s32 i = 0; i < ICE_ROD_WAVE_COUNT; i++) {
             f32 scale = ICE_ROD_WAVE_BASE_SCALE + (i * ICE_ROD_WAVE_SCALE_GROW);
-            iceRodWaveColliders[i].dim.radius = (s16)(scale * 0.12f + 3.0f);
-            iceRodWaveColliders[i].dim.height = (s16)(scale * 0.2f + 5.0f);
+            // Use larger colliders for better hit detection
+            iceRodWaveColliders[i].dim.radius = (s16)(scale * 80.0f + ICE_ROD_WAVE_RADIUS + 15);
+            iceRodWaveColliders[i].dim.height = (s16)(scale * 100.0f + ICE_ROD_WAVE_HEIGHT + 30);
             iceRodWaveColliders[i].dim.pos.x = (s16)iceRodWavePos[i].x;
             iceRodWaveColliders[i].dim.pos.y = (s16)iceRodWavePos[i].y;
             iceRodWaveColliders[i].dim.pos.z = (s16)iceRodWavePos[i].z;
             CollisionCheck_SetAT(play, &play->colChkCtx, &iceRodWaveColliders[i].base);
+
+            // Check for wave hits and force freeze
+            if (iceRodWaveColliders[i].base.atFlags & AT_HIT) {
+                if (iceRodWaveColliders[i].base.at != NULL && iceRodWaveColliders[i].base.at->update != NULL) {
+                    Actor* hitActor = iceRodWaveColliders[i].base.at;
+                    if (hitActor->category == ACTORCAT_ENEMY || hitActor->category == ACTORCAT_BOSS) {
+                        hitActor->freezeTimer = ICE_ROD_FREEZE_DURATION;
+                        Actor_SetColorFilter(hitActor, 0x4000, 255, 0x2000, ICE_ROD_FREEZE_DURATION);
+                        EffectSsEnIce_SpawnFlyingVec3f(play, hitActor, &hitActor->world.pos, 150, 150, 150, 250, 235,
+                                                       245, 255, 1.0f);
+                        Audio_PlayActorSound2(hitActor, NA_SE_PL_FREEZE_S);
+                    }
+                }
+                iceRodWaveColliders[i].base.atFlags &= ~AT_HIT;
+            }
         }
     } else {
         iceRodWaveActive = 0;
+        Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
     }
 }
 
@@ -484,6 +519,22 @@ static void IceRod_UpdateSpinIce(Player* p, PlayState* play) {
     iceRodSpinCollider.dim.pos.z = (s16)p->actor.world.pos.z;
 
     CollisionCheck_SetAT(play, &play->colChkCtx, &iceRodSpinCollider.base);
+
+    // Check for spin attack hits and force freeze
+    if (iceRodSpinCollider.base.atFlags & AT_HIT) {
+        if (iceRodSpinCollider.base.at != NULL && iceRodSpinCollider.base.at->update != NULL) {
+            Actor* hitActor = iceRodSpinCollider.base.at;
+            if (hitActor->category == ACTORCAT_ENEMY || hitActor->category == ACTORCAT_BOSS) {
+                hitActor->freezeTimer = ICE_ROD_FREEZE_DURATION;
+                Actor_SetColorFilter(hitActor, 0x4000, 255, 0x2000, ICE_ROD_FREEZE_DURATION);
+                EffectSsEnIce_SpawnFlyingVec3f(play, hitActor, &hitActor->world.pos, 150, 150, 150, 250, 235, 245, 255,
+                                               1.0f);
+                EffectSsIcePiece_SpawnBurst(play, &hitActor->world.pos, 1.0f);
+                Audio_PlayActorSound2(hitActor, NA_SE_PL_FREEZE_S);
+            }
+        }
+        iceRodSpinCollider.base.atFlags &= ~AT_HIT;
+    }
 
     // Draw ice cylinder (blue to white based on progress)
     FX_DrawSpinFireCylinder(play, p, iceRodSpinRadius, iceRodSpinIsBig, &sIceRodColor);
@@ -746,6 +797,7 @@ static void IceRod_OnUnequip(PlayState* play, Player* p) {
     iceRodProjActive = 0;
     iceRodProjCount = 0;
     iceRodWaveActive = 0;
+    Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
 
     iceRodCharging = 0;
     iceRodChargeLevel = 0.0f;

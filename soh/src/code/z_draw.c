@@ -80,6 +80,90 @@
 #include "objects/object_st/object_st.h"
 
 #include "soh_assets.h"
+#include "mods/transformation_masks/transformation_masks.h"
+#include "mods/transformation_masks/assets/mm_asset_loader.h"
+
+// =============================================================================
+// MM Mask GI DL Replacement
+// Each mask in MM has TWO DLs with specific render modes (from 2Ship z_draw.c):
+// - Deku/Stone: GetItem_DrawOpa0Xlu1 -> EmptyDL (Opa) + MaskDL (Xlu)
+// - Fierce: GetItem_DrawOpa01 -> FaceDL (Opa) + HairDL (Opa)
+// =============================================================================
+
+// Cached MM Get Item DLs - Deku Mask (two DLs)
+static Gfx* sCachedDekuEmptyDL = NULL;
+static Gfx* sCachedDekuMaskDL = NULL;
+static u8 sDekuGiLoaded = 0;
+
+// Cached MM Get Item DLs - Stone Mask (two DLs)
+static Gfx* sCachedStoneEmptyDL = NULL;
+static Gfx* sCachedStoneMaskDL = NULL;
+static u8 sStoneGiLoaded = 0;
+
+// Cached MM Get Item DLs - Fierce Deity (two DLs)
+static Gfx* sCachedFierceFaceDL = NULL;
+static Gfx* sCachedFierceHairDL = NULL;
+static u8 sFierceGiLoaded = 0;
+
+/**
+ * Check if Deku Mask replacement is active and load DLs if needed
+ * MM draws with GetItem_DrawOpa0Xlu1: EmptyDL (Opa) + MaskDL (Xlu)
+ */
+static u8 GetItem_IsDekuMaskReplacement(s16 drawId) {
+    // GID_MASK_SKULL = 0x4E (78) -> Deku Mask
+    if (drawId == 0x4E && TransformMasks_DekuReplacesSkull()) {
+        if (!sDekuGiLoaded) {
+            sCachedDekuEmptyDL = (Gfx*)MmAssets_LoadDekuMaskEmptyDL();
+            sCachedDekuMaskDL = (Gfx*)MmAssets_LoadDekuMaskDL();
+            sDekuGiLoaded = 1;
+            printf("[z_draw] Deku Empty DL: %p, Mask DL: %p\n", (void*)sCachedDekuEmptyDL, (void*)sCachedDekuMaskDL);
+        }
+        return (sCachedDekuEmptyDL != NULL && sCachedDekuMaskDL != NULL) ? 1 : 0;
+    }
+    return 0;
+}
+
+/**
+ * Check if Stone Mask replacement is active and load DLs if needed
+ * MM draws with GetItem_DrawOpa0Xlu1: EmptyDL (Opa) + MaskDL (Xlu)
+ */
+static u8 GetItem_IsStoneMaskReplacement(s16 drawId) {
+    // GID_MASK_SPOOKY = 0x31 (49) -> Stone Mask
+    if (drawId == 0x31 && TransformMasks_StoneReplacesSpooky()) {
+        if (!sStoneGiLoaded) {
+            sCachedStoneEmptyDL = (Gfx*)MmAssets_LoadStoneMaskEmptyDL();
+            sCachedStoneMaskDL = (Gfx*)MmAssets_LoadStoneMaskDL();
+            sStoneGiLoaded = 1;
+            printf("[z_draw] Stone Empty DL: %p, Mask DL: %p\n", (void*)sCachedStoneEmptyDL, (void*)sCachedStoneMaskDL);
+        }
+        return (sCachedStoneEmptyDL != NULL && sCachedStoneMaskDL != NULL) ? 1 : 0;
+    }
+    return 0;
+}
+
+/**
+ * Check if Fierce Deity replacement is active and load DLs if needed
+ * MM draws with GetItem_DrawOpa01: FaceDL (Opa) + HairDL (Opa)
+ */
+static u8 GetItem_IsFierceDeityReplacement(s16 drawId) {
+    // GID_MASK_GERUDO = 0x5C (92) -> Fierce Deity Mask
+    if (drawId == 0x5C && TransformMasks_FierceReplacesGerudo()) {
+        if (!sFierceGiLoaded) {
+            sCachedFierceFaceDL = (Gfx*)MmAssets_LoadFierceMaskFaceDL();
+            sCachedFierceHairDL = (Gfx*)MmAssets_LoadFierceMaskHairDL();
+            sFierceGiLoaded = 1;
+            printf("[z_draw] Fierce Face DL: %p, Hair DL: %p\n", (void*)sCachedFierceFaceDL,
+                   (void*)sCachedFierceHairDL);
+        }
+        return (sCachedFierceFaceDL != NULL && sCachedFierceHairDL != NULL) ? 1 : 0;
+    }
+    return 0;
+}
+
+// Legacy single-DL replacement (kept for compatibility, not used for masks now)
+static Gfx* GetItem_GetMaskReplacementDL(s16 drawId, Gfx* originalDL) {
+    return originalDL;
+}
 
 // "Get Item" Model Draw Functions
 void GetItem_DrawMaskOrBombchu(PlayState* play, s16 drawId);
@@ -511,9 +595,37 @@ void GetItem_DrawMaskOrBombchu(PlayState* play, s16 drawId) {
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    Gfx_SetupDL_26Opa(play->state.gfxCtx);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
-    gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[0]);
+    // MM mask replacements with correct render modes:
+    // - Deku/Stone: Opa0Xlu1 (EmptyDL as Opa, MaskDL as Xlu)
+    // - Fierce: Opa01 (both DLs as Opa)
+    if (GetItem_IsDekuMaskReplacement(drawId)) {
+        // Deku Mask: GetItem_DrawOpa0Xlu1 pattern
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedDekuEmptyDL);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_XLU_DISP++, sCachedDekuMaskDL);
+    } else if (GetItem_IsStoneMaskReplacement(drawId)) {
+        // Stone Mask: GetItem_DrawOpa0Xlu1 pattern
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedStoneEmptyDL);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_XLU_DISP++, sCachedStoneMaskDL);
+    } else if (GetItem_IsFierceDeityReplacement(drawId)) {
+        // Fierce Deity: GetItem_DrawOpa01 pattern (both as Opa)
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedFierceFaceDL);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedFierceHairDL);
+    } else {
+        // Default OOT behavior
+        Gfx_SetupDL_26Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[0]);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -765,9 +877,35 @@ void GetItem_DrawOpa0(PlayState* play, s16 drawId) {
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
-    gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[0]);
+    // MM mask replacements with correct render modes
+    if (GetItem_IsDekuMaskReplacement(drawId)) {
+        // Deku Mask: GetItem_DrawOpa0Xlu1 pattern
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedDekuEmptyDL);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_XLU_DISP++, sCachedDekuMaskDL);
+    } else if (GetItem_IsStoneMaskReplacement(drawId)) {
+        // Stone Mask: GetItem_DrawOpa0Xlu1 pattern
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedStoneEmptyDL);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_XLU_DISP++, sCachedStoneMaskDL);
+    } else if (GetItem_IsFierceDeityReplacement(drawId)) {
+        // Fierce Deity: GetItem_DrawOpa01 pattern (both as Opa)
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedFierceFaceDL);
+        gSPDisplayList(POLY_OPA_DISP++, sCachedFierceHairDL);
+    } else {
+        // Default OOT behavior
+        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPDisplayList(POLY_OPA_DISP++, sDrawItemTable[drawId].dlists[0]);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

@@ -12,6 +12,7 @@
 #include "macros.h"
 #include "functions.h"
 #include "variables.h"
+#include <math.h>
 
 // Angle to radians conversion for s16 angles
 #define DEKULEAF_ANGLE_TO_RAD (M_PI / 0x8000)
@@ -46,6 +47,23 @@ static void DekuLeaf_DrawModel(PlayState* play, f32 posX, f32 posY, f32 posZ, s1
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// Draw with hand direction (for blowing mode) - Y rotation only, no pitch
+static void DekuLeaf_DrawModelWithHandDir(PlayState* play, Vec3f* handPos, f32 handYaw, f32 scale) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Translate(handPos->x, handPos->y, handPos->z, MTXMODE_NEW);
+    Matrix_RotateY(handYaw + M_PI, MTXMODE_APPLY);
+    // Counter-rotate X to restore original orientation (model vertices are rotated 90deg for giveDL)
+    Matrix_RotateX(-M_PI / 2, MTXMODE_APPLY);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+
+    gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
+              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, g_dekuleaf_dl);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void CustomItems_DrawDekuLeaf(Player* p, PlayState* play) {
     if (!dlGliding && !dlBlowing)
         return;
@@ -63,8 +81,14 @@ void CustomItems_DrawDekuLeaf(Player* p, PlayState* play) {
         DekuLeaf_DrawModel(play, posX, posY, posZ, rotY, scale);
     } else if (dlBlowing) {
         // Blowing: draw attached to LEFT hand with frame-based scale
+        // Use forearm-to-hand direction for Y rotation only
+        Vec3f forearmPos = p->bodyPartsPos[PLAYER_BODYPART_L_FOREARM];
         Vec3f handPos = p->bodyPartsPos[PLAYER_BODYPART_L_HAND];
-        s16 rotY = p->actor.shape.rot.y;
+
+        // Calculate direction vector from forearm to hand (Y rotation only)
+        f32 dx = handPos.x - forearmPos.x;
+        f32 dz = handPos.z - forearmPos.z;
+        f32 handYaw = atan2f(dx, dz);
 
         // Determine scale based on current animation frame
         f32 scale;
@@ -74,12 +98,7 @@ void CustomItems_DrawDekuLeaf(Player* p, PlayState* play) {
             scale = DEKULEAF_HOLD_SCALE;
         }
 
-        f32 forwardOffset = 3.0f;
-        f32 posX = handPos.x + Math_SinS(rotY) * forwardOffset;
-        f32 posY = handPos.y + 5.0f;
-        f32 posZ = handPos.z + Math_CosS(rotY) * forwardOffset;
-
-        DekuLeaf_DrawModel(play, posX, posY, posZ, rotY, scale);
+        DekuLeaf_DrawModelWithHandDir(play, &handPos, handYaw, scale);
     }
 
     DekuLeaf_RestoreGeometryMode(play->state.gfxCtx);

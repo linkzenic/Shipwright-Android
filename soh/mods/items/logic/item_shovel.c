@@ -24,6 +24,10 @@
 #include "overlays/actors/ovl_En_Tk/z_en_tk.h"
 #include "../objects/shovel_hole_DL/model.inc.c"
 
+// Include animation
+#include "../anim/dampe_dig/gLinkAdultSkel_001Gdampediganim_002_retargetAnim.c"
+#include "../anim/dampe_dig/gLinkAdultSkel_001Gdampediganim_002_retargetAnimData.c"
+
 extern EnItem00* Item_DropCollectible(PlayState* play, Vec3f* spawnPos, s16 params);
 extern void DoorAna_WaitOpen(DoorAna* this, PlayState* play);
 
@@ -218,14 +222,6 @@ static void Shovel_Stop(Player* p, PlayState* play) {
     shActive = 0;
     shAnimating = 0;
     shAnimTimer = 0;
-    p->upperLimbRot.x = p->upperLimbRot.y = p->upperLimbRot.z = 0;
-    p->jointTable[PLAYER_LIMB_R_SHOULDER].x = 0;
-    p->jointTable[PLAYER_LIMB_R_FOREARM].x = 0;
-    p->jointTable[PLAYER_LIMB_L_SHOULDER].x = 0;
-    p->jointTable[PLAYER_LIMB_L_FOREARM].x = 0;
-    p->jointTable[PLAYER_LIMB_R_SHOULDER].y = 0;
-    p->jointTable[PLAYER_LIMB_L_SHOULDER].y = 0;
-    p->jointTable[PLAYER_LIMB_R_THIGH].x = 0;
     p->stateFlags1 &= ~PLAYER_STATE1_INPUT_DISABLED;
     ItemEquip_PlayUnequipSFX(play, p);
 }
@@ -236,51 +232,15 @@ static void Shovel_Start(Player* p, PlayState* play) {
     shActive = 1;
     shAnimating = 1;
     shAnimTimer = 0;
+    LinkAnimation_PlayOnce(play, &p->upperSkelAnime, &gLinkAdultSkel_001Gdampediganim_002_retargetAnim);
     ItemEquip_PlayEquipSFX(play, p);
 }
 
 static void Shovel_UpdateAnimation(Player* p, PlayState* play) {
+    // Stop movement during animation
     p->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
     p->actor.speedXZ = 0.0f;
-
-    if (shAnimTimer < 10) {
-        f32 prog = shAnimTimer / 10.0f;
-        p->upperLimbRot.x = (s16)(prog * 800.0f);
-        p->jointTable[PLAYER_LIMB_R_SHOULDER].x = (s16)(prog * -4000.0f);
-        p->jointTable[PLAYER_LIMB_R_FOREARM].x = (s16)(prog * -2000.0f);
-        p->jointTable[PLAYER_LIMB_L_SHOULDER].x = (s16)(prog * -4000.0f);
-        p->jointTable[PLAYER_LIMB_L_FOREARM].x = (s16)(prog * -2000.0f);
-        p->jointTable[PLAYER_LIMB_R_SHOULDER].y = (s16)(prog * 1500.0f);
-        p->jointTable[PLAYER_LIMB_L_SHOULDER].y = (s16)(prog * -1500.0f);
-    } else if (shAnimTimer < 20) {
-        f32 prog = (shAnimTimer - 10) / 10.0f;
-        p->upperLimbRot.x = (s16)(800.0f - prog * 3300.0f);
-        p->jointTable[PLAYER_LIMB_R_SHOULDER].x = (s16)(-4000.0f + prog * 6000.0f);
-        p->jointTable[PLAYER_LIMB_R_FOREARM].x = (s16)(-2000.0f + prog * 1000.0f);
-        p->jointTable[PLAYER_LIMB_L_SHOULDER].x = (s16)(-4000.0f + prog * 6000.0f);
-        p->jointTable[PLAYER_LIMB_L_FOREARM].x = (s16)(-2000.0f + prog * 1000.0f);
-        p->jointTable[PLAYER_LIMB_R_SHOULDER].y = (s16)(1500.0f + prog * 2000.0f);
-        p->jointTable[PLAYER_LIMB_L_SHOULDER].y = (s16)(-1500.0f - prog * 2000.0f);
-        p->jointTable[PLAYER_LIMB_R_THIGH].x = (s16)(prog * -2000.0f);
-        if (shAnimTimer % 4 < 2)
-            p->upperLimbRot.x -= 400;
-        if (shAnimTimer == 10)
-            PerformDig(p, play);
-    } else {
-        f32 prog = (shAnimTimer - 20) / 10.0f;
-        p->upperLimbRot.x = (s16)(-2500.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_R_SHOULDER].x = (s16)(2000.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_R_FOREARM].x = (s16)(-1000.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_L_SHOULDER].x = (s16)(2000.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_L_FOREARM].x = (s16)(-1000.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_R_SHOULDER].y = (s16)(3500.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_L_SHOULDER].y = (s16)(-3500.0f * (1.0f - prog));
-        p->jointTable[PLAYER_LIMB_R_THIGH].x = (s16)(-2000.0f * (1.0f - prog));
-    }
-
-    shAnimTimer++;
-    if (shAnimTimer >= SHOVEL_ANIM_DURATION)
-        Shovel_Stop(p, play);
+    p->linearVelocity = 0.0f;
 }
 
 void Handle_Shovel(Player* p, PlayState* play) {
@@ -322,6 +282,36 @@ void Handle_Shovel(Player* p, PlayState* play) {
         Shovel_UpdateAnimation(p, play);
 }
 
+// ============================================================================
+// UPPER ACTION - Drives the dig animation via upperSkelAnime
+// ============================================================================
+
 s32 Player_UpperAction_Shovel(Player* p, PlayState* play) {
-    return 0;
+    if (!shActive)
+        return 0;
+    if (!shAnimating)
+        return 0;
+
+    // Update the skeletal animation
+    if (LinkAnimation_Update(play, &p->upperSkelAnime)) {
+        // Animation finished
+        Shovel_Stop(p, play);
+        return 0;
+    }
+
+    // Track frame
+    shAnimTimer++;
+
+    // Stop movement during dig animation
+    p->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+    p->actor.speedXZ = 0.0f;
+    p->linearVelocity = 0.0f;
+
+    // Perform dig at the designated frame
+    if (shAnimTimer == SHOVEL_DIG_FRAME) {
+        PerformDig(p, play);
+    }
+
+    // Return 1 to indicate upper body is busy (use upperSkelAnime)
+    return 1;
 }

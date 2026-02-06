@@ -2,6 +2,7 @@
  * Mogma Mitts Item Header
  * Equip-based passive item: transforms all walls into climbable surfaces.
  * Drains 1 MP every other frame while active.
+ * Forces white gauntlets visible on both adult and child Link.
  */
 
 #ifndef ITEM_MITTS_H
@@ -28,6 +29,12 @@
 // files to the full custom_items.h header.
 // =============================================================================
 extern u8 gMogmaMittsClimbActive;
+
+// =============================================================================
+// Global flag to force white gauntlets visible on both adult and child Link
+// (extern'd by z_player_lib.c)
+// =============================================================================
+extern u8 gMogmaMittsForceGauntlets;
 
 // =============================================================================
 // Functions

@@ -197,11 +197,65 @@ static void LightRod_UpdateCollider(ColliderCylinder* col, Vec3f* pos, f32 scale
     CollisionCheck_SetAT(play, &play->colChkCtx, &col->base);
 }
 
+// Check if actor is an undead type (ReDeads, Gibdos, Poes, Dead Hand, etc.)
+static u8 LightRod_IsUndeadActor(Actor* actor) {
+    switch (actor->id) {
+        case ACTOR_EN_RD:         // ReDead / Gibdo
+        case ACTOR_EN_POH:        // Poe
+        case ACTOR_EN_PO_SISTERS: // Poe Sisters (Forest Temple)
+        case ACTOR_EN_PO_RELAY:   // Dampe's Ghost
+        case ACTOR_EN_PO_FIELD:   // Field Poe
+        case ACTOR_EN_PO_DESERT:  // Desert Poe (Haunted Wasteland)
+        case ACTOR_EN_SKB:        // Stalchild
+        case ACTOR_EN_WALLMAS:    // Wallmaster
+        case ACTOR_EN_FLOORMAS:   // Floormaster
+        case ACTOR_EN_DH:         // Dead Hand (body)
+        case ACTOR_EN_DHA:        // Dead Hand Arms
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+// Apply white paralysis effect to undead (like Sun's Song / Gibdo sun effect)
+static void LightRod_ApplyUndeadParalysis(Actor* hitActor, PlayState* play) {
+    // White color filter: -0x8000 flag makes it white
+    Actor_SetColorFilter(hitActor, -0x8000, 0xC8, 0, LIGHT_ROD_STUN_DURATION);
+    hitActor->freezeTimer = LIGHT_ROD_STUN_DURATION;
+    Audio_PlayActorSound2(hitActor, NA_SE_EN_LIGHT_ARROW_HIT);
+
+    // Spawn light sparkles on frozen undead
+    LightRod_SpawnKiraKira(play, &hitActor->world.pos, 50.0f, 25);
+}
+
+// Apply yellow stun effect to regular enemies
+static void LightRod_ApplyStun(Actor* hitActor, PlayState* play) {
+    Actor_SetColorFilter(hitActor, 0, 0xFF, 0, LIGHT_ROD_STUN_DURATION);
+    hitActor->freezeTimer = LIGHT_ROD_STUN_DURATION;
+    Audio_PlayActorSound2(hitActor, NA_SE_EN_LIGHT_ARROW_HIT);
+}
+
 static u8 LightRod_CheckHit(ColliderCylinder* col, Vec3f* pos, PlayState* play, Player* p) {
     if (col->base.atFlags & AT_HIT) {
         // Spawn golden sparkle burst on hit
         LightRod_SpawnKiraKira(play, pos, 30.0f, 20);
         Audio_PlayActorSound2(&p->actor, LIGHT_ROD_SFX_LIGHT_EXPLODE);
+
+        // Apply paralysis/stun effect on hit actor
+        if (col->base.at != NULL && col->base.at->update != NULL) {
+            Actor* hitActor = col->base.at;
+
+            if (hitActor->category == ACTORCAT_ENEMY || hitActor->category == ACTORCAT_BOSS) {
+                if (LightRod_IsUndeadActor(hitActor)) {
+                    // White paralysis for undead (like Sun's Song/Gibdo effect)
+                    LightRod_ApplyUndeadParalysis(hitActor, play);
+                } else {
+                    // Yellow stun for regular enemies
+                    LightRod_ApplyStun(hitActor, play);
+                }
+            }
+        }
+
         col->base.atFlags &= ~AT_HIT;
         return 1;
     }
@@ -234,6 +288,7 @@ static void LightRod_UpdateProjectile(Player* p, PlayState* play) {
     if (lightRodProjTimer == 0 && lightRodProjScale < 0.1f) {
         lightRodProjActive = 0;
         sLightRodTargetScale = 2.0f;
+        Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
         return;
     }
 
@@ -381,6 +436,21 @@ static void LightRod_UpdateLightBeam(Player* p, PlayState* play) {
             lightRodBeamColliders[i].dim.pos.y = (s16)lightRodBeamPos[i].y;
             lightRodBeamColliders[i].dim.pos.z = (s16)lightRodBeamPos[i].z;
             CollisionCheck_SetAT(play, &play->colChkCtx, &lightRodBeamColliders[i].base);
+
+            // Check for beam hits and apply stun/paralysis
+            if (lightRodBeamColliders[i].base.atFlags & AT_HIT) {
+                if (lightRodBeamColliders[i].base.at != NULL && lightRodBeamColliders[i].base.at->update != NULL) {
+                    Actor* hitActor = lightRodBeamColliders[i].base.at;
+                    if (hitActor->category == ACTORCAT_ENEMY || hitActor->category == ACTORCAT_BOSS) {
+                        if (LightRod_IsUndeadActor(hitActor)) {
+                            LightRod_ApplyUndeadParalysis(hitActor, play);
+                        } else {
+                            LightRod_ApplyStun(hitActor, play);
+                        }
+                    }
+                }
+                lightRodBeamColliders[i].base.atFlags &= ~AT_HIT;
+            }
         }
 
         // Spawn KiraKira sparkles while beam is active (golden light effect)
@@ -392,6 +462,7 @@ static void LightRod_UpdateLightBeam(Player* p, PlayState* play) {
         }
     } else {
         lightRodBeamActive = 0;
+        Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
     }
 }
 
@@ -535,6 +606,23 @@ static void LightRod_UpdateSpinLight(Player* p, PlayState* play) {
     lightRodSpinCollider.dim.pos.z = (s16)p->actor.world.pos.z;
 
     CollisionCheck_SetAT(play, &play->colChkCtx, &lightRodSpinCollider.base);
+
+    // Check for spin attack hits and apply stun/paralysis
+    if (lightRodSpinCollider.base.atFlags & AT_HIT) {
+        if (lightRodSpinCollider.base.at != NULL && lightRodSpinCollider.base.at->update != NULL) {
+            Actor* hitActor = lightRodSpinCollider.base.at;
+            if (hitActor->category == ACTORCAT_ENEMY || hitActor->category == ACTORCAT_BOSS) {
+                if (LightRod_IsUndeadActor(hitActor)) {
+                    LightRod_ApplyUndeadParalysis(hitActor, play);
+                } else {
+                    LightRod_ApplyStun(hitActor, play);
+                }
+                LightRod_SpawnKiraKira(play, &hitActor->world.pos, 40.0f, 20);
+            }
+        }
+        lightRodSpinCollider.base.atFlags &= ~AT_HIT;
+    }
+
     FX_DrawSpinFireCylinder(play, p, lightRodSpinRadius, lightRodSpinIsBig, &sLightRodColor);
 
     if ((play->gameplayFrames % 6) == 0) {
@@ -807,6 +895,7 @@ static void LightRod_OnUnequip(PlayState* play, Player* p) {
     lightRodProjActive = 0;
     lightRodProjCount = 0;
     lightRodBeamActive = 0;
+    Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
 
     lightRodCharging = 0;
     lightRodChargeLevel = 0.0f;

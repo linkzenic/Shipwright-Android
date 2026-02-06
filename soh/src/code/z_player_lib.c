@@ -12,6 +12,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "mods/items/custom_items.h"
 #include "mods/extended_player.h"
+#include "mods/items/logic/item_mitts.h"
 
 #include <stdlib.h>
 
@@ -1122,16 +1123,22 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
         if (LINK_IS_ADULT) {
             s32 strengthUpgrade = CUR_UPG_VALUE(UPG_STRENGTH);
 
-            if (strengthUpgrade >= 2) { // silver or gold gauntlets
+            // Mogma Mitts: force white gauntlets visible even without strength upgrade
+            if (gMogmaMittsForceGauntlets || strengthUpgrade >= 2) {
                 gDPPipeSync(POLY_OPA_DISP++);
 
-                color = &sGauntletColors[strengthUpgrade - 2];
-                if (strengthUpgrade == PLAYER_STR_SILVER_G &&
+                // Mogma Mitts always uses white (silver) gauntlets
+                if (gMogmaMittsForceGauntlets) {
+                    color = &sGauntletColors[0]; // White/silver color
+                } else {
+                    color = &sGauntletColors[strengthUpgrade - 2];
+                }
+                if (!gMogmaMittsForceGauntlets && strengthUpgrade == PLAYER_STR_SILVER_G &&
                     CVarGetInteger(CVAR_COSMETIC("Gloves.SilverGauntlets.Changed"), 0)) {
                     sTemp = CVarGetColor24(CVAR_COSMETIC("Gloves.SilverGauntlets.Value"),
                                            sGauntletColors[PLAYER_STR_SILVER_G - 2]);
                     color = &sTemp;
-                } else if (strengthUpgrade == PLAYER_STR_GOLD_G &&
+                } else if (!gMogmaMittsForceGauntlets && strengthUpgrade == PLAYER_STR_GOLD_G &&
                            CVarGetInteger(CVAR_COSMETIC("Gloves.GoldenGauntlets.Changed"), 0)) {
                     sTemp = CVarGetColor24(CVAR_COSMETIC("Gloves.GoldenGauntlets.Value"),
                                            sGauntletColors[PLAYER_STR_GOLD_G - 2]);
@@ -1156,7 +1163,23 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
                 gSPDisplayList(POLY_OPA_DISP++, bootDLists[1]);
             }
         } else {
-            if (Player_GetStrength() > PLAYER_STR_NONE) {
+            // Child Link
+            if (gMogmaMittsForceGauntlets) {
+                // Mogma Mitts: force white gauntlets visible on child Link too
+                // Use adult gauntlet models scaled for child
+                gDPPipeSync(POLY_OPA_DISP++);
+                color = &sGauntletColors[0]; // White/silver color
+                gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);
+
+                gSPDisplayList(POLY_OPA_DISP++, gLinkAdultLeftGauntletPlate1DL);
+                gSPDisplayList(POLY_OPA_DISP++, gLinkAdultRightGauntletPlate1DL);
+                gSPDisplayList(POLY_OPA_DISP++, (sLeftHandType == PLAYER_MODELTYPE_LH_OPEN)
+                                                    ? gLinkAdultLeftGauntletPlate2DL
+                                                    : gLinkAdultLeftGauntletPlate3DL);
+                gSPDisplayList(POLY_OPA_DISP++, (sRightHandType == PLAYER_MODELTYPE_RH_OPEN)
+                                                    ? gLinkAdultRightGauntletPlate2DL
+                                                    : gLinkAdultRightGauntletPlate3DL);
+            } else if (Player_GetStrength() > PLAYER_STR_NONE) {
                 gSPDisplayList(POLY_OPA_DISP++, gLinkChildGoronBraceletDL);
             }
         }
@@ -1475,6 +1498,10 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
         if (this->unk_6AD != 2) {
+            *dList = NULL;
+        } else if (!Player_HoldsHookshot(this) && !Player_HoldsBow(this) && !Player_HoldsSlingshot(this) &&
+                   this->heldItemAction != PLAYER_IA_BOMB_ARROWS) {
+            // Custom item in first-person mode - hide vanilla weapon/arm models
             *dList = NULL;
         } else if (limbIndex == PLAYER_LIMB_L_FOREARM) {
             *dList = sFirstPersonLeftForearmDLs[gSaveContext.linkAge];

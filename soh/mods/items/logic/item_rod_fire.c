@@ -223,6 +223,7 @@ static void FireRod_UpdateProjectile(Player* p, PlayState* play) {
     if (fireRodProjTimer == 0 && fireRodProjScale < 0.1f) {
         fireRodProjActive = 0;
         sFireRodTargetScale = 2.0f;
+        Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
         return;
     }
 
@@ -343,6 +344,7 @@ static void FireRod_UpdateFlamethrower(Player* p, PlayState* play) {
         }
     } else {
         fireRodFlameActive = 0;
+        Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
     }
 }
 
@@ -747,6 +749,7 @@ static void FireRod_OnUnequip(PlayState* play, Player* p) {
     fireRodProjActive = 0;
     fireRodProjCount = 0;
     fireRodFlameActive = 0;
+    Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
 
     fireRodCharging = 0;
     fireRodChargeLevel = 0.0f;

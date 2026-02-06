@@ -5,7 +5,7 @@
  * Sequence: Farore's Wind cast -> blue warp enter -> fairy flight -> warp exit
  * A=ascend, B=descend, L=sprint, stick=direction
  * Ascending or sprinting drains timer 2x faster
- * 1 minute cooldown after use
+ * No cooldown - can be used again immediately after previous use
  */
 
 #ifndef ITEM_HYLIAS_GRACE_H
@@ -34,7 +34,7 @@
 #define HGRACE_FLICKER_START 90   // Last 1.5 seconds = flicker
 #define HGRACE_SPEED 5.0f
 #define HGRACE_SPRINT_MULT 2.0f
-#define HGRACE_COOLDOWN 1200 // 1 minute at 20fps
+// No cooldown - removed
 
 // Warp timing
 #define HGRACE_WARP_IN_DURATION 40

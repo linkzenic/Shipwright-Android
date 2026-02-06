@@ -59,6 +59,12 @@ extern "C" {
 #define BEETLE_SFX_RETURN NA_SE_PL_CHANGE_ARMS
 #define BEETLE_SFX_EQUIP NA_SE_PL_CHANGE_ARMS
 
+// Silver rupee actor
+#ifndef ACTOR_EN_G_SWITCH
+#define ACTOR_EN_G_SWITCH 0x0117
+#endif
+#define ENGSWITCH_SILVER_RUPEE 1
+
 // State aliases
 #define beetleActive gCustomItemState.beetleActive
 #define beetleState gCustomItemState.beetleState

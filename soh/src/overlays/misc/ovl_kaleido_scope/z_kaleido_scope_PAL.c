@@ -25,6 +25,7 @@
 #include <soh_assets.h>
 
 #include "mods/extended_inventory.h"
+#include "mods/transformation_masks/transformation_masks.h"
 #include "mods/items/custom_names.c"
 
 static void* sEquipmentFRATexs[] = {
@@ -2143,6 +2144,15 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                         textureName = iconNameTextures[0]; // Deku Stick as fallback
                     } else {
                         isCustomItem = true; // Custom texture data, not a string path
+                    }
+                }
+
+                // Check for MM transformation mask replacement (before vanilla processing)
+                if (!isCustomItem) {
+                    void* mmNameTex = TransformMasks_GetMaskNameTex(originalItemId);
+                    if (mmNameTex != NULL) {
+                        textureName = mmNameTex;
+                        isCustomItem = true; // MM textures are direct data like custom items
                     }
                 }
 

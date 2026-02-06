@@ -60,6 +60,7 @@ typedef struct {
     // Roc's Feather / Cape
     u8 rocsFeatherJumpActive;
     u8 rocsJumpCount;
+    s16 rocsMmAnimTimer; // Timer to force MM animation for ground jump
 
     // Deku Leaf
     u8 dekuLeafActive;
@@ -349,6 +350,22 @@ typedef struct {
     s16 desireSensorTimer;
     u8 desireSensorResult;
 
+    // Switch Hook
+    u8 switchHookActive;
+    u8 switchHookState;
+    u8 switchHookFirstPerson;
+    Vec3f switchHookProjPos;
+    s16 switchHookProjYaw;
+    s16 switchHookProjPitch;
+    s16 switchHookTimer;
+    Actor* switchHookTarget;
+    Vec3f switchHookLinkStartPos;
+    Vec3f switchHookTargetStartPos;
+    s16 switchHookSwapTimer;
+    ColliderQuad switchHookCollider;
+    u16 switchHookButtonMask;
+    s16 switchHookVortexTimer;
+
     // Shared
     Vec3f sharedProjectilePos;
 } CustomItemState;
@@ -407,6 +424,7 @@ void Handle_ZonaiPermafrost(Player* player, PlayState* play);
 void Handle_TimeGate(Player* player, PlayState* play);
 void Handle_Whip(Player* player, PlayState* play);
 void Handle_DesireSensor(Player* player, PlayState* play);
+void Handle_SwitchHook(Player* player, PlayState* play);
 
 // Draw functions
 void CustomItems_DrawDekuLeaf(Player* player, PlayState* play);
@@ -430,6 +448,9 @@ void CustomItems_DrawMogmaMitts(Player* player, PlayState* play);
 void CustomItems_DrawWhip(Player* player, PlayState* play);
 void CustomItems_DrawTimeGate(Player* player, PlayState* play);
 void CustomItems_DrawTimeGatePortal(Player* player, PlayState* play);
+void CustomItems_DrawSwitchHook(Player* player, PlayState* play);
+void CustomItems_DrawSwitchHookInHand(Player* player, PlayState* play);
+void CustomItems_DrawSwitchHookReticle(Player* player, PlayState* play);
 
 // External display lists
 extern Gfx* gFireRodBodyDL;
@@ -442,6 +463,7 @@ extern Gfx* gLightRodGlowDL;
 // Upper action functions
 s32 Player_UpperAction_Shovel(Player* player, PlayState* play);
 s32 Player_UpperAction_DemiseDestruction(Player* player, PlayState* play);
+s32 Player_UpperAction_SwitchHook(Player* player, PlayState* play);
 
 // Init functions
 void Player_InitSpinnerIA(PlayState* play, Player* player);
@@ -461,6 +483,7 @@ void Player_InitZonaiPermafrostIA(PlayState* play, Player* player);
 void Player_InitTimeGateIA(PlayState* play, Player* player);
 void Player_InitWhipIA(PlayState* play, Player* player);
 void Player_InitDesireSensorIA(PlayState* play, Player* player);
+void Player_InitSwitchHookIA(PlayState* play, Player* player);
 
 #ifdef __cplusplus
 }

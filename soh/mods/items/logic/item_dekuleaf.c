@@ -41,6 +41,10 @@ static void DekuLeaf_Stop(Player* p, PlayState* play) {
     dlBlowTimer = 0;
     sDekuLeafBlowEffectFired = 0;
 
+    // Stop looping sounds
+    Audio_StopSfxById(DEKULEAF_SOUND_WIND);
+    Audio_StopSfxById(DEKULEAF_SOUND_BLOW);
+
     p->stateFlags1 &= ~PLAYER_STATE1_INPUT_DISABLED;
     ItemEquip_PlayUnequipSFX(play, p);
 }

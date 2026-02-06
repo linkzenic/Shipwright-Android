@@ -37,6 +37,8 @@ extern "C" {
 #include "objects/object_tw/object_tw.h"
 #include "objects/object_ganon2/object_ganon2.h"
 #include "objects/object_gi_shield_1/object_gi_shield_1.h"
+#include "objects/object_gi_hookshot/object_gi_hookshot.h"
+#include "objects/object_tk/object_tk.h"
 
 #include "mods/items/objects/rocs_cape_giveDL/header.h"
 #include "mods/items/objects/rocs_cape_giveDL/model.inc.c"
@@ -64,6 +66,18 @@ extern "C" {
 #include "mods/items/objects/time_gate_giveDL/model.inc.c"
 #include "mods/items/objects/desire_sensor_giveDL/header.h"
 #include "mods/items/objects/desire_sensor_giveDL/model.inc.c"
+#include "mods/items/objects/fire_rodDL/header.h"
+#include "mods/items/objects/fire_rodDL/model.inc.c"
+#include "mods/items/objects/ice_rodDL/header.h"
+#include "mods/items/objects/ice_rodDL/model.inc.c"
+#include "mods/items/objects/light_rodDL/header.h"
+#include "mods/items/objects/light_rodDL/Cylinder_002.c"
+#include "mods/items/objects/whip_giveDL/header.h"
+#include "mods/items/objects/whip_giveDL/model.inc.c"
+#include "mods/items/objects/switchhook_giveDL/header.h"
+#include "mods/items/objects/switchhook_giveDL/model.inc.c"
+#include "mods/items/objects/shovel_giveDL/header.h"
+#include "mods/items/objects/shovel_giveDL/model.inc.c"
 
 extern PlayState* gPlayState;
 extern SaveContext gSaveContext;
@@ -1562,14 +1576,23 @@ Gfx gRandoDesireSensorDL[] = {
     gsSPDisplayList(g_desire_sensor_dl),
     gsSPEndDisplayList(),
 };
-
-DEFINE_GREEN_CUBE_ITEM(Whip)
-DEFINE_GREEN_CUBE_ITEM(Firerod)
-DEFINE_GREEN_CUBE_ITEM(Icerod)
-DEFINE_GREEN_CUBE_ITEM(Lightrod)
-DEFINE_GREEN_CUBE_ITEM(SwitchHook)
+Gfx gRandoFirerodDL[] = {
+    gsSPDisplayList(g_fire_rod_give_dl),
+    gsSPEndDisplayList(),
+};
+Gfx gRandoIcerodDL[] = {
+    gsSPDisplayList(g_ice_rod_give_dl),
+    gsSPEndDisplayList(),
+};
+Gfx gRandoSwitchHookDL[] = {
+    gsSPDisplayList(g_switchhook_give_dl),
+    gsSPEndDisplayList(),
+};
+Gfx gRandoLightrodDL[] = {
+    gsSPDisplayList(g_light_rod_give_dl),
+    gsSPEndDisplayList(),
+};
 DEFINE_GREEN_CUBE_ITEM(Dominionrod)
-DEFINE_GREEN_CUBE_ITEM(Shovel)
 DEFINE_GREEN_CUBE_ITEM(Magnesis)
 DEFINE_GREEN_CUBE_ITEM(Stasis)
 DEFINE_GREEN_CUBE_ITEM(Cryonis)
@@ -1605,7 +1628,7 @@ void Randomizer_DrawRocsCape(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawWhip(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoWhipDL, 2.5f);
+    DrawCustomItemDiamond(play, g_whip_give_dl, 0.5f);
 }
 
 void Randomizer_DrawSpinner(PlayState* play, GetItemEntry* getItemEntry) {
@@ -1618,10 +1641,8 @@ void Randomizer_DrawBombArrows(PlayState* play, GetItemEntry* getItemEntry) {
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     Matrix_Scale(0.5f, 0.5f, 0.5f, MTXMODE_APPLY);
 
-    // Rotate 180 deg Z so arrowhead tip (with bomb bag) points UP
     Matrix_RotateZ(M_PI, MTXMODE_APPLY);
 
-    // Spinning animation
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
 
@@ -1633,15 +1654,15 @@ void Randomizer_DrawBombArrows(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawFireRod(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoFirerodDL, 2.5f);
+    DrawCustomItemDiamond(play, gRandoFirerodDL, 0.2f);
 }
 
 void Randomizer_DrawIceRod(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoIcerodDL, 2.5f);
+    DrawCustomItemDiamond(play, gRandoIcerodDL, 0.2f);
 }
 
 void Randomizer_DrawLightRod(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoLightrodDL, 2.5f);
+    DrawCustomItemDiamond(play, gRandoLightrodDL, 0.2f);
 }
 
 void Randomizer_DrawDekuLeaf(PlayState* play, GetItemEntry* getItemEntry) {
@@ -1649,7 +1670,7 @@ void Randomizer_DrawDekuLeaf(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawSwitchHook(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoSwitchHookDL, 2.5f);
+    DrawCustomItemDiamond(play, gRandoSwitchHookDL, 0.01f);
 }
 
 void Randomizer_DrawMogmaMitts(PlayState* play, GetItemEntry* getItemEntry) {
@@ -1659,13 +1680,9 @@ void Randomizer_DrawMogmaMitts(PlayState* play, GetItemEntry* getItemEntry) {
 void Randomizer_DrawGustJar(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoGustjarDL, 5.0f);
 }
-/*
-void Randomizer_DrawBallAndChain(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoBallandChainDL, 0.25f);
-}*/
 
 void Randomizer_DrawBallAndChain(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoTimegateDL, 0.5f);
+    DrawCustomItemDiamond(play, gRandoBallandChainDL, 0.25f);
 }
 
 void Randomizer_DrawCaneOfSomaria(PlayState* play, GetItemEntry* getItemEntry) {
@@ -1689,7 +1706,7 @@ void Randomizer_DrawBeetle(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawShovel(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoShovelDL, 2.5f);
+    DrawCustomItemDiamond(play, gShovelGiveDL_opaque_dl, 0.2f);
 }
 
 void Randomizer_DrawHyliaGrace(PlayState* play, GetItemEntry* getItemEntry) {
