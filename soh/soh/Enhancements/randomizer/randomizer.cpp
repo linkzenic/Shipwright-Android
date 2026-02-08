@@ -4192,6 +4192,9 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
         case RG_BEETLE:
             ExtInv_SetItemById(ITEM_BEETLE);
             break;
+        case RG_DESIRE_SENSOR:
+            ExtInv_SetItemById(ITEM_DESIRE_SENSOR);
+            break;
         case RG_SWITCH_HOOK:
             ExtInv_SetItemById(ITEM_SWITCH_HOOK);
             break;
