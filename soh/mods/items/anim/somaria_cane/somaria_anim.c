@@ -6,6 +6,4 @@
 #include "somaria_anim.h"
 #include "somaria_anim_data.h"
 
-LinkAnimationHeader gSomariaAnim = {
-    { 60 }, gSomariaAnimData
-};
+LinkAnimationHeader gSomariaAnim = { { 60 }, gSomariaAnimData };

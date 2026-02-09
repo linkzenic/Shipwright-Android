@@ -28,46 +28,42 @@ static ActorFunc sSomariaCubeUpdate = SomariaCube_Update;
 
 static Vtx sSomariaCubeVtx[] = {
     // Front face (Z+)
-    VTX(-15, 0,  15, 0, 0, 0, 0, 127, 255),
-    VTX( 15, 0,  15, 0, 0, 0, 0, 127, 255),
-    VTX( 15, 30, 15, 0, 0, 0, 0, 127, 255),
+    VTX(-15, 0, 15, 0, 0, 0, 0, 127, 255),
+    VTX(15, 0, 15, 0, 0, 0, 0, 127, 255),
+    VTX(15, 30, 15, 0, 0, 0, 0, 127, 255),
     VTX(-15, 30, 15, 0, 0, 0, 0, 127, 255),
     // Back face (Z-)
-    VTX( 15, 0, -15, 0, 0, 0, 0, -127, 255),
+    VTX(15, 0, -15, 0, 0, 0, 0, -127, 255),
     VTX(-15, 0, -15, 0, 0, 0, 0, -127, 255),
-    VTX(-15, 30,-15, 0, 0, 0, 0, -127, 255),
-    VTX( 15, 30,-15, 0, 0, 0, 0, -127, 255),
+    VTX(-15, 30, -15, 0, 0, 0, 0, -127, 255),
+    VTX(15, 30, -15, 0, 0, 0, 0, -127, 255),
     // Top face (Y+)
     VTX(-15, 30, 15, 0, 0, 0, 127, 0, 255),
-    VTX( 15, 30, 15, 0, 0, 0, 127, 0, 255),
-    VTX( 15, 30,-15, 0, 0, 0, 127, 0, 255),
-    VTX(-15, 30,-15, 0, 0, 0, 127, 0, 255),
+    VTX(15, 30, 15, 0, 0, 0, 127, 0, 255),
+    VTX(15, 30, -15, 0, 0, 0, 127, 0, 255),
+    VTX(-15, 30, -15, 0, 0, 0, 127, 0, 255),
     // Bottom face (Y-)
     VTX(-15, 0, -15, 0, 0, 0, -127, 0, 255),
-    VTX( 15, 0, -15, 0, 0, 0, -127, 0, 255),
-    VTX( 15, 0,  15, 0, 0, 0, -127, 0, 255),
-    VTX(-15, 0,  15, 0, 0, 0, -127, 0, 255),
+    VTX(15, 0, -15, 0, 0, 0, -127, 0, 255),
+    VTX(15, 0, 15, 0, 0, 0, -127, 0, 255),
+    VTX(-15, 0, 15, 0, 0, 0, -127, 0, 255),
     // Right face (X+)
-    VTX( 15, 0,  15, 0, 0, 127, 0, 0, 255),
-    VTX( 15, 0, -15, 0, 0, 127, 0, 0, 255),
-    VTX( 15, 30,-15, 0, 0, 127, 0, 0, 255),
-    VTX( 15, 30, 15, 0, 0, 127, 0, 0, 255),
+    VTX(15, 0, 15, 0, 0, 127, 0, 0, 255),
+    VTX(15, 0, -15, 0, 0, 127, 0, 0, 255),
+    VTX(15, 30, -15, 0, 0, 127, 0, 0, 255),
+    VTX(15, 30, 15, 0, 0, 127, 0, 0, 255),
     // Left face (X-)
     VTX(-15, 0, -15, 0, 0, -127, 0, 0, 255),
-    VTX(-15, 0,  15, 0, 0, -127, 0, 0, 255),
+    VTX(-15, 0, 15, 0, 0, -127, 0, 0, 255),
     VTX(-15, 30, 15, 0, 0, -127, 0, 0, 255),
-    VTX(-15, 30,-15, 0, 0, -127, 0, 0, 255),
+    VTX(-15, 30, -15, 0, 0, -127, 0, 0, 255),
 };
 
 static Gfx sSomariaCubeDL[] = {
-    gsSPVertex(sSomariaCubeVtx, 24, 0),
-    gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
-    gsSP2Triangles(4, 5, 6, 0, 4, 6, 7, 0),
-    gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),
-    gsSP2Triangles(12, 13, 14, 0, 12, 14, 15, 0),
-    gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),
-    gsSP2Triangles(20, 21, 22, 0, 20, 22, 23, 0),
-    gsSPEndDisplayList(),
+    gsSPVertex(sSomariaCubeVtx, 24, 0),           gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
+    gsSP2Triangles(4, 5, 6, 0, 4, 6, 7, 0),       gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),
+    gsSP2Triangles(12, 13, 14, 0, 12, 14, 15, 0), gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),
+    gsSP2Triangles(20, 21, 22, 0, 20, 22, 23, 0), gsSPEndDisplayList(),
 };
 
 // ============================================================================
@@ -79,13 +75,13 @@ typedef struct {
 } CubeColor;
 
 static CubeColor sColorTable[SOMARIA_COLOR_MAX] = {
-    { 80,  80,  255 },  // BLUE
-    { 255, 80,  80  },  // RED
-    { 80,  255, 80  },  // GREEN
-    { 255, 255, 80  },  // YELLOW
-    { 200, 80,  255 },  // PURPLE
-    { 80,  255, 255 },  // CYAN
-    { 255, 160, 80  },  // ORANGE
+    { 80, 80, 255 },  // BLUE
+    { 255, 80, 80 },  // RED
+    { 80, 255, 80 },  // GREEN
+    { 255, 255, 80 }, // YELLOW
+    { 200, 80, 255 }, // PURPLE
+    { 80, 255, 255 }, // CYAN
+    { 255, 160, 80 }, // ORANGE
 };
 
 // ============================================================================
@@ -120,7 +116,7 @@ static ColliderCylinderInit sColliderInit = {
 
 typedef struct {
     ColliderCylinder collider;
-    Actor* owner;           // Which cube owns this slot (NULL = free)
+    Actor* owner; // Which cube owns this slot (NULL = free)
     u8 initialized;
 } ColliderSlot;
 
@@ -128,7 +124,8 @@ static ColliderSlot sColliderPool[SOMARIA_MAX_CUBES] = { 0 };
 
 static s8 SomariaCube_GetColliderSlot(Actor* actor) {
     for (s8 i = 0; i < SOMARIA_MAX_CUBES; i++) {
-        if (sColliderPool[i].owner == actor) return i;
+        if (sColliderPool[i].owner == actor)
+            return i;
     }
     return -1;
 }
@@ -161,8 +158,8 @@ static void SomariaCube_FreeCollider(PlayState* play, Actor* actor) {
 // ============================================================================
 
 void SomariaCube_PlaySound(Actor* actor, u16 sfxId) {
-    Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultReverb);
 }
 
 // Check and activate Bg_Bdan_Switch (YELLOW_HEAVY type 0x01) when cube is on top
@@ -191,8 +188,8 @@ static void SomariaCube_TryActivateHeavySwitch(Actor* cube, PlayState* play) {
                         Flags_SetSwitch(play, switchFlag);
                         SomariaCube_PlaySound(cube, NA_SE_EV_FOOT_SWITCH);
                         // Play the chime
-                        Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &gSfxDefaultPos, 4,
-                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                        Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                     }
                 }
             }
@@ -202,7 +199,8 @@ static void SomariaCube_TryActivateHeavySwitch(Actor* cube, PlayState* play) {
 }
 
 u8 SomariaCube_IsSomariaCube(Actor* actor) {
-    if (actor == NULL || actor->update == NULL) return 0;
+    if (actor == NULL || actor->update == NULL)
+        return 0;
     return (actor->update == sSomariaCubeUpdate);
 }
 
@@ -220,7 +218,8 @@ static void SomariaCube_Update(Actor* thisx, PlayState* play) {
     s16 timer = SOMARIA_GET_TIMER(thisx);
     Player* player = GET_PLAYER(play);
 
-    if (player == NULL) return;
+    if (player == NULL)
+        return;
 
     if (timer > 0) {
         SOMARIA_SET_TIMER(thisx, timer - 1);
@@ -316,10 +315,12 @@ static void SomariaCube_Update(Actor* thisx, PlayState* play) {
 // ============================================================================
 
 static void SomariaCube_Draw(Actor* thisx, PlayState* play) {
-    if (thisx->scale.x <= 0.001f) return;
+    if (thisx->scale.x <= 0.001f)
+        return;
 
     SomariaCubeColor colorIdx = SOMARIA_GET_COLOR(thisx);
-    if (colorIdx >= SOMARIA_COLOR_MAX) colorIdx = SOMARIA_COLOR_BLUE;
+    if (colorIdx >= SOMARIA_COLOR_MAX)
+        colorIdx = SOMARIA_COLOR_BLUE;
 
     CubeColor* color = &sColorTable[colorIdx];
 
@@ -333,10 +334,9 @@ static void SomariaCube_Draw(Actor* thisx, PlayState* play) {
     Matrix_Scale(thisx->scale.x, thisx->scale.y, thisx->scale.z, MTXMODE_APPLY);
 
     gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, color->r, color->g, color->b, 180);
-    gDPSetEnvColor(POLY_XLU_DISP++, color->r/2, color->g/2, color->b/2, 180);
+    gDPSetEnvColor(POLY_XLU_DISP++, color->r / 2, color->g / 2, color->b / 2, 180);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-        G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(POLY_XLU_DISP++, sSomariaCubeDL);
 
@@ -361,10 +361,10 @@ static void SomariaCube_DestroyFunc(Actor* thisx, PlayState* play) {
 // ============================================================================
 
 Actor* SomariaCube_Spawn(PlayState* play, Vec3f* pos, s16 yaw) {
-    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX,
-        pos->x, pos->y, pos->z, 0, yaw, 0, 0, true);
+    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX, pos->x, pos->y, pos->z, 0, yaw, 0, 0, true);
 
-    if (cube == NULL) return NULL;
+    if (cube == NULL)
+        return NULL;
 
     EnLightbox* lightbox = (EnLightbox*)cube;
 
@@ -401,7 +401,8 @@ Actor* SomariaCube_Spawn(PlayState* play, Vec3f* pos, s16 yaw) {
 
     // Random color
     SomariaCubeColor randomColor = (SomariaCubeColor)(Rand_ZeroOne() * SOMARIA_COLOR_MAX);
-    if (randomColor >= SOMARIA_COLOR_MAX) randomColor = SOMARIA_COLOR_BLUE;
+    if (randomColor >= SOMARIA_COLOR_MAX)
+        randomColor = SOMARIA_COLOR_BLUE;
     SOMARIA_SET_COLOR(cube, randomColor);
 
     // Spawn animation

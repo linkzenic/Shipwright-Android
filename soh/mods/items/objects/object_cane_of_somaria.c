@@ -10,7 +10,8 @@
 #include "somaria_cane_DL/header.h"
 
 void CustomItems_DrawCaneOfSomaria(Player* player, PlayState* play) {
-    if (!shSomariaActive) return;
+    if (!shSomariaActive)
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -19,12 +20,8 @@ void CustomItems_DrawCaneOfSomaria(Player* player, PlayState* play) {
     Vec3f handPos = player->bodyPartsPos[PLAYER_BODYPART_R_HAND];
 
     f32 forwardOffset = 3.0f;
-    Matrix_Translate(
-        handPos.x + Math_SinS(player->actor.shape.rot.y) * forwardOffset,
-        handPos.y + 5,
-        handPos.z + Math_CosS(player->actor.shape.rot.y) * forwardOffset,
-        MTXMODE_NEW
-    );
+    Matrix_Translate(handPos.x + Math_SinS(player->actor.shape.rot.y) * forwardOffset, handPos.y + 5,
+                     handPos.z + Math_CosS(player->actor.shape.rot.y) * forwardOffset, MTXMODE_NEW);
     Matrix_RotateY(BINANG_TO_RAD(player->actor.shape.rot.y), MTXMODE_APPLY);
     Matrix_RotateY(BINANG_TO_RAD(0x4000), MTXMODE_APPLY);
     Matrix_Scale(0.05f, 0.05f, 0.05f, MTXMODE_APPLY);

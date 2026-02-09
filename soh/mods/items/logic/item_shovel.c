@@ -30,7 +30,11 @@ extern void DoorAna_WaitOpen(DoorAna* this, PlayState* play);
 static s8 sShovelPrevInvinc = 0;
 
 // Shovel Hole Actor
-typedef struct { Actor actor; s16 lifetime; f32 scale; } ShovelHole;
+typedef struct {
+    Actor actor;
+    s16 lifetime;
+    f32 scale;
+} ShovelHole;
 
 void ShovelHole_Init(Actor* thisx, PlayState* play) {
     ShovelHole* this = (ShovelHole*)thisx;
@@ -41,7 +45,8 @@ void ShovelHole_Init(Actor* thisx, PlayState* play) {
 
 void ShovelHole_Update(Actor* thisx, PlayState* play) {
     ShovelHole* this = (ShovelHole*)thisx;
-    if (this->scale < 1.0f) this->scale += 0.1f;
+    if (this->scale < 1.0f)
+        this->scale += 0.1f;
 
     Actor* actor = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
     while (actor != NULL) {
@@ -71,7 +76,8 @@ void ShovelHole_Update(Actor* thisx, PlayState* play) {
     }
 
     this->lifetime--;
-    if (this->lifetime <= 0) Actor_Kill(&this->actor);
+    if (this->lifetime <= 0)
+        Actor_Kill(&this->actor);
 }
 
 void ShovelHole_Draw(Actor* thisx, PlayState* play) {
@@ -92,15 +98,17 @@ static void DropRandomItem(PlayState* play, Vec3f* pos) {
     // Graveyard heart piece
     if (play->sceneNum == SCENE_GRAVEYARD && !Flags_GetItemGetInf(ITEMGETINF_1C)) {
         s16 itemType = ((COLLECTFLAG_GRAVEDIGGING_HEART_PIECE & 0x3F) << 8) | ITEM00_HEART_PIECE;
-        Vec3f dropPos = *pos; dropPos.y += 10.0f;
+        Vec3f dropPos = *pos;
+        dropPos.y += 10.0f;
         Item_DropCollectible(play, &dropPos, itemType);
         Flags_SetItemGetInf(ITEMGETINF_1C);
-        Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &dropPos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &dropPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
-    if (Rand_ZeroOne() * 100.0f > (f32)SHOVEL_ITEM_DROP_CHANCE) return;
+    if (Rand_ZeroOne() * 100.0f > (f32)SHOVEL_ITEM_DROP_CHANCE)
+        return;
 
     f32 roll = Rand_ZeroOne() * 100.0f;
     s16 itemType;
@@ -109,31 +117,40 @@ static void DropRandomItem(PlayState* play, Vec3f* pos) {
         itemType = ITEM00_FAIRY;
     } else if (roll < 50.0f) {
         f32 rupeeRoll = Rand_ZeroOne();
-        if (rupeeRoll < 0.70f) itemType = ITEM00_RUPEE_GREEN;
-        else if (rupeeRoll < 0.95f) itemType = ITEM00_RUPEE_BLUE;
-        else itemType = ITEM00_RUPEE_RED;
+        if (rupeeRoll < 0.70f)
+            itemType = ITEM00_RUPEE_GREEN;
+        else if (rupeeRoll < 0.95f)
+            itemType = ITEM00_RUPEE_BLUE;
+        else
+            itemType = ITEM00_RUPEE_RED;
     } else if (roll < 75.0f) {
         f32 recoveryRoll = Rand_ZeroOne();
-        if (recoveryRoll < 0.50f) itemType = ITEM00_HEART;
-        else if (recoveryRoll < 0.75f) itemType = ITEM00_MAGIC_SMALL;
-        else itemType = ITEM00_MAGIC_LARGE;
+        if (recoveryRoll < 0.50f)
+            itemType = ITEM00_HEART;
+        else if (recoveryRoll < 0.75f)
+            itemType = ITEM00_MAGIC_SMALL;
+        else
+            itemType = ITEM00_MAGIC_LARGE;
     } else {
         f32 consumableRoll = Rand_ZeroOne();
-        if (consumableRoll < 0.6f) itemType = ITEM00_BOMBS_A;
-        else itemType = ITEM00_NUTS;
+        if (consumableRoll < 0.6f)
+            itemType = ITEM00_BOMBS_A;
+        else
+            itemType = ITEM00_NUTS;
     }
 
-    Vec3f dropPos = *pos; dropPos.y += 10.0f;
+    Vec3f dropPos = *pos;
+    dropPos.y += 10.0f;
     Item_DropCollectible(play, &dropPos, itemType);
-    Audio_PlaySoundGeneral(NA_SE_SY_GET_ITEM, &dropPos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_SY_GET_ITEM, &dropPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultReverb);
 }
 
 static void ActivateSoftSoil(PlayState* play, Actor* soilActor) {
     ObjMakekinsuta* soil = (ObjMakekinsuta*)soilActor;
     soil->unk_152 = 1;
-    Audio_PlaySoundGeneral(NA_SE_SY_PIECE_OF_HEART, &soilActor->world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_SY_PIECE_OF_HEART, &soilActor->world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     FX_SpawnParticles(play, &soilActor->world.pos, FX_DUST, 6);
 }
 
@@ -146,8 +163,8 @@ static void RevealGrotto(PlayState* play, Actor* grottoActor) {
         grotto->actor.params &= ~0x0300;
         grotto->actionFunc = DoorAna_WaitOpen;
         grotto->actor.flags &= ~ACTOR_FLAG_UPDATE_CULLING_DISABLED;
-        Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &gSfxDefaultPos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_CORRECT_CHIME, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         FX_SpawnParticles(play, &grotto->actor.world.pos, FX_DUST, 12);
     }
 }
@@ -164,8 +181,8 @@ static void PerformDig(Player* p, PlayState* play) {
     digPos.z += Math_CosS(facingYaw) * 30.0f;
 
     FX_SpawnParticles(play, &digPos, FX_DUST, 8);
-    Audio_PlaySoundGeneral(NA_SE_PL_WALK_SAND, &digPos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_PL_WALK_SAND, &digPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultReverb);
 
     s32 foundSpecial = 0;
     Actor* actor = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head;
@@ -174,10 +191,16 @@ static void PerformDig(Player* p, PlayState* play) {
             f32 dist = Math_Vec3f_DistXYZ(&digPos, &actor->world.pos);
             switch (actor->id) {
                 case ACTOR_OBJ_MAKEKINSUTA:
-                    if (dist < SHOVEL_BEAN_RADIUS) { ActivateSoftSoil(play, actor); foundSpecial = 1; }
+                    if (dist < SHOVEL_BEAN_RADIUS) {
+                        ActivateSoftSoil(play, actor);
+                        foundSpecial = 1;
+                    }
                     break;
                 case ACTOR_DOOR_ANA:
-                    if (dist < SHOVEL_DOOR_ANA_RADIUS) { RevealGrotto(play, actor); foundSpecial = 1; }
+                    if (dist < SHOVEL_DOOR_ANA_RADIUS) {
+                        RevealGrotto(play, actor);
+                        foundSpecial = 1;
+                    }
                     break;
             }
         }
@@ -185,12 +208,16 @@ static void PerformDig(Player* p, PlayState* play) {
     }
 
     DropRandomItem(play, &digPos);
-    if (!foundSpecial) CreateDamageHole(play, &digPos);
+    if (!foundSpecial)
+        CreateDamageHole(play, &digPos);
 }
 
 static void Shovel_Stop(Player* p, PlayState* play) {
-    if (!shActive) return;
-    shActive = 0; shAnimating = 0; shAnimTimer = 0;
+    if (!shActive)
+        return;
+    shActive = 0;
+    shAnimating = 0;
+    shAnimTimer = 0;
     p->upperLimbRot.x = p->upperLimbRot.y = p->upperLimbRot.z = 0;
     p->jointTable[PLAYER_LIMB_R_SHOULDER].x = 0;
     p->jointTable[PLAYER_LIMB_R_FOREARM].x = 0;
@@ -204,8 +231,11 @@ static void Shovel_Stop(Player* p, PlayState* play) {
 }
 
 static void Shovel_Start(Player* p, PlayState* play) {
-    if (shActive) return;
-    shActive = 1; shAnimating = 1; shAnimTimer = 0;
+    if (shActive)
+        return;
+    shActive = 1;
+    shAnimating = 1;
+    shAnimTimer = 0;
     ItemEquip_PlayEquipSFX(play, p);
 }
 
@@ -232,8 +262,10 @@ static void Shovel_UpdateAnimation(Player* p, PlayState* play) {
         p->jointTable[PLAYER_LIMB_R_SHOULDER].y = (s16)(1500.0f + prog * 2000.0f);
         p->jointTable[PLAYER_LIMB_L_SHOULDER].y = (s16)(-1500.0f - prog * 2000.0f);
         p->jointTable[PLAYER_LIMB_R_THIGH].x = (s16)(prog * -2000.0f);
-        if (shAnimTimer % 4 < 2) p->upperLimbRot.x -= 400;
-        if (shAnimTimer == 10) PerformDig(p, play);
+        if (shAnimTimer % 4 < 2)
+            p->upperLimbRot.x -= 400;
+        if (shAnimTimer == 10)
+            PerformDig(p, play);
     } else {
         f32 prog = (shAnimTimer - 20) / 10.0f;
         p->upperLimbRot.x = (s16)(-2500.0f * (1.0f - prog));
@@ -247,29 +279,49 @@ static void Shovel_UpdateAnimation(Player* p, PlayState* play) {
     }
 
     shAnimTimer++;
-    if (shAnimTimer >= SHOVEL_ANIM_DURATION) Shovel_Stop(p, play);
+    if (shAnimTimer >= SHOVEL_ANIM_DURATION)
+        Shovel_Stop(p, play);
 }
 
 void Handle_Shovel(Player* p, PlayState* play) {
     ItemInputState in;
     ItemInput_Update(&in, ITEM_SHOVEL, p, play);
 
-    if (!in.wasEquipped) { if (shActive) Shovel_Stop(p, play); return; }
-    if (ItemInput_IsBlocked(p, play)) { if (shActive) Shovel_Stop(p, play); return; }
-    if (ItemInput_CheckDamage(p, &sShovelPrevInvinc)) { Shovel_Stop(p, play); return; }
-    if (in.otherButtonPressed) { Shovel_Stop(p, play); return; }
+    if (!in.wasEquipped) {
+        if (shActive)
+            Shovel_Stop(p, play);
+        return;
+    }
+    if (ItemInput_IsBlocked(p, play)) {
+        if (shActive)
+            Shovel_Stop(p, play);
+        return;
+    }
+    if (ItemInput_CheckDamage(p, &sShovelPrevInvinc)) {
+        Shovel_Stop(p, play);
+        return;
+    }
+    if (in.otherButtonPressed) {
+        Shovel_Stop(p, play);
+        return;
+    }
 
     if (!shActive) {
         // All restrictions: no water, must be on ground
-        if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
-        if (p->meleeWeaponState != 0) return;
+        if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+            return;
+        if (p->meleeWeaponState != 0)
+            return;
         if (in.isPressed && (p->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
             Shovel_Start(p, play);
         }
         return;
     }
 
-    if (shAnimating) Shovel_UpdateAnimation(p, play);
+    if (shAnimating)
+        Shovel_UpdateAnimation(p, play);
 }
 
-s32 Player_UpperAction_Shovel(Player* p, PlayState* play) { return 0; }
+s32 Player_UpperAction_Shovel(Player* p, PlayState* play) {
+    return 0;
+}

@@ -18,8 +18,7 @@ void Combat_InitCylinder(PlayState* play, ColliderCylinder* col, Actor* owner, C
                                TOUCH_ON | TOUCH_SFX_NORMAL,
                                BUMP_NONE,
                                OCELEM_NONE },
-                             { (s16)cfg->radius, (s16)cfg->height, 0, { 0, 0, 0 } }
-                         });
+                             { (s16)cfg->radius, (s16)cfg->height, 0, { 0, 0, 0 } } });
 }
 
 void Combat_UpdateCylinder(ColliderCylinder* col, Vec3f* pos, CombatColliderConfig* cfg) {
@@ -43,12 +42,13 @@ inline u8 Combat_CheckHit(ColliderCylinder* col) {
 }
 
 void Combat_PlayHitSFX(Vec3f* pos) {
-    Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, pos, 4,
-                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, pos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultReverb);
 }
 
 void Combat_ApplyKnockback(Actor* actor, f32 knockbackSpeed, f32 knockbackHeight) {
-    if (actor == NULL || actor->update == NULL) return;
+    if (actor == NULL || actor->update == NULL)
+        return;
 
     s16 knockbackYaw = actor->yawTowardsPlayer + ANGLE_180_DEG;
     actor->world.rot.y = knockbackYaw;
@@ -57,7 +57,8 @@ void Combat_ApplyKnockback(Actor* actor, f32 knockbackSpeed, f32 knockbackHeight
 }
 
 void Combat_ApplyKnockbackFromPoint(Actor* actor, Vec3f* sourcePos, f32 knockbackSpeed, f32 knockbackHeight) {
-    if (actor == NULL || actor->update == NULL) return;
+    if (actor == NULL || actor->update == NULL)
+        return;
 
     s16 knockbackYaw = Math_Vec3f_Yaw(sourcePos, &actor->world.pos);
     actor->world.rot.y = knockbackYaw;
@@ -66,13 +67,16 @@ void Combat_ApplyKnockbackFromPoint(Actor* actor, Vec3f* sourcePos, f32 knockbac
 }
 
 u8 Combat_IsActorInRange(Actor* actor, f32 xzRange, f32 yRange) {
-    if (actor == NULL) return 0;
+    if (actor == NULL)
+        return 0;
     return (actor->xzDistToPlayer < xzRange) && (fabsf(actor->yDistToPlayer) < yRange);
 }
 
 void Combat_DamageActor(Actor* actor, u8 damage, u8 effect) {
-    if (actor == NULL || actor->update == NULL) return;
-    if (actor->colChkInfo.health <= 0) return;
+    if (actor == NULL || actor->update == NULL)
+        return;
+    if (actor->colChkInfo.health <= 0)
+        return;
 
     actor->colChkInfo.damage = damage;
     actor->colChkInfo.damageEffect = effect;

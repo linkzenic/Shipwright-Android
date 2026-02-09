@@ -7,31 +7,31 @@
 
 // Custom item icon textures (defined in soh/mods/items/icons/*.c)
 extern "C" {
-    extern const unsigned char gItemIconRocsFeatherTex[];
-    extern const unsigned char gItemIconRocsCapeTex[];
-    extern const unsigned char gItemIconDesireSensorTex[];
-    extern const unsigned char gItemIconHyliaGraceTex[];
-    extern const unsigned char gItemIconZonaiPermafrostTex[];
-    extern const unsigned char gItemIconDemiseDestructionTex[];
-    extern const unsigned char gItemIconDekuLeafTex[];
-    extern const unsigned char gItemIconSwitchHookTex[];
-    extern const unsigned char gItemIconMogmaMittsTex[];
-    extern const unsigned char gItemIconGustJarTex[];
-    extern const unsigned char gItemIconBallAndChainTex[];
-    extern const unsigned char gItemIconWhipTex[];
-    extern const unsigned char gItemIconSpinnerTex[];
-    extern const unsigned char gItemIconCaneOfSomariaTex[];
-    extern const unsigned char gItemIconDominionRodTex[];
-    extern const unsigned char gItemIconTimeGateTex[];
-    extern const unsigned char gItemIconBombArrowsTex[];
-    extern const unsigned char gItemIconFireRodTex[];
-    extern const unsigned char gItemIconIceRodTex[];
-    extern const unsigned char gItemIconLightRodTex[];
-    extern const unsigned char gItemIconBeetleTex[];
-    extern const unsigned char gItemIconShovelTex[];
-    extern const unsigned char gItemIconPending1Tex[];
-    extern const unsigned char gItemIconPending2Tex[];
-    extern const unsigned char gItemIconPending3Tex[];
+extern const unsigned char gItemIconRocsFeatherTex[];
+extern const unsigned char gItemIconRocsCapeTex[];
+extern const unsigned char gItemIconDesireSensorTex[];
+extern const unsigned char gItemIconHyliaGraceTex[];
+extern const unsigned char gItemIconZonaiPermafrostTex[];
+extern const unsigned char gItemIconDemiseDestructionTex[];
+extern const unsigned char gItemIconDekuLeafTex[];
+extern const unsigned char gItemIconSwitchHookTex[];
+extern const unsigned char gItemIconMogmaMittsTex[];
+extern const unsigned char gItemIconGustJarTex[];
+extern const unsigned char gItemIconBallAndChainTex[];
+extern const unsigned char gItemIconWhipTex[];
+extern const unsigned char gItemIconSpinnerTex[];
+extern const unsigned char gItemIconCaneOfSomariaTex[];
+extern const unsigned char gItemIconDominionRodTex[];
+extern const unsigned char gItemIconTimeGateTex[];
+extern const unsigned char gItemIconBombArrowsTex[];
+extern const unsigned char gItemIconFireRodTex[];
+extern const unsigned char gItemIconIceRodTex[];
+extern const unsigned char gItemIconLightRodTex[];
+extern const unsigned char gItemIconBeetleTex[];
+extern const unsigned char gItemIconShovelTex[];
+extern const unsigned char gItemIconPending1Tex[];
+extern const unsigned char gItemIconPending2Tex[];
+extern const unsigned char gItemIconPending3Tex[];
 }
 
 std::map<uint32_t, ItemMapEntry> itemMapping = {
@@ -161,23 +161,38 @@ std::map<uint32_t, ItemMapEntry> itemMapping = {
 
 // Custom items mapping (second inventory page)
 std::map<uint32_t, ItemMapEntry> customItemMapping = {
-    { ITEM_ROCS_FEATHER_SKIJER, { ITEM_ROCS_FEATHER_SKIJER, "ITEM_ROCS_FEATHER_SKIJER", "ITEM_ROCS_FEATHER_SKIJER_Faded", (char*)gItemIconRocsFeatherTex } },
+    { ITEM_ROCS_FEATHER_SKIJER,
+      { ITEM_ROCS_FEATHER_SKIJER, "ITEM_ROCS_FEATHER_SKIJER", "ITEM_ROCS_FEATHER_SKIJER_Faded",
+        (char*)gItemIconRocsFeatherTex } },
     { ITEM_ROCS_CAPE, { ITEM_ROCS_CAPE, "ITEM_ROCS_CAPE", "ITEM_ROCS_CAPE_Faded", (char*)gItemIconRocsCapeTex } },
-    { ITEM_DESIRE_SENSOR, { ITEM_DESIRE_SENSOR, "ITEM_DESIRE_SENSOR", "ITEM_DESIRE_SENSOR_Faded", (char*)gItemIconDesireSensorTex } },
-    { ITEM_HYLIAS_GRACE, { ITEM_HYLIAS_GRACE, "ITEM_HYLIAS_GRACE", "ITEM_HYLIAS_GRACE_Faded", (char*)gItemIconHyliaGraceTex } },
-    { ITEM_ZONAI_PERMAFROST, { ITEM_ZONAI_PERMAFROST, "ITEM_ZONAI_PERMAFROST", "ITEM_ZONAI_PERMAFROST_Faded", (char*)gItemIconZonaiPermafrostTex } },
-    { ITEM_DEMISE_DESTRUCTION, { ITEM_DEMISE_DESTRUCTION, "ITEM_DEMISE_DESTRUCTION", "ITEM_DEMISE_DESTRUCTION_Faded", (char*)gItemIconDemiseDestructionTex } },
+    { ITEM_DESIRE_SENSOR,
+      { ITEM_DESIRE_SENSOR, "ITEM_DESIRE_SENSOR", "ITEM_DESIRE_SENSOR_Faded", (char*)gItemIconDesireSensorTex } },
+    { ITEM_HYLIAS_GRACE,
+      { ITEM_HYLIAS_GRACE, "ITEM_HYLIAS_GRACE", "ITEM_HYLIAS_GRACE_Faded", (char*)gItemIconHyliaGraceTex } },
+    { ITEM_ZONAI_PERMAFROST,
+      { ITEM_ZONAI_PERMAFROST, "ITEM_ZONAI_PERMAFROST", "ITEM_ZONAI_PERMAFROST_Faded",
+        (char*)gItemIconZonaiPermafrostTex } },
+    { ITEM_DEMISE_DESTRUCTION,
+      { ITEM_DEMISE_DESTRUCTION, "ITEM_DEMISE_DESTRUCTION", "ITEM_DEMISE_DESTRUCTION_Faded",
+        (char*)gItemIconDemiseDestructionTex } },
     { ITEM_DEKU_LEAF, { ITEM_DEKU_LEAF, "ITEM_DEKU_LEAF", "ITEM_DEKU_LEAF_Faded", (char*)gItemIconDekuLeafTex } },
-    { ITEM_SWITCH_HOOK, { ITEM_SWITCH_HOOK, "ITEM_SWITCH_HOOK", "ITEM_SWITCH_HOOK_Faded", (char*)gItemIconSwitchHookTex } },
-    { ITEM_MOGMA_MITTS, { ITEM_MOGMA_MITTS, "ITEM_MOGMA_MITTS", "ITEM_MOGMA_MITTS_Faded", (char*)gItemIconMogmaMittsTex } },
+    { ITEM_SWITCH_HOOK,
+      { ITEM_SWITCH_HOOK, "ITEM_SWITCH_HOOK", "ITEM_SWITCH_HOOK_Faded", (char*)gItemIconSwitchHookTex } },
+    { ITEM_MOGMA_MITTS,
+      { ITEM_MOGMA_MITTS, "ITEM_MOGMA_MITTS", "ITEM_MOGMA_MITTS_Faded", (char*)gItemIconMogmaMittsTex } },
     { ITEM_GUST_JAR, { ITEM_GUST_JAR, "ITEM_GUST_JAR", "ITEM_GUST_JAR_Faded", (char*)gItemIconGustJarTex } },
-    { ITEM_BALL_AND_CHAIN, { ITEM_BALL_AND_CHAIN, "ITEM_BALL_AND_CHAIN", "ITEM_BALL_AND_CHAIN_Faded", (char*)gItemIconBallAndChainTex } },
+    { ITEM_BALL_AND_CHAIN,
+      { ITEM_BALL_AND_CHAIN, "ITEM_BALL_AND_CHAIN", "ITEM_BALL_AND_CHAIN_Faded", (char*)gItemIconBallAndChainTex } },
     { ITEM_WHIP, { ITEM_WHIP, "ITEM_WHIP", "ITEM_WHIP_Faded", (char*)gItemIconWhipTex } },
     { ITEM_SPINNER, { ITEM_SPINNER, "ITEM_SPINNER", "ITEM_SPINNER_Faded", (char*)gItemIconSpinnerTex } },
-    { ITEM_CANE_OF_SOMARIA, { ITEM_CANE_OF_SOMARIA, "ITEM_CANE_OF_SOMARIA", "ITEM_CANE_OF_SOMARIA_Faded", (char*)gItemIconCaneOfSomariaTex } },
-    { ITEM_DOMINION_ROD, { ITEM_DOMINION_ROD, "ITEM_DOMINION_ROD", "ITEM_DOMINION_ROD_Faded", (char*)gItemIconDominionRodTex } },
+    { ITEM_CANE_OF_SOMARIA,
+      { ITEM_CANE_OF_SOMARIA, "ITEM_CANE_OF_SOMARIA", "ITEM_CANE_OF_SOMARIA_Faded",
+        (char*)gItemIconCaneOfSomariaTex } },
+    { ITEM_DOMINION_ROD,
+      { ITEM_DOMINION_ROD, "ITEM_DOMINION_ROD", "ITEM_DOMINION_ROD_Faded", (char*)gItemIconDominionRodTex } },
     { ITEM_TIME_GATE, { ITEM_TIME_GATE, "ITEM_TIME_GATE", "ITEM_TIME_GATE_Faded", (char*)gItemIconTimeGateTex } },
-    { ITEM_BOMB_ARROWS, { ITEM_BOMB_ARROWS, "ITEM_BOMB_ARROWS", "ITEM_BOMB_ARROWS_Faded", (char*)gItemIconBombArrowsTex } },
+    { ITEM_BOMB_ARROWS,
+      { ITEM_BOMB_ARROWS, "ITEM_BOMB_ARROWS", "ITEM_BOMB_ARROWS_Faded", (char*)gItemIconBombArrowsTex } },
     { ITEM_ROD_FIRE, { ITEM_ROD_FIRE, "ITEM_ROD_FIRE", "ITEM_ROD_FIRE_Faded", (char*)gItemIconFireRodTex } },
     { ITEM_ROD_ICE, { ITEM_ROD_ICE, "ITEM_ROD_ICE", "ITEM_ROD_ICE_Faded", (char*)gItemIconIceRodTex } },
     { ITEM_ROD_LIGHT, { ITEM_ROD_LIGHT, "ITEM_ROD_LIGHT", "ITEM_ROD_LIGHT_Faded", (char*)gItemIconLightRodTex } },

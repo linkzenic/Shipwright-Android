@@ -12,19 +12,19 @@
 extern "C" {
 #endif
 
-#define KNOCKBACK_SPEED_STRONG   8.0f   // units/frame
-#define KNOCKBACK_HEIGHT_MEDIUM  6.0f   // units/frame
-#define ANGLE_180_DEG  0x8000
+#define KNOCKBACK_SPEED_STRONG 8.0f  // units/frame
+#define KNOCKBACK_HEIGHT_MEDIUM 6.0f // units/frame
+#define ANGLE_180_DEG 0x8000
 
 /**
  * Combat collider configuration for AT collider setup.
  */
 typedef struct {
-    u32 dmgFlags;   // DMG_HAMMER, DMG_SWORD, etc.
-    u8 damage;      // Damage amount (hearts = damage/2)
-    u8 effect;      // Knockback, fire, ice, etc.
-    f32 radius;     // Cylinder radius
-    f32 height;     // Cylinder height
+    u32 dmgFlags; // DMG_HAMMER, DMG_SWORD, etc.
+    u8 damage;    // Damage amount (hearts = damage/2)
+    u8 effect;    // Knockback, fire, ice, etc.
+    f32 radius;   // Cylinder radius
+    f32 height;   // Cylinder height
 } CombatColliderConfig;
 
 /**

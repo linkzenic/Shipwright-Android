@@ -11,16 +11,16 @@
 #include "../custom_items.h"
 
 // States
-#define BOMBARROW_STATE_IDLE       0
-#define BOMBARROW_STATE_CHARGING   1
-#define BOMBARROW_STATE_FLYING     2
+#define BOMBARROW_STATE_IDLE 0
+#define BOMBARROW_STATE_CHARGING 1
+#define BOMBARROW_STATE_FLYING 2
 
 // State aliases - maps to gCustomItemState fields
-#define baActive       gCustomItemState.bombArrowActive
-#define baState        gCustomItemState.bombArrowState
-#define baBombActor    gCustomItemState.bombArrowBombActor
-#define baArrowActor   gCustomItemState.bombArrowArrowActor
-#define baFirstPerson  gCustomItemState.bombArrowFirstPersonActive
-#define baButtonMask   gCustomItemState.bombArrowButtonMask
+#define baActive gCustomItemState.bombArrowActive
+#define baState gCustomItemState.bombArrowState
+#define baBombActor gCustomItemState.bombArrowBombActor
+#define baArrowActor gCustomItemState.bombArrowArrowActor
+#define baFirstPerson gCustomItemState.bombArrowFirstPersonActive
+#define baButtonMask gCustomItemState.bombArrowButtonMask
 
 #endif // ITEM_BOMBARROWS_H

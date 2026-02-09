@@ -16,18 +16,18 @@
 #include "../custom_items.h"
 
 // Jump velocities
-#define ROCSCAPE_JUMP_VELOCITY          11.0f
-#define ROCSCAPE_DOUBLE_JUMP_VELOCITY   11.0f
-#define ROCSCAPE_WATER_JUMP_VELOCITY    5.5f
+#define ROCSCAPE_JUMP_VELOCITY 11.0f
+#define ROCSCAPE_DOUBLE_JUMP_VELOCITY 11.0f
+#define ROCSCAPE_WATER_JUMP_VELOCITY 5.5f
 
 // Effects
-#define ROCSCAPE_SHOCKWAVE_Y_OFFSET     10.0f
+#define ROCSCAPE_SHOCKWAVE_Y_OFFSET 10.0f
 
 // Sound
-#define ROCSCAPE_SOUND_JUMP    NA_SE_VO_LI_AUTO_JUMP_KID
-#define ROCSCAPE_SOUND_DOUBLE  NA_SE_VO_LI_AUTO_JUMP_KID
+#define ROCSCAPE_SOUND_JUMP NA_SE_VO_LI_AUTO_JUMP_KID
+#define ROCSCAPE_SOUND_DOUBLE NA_SE_VO_LI_AUTO_JUMP_KID
 
 // State alias
-#define rcJumpCount  gCustomItemState.rocsJumpCount
+#define rcJumpCount gCustomItemState.rocsJumpCount
 
 #endif // ITEM_ROCSCAPE_H

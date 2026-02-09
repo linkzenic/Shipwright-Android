@@ -10,18 +10,18 @@
 #include "../custom_items.h"
 
 // Radius
-#define SHOVEL_USE_RADIUS       80.0f
-#define SHOVEL_BEAN_RADIUS      100.0f
-#define SHOVEL_DOOR_ANA_RADIUS  120.0f
-#define SHOVEL_HOLE_RADIUS      40.0f
+#define SHOVEL_USE_RADIUS 80.0f
+#define SHOVEL_BEAN_RADIUS 100.0f
+#define SHOVEL_DOOR_ANA_RADIUS 120.0f
+#define SHOVEL_HOLE_RADIUS 40.0f
 
 // Drops
 #define SHOVEL_ITEM_DROP_CHANCE 15
-#define SHOVEL_FAIRY_CHANCE     1
+#define SHOVEL_FAIRY_CHANCE 1
 
 // Animation
-#define SHOVEL_ANIM_DURATION    30
-#define SHOVEL_HOLE_LIFETIME    300
+#define SHOVEL_ANIM_DURATION 30
+#define SHOVEL_HOLE_LIFETIME 300
 
 // Scene
 #ifndef SCENE_GRAVEYARD
@@ -75,9 +75,9 @@
 #endif
 
 // State aliases
-#define shActive     gCustomItemState.shovelActive
-#define shAnimating  gCustomItemState.shovelAnimating
-#define shAnimTimer  gCustomItemState.shovelAnimTimer
-#define shHoleActor  gCustomItemState.shovelHoleActor
+#define shActive gCustomItemState.shovelActive
+#define shAnimating gCustomItemState.shovelAnimating
+#define shAnimTimer gCustomItemState.shovelAnimTimer
+#define shHoleActor gCustomItemState.shovelHoleActor
 
 #endif // ITEM_SHOVEL_H

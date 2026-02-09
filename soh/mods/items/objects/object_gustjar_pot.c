@@ -10,7 +10,8 @@ extern Gfx jar_body_dl[];
 extern Gfx jar_decoration_dl[];
 
 static void GustJarPot_Draw(Player* player, PlayState* play) {
-    if (!gCustomItemState.gustJarEquipped) return;
+    if (!gCustomItemState.gustJarEquipped)
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
 

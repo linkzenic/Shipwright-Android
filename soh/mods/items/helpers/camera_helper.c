@@ -10,7 +10,7 @@
 extern int Player_IsZTargeting(Player* this);
 
 void FirstPerson_Init(Player* player, PlayState* play) {
-    player->unk_6AD = 2;  // weapon aiming mode
+    player->unk_6AD = 2; // weapon aiming mode
     player->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
     player->stateFlags1 |= PLAYER_STATE1_ITEM_IN_HAND;
     player->stateFlags1 |= PLAYER_STATE1_READY_TO_FIRE;
@@ -48,7 +48,8 @@ s16 FirstPerson_GetAimPitch(Player* player) {
 }
 
 void FirstPerson_DrawReticle(Player* player, PlayState* play, f32 range, u8 r, u8 g, u8 b) {
-    if (!(player->stateFlags1 & PLAYER_STATE1_ITEM_IN_HAND) || player->unk_834 == 0) return;
+    if (!(player->stateFlags1 & PLAYER_STATE1_ITEM_IN_HAND) || player->unk_834 == 0)
+        return;
 
     CollisionPoly* colPoly;
     s32 bgId;
@@ -215,8 +216,10 @@ void Projectile_UpdateDirectionFromStick(s16* yaw, s16* pitch, PlayState* play, 
     Input_GetStickDirection(play, &yawDelta, &pitchDelta, turnSpeed);
     *yaw += yawDelta;
     *pitch += pitchDelta;
-    if (*pitch > pitchMax) *pitch = pitchMax;
-    if (*pitch < -pitchMax) *pitch = -pitchMax;
+    if (*pitch > pitchMax)
+        *pitch = pitchMax;
+    if (*pitch < -pitchMax)
+        *pitch = -pitchMax;
 }
 
 void Projectile_UpdateRotationFromStick(s16* yaw, s16* pitch, PlayState* play, s16 turnSpeed, s16 pitchMax) {
@@ -235,7 +238,9 @@ void Projectile_UpdateRotationFromStick(s16* yaw, s16* pitch, PlayState* play, s
         *yaw = targetYaw;
         *pitch = targetPitch;
 
-        if (*pitch > pitchMax) *pitch = pitchMax;
-        if (*pitch < -pitchMax) *pitch = -pitchMax;
+        if (*pitch > pitchMax)
+            *pitch = pitchMax;
+        if (*pitch < -pitchMax)
+            *pitch = -pitchMax;
     }
 }

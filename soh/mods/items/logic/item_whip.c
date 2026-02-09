@@ -29,11 +29,11 @@
 // =============================================================================
 // Internal Constants
 // =============================================================================
-#define WHIP_GRAPPLE_ACTOR_RADIUS   40.0f
+#define WHIP_GRAPPLE_ACTOR_RADIUS 40.0f
 #define WHIP_GRAPPLE_ACTOR_Y_OFFSET 30.0f
-#define WHIP_MAX_HORIZ_SPEED        15.0f
-#define WHIP_MAX_VERT_SPEED         12.0f
-#define WHIP_YAW_TURN_RATE          256    // s16 units per frame at full stick (~1.4 deg/frame)
+#define WHIP_MAX_HORIZ_SPEED 15.0f
+#define WHIP_MAX_VERT_SPEED 12.0f
+#define WHIP_YAW_TURN_RATE 256 // s16 units per frame at full stick (~1.4 deg/frame)
 
 // =============================================================================
 // Static Data
@@ -45,7 +45,8 @@ static s32 sWhipAnimState = -1; // Tracks animation state for upper action
 // Collider Functions
 // =============================================================================
 static void Whip_InitCollider(PlayState* play, Player* p) {
-    if (sWhipColInitialized) return;
+    if (sWhipColInitialized)
+        return;
     Collider_InitCylinder(play, &whipCollider);
     Collider_SetCylinder(play, &whipCollider, &p->actor, &sWhipColInit);
     sWhipColInitialized = 1;
@@ -66,8 +67,7 @@ static s32 Whip_IsGrappleActor(Actor* actor) {
     s32 i;
     for (i = 0; i < (s32)WHIP_GRAPPLE_COUNT; i++) {
         if (actor->id == sWhipGrappleTable[i].actorId) {
-            if (sWhipGrappleTable[i].params == -1 ||
-                actor->params == sWhipGrappleTable[i].params) {
+            if (sWhipGrappleTable[i].params == -1 || actor->params == sWhipGrappleTable[i].params) {
                 return 1;
             }
         }
@@ -79,8 +79,7 @@ static s32 Whip_IsParalyzeTarget(Actor* actor) {
     s32 i;
     for (i = 0; i < (s32)WHIP_PARALYZE_COUNT; i++) {
         if (actor->id == sWhipParalyzeTable[i].actorId) {
-            if (sWhipParalyzeTable[i].params == -1 ||
-                actor->params == sWhipParalyzeTable[i].params) {
+            if (sWhipParalyzeTable[i].params == -1 || actor->params == sWhipParalyzeTable[i].params) {
                 return 1;
             }
         }
@@ -92,9 +91,9 @@ static s32 Whip_IsDisarmTarget(Actor* actor, WhipDisarmType* outType) {
     s32 i;
     for (i = 0; i < (s32)WHIP_DISARM_COUNT; i++) {
         if (actor->id == sWhipDisarmTable[i].actorId) {
-            if (sWhipDisarmTable[i].params == -1 ||
-                actor->params == sWhipDisarmTable[i].params) {
-                if (outType != NULL) *outType = sWhipDisarmTable[i].type;
+            if (sWhipDisarmTable[i].params == -1 || actor->params == sWhipDisarmTable[i].params) {
+                if (outType != NULL)
+                    *outType = sWhipDisarmTable[i].type;
                 return 1;
             }
         }
@@ -111,14 +110,14 @@ static void Whip_ApplyParalyze(Actor* enemy, Player* p, PlayState* play) {
     enemy->speedXZ = 0.0f;
     whipPullTarget = enemy;
     whipState = WHIP_STATE_HIT_ENEMY;
-    Audio_PlaySoundGeneral(WHIP_SFX_HIT_ENEMY, &enemy->world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(WHIP_SFX_HIT_ENEMY, &enemy->world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Whip_ApplyDisarm(Actor* enemy, WhipDisarmType type, PlayState* play) {
     enemy->home.rot.z |= WHIP_DISARMED_FLAG;
-    Audio_PlaySoundGeneral(WHIP_SFX_DISARM, &enemy->world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(WHIP_SFX_DISARM, &enemy->world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Whip_ApplyBoomerangDamage(Actor* enemy, Player* p, PlayState* play) {
@@ -127,8 +126,8 @@ static void Whip_ApplyBoomerangDamage(Actor* enemy, Player* p, PlayState* play) 
     whipRageTarget = enemy;
     whipRageTimer = WHIP_RAGE_DURATION + WHIP_STUN_FRAMES;
     whipRageOrigSpeed = enemy->speedXZ;
-    Audio_PlaySoundGeneral(WHIP_SFX_HIT_ENEMY, &enemy->world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(WHIP_SFX_HIT_ENEMY, &enemy->world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Whip_UpdateRage(PlayState* play) {
@@ -166,8 +165,10 @@ static Actor* Whip_FindGrappleActor(PlayState* play, Vec3f* tipPos) {
         s32 category = (cat == 0) ? ACTORCAT_PROP : ACTORCAT_BG;
         for (actor = play->actorCtx.actorLists[category].head; actor != NULL; actor = next) {
             next = actor->next;
-            if (actor->update == NULL) continue;
-            if (!Whip_IsGrappleActor(actor)) continue;
+            if (actor->update == NULL)
+                continue;
+            if (!Whip_IsGrappleActor(actor))
+                continue;
             dist = Math_Vec3f_DistXYZ(tipPos, &actor->world.pos);
             if (dist < WHIP_GRAPPLE_ACTOR_RADIUS) {
                 return actor;
@@ -199,7 +200,8 @@ static void Whip_Stop(Player* p, PlayState* play) {
 }
 
 static void Whip_Start(Player* p, PlayState* play) {
-    if (whipActive) return;
+    if (whipActive)
+        return;
     whipActive = 1;
     whipState = WHIP_STATE_EQUIP;
     whipTimer = 0;
@@ -227,8 +229,8 @@ static void Whip_Start(Player* p, PlayState* play) {
         p->yaw = whipExtendYaw;
 
         whipFirstPerson = 0;
-        Audio_PlaySoundGeneral(WHIP_SFX_THROW, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(WHIP_SFX_THROW, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     } else {
         // Regular equip with first-person aiming
         if (!Player_IsZTargeting(p)) {
@@ -293,8 +295,8 @@ static void WhipStateEquip(Player* p, PlayState* play, ItemInputState* in) {
         p->actor.world.rot.y = whipExtendYaw;
         p->yaw = whipExtendYaw;
 
-        Audio_PlaySoundGeneral(WHIP_SFX_THROW, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(WHIP_SFX_THROW, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -334,8 +336,8 @@ static void WhipStateExtending(Player* p, PlayState* play) {
     Whip_UpdateCollider(play, &whipTipPos);
 
     // Check 1: Surface collision — only attach if beam/bar shaped (graspable)
-    if (BgCheck_EntityLineTest1(&play->colCtx, &prevTip, &whipTipPos, &hitPos,
-                                 &hitPoly, true, true, true, true, &bgId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &prevTip, &whipTipPos, &hitPos, &hitPoly, true, true, true, true,
+                                &bgId)) {
         whipTipPos = hitPos;
         Grapple_AnalyzeSurface(play, hitPoly, bgId, &hitPos, &target);
 
@@ -345,8 +347,8 @@ static void WhipStateExtending(Player* p, PlayState* play) {
             whipAttachNormal = target.surfaceNormal;
             whipAttachedBgId = bgId;
             whipState = WHIP_STATE_ATTACHED;
-            Audio_PlaySoundGeneral(WHIP_SFX_HIT_SURFACE, &hitPos, 4,
-                &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(WHIP_SFX_HIT_SURFACE, &hitPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             return;
         }
 
@@ -365,8 +367,8 @@ static void WhipStateExtending(Player* p, PlayState* play) {
         whipAttachNormal.z = 0.0f;
         whipAttachedBgId = BGCHECK_SCENE;
         whipState = WHIP_STATE_ATTACHED;
-        Audio_PlaySoundGeneral(WHIP_SFX_HIT_SURFACE, &grappleActor->world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(WHIP_SFX_HIT_SURFACE, &grappleActor->world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
@@ -583,8 +585,10 @@ static void WhipStateSwinging(Player* p, PlayState* play, ItemInputState* in) {
 
         // Vertical launch (minimum upward boost to feel like a jump)
         p->actor.velocity.y = vertSpeed;
-        if (p->actor.velocity.y < 4.0f) p->actor.velocity.y = 4.0f;
-        if (p->actor.velocity.y > WHIP_MAX_VERT_SPEED) p->actor.velocity.y = WHIP_MAX_VERT_SPEED;
+        if (p->actor.velocity.y < 4.0f)
+            p->actor.velocity.y = 4.0f;
+        if (p->actor.velocity.y > WHIP_MAX_VERT_SPEED)
+            p->actor.velocity.y = WHIP_MAX_VERT_SPEED;
 
         p->actor.gravity = -1.0f;
         Whip_Stop(p, play);
@@ -609,8 +613,8 @@ static void WhipStateRetracting(Player* p, PlayState* play) {
     if (dist < WHIP_ARRIVE_DIST) {
         whipTipPos = handPos;
         whipState = WHIP_STATE_EQUIP;
-        Audio_PlaySoundGeneral(WHIP_SFX_RETRACT, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(WHIP_SFX_RETRACT, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
@@ -640,11 +644,13 @@ void Handle_Whip(Player* p, PlayState* play) {
     ItemInput_Update(&in, ITEM_WHIP, p, play);
 
     if (!in.wasEquipped || ItemInput_IsBlocked(p, play) || ItemInput_CheckDamage(p, &whipPrevInvinc)) {
-        if (whipActive) Whip_Stop(p, play);
+        if (whipActive)
+            Whip_Stop(p, play);
         return;
     }
     if (in.otherButtonPressed) {
-        if (whipActive) Whip_Stop(p, play);
+        if (whipActive)
+            Whip_Stop(p, play);
         return;
     }
 
@@ -656,13 +662,27 @@ void Handle_Whip(Player* p, PlayState* play) {
     }
 
     switch (whipState) {
-        case WHIP_STATE_EQUIP:      WhipStateEquip(p, play, &in);    break;
-        case WHIP_STATE_EXTENDING:  WhipStateExtending(p, play);      break;
-        case WHIP_STATE_HIT_ENEMY:  WhipStateHitEnemy(p, play);       break;
-        case WHIP_STATE_ATTACHED:   WhipStateAttached(p, play);       break;
-        case WHIP_STATE_SWINGING:   WhipStateSwinging(p, play, &in);  break;
-        case WHIP_STATE_RETRACTING: WhipStateRetracting(p, play);     break;
-        default:                    whipState = WHIP_STATE_EQUIP; break;
+        case WHIP_STATE_EQUIP:
+            WhipStateEquip(p, play, &in);
+            break;
+        case WHIP_STATE_EXTENDING:
+            WhipStateExtending(p, play);
+            break;
+        case WHIP_STATE_HIT_ENEMY:
+            WhipStateHitEnemy(p, play);
+            break;
+        case WHIP_STATE_ATTACHED:
+            WhipStateAttached(p, play);
+            break;
+        case WHIP_STATE_SWINGING:
+            WhipStateSwinging(p, play, &in);
+            break;
+        case WHIP_STATE_RETRACTING:
+            WhipStateRetracting(p, play);
+            break;
+        default:
+            whipState = WHIP_STATE_EQUIP;
+            break;
     }
 }
 

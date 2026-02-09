@@ -40,10 +40,14 @@ static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTime
 // Page 2 item layout (slots 24-47)
 // Note: ITEM_ROCS_FEATHER_SKIJER at slot 24 is progressive - becomes ITEM_ROCS_CAPE when upgraded (shares slot)
 // Slot 15 (actual slot 39) now has ITEM_DESIRE_SENSOR instead of ITEM_ROCS_CAPE
-const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER,   ITEM_WHIP,          ITEM_SPINNER,        ITEM_BOMB_ARROWS,    ITEM_ROD_FIRE,      ITEM_DEMISE_DESTRUCTION,
-                                  ITEM_DEKU_LEAF,      ITEM_TIME_GATE,     ITEM_BEETLE,         ITEM_SWITCH_HOOK, ITEM_ROD_ICE,       ITEM_ZONAI_PERMAFROST,
-                                  ITEM_MOGMA_MITTS,    ITEM_GUST_JAR,      ITEM_BALL_AND_CHAIN, ITEM_DESIRE_SENSOR,  ITEM_ROD_LIGHT,     ITEM_HYLIAS_GRACE,
-                                  ITEM_PENDING_2,      ITEM_PENDING_1,     ITEM_PENDING_3,      ITEM_CANE_OF_SOMARIA, ITEM_SHOVEL,        ITEM_DOMINION_ROD };
+const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,      ITEM_SPINNER,
+                                  ITEM_BOMB_ARROWS,         ITEM_ROD_FIRE,  ITEM_DEMISE_DESTRUCTION,
+                                  ITEM_DEKU_LEAF,           ITEM_TIME_GATE, ITEM_BEETLE,
+                                  ITEM_SWITCH_HOOK,         ITEM_ROD_ICE,   ITEM_ZONAI_PERMAFROST,
+                                  ITEM_MOGMA_MITTS,         ITEM_GUST_JAR,  ITEM_BALL_AND_CHAIN,
+                                  ITEM_DESIRE_SENSOR,       ITEM_ROD_LIGHT, ITEM_HYLIAS_GRACE,
+                                  ITEM_PENDING_2,           ITEM_PENDING_1, ITEM_PENDING_3,
+                                  ITEM_CANE_OF_SOMARIA,     ITEM_SHOVEL,    ITEM_DOMINION_ROD };
 
 // Age requirements for page 2 items
 // Roc's items (slot 0/24) = AGE_REQ_NONE (both adult and child can use Feather AND Cape)
@@ -138,53 +142,53 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     switch (itemId) {
         case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
             return (void*)gRocsFeatherNameTex;
-        case ITEM_ROCS_CAPE:           // 0x9E
+        case ITEM_ROCS_CAPE: // 0x9E
             return (void*)gRocsCapeNameTex;
-        case ITEM_DESIRE_SENSOR:       // 0x9F
+        case ITEM_DESIRE_SENSOR: // 0x9F
             return (void*)gDesireSensorNameTex;
-        case ITEM_HYLIAS_GRACE:        // 0xA0
+        case ITEM_HYLIAS_GRACE: // 0xA0
             return (void*)gHyliaGraceNameTex;
-        case ITEM_ZONAI_PERMAFROST:    // 0xA1
+        case ITEM_ZONAI_PERMAFROST: // 0xA1
             return (void*)gZonaiPermafrostNameTex;
-        case ITEM_DEMISE_DESTRUCTION:  // 0xA2
+        case ITEM_DEMISE_DESTRUCTION: // 0xA2
             return (void*)gDemiseDestructionNameTex;
-        case ITEM_DEKU_LEAF:           // 0xA3
+        case ITEM_DEKU_LEAF: // 0xA3
             return (void*)gDekuLeafNameTex;
-        case ITEM_SWITCH_HOOK:         // 0xA4
+        case ITEM_SWITCH_HOOK: // 0xA4
             return (void*)gSwitchHookNameTex;
-        case ITEM_MOGMA_MITTS:         // 0xA5
+        case ITEM_MOGMA_MITTS: // 0xA5
             return (void*)gMogmaMittsNameTex;
-        case ITEM_GUST_JAR:            // 0xA6
+        case ITEM_GUST_JAR: // 0xA6
             return (void*)gGustJarNameTex;
-        case ITEM_BALL_AND_CHAIN:      // 0xA7
+        case ITEM_BALL_AND_CHAIN: // 0xA7
             return (void*)gBallAndChainNameTex;
-        case ITEM_WHIP:                // 0xA8
+        case ITEM_WHIP: // 0xA8
             return (void*)gWhipNameTex;
-        case ITEM_SPINNER:             // 0xA9
+        case ITEM_SPINNER: // 0xA9
             return (void*)gSpinnerNameTex;
-        case ITEM_CANE_OF_SOMARIA:     // 0xAA
+        case ITEM_CANE_OF_SOMARIA: // 0xAA
             return (void*)gCaneOfSomariaNameTex;
-        case ITEM_DOMINION_ROD:        // 0xAB
+        case ITEM_DOMINION_ROD: // 0xAB
             return (void*)gDominionRodNameTex;
-        case ITEM_TIME_GATE:           // 0xAC
+        case ITEM_TIME_GATE: // 0xAC
             return (void*)gTimeGateNameTex;
-        case ITEM_BOMB_ARROWS:         // 0xAD
+        case ITEM_BOMB_ARROWS: // 0xAD
             return (void*)gBombArrowsNameTex;
-        case ITEM_ROD_FIRE:            // 0xAE
+        case ITEM_ROD_FIRE: // 0xAE
             return (void*)gFireRodNameTex;
-        case ITEM_ROD_ICE:             // 0xAF
+        case ITEM_ROD_ICE: // 0xAF
             return (void*)gIceRodNameTex;
-        case ITEM_ROD_LIGHT:           // 0xB0
+        case ITEM_ROD_LIGHT: // 0xB0
             return (void*)gLightRodNameTex;
-        case ITEM_BEETLE:              // 0xB1
+        case ITEM_BEETLE: // 0xB1
             return (void*)gBeetleNameTex;
-        case ITEM_SHOVEL:              // 0xB2
+        case ITEM_SHOVEL: // 0xB2
             return (void*)gShovelNameTex;
-        case ITEM_PENDING_1:           // 0xB3
+        case ITEM_PENDING_1: // 0xB3
             return (void*)gPending1NameTex;
-        case ITEM_PENDING_2:           // 0xB4
+        case ITEM_PENDING_2: // 0xB4
             return (void*)gPending2NameTex;
-        case ITEM_PENDING_3:           // 0xB6
+        case ITEM_PENDING_3: // 0xB6
             return (void*)gPending3NameTex;
         default:
             return NULL;
@@ -197,53 +201,53 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     switch (itemId) {
         case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
             return (void*)gItemIconRocsFeatherTex;
-        case ITEM_ROCS_CAPE:           // 0x9E
+        case ITEM_ROCS_CAPE: // 0x9E
             return (void*)gItemIconRocsCapeTex;
-        case ITEM_DESIRE_SENSOR:       // 0x9F
+        case ITEM_DESIRE_SENSOR: // 0x9F
             return (void*)gItemIconDesireSensorTex;
-        case ITEM_HYLIAS_GRACE:        // 0xA0
+        case ITEM_HYLIAS_GRACE: // 0xA0
             return (void*)gItemIconHyliaGraceTex;
-        case ITEM_ZONAI_PERMAFROST:    // 0xA1
+        case ITEM_ZONAI_PERMAFROST: // 0xA1
             return (void*)gItemIconZonaiPermafrostTex;
-        case ITEM_DEMISE_DESTRUCTION:  // 0xA2
+        case ITEM_DEMISE_DESTRUCTION: // 0xA2
             return (void*)gItemIconDemiseDestructionTex;
-        case ITEM_DEKU_LEAF:           // 0xA3
+        case ITEM_DEKU_LEAF: // 0xA3
             return (void*)gItemIconDekuLeafTex;
-        case ITEM_SWITCH_HOOK:         // 0xA4
+        case ITEM_SWITCH_HOOK: // 0xA4
             return (void*)gItemIconSwitchHookTex;
-        case ITEM_MOGMA_MITTS:         // 0xA5
+        case ITEM_MOGMA_MITTS: // 0xA5
             return (void*)gItemIconMogmaMittsTex;
-        case ITEM_GUST_JAR:            // 0xA6
+        case ITEM_GUST_JAR: // 0xA6
             return (void*)gItemIconGustJarTex;
-        case ITEM_BALL_AND_CHAIN:      // 0xA7
+        case ITEM_BALL_AND_CHAIN: // 0xA7
             return (void*)gItemIconBallAndChainTex;
-        case ITEM_WHIP:                // 0xA8
+        case ITEM_WHIP: // 0xA8
             return (void*)gItemIconWhipTex;
-        case ITEM_SPINNER:             // 0xA9
+        case ITEM_SPINNER: // 0xA9
             return (void*)gItemIconSpinnerTex;
-        case ITEM_CANE_OF_SOMARIA:     // 0xAA
+        case ITEM_CANE_OF_SOMARIA: // 0xAA
             return (void*)gItemIconCaneOfSomariaTex;
-        case ITEM_DOMINION_ROD:        // 0xAB
+        case ITEM_DOMINION_ROD: // 0xAB
             return (void*)gItemIconDominionRodTex;
-        case ITEM_TIME_GATE:           // 0xAC
+        case ITEM_TIME_GATE: // 0xAC
             return (void*)gItemIconTimeGateTex;
-        case ITEM_BOMB_ARROWS:         // 0xAD
+        case ITEM_BOMB_ARROWS: // 0xAD
             return (void*)gItemIconBombArrowsTex;
-        case ITEM_ROD_FIRE:            // 0xAE
+        case ITEM_ROD_FIRE: // 0xAE
             return (void*)gItemIconFireRodTex;
-        case ITEM_ROD_ICE:             // 0xAF
+        case ITEM_ROD_ICE: // 0xAF
             return (void*)gItemIconIceRodTex;
-        case ITEM_ROD_LIGHT:           // 0xB0
+        case ITEM_ROD_LIGHT: // 0xB0
             return (void*)gItemIconLightRodTex;
-        case ITEM_BEETLE:              // 0xB1
+        case ITEM_BEETLE: // 0xB1
             return (void*)gItemIconBeetleTex;
-        case ITEM_SHOVEL:              // 0xB2
+        case ITEM_SHOVEL: // 0xB2
             return (void*)gItemIconShovelTex;
-        case ITEM_PENDING_1:           // 0xB3
+        case ITEM_PENDING_1: // 0xB3
             return (void*)gItemIconPending1Tex;
-        case ITEM_PENDING_2:           // 0xB4
+        case ITEM_PENDING_2: // 0xB4
             return (void*)gItemIconPending2Tex;
-        case ITEM_PENDING_3:           // 0xB6
+        case ITEM_PENDING_3: // 0xB6
             return (void*)gItemIconPending3Tex;
         default:
             return gItemIcons[0];
@@ -255,7 +259,7 @@ uint8_t ExtInv_GetItemSlot(uint16_t itemId) {
     }
     // Special case: ITEM_ROCS_CAPE shares slot with ITEM_ROCS_FEATHER_SKIJER (progressive upgrade)
     if (itemId == ITEM_ROCS_CAPE) {
-        return SLOT_ROCS;  // Same as SLOT_ROCS_FEATHER_SKIJER (24)
+        return SLOT_ROCS; // Same as SLOT_ROCS_FEATHER_SKIJER (24)
     }
     for (int i = 0; i < 24; i++) {
         if (gPage2Items[i] == itemId) {

@@ -479,10 +479,11 @@ void InitTrickNames() {
     };
 
     trickNameTable[RG_PROGRESSIVE_HOOKSHOT] = {
-        Text{ "Progressive Switch Hook", "Crochet Echange (prog.)", "Wechselhaken (prog.)" }, // "Gancho intercambiador progresivo"
-        Text{ "Progressive Clawshot", "Grappin-griffe (prog.)", "Greifhaken (prog.)" },     // "Zarpa progresiva"
-        Text{ "Progressive Gripshot", "Grappince (prog.)", "Tauschhaken (prog.)" },         // "Enganchador progresivo"
-        Text{ "Progressive Rope", "Corde (prog.)", "Giftwurm (prog.)" },                    // "Cuerda progresivo"
+        Text{ "Progressive Switch Hook", "Crochet Echange (prog.)",
+              "Wechselhaken (prog.)" }, // "Gancho intercambiador progresivo"
+        Text{ "Progressive Clawshot", "Grappin-griffe (prog.)", "Greifhaken (prog.)" }, // "Zarpa progresiva"
+        Text{ "Progressive Gripshot", "Grappince (prog.)", "Tauschhaken (prog.)" },     // "Enganchador progresivo"
+        Text{ "Progressive Rope", "Corde (prog.)", "Giftwurm (prog.)" },                // "Cuerda progresivo"
     };
     trickNameTable[RG_PROGRESSIVE_STRENGTH] = {
         Text{ "Power Glove", "Gant de Puissance (prog.)", "Krafthandschuh (prog.)" },  // "Guanteletes progresivos"

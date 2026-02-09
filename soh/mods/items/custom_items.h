@@ -16,41 +16,37 @@
 extern "C" {
 #endif
 
-#define CUSTOM_BLOCKING_STATE1_FLAGS ( \
-    PLAYER_STATE1_DEAD | \
-    PLAYER_STATE1_IN_CUTSCENE | \
-    PLAYER_STATE1_LOADING | \
-    PLAYER_STATE1_IN_ITEM_CS \
-)
+#define CUSTOM_BLOCKING_STATE1_FLAGS \
+    (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS)
 
 #define GUSTJAR_MAX_TRACKED 16
 
 // Item IDs (custom items start at 0x9D, develop's ITEM_ROCS_FEATHER is at 0x9C)
-#define ITEM_ROCS_FEATHER_SKIJER       0x9D
-#define ITEM_ROCS_CAPE          0x9E
-#define ITEM_DESIRE_SENSOR      0x9F
-#define ITEM_HYLIAS_GRACE       0xA0
-#define ITEM_ZONAI_PERMAFROST   0xA1
+#define ITEM_ROCS_FEATHER_SKIJER 0x9D
+#define ITEM_ROCS_CAPE 0x9E
+#define ITEM_DESIRE_SENSOR 0x9F
+#define ITEM_HYLIAS_GRACE 0xA0
+#define ITEM_ZONAI_PERMAFROST 0xA1
 #define ITEM_DEMISE_DESTRUCTION 0xA2
-#define ITEM_DEKU_LEAF          0xA3
-#define ITEM_SWITCH_HOOK        0xA4
-#define ITEM_MOGMA_MITTS        0xA5
-#define ITEM_GUST_JAR           0xA6
-#define ITEM_BALL_AND_CHAIN     0xA7
-#define ITEM_WHIP               0xA8
-#define ITEM_SPINNER            0xA9
-#define ITEM_CANE_OF_SOMARIA    0xAA
-#define ITEM_DOMINION_ROD       0xAB
-#define ITEM_TIME_GATE          0xAC
-#define ITEM_BOMB_ARROWS        0xAD
-#define ITEM_ROD_FIRE           0xAE
-#define ITEM_ROD_ICE            0xAF
-#define ITEM_ROD_LIGHT          0xB0
-#define ITEM_BEETLE             0xB1
-#define ITEM_SHOVEL             0xB2
-#define ITEM_PENDING_1          0xB3
-#define ITEM_PENDING_2          0xB4
-#define ITEM_PENDING_3          0xB6
+#define ITEM_DEKU_LEAF 0xA3
+#define ITEM_SWITCH_HOOK 0xA4
+#define ITEM_MOGMA_MITTS 0xA5
+#define ITEM_GUST_JAR 0xA6
+#define ITEM_BALL_AND_CHAIN 0xA7
+#define ITEM_WHIP 0xA8
+#define ITEM_SPINNER 0xA9
+#define ITEM_CANE_OF_SOMARIA 0xAA
+#define ITEM_DOMINION_ROD 0xAB
+#define ITEM_TIME_GATE 0xAC
+#define ITEM_BOMB_ARROWS 0xAD
+#define ITEM_ROD_FIRE 0xAE
+#define ITEM_ROD_ICE 0xAF
+#define ITEM_ROD_LIGHT 0xB0
+#define ITEM_BEETLE 0xB1
+#define ITEM_SHOVEL 0xB2
+#define ITEM_PENDING_1 0xB3
+#define ITEM_PENDING_2 0xB4
+#define ITEM_PENDING_3 0xB6
 
 /**
  * Global state for all custom items.
@@ -101,7 +97,10 @@ typedef struct {
     u16 gustJarButtonMask;
     s8 gustJarPrevInvincibility;
     Actor* gustJarPotActor;
-    struct { Actor* actor; Vec3f originalScale; } gustJarScaleCache[GUSTJAR_MAX_TRACKED];
+    struct {
+        Actor* actor;
+        Vec3f originalScale;
+    } gustJarScaleCache[GUSTJAR_MAX_TRACKED];
     u8 gustJarScaleCacheCount;
 
     // Shovel
@@ -313,10 +312,10 @@ typedef struct {
     u8 timeGateSubPhase;
     s16 timeGateTimer;
     u8 timeGatePromptShown;
-    u8 timeGateItemVisible;   // Show item in Link's hand during cast
-    u8 timeGatePortalActive;  // Show blue warp portal on ground
-    f32 timeGatePortalAlpha;  // Portal fade alpha (0-255)
-    f32 timeGatePortalScale;  // Portal scale for grow/shrink effect
+    u8 timeGateItemVisible;  // Show item in Link's hand during cast
+    u8 timeGatePortalActive; // Show blue warp portal on ground
+    f32 timeGatePortalAlpha; // Portal fade alpha (0-255)
+    f32 timeGatePortalScale; // Portal scale for grow/shrink effect
 
     // Mogma Mitts
     u8 mogmaMittsActive;

@@ -13,38 +13,35 @@ extern "C" {
 #endif
 
 static const u16 sButtonMasks[8] = {
-    BTN_B, BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT,
-    BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT
+    BTN_B, BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT, BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT
 };
 
-#define ITEM_BLOCK_STATE1 ( \
-    PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | \
-    PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM | \
-    PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE | \
-    PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING | \
-    PLAYER_STATE1_CHARGING_SPIN_ATTACK \
-)
+#define ITEM_BLOCK_STATE1                                                                                           \
+    (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |            \
+     PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | \
+     PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE |                        \
+     PLAYER_STATE1_HOOKSHOT_FALLING | PLAYER_STATE1_CHARGING_SPIN_ATTACK)
 
 /**
  * Input state for custom item polling.
  */
 typedef struct {
-    u16 equippedButton;     // Button mask (BTN_CLEFT, etc.)
-    u8 isPressed;           // Pressed this frame
-    u8 isHeld;              // Currently held
-    u8 isReleased;          // Released this frame
-    u8 wasEquipped;         // Item is on a C-button
-    u8 otherButtonPressed;  // Another action button pressed
-    u8 damageTaken;         // Player took damage
+    u16 equippedButton;    // Button mask (BTN_CLEFT, etc.)
+    u8 isPressed;          // Pressed this frame
+    u8 isHeld;             // Currently held
+    u8 isReleased;         // Released this frame
+    u8 wasEquipped;        // Item is on a C-button
+    u8 otherButtonPressed; // Another action button pressed
+    u8 damageTaken;        // Player took damage
 } ItemInputState;
 
 /**
  * Equip state with callbacks.
  */
 typedef struct {
-    u8 isEquipped;          // Item currently active
-    u8 shouldUnequip;       // Pending unequip
-    s8 prevInvincibility;   // For damage detection
+    u8 isEquipped;        // Item currently active
+    u8 shouldUnequip;     // Pending unequip
+    s8 prevInvincibility; // For damage detection
 } ItemEquipState;
 
 typedef void (*EquipCallback)(PlayState* play, Player* player);
@@ -124,8 +121,8 @@ u8 ItemInput_CanInterrupt(Player* player);
  * @param play PlayState instance
  * @return 1 if equipped
  */
-u8 ItemEquip_Update(ItemEquipState* state, ItemInputState* input, EquipCallback onEquip,
-                    UnequipCallback onUnequip, Player* player, PlayState* play);
+u8 ItemEquip_Update(ItemEquipState* state, ItemInputState* input, EquipCallback onEquip, UnequipCallback onUnequip,
+                    Player* player, PlayState* play);
 
 /**
  * Play equip sound effect.

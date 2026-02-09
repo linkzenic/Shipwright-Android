@@ -54,8 +54,10 @@ static void BallChain_DrawChain(PlayState* play, Vec3f* start, Vec3f* end) {
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 85, 85, 85, 255);
     gDPSetEnvColor(POLY_OPA_DISP++, 40, 40, 40, 255);
 
-    if (linkCount < 1) linkCount = 1;
-    if (linkCount > 40) linkCount = 40;
+    if (linkCount < 1)
+        linkCount = 1;
+    if (linkCount > 40)
+        linkCount = 40;
 
     for (i = 0; i <= linkCount; i++) {
         f32 t = (f32)i / (f32)linkCount;
@@ -97,7 +99,8 @@ void CustomItems_DrawBallChain(Player* this, PlayState* play) {
     f32 scale;
     u8 shouldRotate;
 
-    if (!gCustomItemState.ballAndChainThrown) return;
+    if (!gCustomItemState.ballAndChainThrown)
+        return;
 
     state = gCustomItemState.timer2;
     ballPos = &gCustomItemState.sharedProjectilePos;

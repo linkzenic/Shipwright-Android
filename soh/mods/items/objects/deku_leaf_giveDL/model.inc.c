@@ -5,61 +5,61 @@
  */
 
 // Vertex colors
-#define COL_SPINE_R     160
-#define COL_SPINE_G     220
-#define COL_SPINE_B     100
-#define COL_MEMBRANE_R  90
-#define COL_MEMBRANE_G  200
-#define COL_MEMBRANE_B  90
-#define COL_EDGE_R      50
-#define COL_EDGE_G      160
-#define COL_EDGE_B      60
-#define COL_STEM_R      2
-#define COL_STEM_G      15
-#define COL_STEM_B      2
+#define COL_SPINE_R 160
+#define COL_SPINE_G 220
+#define COL_SPINE_B 100
+#define COL_MEMBRANE_R 90
+#define COL_MEMBRANE_G 200
+#define COL_MEMBRANE_B 90
+#define COL_EDGE_R 50
+#define COL_EDGE_G 160
+#define COL_EDGE_B 60
+#define COL_STEM_R 2
+#define COL_STEM_G 15
+#define COL_STEM_B 2
 
 // Vertices rotated 90deg on X: {x, y, z} -> {x, -z, y}
 Vtx g_dekuleaf_vtx[29] = {
     // Spine (central vein)
-    {{ {0, -40, -10}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {0, -10, 15}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {0, 20, 30}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {0, 50, 35}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {0, 80, 40}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
+    { { { 0, -40, -10 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 0, -10, 15 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 0, 20, 30 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 0, 50, 35 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 0, 80, 40 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
 
     // Left veins
-    {{ {-30, -20, 5}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {-45, 10, 15}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {-50, 40, 25}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {-30, 70, 35}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
+    { { { -30, -20, 5 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { -45, 10, 15 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { -50, 40, 25 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { -30, 70, 35 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
 
     // Right veins
-    {{ {30, -20, 5}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {45, 10, 15}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {50, 40, 25}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
-    {{ {30, 70, 35}, 0, {0, 0}, {COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255} }},
+    { { { 30, -20, 5 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 45, 10, 15 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 50, 40, 25 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
+    { { { 30, 70, 35 }, 0, { 0, 0 }, { COL_SPINE_R, COL_SPINE_G, COL_SPINE_B, 255 } } },
 
     // Left edge (membrane)
-    {{ {-40, -50, -10}, 0, {0, 0}, {COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255} }},
-    {{ {-60, -10, -5}, 0, {0, 0}, {COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255} }},
-    {{ {-80, 20, 10}, 0, {0, 0}, {COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255} }},
-    {{ {-65, 55, 20}, 0, {0, 0}, {COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255} }},
+    { { { -40, -50, -10 }, 0, { 0, 0 }, { COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255 } } },
+    { { { -60, -10, -5 }, 0, { 0, 0 }, { COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255 } } },
+    { { { -80, 20, 10 }, 0, { 0, 0 }, { COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255 } } },
+    { { { -65, 55, 20 }, 0, { 0, 0 }, { COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255 } } },
 
     // Right edge (membrane)
-    {{ {40, -50, -10}, 0, {0, 0}, {COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255} }},
-    {{ {60, -10, -5}, 0, {0, 0}, {COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255} }},
-    {{ {80, 20, 10}, 0, {0, 0}, {COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255} }},
-    {{ {65, 55, 20}, 0, {0, 0}, {COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255} }},
+    { { { 40, -50, -10 }, 0, { 0, 0 }, { COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255 } } },
+    { { { 60, -10, -5 }, 0, { 0, 0 }, { COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255 } } },
+    { { { 80, 20, 10 }, 0, { 0, 0 }, { COL_MEMBRANE_R, COL_MEMBRANE_G, COL_MEMBRANE_B, 255 } } },
+    { { { 65, 55, 20 }, 0, { 0, 0 }, { COL_EDGE_R, COL_EDGE_G, COL_EDGE_B, 255 } } },
 
     // Stem (handle)
-    {{ {2, -45, -15}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {-2, -45, -15}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {-2, -41, -15}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {2, -41, -15}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {1, -55, -50}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {-1, -55, -50}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {-1, -51, -50}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
-    {{ {1, -51, -50}, 0, {0, 0}, {COL_STEM_R, COL_STEM_G, COL_STEM_B, 255} }},
+    { { { 2, -45, -15 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { -2, -45, -15 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { -2, -41, -15 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { 2, -41, -15 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { 1, -55, -50 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { -1, -55, -50 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { -1, -51, -50 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
+    { { { 1, -51, -50 }, 0, { 0, 0 }, { COL_STEM_R, COL_STEM_G, COL_STEM_B, 255 } } },
 };
 
 Gfx g_dekuleaf_dl[] = {

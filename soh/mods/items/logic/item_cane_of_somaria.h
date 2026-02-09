@@ -13,9 +13,9 @@
 // STATES (like Fire Rod)
 // =============================================================================
 
-#define SOMARIA_STATE_INACTIVE      0
-#define SOMARIA_STATE_EQUIPPED      1
-#define SOMARIA_STATE_CASTING       2
+#define SOMARIA_STATE_INACTIVE 0
+#define SOMARIA_STATE_EQUIPPED 1
+#define SOMARIA_STATE_CASTING 2
 
 // =============================================================================
 // SETTINGS
@@ -27,16 +27,16 @@
 // STATE ALIASES (like Fire Rod)
 // =============================================================================
 
-#define shSomariaActive     gCustomItemState.somariaActive
-#define somariaState        gCustomItemState.somariaActionType
-#define shSomariaAnimating  gCustomItemState.somariaAnimating
-#define shSomariaAnimTimer  gCustomItemState.somariaAnimTimer
+#define shSomariaActive gCustomItemState.somariaActive
+#define somariaState gCustomItemState.somariaActionType
+#define shSomariaAnimating gCustomItemState.somariaAnimating
+#define shSomariaAnimTimer gCustomItemState.somariaAnimTimer
 
 // Block state aliases
-#define somariaBlocks       gCustomItemState.somariaBlocks
-#define somariaBlockCount   gCustomItemState.somariaBlockCount
-#define somariaOldestSlot   gCustomItemState.somariaOldestSlot
-#define somariaButtonMask   gCustomItemState.somariaButtonMask
+#define somariaBlocks gCustomItemState.somariaBlocks
+#define somariaBlockCount gCustomItemState.somariaBlockCount
+#define somariaOldestSlot gCustomItemState.somariaOldestSlot
+#define somariaButtonMask gCustomItemState.somariaButtonMask
 
 // =============================================================================
 // DISPLAY LISTS (defined in object_cane_of_somaria.c)

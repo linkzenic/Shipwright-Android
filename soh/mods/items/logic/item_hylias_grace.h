@@ -15,33 +15,33 @@
 #include "../custom_items.h"
 
 // States
-#define HGRACE_STATE_IDLE       0
-#define HGRACE_STATE_CASTING    1   // Farore's Wind animation (kaze1 -> kaze2 -> kaze3)
-#define HGRACE_STATE_WARP_IN    2   // Blue warp transition
-#define HGRACE_STATE_FAIRY      3   // Fairy flight mode
-#define HGRACE_STATE_WARP_OUT   4   // Reverse warp, Link reappears
+#define HGRACE_STATE_IDLE 0
+#define HGRACE_STATE_CASTING 1  // Farore's Wind animation (kaze1 -> kaze2 -> kaze3)
+#define HGRACE_STATE_WARP_IN 2  // Blue warp transition
+#define HGRACE_STATE_FAIRY 3    // Fairy flight mode
+#define HGRACE_STATE_WARP_OUT 4 // Reverse warp, Link reappears
 
 // Casting sub-phases (Farore's Wind 3-part animation)
-#define HGRACE_CAST_KAZE1   0
-#define HGRACE_CAST_KAZE2   1
-#define HGRACE_CAST_KAZE3   2
+#define HGRACE_CAST_KAZE1 0
+#define HGRACE_CAST_KAZE2 1
+#define HGRACE_CAST_KAZE3 2
 
 // Magic
-#define HGRACE_MAGIC_COST       24
+#define HGRACE_MAGIC_COST 24
 
 // Fairy mode
-#define HGRACE_FAIRY_DURATION   600     // 10 seconds at 20fps
-#define HGRACE_FLICKER_START    90      // Last 1.5 seconds = flicker
-#define HGRACE_SPEED            5.0f
-#define HGRACE_SPRINT_MULT      2.0f
-#define HGRACE_COOLDOWN         1200    // 1 minute at 20fps
+#define HGRACE_FAIRY_DURATION 600 // 10 seconds at 20fps
+#define HGRACE_FLICKER_START 90   // Last 1.5 seconds = flicker
+#define HGRACE_SPEED 5.0f
+#define HGRACE_SPRINT_MULT 2.0f
+#define HGRACE_COOLDOWN 1200 // 1 minute at 20fps
 
 // Warp timing
-#define HGRACE_WARP_IN_DURATION  40
+#define HGRACE_WARP_IN_DURATION 40
 #define HGRACE_WARP_OUT_DURATION 30
 
 // Collision
-#define HGRACE_FAIRY_HOVER      5.0f    // Minimum hover height above floor
+#define HGRACE_FAIRY_HOVER 5.0f // Minimum hover height above floor
 
 // DynaPoly actors that BLOCK fairy passage (doors / solid shutters).
 // All other DynaPoly actors (bars, grates, bombable walls, fake walls, etc.)
@@ -61,11 +61,11 @@ static const u16 sHGraceDoorActors[] = {
 };
 
 // State aliases
-#define hgActive    gCustomItemState.hyliasGraceActive
-#define hgState     gCustomItemState.hyliasGraceState
-#define hgSubPhase  gCustomItemState.hyliasGraceSubPhase
-#define hgTimer     gCustomItemState.hyliasGraceTimer
-#define hgCooldown  gCustomItemState.hyliasGraceCooldown
-#define hgFairy     gCustomItemState.hyliasGraceFairy
+#define hgActive gCustomItemState.hyliasGraceActive
+#define hgState gCustomItemState.hyliasGraceState
+#define hgSubPhase gCustomItemState.hyliasGraceSubPhase
+#define hgTimer gCustomItemState.hyliasGraceTimer
+#define hgCooldown gCustomItemState.hyliasGraceCooldown
+#define hgFairy gCustomItemState.hyliasGraceFairy
 
 #endif // ITEM_HYLIAS_GRACE_H

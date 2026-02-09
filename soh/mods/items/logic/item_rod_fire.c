@@ -32,24 +32,22 @@ static u8 sSpinColliderInited = 0;
 static u8 sFlameCollidersInited = 0;
 static u8 sMultiCollidersInited = 0;
 
-static RodColor sFireRodColor = {
-    FIRE_ROD_PRIM_R, FIRE_ROD_PRIM_G, FIRE_ROD_PRIM_B, FIRE_ROD_PRIM_A,
-    FIRE_ROD_ENV_R, FIRE_ROD_ENV_G, FIRE_ROD_ENV_B, FIRE_ROD_ENV_A
-};
+static RodColor sFireRodColor = { FIRE_ROD_PRIM_R, FIRE_ROD_PRIM_G, FIRE_ROD_PRIM_B, FIRE_ROD_PRIM_A,
+                                  FIRE_ROD_ENV_R,  FIRE_ROD_ENV_G,  FIRE_ROD_ENV_B,  FIRE_ROD_ENV_A };
 
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 
 // Aliases for multi-projectile system
-#define fireRodProjPos2     gCustomItemState.fireRodProjPos2
-#define fireRodProjPos3     gCustomItemState.fireRodProjPos3
-#define fireRodProjVel      gCustomItemState.fireRodProjVel
-#define fireRodProjCount    gCustomItemState.fireRodProjCount
-#define fireRodCollider2    gCustomItemState.fireRodCollider2
-#define fireRodCollider3    gCustomItemState.fireRodCollider3
-#define fireRodFlameActive  gCustomItemState.fireRodFlameActive
-#define fireRodFlameTimer   gCustomItemState.fireRodFlameTimer
-#define fireRodFlamePos     gCustomItemState.fireRodFlamePos
+#define fireRodProjPos2 gCustomItemState.fireRodProjPos2
+#define fireRodProjPos3 gCustomItemState.fireRodProjPos3
+#define fireRodProjVel gCustomItemState.fireRodProjVel
+#define fireRodProjCount gCustomItemState.fireRodProjCount
+#define fireRodCollider2 gCustomItemState.fireRodCollider2
+#define fireRodCollider3 gCustomItemState.fireRodCollider3
+#define fireRodFlameActive gCustomItemState.fireRodFlameActive
+#define fireRodFlameTimer gCustomItemState.fireRodFlameTimer
+#define fireRodFlamePos gCustomItemState.fireRodFlamePos
 #define fireRodFlameColliders gCustomItemState.fireRodFlameColliders
 
 // =============================================================================
@@ -71,7 +69,8 @@ static void FireRod_Backfire(Player* p, PlayState* play) {
 }
 
 static u8 FireRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 backfireChance) {
-    if (ItemMagic_HasEnough(play, magicCost)) return 0;
+    if (ItemMagic_HasEnough(play, magicCost))
+        return 0;
 
     u8 roll = (u8)(Rand_ZeroOne() * 100.0f);
     if (roll < backfireChance) {
@@ -88,7 +87,8 @@ static u8 FireRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 ba
 // =============================================================================
 
 static void FireRod_InitColliders(Player* p, PlayState* play) {
-    if (sMultiCollidersInited) return;
+    if (sMultiCollidersInited)
+        return;
 
     Collider_InitCylinder(play, &fireRodCollider);
     Collider_SetCylinder(play, &fireRodCollider, &p->actor, &sFireRodProjColInit);
@@ -109,7 +109,8 @@ static void FireRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
 }
 
 // Spawns single projectile (stab, first-person)
-static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch, f32 maxRange) {
+static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
+                                         f32 maxRange) {
     FireRod_InitColliders(p, play);
 
     sFireRodTargetScale = 2.0f;
@@ -117,13 +118,16 @@ static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* star
     fireRodProjCount = 1;
     fireRodProjPos = *startPos;
     fireRodProjTimer = (s16)(maxRange / FIRE_ROD_PROJ_SPEED);
-    if (fireRodProjTimer < 10) fireRodProjTimer = 10;
-    if (fireRodProjTimer > 30) fireRodProjTimer = 30;
+    if (fireRodProjTimer < 10)
+        fireRodProjTimer = 10;
+    if (fireRodProjTimer > 30)
+        fireRodProjTimer = 30;
 
     fireRodProjScale = 0.0f;
     fireRodProjRotZ = 0;
     fireRodProjTrailIdx = 0;
-    for (s32 i = 0; i < 6; i++) fireRodProjTrail[i] = *startPos;
+    for (s32 i = 0; i < 6; i++)
+        fireRodProjTrail[i] = *startPos;
 
     fireRodProjYaw = yaw;
     fireRodProjPitch = pitch;
@@ -140,7 +144,8 @@ static void FireRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* star
 
     s16 spreadAngle = (s16)(FIRE_ROD_SLASH_SPREAD * (0x10000 / 360));
     s16 timer = (s16)(FIRE_ROD_SLASH_RANGE / FIRE_ROD_PROJ_SPEED);
-    if (timer < 10) timer = 10;
+    if (timer < 10)
+        timer = 10;
     fireRodProjTimer = timer;
 
     fireRodProjScale = 0.0f;
@@ -152,7 +157,8 @@ static void FireRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* star
     fireRodProjYaw = baseYaw;
     fireRodProjPitch = pitch;
     FireRod_CalcVelocity(&fireRodProjVel[0], baseYaw, pitch);
-    for (s32 i = 0; i < 6; i++) fireRodProjTrail[i] = *startPos;
+    for (s32 i = 0; i < 6; i++)
+        fireRodProjTrail[i] = *startPos;
 
     // Left fireball (-spread angle)
     fireRodProjPos2 = *startPos;
@@ -202,12 +208,15 @@ static void FireRod_SpawnFireSparks(PlayState* play, Vec3f* pos, f32 scale) {
 }
 
 static void FireRod_UpdateProjectile(Player* p, PlayState* play) {
-    if (!fireRodProjActive) return;
+    if (!fireRodProjActive)
+        return;
 
     fireRodProjRotZ += 5000;
 
-    if (fireRodProjTimer > 0) fireRodProjTimer--;
-    if (fireRodProjTimer == 0) sFireRodTargetScale = 0.0f;
+    if (fireRodProjTimer > 0)
+        fireRodProjTimer--;
+    if (fireRodProjTimer == 0)
+        sFireRodTargetScale = 0.0f;
 
     Math_ApproachF(&fireRodProjScale, sFireRodTargetScale, 0.2f, 0.4f);
 
@@ -235,27 +244,34 @@ static void FireRod_UpdateProjectile(Player* p, PlayState* play) {
 
     // Trail for center projectile
     fireRodProjTrail[0] = fireRodProjPos;
-    for (s32 i = 4; i >= 0; i--) fireRodProjTrail[i + 1] = fireRodProjTrail[i];
+    for (s32 i = 4; i >= 0; i--)
+        fireRodProjTrail[i + 1] = fireRodProjTrail[i];
 
     // Sparks and sound
     if (fireRodProjScale >= 0.4f) {
         FireRod_SpawnFireSparks(play, &fireRodProjPos, fireRodProjScale);
-        if (fireRodProjCount >= 2) FireRod_SpawnFireSparks(play, &fireRodProjPos2, fireRodProjScale);
-        if (fireRodProjCount >= 3) FireRod_SpawnFireSparks(play, &fireRodProjPos3, fireRodProjScale);
+        if (fireRodProjCount >= 2)
+            FireRod_SpawnFireSparks(play, &fireRodProjPos2, fireRodProjScale);
+        if (fireRodProjCount >= 3)
+            FireRod_SpawnFireSparks(play, &fireRodProjPos3, fireRodProjScale);
         Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_LOOP - SFX_FLAG);
     }
 
     // Colliders
     if (fireRodProjScale >= 0.6f) {
         FireRod_UpdateCollider(&fireRodCollider, &fireRodProjPos, fireRodProjScale, play);
-        if (fireRodProjCount >= 2) FireRod_UpdateCollider(&fireRodCollider2, &fireRodProjPos2, fireRodProjScale, play);
-        if (fireRodProjCount >= 3) FireRod_UpdateCollider(&fireRodCollider3, &fireRodProjPos3, fireRodProjScale, play);
+        if (fireRodProjCount >= 2)
+            FireRod_UpdateCollider(&fireRodCollider2, &fireRodProjPos2, fireRodProjScale, play);
+        if (fireRodProjCount >= 3)
+            FireRod_UpdateCollider(&fireRodCollider3, &fireRodProjPos3, fireRodProjScale, play);
     }
 
     // Hit detection
     u8 anyHit = FireRod_CheckHit(&fireRodCollider, &fireRodProjPos, play, p);
-    if (fireRodProjCount >= 2) anyHit |= FireRod_CheckHit(&fireRodCollider2, &fireRodProjPos2, play, p);
-    if (fireRodProjCount >= 3) anyHit |= FireRod_CheckHit(&fireRodCollider3, &fireRodProjPos3, play, p);
+    if (fireRodProjCount >= 2)
+        anyHit |= FireRod_CheckHit(&fireRodCollider2, &fireRodProjPos2, play, p);
+    if (fireRodProjCount >= 3)
+        anyHit |= FireRod_CheckHit(&fireRodCollider3, &fireRodProjPos3, play, p);
 
     if (anyHit) {
         fireRodProjVel[0].x = fireRodProjVel[0].y = fireRodProjVel[0].z = 0.0f;
@@ -271,7 +287,8 @@ static void FireRod_UpdateProjectile(Player* p, PlayState* play) {
 // =============================================================================
 
 static void FireRod_InitFlameColliders(Player* p, PlayState* play) {
-    if (sFlameCollidersInited) return;
+    if (sFlameCollidersInited)
+        return;
 
     for (s32 i = 0; i < FIRE_ROD_FLAME_COUNT; i++) {
         Collider_InitCylinder(play, &fireRodFlameColliders[i]);
@@ -307,7 +324,8 @@ static void FireRod_StartFlamethrower(Player* p, PlayState* play) {
 }
 
 static void FireRod_UpdateFlamethrower(Player* p, PlayState* play) {
-    if (!fireRodFlameActive) return;
+    if (!fireRodFlameActive)
+        return;
 
     if (fireRodFlameTimer > 0) {
         fireRodFlameTimer--;
@@ -334,7 +352,8 @@ static void FireRod_UpdateFlamethrower(Player* p, PlayState* play) {
 
 // Slash: 3 fireballs spread at short range
 static void FireRod_SlashEffect(Player* p, PlayState* play) {
-    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_SLASH, FIRE_ROD_BACKFIRE_SLASH)) return;
+    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_SLASH, FIRE_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, FIRE_ROD_MAGIC_SLASH);
 
     Vec3f* tipPos = &p->meleeWeaponInfo[0].tip;
@@ -355,7 +374,8 @@ static void FireRod_SlashEffect(Player* p, PlayState* play) {
 
 // Stab: Single fireball at long range - uses weapon direction from base to tip
 static void FireRod_StabEffect(Player* p, PlayState* play) {
-    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_STAB, FIRE_ROD_BACKFIRE_SLASH)) return;
+    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_STAB, FIRE_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, FIRE_ROD_MAGIC_STAB);
 
     Vec3f* tipPos = &p->meleeWeaponInfo[0].tip;
@@ -378,14 +398,16 @@ static void FireRod_StabEffect(Player* p, PlayState* play) {
 
 // Jump Slash: Flamethrower cone
 static void FireRod_JumpEffect(Player* p, PlayState* play) {
-    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_JUMP, FIRE_ROD_BACKFIRE_JUMP)) return;
+    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_JUMP, FIRE_ROD_BACKFIRE_JUMP))
+        return;
     ItemMagic_Consume(play, FIRE_ROD_MAGIC_JUMP);
     FireRod_StartFlamethrower(p, play);
 }
 
 // First Person: Fires stab in aimed direction
 static void FireRod_FirstPersonFire(Player* p, PlayState* play) {
-    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_STAB, FIRE_ROD_BACKFIRE_SLASH)) return;
+    if (FireRod_CheckBackfire(p, play, FIRE_ROD_MAGIC_STAB, FIRE_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, FIRE_ROD_MAGIC_STAB);
 
     s16 aimYaw = FirstPerson_GetAimYaw(p);
@@ -422,8 +444,8 @@ static void FireRod_SwingParticles(Player* p, PlayState* play) {
 }
 
 static u8 FireRod_IsSpinAttack(u8 mwa) {
-    return (mwa == PLAYER_MWA_SPIN_ATTACK_1H || mwa == PLAYER_MWA_SPIN_ATTACK_2H ||
-            mwa == PLAYER_MWA_BIG_SPIN_1H || mwa == PLAYER_MWA_BIG_SPIN_2H);
+    return (mwa == PLAYER_MWA_SPIN_ATTACK_1H || mwa == PLAYER_MWA_SPIN_ATTACK_2H || mwa == PLAYER_MWA_BIG_SPIN_1H ||
+            mwa == PLAYER_MWA_BIG_SPIN_2H);
 }
 
 // =============================================================================
@@ -446,14 +468,17 @@ static void FireRod_StartSpinFire(Player* p, PlayState* play, u8 isBigSpin) {
 }
 
 static void FireRod_UpdateSpinFire(Player* p, PlayState* play) {
-    if (!fireRodSpinActive) return;
+    if (!fireRodSpinActive)
+        return;
 
     f32 expandSpeed = fireRodSpinIsBig ? 30.0f : 15.0f;
     fireRodSpinRadius += expandSpeed;
-    if (fireRodSpinRadius >= fireRodSpinMaxRadius) fireRodSpinRadius = fireRodSpinMaxRadius;
+    if (fireRodSpinRadius >= fireRodSpinMaxRadius)
+        fireRodSpinRadius = fireRodSpinMaxRadius;
 
     sSpinExpandProgress = fireRodSpinRadius / fireRodSpinMaxRadius;
-    if (sSpinExpandProgress > 1.0f) sSpinExpandProgress = 1.0f;
+    if (sSpinExpandProgress > 1.0f)
+        sSpinExpandProgress = 1.0f;
 
     fireRodSpinCollider.dim.radius = (s16)fireRodSpinRadius;
     fireRodSpinCollider.dim.height = 80;
@@ -487,10 +512,12 @@ static void FireRod_ProcessSwing(Player* p, PlayState* play) {
         }
         FireRod_UpdateSpinFire(p, play);
     } else {
-        if (fireRodSpinActive) FireRod_StopSpinFire();
+        if (fireRodSpinActive)
+            FireRod_StopSpinFire();
     }
 
-    if (mwa == sLastSwingType) return;
+    if (mwa == sLastSwingType)
+        return;
     sLastSwingType = mwa;
 
     switch (mwa) {
@@ -539,12 +566,15 @@ static void FireRod_ProcessSwing(Player* p, PlayState* play) {
 // =============================================================================
 
 static u8 FireRod_CanCharge(Player* p, PlayState* play) {
-    if (p->meleeWeaponState > 0) return 0;
-    if (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                          PLAYER_STATE1_DAMAGED | PLAYER_STATE1_LOADING |
-                          PLAYER_STATE1_HOOKSHOT_FALLING)) return 0;
-    if (!(p->actor.bgCheckFlags & 1)) return 0;
-    if (p->stateFlags2 & PLAYER_STATE2_HOPPING) return 0;
+    if (p->meleeWeaponState > 0)
+        return 0;
+    if (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_DAMAGED |
+                          PLAYER_STATE1_LOADING | PLAYER_STATE1_HOOKSHOT_FALLING))
+        return 0;
+    if (!(p->actor.bgCheckFlags & 1))
+        return 0;
+    if (p->stateFlags2 & PLAYER_STATE2_HOPPING)
+        return 0;
     return 1;
 }
 
@@ -558,13 +588,15 @@ static void FireRod_StartCharge(Player* p, PlayState* play) {
 }
 
 static void FireRod_UpdateCharge(Player* p, PlayState* play) {
-    if (!fireRodCharging) return;
+    if (!fireRodCharging)
+        return;
 
     fireRodChargeTimer++;
 
     if (fireRodChargeLevel < 1.0f) {
         fireRodChargeLevel += FIRE_ROD_CHARGE_RATE;
-        if (fireRodChargeLevel > 1.0f) fireRodChargeLevel = 1.0f;
+        if (fireRodChargeLevel > 1.0f)
+            fireRodChargeLevel = 1.0f;
     }
 
     if (!fireRodChargeReady && fireRodChargeLevel >= FIRE_ROD_CHARGE_MIN) {
@@ -590,7 +622,8 @@ static void FireRod_UpdateCharge(Player* p, PlayState* play) {
 }
 
 static void FireRod_ReleaseCharge(Player* p, PlayState* play) {
-    if (!fireRodCharging) return;
+    if (!fireRodCharging)
+        return;
 
     s32 spinType;
     u8 isBigSpin = 0;
@@ -670,7 +703,8 @@ static void FireRod_UpdateFirstPerson(Player* p, PlayState* play, ItemInputState
 
     // Exit on B, other C-buttons, or damage/cutscene
     u16 exitButtons = BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
-    if (in->equippedButton) exitButtons &= ~in->equippedButton;
+    if (in->equippedButton)
+        exitButtons &= ~in->equippedButton;
 
     if (CHECK_BTN_ANY(play->state.input[0].press.button, exitButtons) ||
         (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_DAMAGED))) {
@@ -704,7 +738,8 @@ static void FireRod_OnEquip(PlayState* play, Player* p) {
 }
 
 static void FireRod_OnUnequip(PlayState* play, Player* p) {
-    if (fireRodFirstPerson) FireRod_ExitFirstPerson(p, play);
+    if (fireRodFirstPerson)
+        FireRod_ExitFirstPerson(p, play);
 
     fireRodActive = 0;
     fireRodState = FIRE_ROD_STATE_INACTIVE;
@@ -725,7 +760,8 @@ static void FireRod_OnUnequip(PlayState* play, Player* p) {
         fireRodBlureIdx = -1;
     }
 
-    if (fireRodSpinActive) FireRod_StopSpinFire();
+    if (fireRodSpinActive)
+        FireRod_StopSpinFire();
     ItemEquip_PlayUnequipSFX(play, p);
 }
 
@@ -742,7 +778,8 @@ void Handle_FireRod(Player* p, PlayState* play) {
     fireRodButtonMask = in.equippedButton;
 
     if (!in.wasEquipped) {
-        if (fireRodActive) FireRod_OnUnequip(play, p);
+        if (fireRodActive)
+            FireRod_OnUnequip(play, p);
         sEquipState.isEquipped = 0;
         return;
     }
@@ -761,32 +798,39 @@ void Handle_FireRod(Player* p, PlayState* play) {
     }
 
     if (!fireRodActive) {
-        if (ItemInput_IsBlockedEx(p, play, 1)) return;
+        if (ItemInput_IsBlockedEx(p, play, 1))
+            return;
     } else {
         u32 criticalBlocks = (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
-            PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
-            PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
-            PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
+                              PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
+                              PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+                              PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
         if (p->stateFlags1 & criticalBlocks) {
-            if (fireRodCharging) FireRod_CancelCharge(p);
+            if (fireRodCharging)
+                FireRod_CancelCharge(p);
             return;
         }
     }
 
     if (ItemInput_CheckDamage(p, &sPrevInvinc)) {
-        if (fireRodCharging) FireRod_CancelCharge(p);
-        if (fireRodActive) FireRod_OnUnequip(play, p);
+        if (fireRodCharging)
+            FireRod_CancelCharge(p);
+        if (fireRodActive)
+            FireRod_OnUnequip(play, p);
         sEquipState.isEquipped = 0;
         return;
     }
 
     ItemEquip_Update(&sEquipState, &in, FireRod_OnEquip, FireRod_OnUnequip, p, play);
 
-    if (!fireRodActive) return;
+    if (!fireRodActive)
+        return;
 
     if (fireRodCharging) {
-        if (in.isHeld) FireRod_UpdateCharge(p, play);
-        else FireRod_ReleaseCharge(p, play);
+        if (in.isHeld)
+            FireRod_UpdateCharge(p, play);
+        else
+            FireRod_ReleaseCharge(p, play);
     } else if (in.isHeld && FireRod_CanCharge(p, play)) {
         if (!sChargeButtonHeld) {
             sChargeButtonHeld = 1;
@@ -804,13 +848,15 @@ void Handle_FireRod(Player* p, PlayState* play) {
     if (p->meleeWeaponState > 0) {
         fireRodState = FIRE_ROD_STATE_SWINGING;
         FireRod_ProcessSwing(p, play);
-        if (fireRodCharging) FireRod_CancelCharge(p);
+        if (fireRodCharging)
+            FireRod_CancelCharge(p);
     } else {
         if (!fireRodCharging) {
             fireRodState = FIRE_ROD_STATE_EQUIPPED;
             sLastSwingType = 0;
         }
-        if (fireRodSpinActive) FireRod_StopSpinFire();
+        if (fireRodSpinActive)
+            FireRod_StopSpinFire();
     }
 }
 
@@ -854,6 +900,7 @@ void Player_InitFireRodIA(PlayState* play, Player* p) {
 }
 
 void CustomItems_DrawFireRodReticle(Player* p, PlayState* play) {
-    if (!fireRodFirstPerson || fireRodState != FIRE_ROD_STATE_AIMING) return;
+    if (!fireRodFirstPerson || fireRodState != FIRE_ROD_STATE_AIMING)
+        return;
     FirstPerson_DrawReticle(p, play, 0.0f, FIRE_ROD_RETICLE_R, FIRE_ROD_RETICLE_G, FIRE_ROD_RETICLE_B);
 }

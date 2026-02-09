@@ -32,16 +32,16 @@
 extern void Player_Draw(Actor* thisx, PlayState* play);
 
 static s8 sHGracePrevInvinc = 0;
-static s32 sHGPhaseEnd = 0;  // Absolute hgTimer value when current animation phase ends
+static s32 sHGPhaseEnd = 0; // Absolute hgTimer value when current animation phase ends
 
 // Saved fairy position — used to undo displacement from the normal collision
 // response (Actor_UpdateBgCheckInfo / OC) that runs after our code each frame.
 static Vec3f sFairyPos;
-static u8    sFairyPosValid = 0;
+static u8 sFairyPosValid = 0;
 
 // Camera yaw captured at fairy mode start — fixed reference for stick movement.
 // The free camera (NORMAL0) orbits unpredictably so we lock the movement reference.
-static s16   sFairyCamYaw = 0;
+static s16 sFairyCamYaw = 0;
 
 // Halved from vanilla 0.83f to compensate for double LinkAnimation_Update
 // (vanilla's Player_Action_Idle calls it once, we call it again — Demise pattern).
@@ -108,7 +108,8 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Player* p = (Player*)thisx;
 
     // Flicker: skip drawing during flicker-off frames (last 1.5 seconds)
-    if ((hgTimer <= HGRACE_FLICKER_START) && ((play->gameplayFrames % 6) < 3)) return;
+    if ((hgTimer <= HGRACE_FLICKER_START) && ((play->gameplayFrames % 6) < 3))
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -130,8 +131,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
         Matrix_Translate(bx, by, bz, MTXMODE_NEW);
         Matrix_ReplaceRotation(&play->billboardMtxF);
         Matrix_Scale(s, s, s, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 180, 255, 180, 120);
         gSPDisplayList(POLY_XLU_DISP++, gGlowCircleDL);
     }
@@ -142,8 +142,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
         Matrix_Translate(bx, by, bz, MTXMODE_NEW);
         Matrix_ReplaceRotation(&play->billboardMtxF);
         Matrix_Scale(si, si, si, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 200);
         gSPDisplayList(POLY_XLU_DISP++, gGlowCircleDL);
     }
@@ -178,8 +177,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Matrix_Translate(5.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(flapRad + 0.5f, MTXMODE_APPLY);
     Matrix_Scale(ws, ws, ws, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gFairyWing1DL);
 
     // Right lower wing
@@ -188,8 +186,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Matrix_Translate(4.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(flapRad + 0.3f, MTXMODE_APPLY);
     Matrix_Scale(wsLower, wsLower, wsLower, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gFairyWing2DL);
 
     // Left upper wing (mirrored X scale to flip geometry)
@@ -198,8 +195,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Matrix_Translate(-5.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(-flapRad - 0.5f, MTXMODE_APPLY);
     Matrix_Scale(-ws, ws, ws, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gFairyWing3DL);
 
     // Left lower wing (mirrored X scale to flip geometry)
@@ -208,8 +204,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Matrix_Translate(-4.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(-flapRad - 0.3f, MTXMODE_APPLY);
     Matrix_Scale(-wsLower, wsLower, wsLower, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gFairyWing4DL);
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -220,7 +215,8 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
 // =============================================================================
 
 static void HGrace_Stop(Player* p, PlayState* play) {
-    if (!hgActive) return;
+    if (!hgActive)
+        return;
 
     // Restore Link
     p->actor.draw = Player_Draw;
@@ -251,19 +247,22 @@ static void HGrace_Stop(Player* p, PlayState* play) {
 }
 
 static void HGrace_Start(Player* p, PlayState* play) {
-    if (hgActive) return;
+    if (hgActive)
+        return;
     if (!ItemMagic_HasEnough(play, HGRACE_MAGIC_COST)) {
-        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
-    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) return;
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
+    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND))
+        return;
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+        return;
 
     // Requires a fairy in a bottle — consumed on cast (bottle becomes empty)
     if (!Inventory_ConsumeFairy(play)) {
-        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
@@ -286,7 +285,8 @@ static void HGrace_Start(Player* p, PlayState* play) {
 
 static void HGrace_ComputePhaseEnd(s32 baseTimer, f32 lastFrame) {
     f32 rate = HGRACE_ANIM_SPEED * R_UPDATE_RATE;
-    if (rate < 0.1f) rate = 0.415f;  // Safety fallback
+    if (rate < 0.1f)
+        rate = 0.415f; // Safety fallback
     sHGPhaseEnd = baseTimer + (s32)(lastFrame / rate) + 1;
 }
 
@@ -309,10 +309,10 @@ static void HGrace_StateCasting(Player* p, PlayState* play) {
     // Start first animation on frame 0
     if (hgTimer == 0) {
         LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_kaze1, HGRACE_ANIM_SPEED, 0.0f,
-            Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze1), ANIMMODE_ONCE, -8.0f);
+                             Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze1), ANIMMODE_ONCE, -8.0f);
         HGrace_ComputePhaseEnd(hgTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze1));
-        Audio_PlaySoundGeneral(NA_SE_VO_LI_MAGIC_FROL, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_VO_LI_MAGIC_FROL, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Double-update: vanilla calls LinkAnimation_Update once, we call it again (Demise pattern)
@@ -324,17 +324,15 @@ static void HGrace_StateCasting(Player* p, PlayState* play) {
     if (hgTimer > 0 && hgTimer >= sHGPhaseEnd) {
         switch (hgSubPhase) {
             case HGRACE_CAST_KAZE1:
-                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_kaze2,
-                    HGRACE_ANIM_SPEED, 0.0f,
-                    Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze2), ANIMMODE_ONCE, 0.0f);
+                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_kaze2, HGRACE_ANIM_SPEED, 0.0f,
+                                     Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze2), ANIMMODE_ONCE, 0.0f);
                 HGrace_ComputePhaseEnd(hgTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze2));
                 hgSubPhase = HGRACE_CAST_KAZE2;
                 break;
 
             case HGRACE_CAST_KAZE2:
-                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_kaze3,
-                    HGRACE_ANIM_SPEED, 0.0f,
-                    Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze3), ANIMMODE_ONCE, 0.0f);
+                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_kaze3, HGRACE_ANIM_SPEED, 0.0f,
+                                     Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze3), ANIMMODE_ONCE, 0.0f);
                 HGrace_ComputePhaseEnd(hgTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_kaze3));
                 hgSubPhase = HGRACE_CAST_KAZE3;
                 break;
@@ -374,9 +372,9 @@ static void HGrace_StateWarpEnter(Player* p, PlayState* play) {
 
     if (hgTimer == 1) {
         LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_demo_warp, HGRACE_ANIM_SPEED, 0.0f,
-            Animation_GetLastFrame(&gPlayerAnim_link_demo_warp), ANIMMODE_ONCE, -8.0f);
-        Audio_PlaySoundGeneral(NA_SE_PL_MAGIC_WIND_WARP, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                             Animation_GetLastFrame(&gPlayerAnim_link_demo_warp), ANIMMODE_ONCE, -8.0f);
+        Audio_PlaySoundGeneral(NA_SE_PL_MAGIC_WIND_WARP, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Double-update (Demise pattern)
@@ -435,14 +433,17 @@ static void HGrace_StateWarpEnter(Player* p, PlayState* play) {
 
 static s32 HGrace_IsPassableBarrier(PlayState* play, s32 bgId) {
     // Scene collision is never passable
-    if (!DynaPoly_IsBgIdBgActor(bgId)) return 0;
+    if (!DynaPoly_IsBgIdBgActor(bgId))
+        return 0;
 
     DynaPolyActor* dyna = DynaPoly_GetActor(&play->colCtx, bgId);
-    if (dyna == NULL) return 0;
+    if (dyna == NULL)
+        return 0;
 
     // Doors block the fairy — everything else is passable
     for (s32 i = 0; i < (s32)ARRAY_COUNT(sHGraceDoorActors); i++) {
-        if (dyna->actor.id == sHGraceDoorActors[i]) return 0;
+        if (dyna->actor.id == sHGraceDoorActors[i])
+            return 0;
     }
     return 1;
 }
@@ -491,12 +492,15 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
 
     // Base speed
     f32 speed = HGRACE_SPEED;
-    if (lBtn) speed *= HGRACE_SPRINT_MULT;
+    if (lBtn)
+        speed *= HGRACE_SPRINT_MULT;
 
     // Vertical: A = ascend, B = descend
     f32 velY = 0.0f;
-    if (aBtn) velY = speed;
-    if (bBtn) velY = -speed;
+    if (aBtn)
+        velY = speed;
+    if (bBtn)
+        velY = -speed;
 
     // Horizontal: joystick camera-relative
     f32 velX = 0.0f, velZ = 0.0f;
@@ -510,7 +514,8 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
         s16 moveYaw = sFairyCamYaw + stickAngle;
 
         f32 normMag = stickMag / 127.0f;
-        if (normMag > 1.0f) normMag = 1.0f;
+        if (normMag > 1.0f)
+            normMag = 1.0f;
 
         velX = Math_SinS(moveYaw) * speed * normMag;
         velZ = Math_CosS(moveYaw) * speed * normMag;
@@ -528,8 +533,8 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     CollisionPoly* hitPoly = NULL;
     s32 hitBgId = 0;
     Vec3f hitPoint;
-    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &desiredPos, &hitPoint,
-            &hitPoly, true, true, true, true, &hitBgId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &desiredPos, &hitPoint, &hitPoly, true, true, true, true,
+                                &hitBgId)) {
         if (!HGrace_IsPassableBarrier(play, hitBgId)) {
             desiredPos = hitPoint;
         }
@@ -539,8 +544,7 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     // (passable barriers are ignored so fairy can fly through grates/floors)
     CollisionPoly* floorPoly = NULL;
     s32 floorBgId;
-    f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &floorBgId,
-                                             &p->actor, &desiredPos);
+    f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &floorBgId, &p->actor, &desiredPos);
     if (floor > BGCHECK_Y_MIN && desiredPos.y < floor + HGRACE_FAIRY_HOVER) {
         if (!HGrace_IsPassableBarrier(play, floorBgId)) {
             desiredPos.y = floor + HGRACE_FAIRY_HOVER;
@@ -564,9 +568,11 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
 
     // Timer countdown (2x drain when ascending or sprinting)
     s16 drain = 1;
-    if (aBtn || lBtn) drain = 2;
+    if (aBtn || lBtn)
+        drain = 2;
     hgTimer -= drain;
-    if (hgTimer < 0) hgTimer = 0;
+    if (hgTimer < 0)
+        hgTimer = 0;
 
     // Timer expired: end fairy mode
     if (hgTimer <= 0) {
@@ -606,16 +612,15 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
         // Snap to floor if close enough
         CollisionPoly* floorPoly = NULL;
         s32 bgId;
-        f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &bgId,
-                                                 &p->actor, &p->actor.world.pos);
+        f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &bgId, &p->actor, &p->actor.world.pos);
         if (floor > BGCHECK_Y_MIN && (p->actor.world.pos.y - floor) < 100.0f) {
             p->actor.world.pos.y = floor;
             p->actor.bgCheckFlags |= BGCHECKFLAG_GROUND;
         }
 
         HGrace_SpawnWarpSparkles(play, &p->actor.world.pos);
-        Audio_PlaySoundGeneral(NA_SE_PL_MAGIC_WIND_WARP, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_PL_MAGIC_WIND_WARP, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         func_800AA000(200.0f, 150, 20, 80);
     }
 
@@ -639,37 +644,62 @@ void Handle_HyliasGrace(Player* p, PlayState* play) {
     ItemInputState in;
     ItemInput_Update(&in, ITEM_HYLIAS_GRACE, p, play);
 
-    if (!in.wasEquipped) { if (hgActive) HGrace_Stop(p, play); return; }
-    if (ItemInput_CheckDamage(p, &sHGracePrevInvinc)) { HGrace_Stop(p, play); return; }
+    if (!in.wasEquipped) {
+        if (hgActive)
+            HGrace_Stop(p, play);
+        return;
+    }
+    if (ItemInput_CheckDamage(p, &sHGracePrevInvinc)) {
+        HGrace_Stop(p, play);
+        return;
+    }
 
     // Cannot use in water
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+        return;
 
     if (!hgActive) {
         // Only block on otherButtonPressed when NOT active.
         // During fairy mode, A/B are used for ascend/descend — must not cancel spell.
-        if (in.otherButtonPressed) return;
-        if (ItemInput_IsBlocked(p, play)) return;
-        if (hgCooldown > 0) return;
-        if (in.isPressed) HGrace_Start(p, play);
+        if (in.otherButtonPressed)
+            return;
+        if (ItemInput_IsBlocked(p, play))
+            return;
+        if (hgCooldown > 0)
+            return;
+        if (in.isPressed)
+            HGrace_Start(p, play);
         return;
     }
 
     switch (hgState) {
-        case HGRACE_STATE_CASTING:  HGrace_StateCasting(p, play); break;
-        case HGRACE_STATE_WARP_IN:  HGrace_StateWarpEnter(p, play); break;
-        case HGRACE_STATE_FAIRY:    HGrace_StateFairy(p, play); break;
-        case HGRACE_STATE_WARP_OUT: HGrace_StateWarpExit(p, play); break;
-        default: HGrace_Stop(p, play); break;
+        case HGRACE_STATE_CASTING:
+            HGrace_StateCasting(p, play);
+            break;
+        case HGRACE_STATE_WARP_IN:
+            HGrace_StateWarpEnter(p, play);
+            break;
+        case HGRACE_STATE_FAIRY:
+            HGrace_StateFairy(p, play);
+            break;
+        case HGRACE_STATE_WARP_OUT:
+            HGrace_StateWarpExit(p, play);
+            break;
+        default:
+            HGrace_Stop(p, play);
+            break;
     }
 }
 
 void Player_InitHyliasGraceIA(PlayState* play, Player* p) {
-    if (hgActive) return;
+    if (hgActive)
+        return;
     hgState = HGRACE_STATE_IDLE;
     hgSubPhase = 0;
     hgTimer = 0;
     hgFairy = NULL;
 }
 
-s32 Player_UpperAction_HyliasGrace(Player* p, PlayState* play) { return 0; }
+s32 Player_UpperAction_HyliasGrace(Player* p, PlayState* play) {
+    return 0;
+}

@@ -6,6 +6,4 @@
 #include "dekuleaf_anim.h"
 #include "dekuleaf_anim_data.h"
 
-LinkAnimationHeader gDekuLeafBlowAnim = {
-    { 39 }, gDekuLeafBlowAnimData
-};
+LinkAnimationHeader gDekuLeafBlowAnim = { { 39 }, gDekuLeafBlowAnimData };

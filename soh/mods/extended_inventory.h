@@ -17,7 +17,7 @@ extern "C" {
 #endif
 
 typedef struct {
-    int currentPage;        // 0 = vanilla, 1 = custom items
+    int currentPage;         // 0 = vanilla, 1 = custom items
     int16_t pageSwitchTimer; // Cooldown to prevent rapid switching
 } ExtendedInventoryState;
 
@@ -106,9 +106,9 @@ extern const uint8_t gPage2Items[24];
 #define AGE_REQ_NONE 9
 extern const uint8_t gPage2ItemAgeReqs[24];
 // Roc's Feather Skijer and Roc's Cape share slot 24 (progressive upgrade system)
-#define SLOT_ROCS 24              // Shared slot for Roc's Feather/Cape progressive
-#define SLOT_ROCS_FEATHER_SKIJER 24      // Alias for compatibility
-#define SLOT_ROCS_CAPE 24         // Now same slot as Feather (upgrade replaces it)
+#define SLOT_ROCS 24                // Shared slot for Roc's Feather/Cape progressive
+#define SLOT_ROCS_FEATHER_SKIJER 24 // Alias for compatibility
+#define SLOT_ROCS_CAPE 24           // Now same slot as Feather (upgrade replaces it)
 #define SLOT_WHIP 25
 #define SLOT_SPINNER 26
 #define SLOT_BOMB_ARROWS 27

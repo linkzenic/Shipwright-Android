@@ -469,7 +469,7 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                 // Switch to next/previous page using modular system
                 ExtInv_SwitchPage();
                 Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                      &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                 moveCursorResult = 2;
             }
 

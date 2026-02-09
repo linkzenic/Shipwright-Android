@@ -44,14 +44,16 @@ static void Somaria_CleanupInvalidBlocks(void) {
     for (u8 i = 0; i < SOMARIA_MAX_CUBES; i++) {
         if (somariaBlocks[i] != NULL && somariaBlocks[i]->update == NULL) {
             somariaBlocks[i] = NULL;
-            if (somariaBlockCount > 0) somariaBlockCount--;
+            if (somariaBlockCount > 0)
+                somariaBlockCount--;
         }
     }
 }
 
 static u8 Somaria_FindEmptySlot(void) {
     for (u8 i = 0; i < SOMARIA_MAX_CUBES; i++) {
-        if (somariaBlocks[i] == NULL) return i;
+        if (somariaBlocks[i] == NULL)
+            return i;
     }
     return 0xFF;
 }
@@ -68,7 +70,8 @@ static u8 Somaria_FindOldestBlock(void) {
 
 static void Somaria_DestroyOldestBlock(PlayState* play) {
     u8 slot = Somaria_FindOldestBlock();
-    if (slot == 0xFF) return;
+    if (slot == 0xFF)
+        return;
 
     Actor* cube = somariaBlocks[slot];
     if (cube != NULL && cube->update != NULL) {
@@ -77,15 +80,16 @@ static void Somaria_DestroyOldestBlock(PlayState* play) {
     }
 
     somariaBlocks[slot] = NULL;
-    if (somariaBlockCount > 0) somariaBlockCount--;
+    if (somariaBlockCount > 0)
+        somariaBlockCount--;
     somariaOldestSlot = (slot + 1) % SOMARIA_MAX_CUBES;
 }
 
 // Spawn radial sparkles around position (like chest spawn circle)
 static void Somaria_SpawnRadialSparkles(PlayState* play, Vec3f* center, f32 radius, u8 count) {
     Vec3f pos, vel, accel;
-    Color_RGBA8 primColor = { 80, 150, 255, 255 };   // Blue primary
-    Color_RGBA8 envColor = { 40, 80, 200, 255 };     // Darker blue env
+    Color_RGBA8 primColor = { 80, 150, 255, 255 }; // Blue primary
+    Color_RGBA8 envColor = { 40, 80, 200, 255 };   // Darker blue env
 
     accel.x = 0.0f;
     accel.y = 0.0f;
@@ -114,7 +118,8 @@ static void Somaria_SpawnBlock(Player* p, PlayState* play) {
     }
 
     u8 slot = Somaria_FindEmptySlot();
-    if (slot == 0xFF) return;
+    if (slot == 0xFF)
+        return;
 
     Vec3f spawnPos;
     s16 yaw = p->actor.shape.rot.y;
@@ -125,7 +130,8 @@ static void Somaria_SpawnBlock(Player* p, PlayState* play) {
     CollisionPoly* outPoly = NULL;
     s32 bgId = BGCHECK_SCENE;
     f32 floorHeight = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &outPoly, &bgId, &p->actor, &spawnPos);
-    if (floorHeight > BGCHECK_Y_MIN) spawnPos.y = floorHeight;
+    if (floorHeight > BGCHECK_Y_MIN)
+        spawnPos.y = floorHeight;
 
     Actor* cube = SomariaCube_Spawn(play, &spawnPos, yaw);
     if (cube != NULL) {
@@ -190,19 +196,21 @@ void Handle_CaneOfSomaria(Player* p, PlayState* play) {
 
     // Not equipped - cleanup
     if (!in.wasEquipped) {
-        if (shSomariaActive) Somaria_OnUnequip(play, p);
+        if (shSomariaActive)
+            Somaria_OnUnequip(play, p);
         sSomariaEquipState.isEquipped = 0;
         return;
     }
 
     // Blocking check (like Fire Rod)
     if (!shSomariaActive) {
-        if (ItemInput_IsBlockedEx(p, play, 1)) return;
+        if (ItemInput_IsBlockedEx(p, play, 1))
+            return;
     } else {
         u32 criticalBlocks = (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
-            PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
-            PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
-            PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
+                              PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
+                              PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+                              PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
         if (p->stateFlags1 & criticalBlocks) {
             return;
         }
@@ -210,7 +218,8 @@ void Handle_CaneOfSomaria(Player* p, PlayState* play) {
 
     // Damage check (like Fire Rod)
     if (ItemInput_CheckDamage(p, &sSomariaPrevInvinc)) {
-        if (shSomariaActive) Somaria_OnUnequip(play, p);
+        if (shSomariaActive)
+            Somaria_OnUnequip(play, p);
         sSomariaEquipState.isEquipped = 0;
         return;
     }
@@ -218,7 +227,8 @@ void Handle_CaneOfSomaria(Player* p, PlayState* play) {
     // Use ItemEquip_Update with callbacks (like Fire Rod)
     ItemEquip_Update(&sSomariaEquipState, &in, Somaria_OnEquip, Somaria_OnUnequip, p, play);
 
-    if (!shSomariaActive) return;
+    if (!shSomariaActive)
+        return;
 
     // Always cleanup invalid blocks
     Somaria_CleanupInvalidBlocks();
@@ -232,8 +242,10 @@ void Handle_CaneOfSomaria(Player* p, PlayState* play) {
     }
 
     // Check for activation
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
-    if (p->meleeWeaponState != 0) return;
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+        return;
+    if (p->meleeWeaponState != 0)
+        return;
 
     if (in.isPressed && (p->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
         Somaria_StartCastAnim(p, play);
@@ -260,8 +272,10 @@ void Player_InitCaneOfSomariaIA(PlayState* play, Player* p) {
 
 s32 Player_UpperAction_CaneOfSomaria(Player* player, PlayState* play) {
     // Only active when somaria is active and animating
-    if (!shSomariaActive) return 0;
-    if (!shSomariaAnimating) return 0;
+    if (!shSomariaActive)
+        return 0;
+    if (!shSomariaAnimating)
+        return 0;
 
     // Update animation
     if (LinkAnimation_Update(play, &player->upperSkelAnime)) {

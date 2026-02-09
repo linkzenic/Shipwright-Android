@@ -74,7 +74,6 @@ void Anchor::HandlePacket_GiveItem(nlohmann::json payload) {
         return;
     }
 
-
     GetItemEntry getItemEntry;
     if (modId == MOD_NONE) {
         getItemEntry = ItemTableManager::Instance->RetrieveItemEntry(MOD_NONE, getItemId);

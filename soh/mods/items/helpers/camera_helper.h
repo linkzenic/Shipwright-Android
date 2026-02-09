@@ -10,11 +10,7 @@
 extern "C" {
 #endif
 
-typedef enum {
-    CAMERA_MODE_FIRST_PERSON = 0,
-    CAMERA_MODE_Z_TARGET = 1,
-    CAMERA_MODE_FREE = 2
-} ItemCameraMode;
+typedef enum { CAMERA_MODE_FIRST_PERSON = 0, CAMERA_MODE_Z_TARGET = 1, CAMERA_MODE_FREE = 2 } ItemCameraMode;
 
 typedef struct {
     ItemCameraMode mode;

@@ -17,11 +17,11 @@
 #include "variables.h"
 
 #ifndef BGCHECKFLAG_GROUND
-#define BGCHECKFLAG_GROUND   0x0001
-#define BGCHECKFLAG_WALL     0x0008
-#define BGCHECKFLAG_CEILING  0x0010
-#define BGCHECKFLAG_WATER    0x0020
-#define BGCHECKFLAG_CRUSHED  0x0100
+#define BGCHECKFLAG_GROUND 0x0001
+#define BGCHECKFLAG_WALL 0x0008
+#define BGCHECKFLAG_CEILING 0x0010
+#define BGCHECKFLAG_WATER 0x0020
+#define BGCHECKFLAG_CRUSHED 0x0100
 #endif
 
 void Movement_SpawnJumpSparkles(Player* player, PlayState* play, int count) {

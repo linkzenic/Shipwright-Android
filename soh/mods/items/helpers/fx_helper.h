@@ -15,14 +15,7 @@ typedef struct {
     u8 r, g, b, a;
 } FX_Color;
 
-typedef enum {
-    FX_DUST,
-    FX_SPARKLE,
-    FX_FIRE,
-    FX_ICE,
-    FX_SHOCK,
-    FX_EXPLOSION
-} FX_Type;
+typedef enum { FX_DUST, FX_SPARKLE, FX_FIRE, FX_ICE, FX_SHOCK, FX_EXPLOSION } FX_Type;
 
 /**
  * Rod effect colors (prim + env for two-color effects).

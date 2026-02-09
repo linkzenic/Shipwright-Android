@@ -9,7 +9,8 @@
 #include <math.h>
 
 void CutsceneHelper_Start(Player* player, PlayState* play, CutsceneItemState* state) {
-    if (state->active) return;
+    if (state->active)
+        return;
 
     state->active = 1;
     state->phase = 0;
@@ -30,7 +31,8 @@ void CutsceneHelper_Start(Player* player, PlayState* play, CutsceneItemState* st
 }
 
 u8 CutsceneHelper_Update(Player* player, PlayState* play, CutsceneItemState* state) {
-    if (!state->active) return 1;
+    if (!state->active)
+        return 1;
 
     state->timer++;
     player->actor.speedXZ = 0.0f;
@@ -57,7 +59,8 @@ u8 CutsceneHelper_Update(Player* player, PlayState* play, CutsceneItemState* sta
 }
 
 void CutsceneHelper_End(Player* player, PlayState* play, CutsceneItemState* state) {
-    if (!state->active) return;
+    if (!state->active)
+        return;
 
     state->active = 0;
     state->phase = 0;

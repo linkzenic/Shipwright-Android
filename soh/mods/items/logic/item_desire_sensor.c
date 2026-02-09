@@ -33,7 +33,7 @@ u8 Randomizer_SceneHasMajorItem(s16 sceneNum);
 static void DS_SpawnSensingSparkles(Player* p, PlayState* play) {
     Vec3f accel = { 0.0f, 0.05f, 0.0f };
     Color_RGBA8 primColor = { 180, 120, 255, 255 };
-    Color_RGBA8 envColor  = { 80, 40, 200, 255 };
+    Color_RGBA8 envColor = { 80, 40, 200, 255 };
 
     for (u8 i = 0; i < 3; i++) {
         s16 angle = (s16)(Rand_ZeroOne() * 0xFFFF);
@@ -49,15 +49,14 @@ static void DS_SpawnSensingSparkles(Player* p, PlayState* play) {
         vel.y = 1.5f + Rand_ZeroOne() * 1.0f;
         vel.z = Math_CosS(angle) * 0.3f;
 
-        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel,
-            &primColor, &envColor, 500, 18);
+        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel, &primColor, &envColor, 500, 18);
     }
 }
 
 // Golden sparkle burst - major item found
 static void DS_SpawnGoldenBurst(Player* p, PlayState* play) {
     Color_RGBA8 primColor = { 255, 255, 100, 255 };
-    Color_RGBA8 envColor  = { 255, 200, 0, 255 };
+    Color_RGBA8 envColor = { 255, 200, 0, 255 };
 
     for (u8 i = 0; i < 16; i++) {
         s16 angle = (s16)(Rand_ZeroOne() * 0xFFFF);
@@ -75,15 +74,14 @@ static void DS_SpawnGoldenBurst(Player* p, PlayState* play) {
 
         Vec3f accel = { 0.0f, -0.1f, 0.0f };
 
-        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel,
-            &primColor, &envColor, 1000, 30);
+        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel, &primColor, &envColor, 1000, 30);
     }
 }
 
 // Dark red flash - no major item
 static void DS_SpawnDarkFlash(Player* p, PlayState* play) {
     Color_RGBA8 primColor = { 200, 50, 50, 255 };
-    Color_RGBA8 envColor  = { 100, 0, 0, 255 };
+    Color_RGBA8 envColor = { 100, 0, 0, 255 };
 
     for (u8 i = 0; i < 8; i++) {
         s16 angle = (s16)(Rand_ZeroOne() * 0xFFFF);
@@ -101,8 +99,7 @@ static void DS_SpawnDarkFlash(Player* p, PlayState* play) {
 
         Vec3f accel = { 0.0f, -0.15f, 0.0f };
 
-        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel,
-            &primColor, &envColor, 400, 15);
+        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel, &primColor, &envColor, 400, 15);
     }
 }
 
@@ -111,7 +108,8 @@ static void DS_SpawnDarkFlash(Player* p, PlayState* play) {
 // =============================================================================
 
 static void DS_Stop(Player* p, PlayState* play) {
-    if (!dsActive) return;
+    if (!dsActive)
+        return;
 
     p->stateFlags1 &= ~(PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_INPUT_DISABLED);
     func_8005B1A4(Play_GetCamera(play, 0));
@@ -123,26 +121,26 @@ static void DS_Stop(Player* p, PlayState* play) {
 }
 
 static void DS_Start(Player* p, PlayState* play) {
-    if (dsActive) return;
+    if (dsActive)
+        return;
 
     // Must be in randomizer mode
     if (!IS_RANDO) {
-        Audio_PlaySoundGeneral(DSENSOR_SE_ERROR, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-            &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(DSENSOR_SE_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
     // Health check: must have more than 3 hearts to survive
     if (gSaveContext.health <= DSENSOR_HEALTH_COST) {
-        Audio_PlaySoundGeneral(DSENSOR_SE_ERROR, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-            &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(DSENSOR_SE_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
     // Must be on the ground
-    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) return;
+    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND))
+        return;
 
     // Pay health cost
     gSaveContext.health -= DSENSOR_HEALTH_COST;
@@ -152,7 +150,7 @@ static void DS_Start(Player* p, PlayState* play) {
 
     dsActive = 1;
     dsState = DSENSOR_STATE_SENSING;
-    dsTimer = -2;  // Demise pattern: start at -2 for deferred camera setup
+    dsTimer = -2; // Demise pattern: start at -2 for deferred camera setup
 }
 
 // =============================================================================
@@ -211,16 +209,14 @@ static void DS_StateResult(Player* p, PlayState* play) {
         if (dsResult) {
             // MAJOR ITEM FOUND
             DS_SpawnGoldenBurst(p, play);
-            Audio_PlaySoundGeneral(DSENSOR_SE_FOUND, &gSfxDefaultPos, 4,
-                &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(DSENSOR_SE_FOUND, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             func_800AA000(300.0f, 255, 40, 80);
         } else {
             // NO MAJOR ITEM
             DS_SpawnDarkFlash(p, play);
-            Audio_PlaySoundGeneral(DSENSOR_SE_NOTHING, &gSfxDefaultPos, 4,
-                &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(DSENSOR_SE_NOTHING, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             func_800AA000(100.0f, 100, 10, 20);
         }
     }
@@ -253,29 +249,46 @@ void Handle_DesireSensor(Player* p, PlayState* play) {
 
     // Unequipped while active -> abort
     if (!in.wasEquipped) {
-        if (dsActive) DS_Stop(p, play);
+        if (dsActive)
+            DS_Stop(p, play);
         return;
     }
 
     // Damage or other button while active -> abort
     if (dsActive) {
-        if (ItemInput_CheckDamage(p, &sDSPrevInvinc)) { DS_Stop(p, play); return; }
-        if (in.otherButtonPressed) { DS_Stop(p, play); return; }
+        if (ItemInput_CheckDamage(p, &sDSPrevInvinc)) {
+            DS_Stop(p, play);
+            return;
+        }
+        if (in.otherButtonPressed) {
+            DS_Stop(p, play);
+            return;
+        }
     }
 
     // Idle: wait for input
     if (!dsActive) {
-        if (ItemInput_IsBlocked(p, play)) return;
-        if (in.isPressed) DS_Start(p, play);
+        if (ItemInput_IsBlocked(p, play))
+            return;
+        if (in.isPressed)
+            DS_Start(p, play);
         return;
     }
 
     // Active: run state machine
     switch (dsState) {
-        case DSENSOR_STATE_SENSING: DS_StateSensing(p, play); break;
-        case DSENSOR_STATE_RESULT:  DS_StateResult(p, play);  break;
-        default: DS_Stop(p, play); break;
+        case DSENSOR_STATE_SENSING:
+            DS_StateSensing(p, play);
+            break;
+        case DSENSOR_STATE_RESULT:
+            DS_StateResult(p, play);
+            break;
+        default:
+            DS_Stop(p, play);
+            break;
     }
 }
 
-s32 Player_UpperAction_DesireSensor(Player* p, PlayState* play) { return 0; }
+s32 Player_UpperAction_DesireSensor(Player* p, PlayState* play) {
+    return 0;
+}

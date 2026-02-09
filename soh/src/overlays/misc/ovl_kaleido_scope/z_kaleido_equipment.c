@@ -788,8 +788,8 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                     gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
                     gSPGrayscale(POLY_OPA_DISP++, true);
                 }
-                KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx,
-                                                   ExtInv_GetItemIcon(sChildUpgradeItemBases[i] + point - 1), 32, 32, 0);
+                KaleidoScope_DrawQuadTextureRGBA32(
+                    play->state.gfxCtx, ExtInv_GetItemIcon(sChildUpgradeItemBases[i] + point - 1), 32, 32, 0);
                 gSPGrayscale(POLY_OPA_DISP++, false);
             }
         } else {
@@ -801,8 +801,8 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                     gSPGrayscale(POLY_OPA_DISP++, true);
                 }
                 KaleidoScope_DrawQuadTextureRGBA32(
-                    play->state.gfxCtx, ExtInv_GetItemIcon(sChildUpgradeItemBases[i] + CUR_UPG_VALUE(sChildUpgrades[i]) - 1),
-                    32, 32, 0);
+                    play->state.gfxCtx,
+                    ExtInv_GetItemIcon(sChildUpgradeItemBases[i] + CUR_UPG_VALUE(sChildUpgrades[i]) - 1), 32, 32, 0);
                 gSPGrayscale(POLY_OPA_DISP++, false);
             } else if (CUR_UPG_VALUE(sAdultUpgrades[i]) != 0) {
                 // Grey Out the Goron Bracelet when Not Randomized and Toggle Strength Option is off
@@ -816,8 +816,8 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                     gSPGrayscale(POLY_OPA_DISP++, true);
                 }
                 KaleidoScope_DrawQuadTextureRGBA32(
-                    play->state.gfxCtx, ExtInv_GetItemIcon(sAdultUpgradeItemBases[i] + CUR_UPG_VALUE(sAdultUpgrades[i]) - 1),
-                    32, 32, 0);
+                    play->state.gfxCtx,
+                    ExtInv_GetItemIcon(sAdultUpgradeItemBases[i] + CUR_UPG_VALUE(sAdultUpgrades[i]) - 1), 32, 32, 0);
                 gSPGrayscale(POLY_OPA_DISP++, false);
             }
         }

@@ -3497,11 +3497,11 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
 
                 func_808328EC(this, NA_SE_PL_CHANGE_ARMS);
             } else if (itemAction == PLAYER_IA_ROCS_FEATHER_SKIJER || itemAction == PLAYER_IA_ROCS_CAPE ||
-                       itemAction == PLAYER_IA_DEMISE_DESTRUCTION || itemAction == PLAYER_IA_HYLIAS_GRACE||
+                       itemAction == PLAYER_IA_DEMISE_DESTRUCTION || itemAction == PLAYER_IA_HYLIAS_GRACE ||
                        itemAction == PLAYER_IA_ZONAI_PERMAFROST || itemAction == PLAYER_IA_TIME_GATE) {
                 // CUSTOM ITEMS: Instant-activation items spell-like
             } else if ((((itemAction >= PLAYER_IA_OCARINA_FAIRY) && (itemAction <= PLAYER_IA_OCARINA_OF_TIME)) ||
-                       (itemAction >= PLAYER_IA_BOTTLE_FISH)) &&
+                        (itemAction >= PLAYER_IA_BOTTLE_FISH)) &&
                        // Exclude ALL custom items - they use held item system for equip/unequip animations
                        itemAction < PLAYER_IA_ROCS_FEATHER_SKIJER) {
                 // Handle "cutscene items"
@@ -5732,7 +5732,8 @@ s32 func_8083A6AC(Player* this, PlayState* play) {
 
         if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.world.pos, &sp74, &sp68, &sp84, true, false, false,
                                     true, &sp80) &&
-            ((ABS(sp84->normal.y) < 600) || (CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) != 0) || gMogmaMittsClimbActive)) {
+            ((ABS(sp84->normal.y) < 600) || (CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) != 0) ||
+             gMogmaMittsClimbActive)) {
             f32 nx = COLPOLY_GET_NORMAL(sp84->normal.x);
             f32 ny = COLPOLY_GET_NORMAL(sp84->normal.y);
             f32 nz = COLPOLY_GET_NORMAL(sp84->normal.z);
@@ -11341,7 +11342,8 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
 
         // conflicts arise from these two being enabled at once, and with ClimbEverything on, FixVineFall is redundant
         // anyway
-        if (CVarGetInteger(CVAR_ENHANCEMENT("FixVineFall"), 0) && !CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) && !gMogmaMittsClimbActive) {
+        if (CVarGetInteger(CVAR_ENHANCEMENT("FixVineFall"), 0) && !CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) &&
+            !gMogmaMittsClimbActive) {
             /* This fixes the "started climbing a wall and then immediately fell off" bug.
              * The main idea is if a climbing wall is detected, double-check that it will
              * still be valid once climbing begins by doing a second raycast with a small
@@ -11414,7 +11416,8 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         if ((this->actor.bgCheckFlags & 0x200) && (sShapeYawToTouchedWall < 0x3000)) {
             CollisionPoly* wallPoly = this->actor.wallPoly;
 
-            if (ABS(wallPoly->normal.y) < 600 || (CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) != 0) || gMogmaMittsClimbActive) {
+            if (ABS(wallPoly->normal.y) < 600 || (CVarGetInteger(CVAR_CHEAT("ClimbEverything"), 0) != 0) ||
+                gMogmaMittsClimbActive) {
                 f32 wallPolyNormalX = COLPOLY_GET_NORMAL(wallPoly->normal.x);
                 f32 wallPolyNormalY = COLPOLY_GET_NORMAL(wallPoly->normal.y);
                 f32 wallPolyNormalZ = COLPOLY_GET_NORMAL(wallPoly->normal.z);
@@ -12742,7 +12745,7 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         if (this->unk_862 > 0) {
             Player_DrawGetItem(play, this);
         }
-        
+
         // CUSTOM ITEMS: Draw all
         CustomItems_OverrideDraw(this, play);
     }
