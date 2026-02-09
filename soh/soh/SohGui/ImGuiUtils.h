@@ -41,7 +41,6 @@ extern std::map<uint32_t, ItemMapEntry> customItemMapping;
 
 extern std::map<uint32_t, ItemMapEntry> gregMapping;
 
-
 typedef struct {
     uint32_t id;
     std::string name;

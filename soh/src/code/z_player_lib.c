@@ -585,8 +585,7 @@ void Player_SetModels(Player* this, s32 modelGroup) {
 
     // Custom rods: Override left hand to use closed fist instead of BGS sword model
     // The rod visual is drawn separately in CustomItems_Draw functions
-    if (this->heldItemAction == PLAYER_IA_ROD_FIRE ||
-        this->heldItemAction == PLAYER_IA_ROD_ICE ||
+    if (this->heldItemAction == PLAYER_IA_ROD_FIRE || this->heldItemAction == PLAYER_IA_ROD_ICE ||
         this->heldItemAction == PLAYER_IA_ROD_LIGHT) {
         this->leftHandType = PLAYER_MODELTYPE_LH_CLOSED;
         this->leftHandDLists = &sPlayerDListGroups[PLAYER_MODELTYPE_LH_CLOSED][gSaveContext.linkAge];
@@ -879,8 +878,7 @@ s32 Player_ActionToMeleeWeapon(s32 actionParam) {
     }
 
     // Custom melee weapons (Fire Rod, Ice Rod, Light Rod) - treated as Deku Stick (4)
-    if (actionParam == PLAYER_IA_ROD_FIRE || actionParam == PLAYER_IA_ROD_ICE ||
-        actionParam == PLAYER_IA_ROD_LIGHT) {
+    if (actionParam == PLAYER_IA_ROD_FIRE || actionParam == PLAYER_IA_ROD_ICE || actionParam == PLAYER_IA_ROD_LIGHT) {
         return 4; // Same as PLAYER_IA_DEKU_STICK
     }
 
@@ -896,8 +894,7 @@ s32 Player_HoldsTwoHandedWeapon(Player* this) {
         return 1;
     }
     // Custom rods use two-handed weapon mechanics (BGS-style spin attack)
-    if (this->heldItemAction == PLAYER_IA_ROD_FIRE ||
-        this->heldItemAction == PLAYER_IA_ROD_ICE ||
+    if (this->heldItemAction == PLAYER_IA_ROD_FIRE || this->heldItemAction == PLAYER_IA_ROD_ICE ||
         this->heldItemAction == PLAYER_IA_ROD_LIGHT) {
         return 1;
     }
@@ -1825,13 +1822,10 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
 
         Math_Vec3f_Copy(&this->leftHandPos, D_80160000);
 
-        if (this->itemAction == PLAYER_IA_DEKU_STICK ||
-            this->itemAction == PLAYER_IA_ROD_FIRE ||
-            this->itemAction == PLAYER_IA_ROD_ICE ||
-            this->itemAction == PLAYER_IA_ROD_LIGHT) {
+        if (this->itemAction == PLAYER_IA_DEKU_STICK || this->itemAction == PLAYER_IA_ROD_FIRE ||
+            this->itemAction == PLAYER_IA_ROD_ICE || this->itemAction == PLAYER_IA_ROD_LIGHT) {
             Vec3f sp124[3];
-            u8 isCustomRod = (this->itemAction == PLAYER_IA_ROD_FIRE ||
-                              this->itemAction == PLAYER_IA_ROD_ICE ||
+            u8 isCustomRod = (this->itemAction == PLAYER_IA_ROD_FIRE || this->itemAction == PLAYER_IA_ROD_ICE ||
                               this->itemAction == PLAYER_IA_ROD_LIGHT);
 
             OPEN_DISPS(play->state.gfxCtx);

@@ -31,7 +31,8 @@ void CustomItems_DrawSpinner(Player* this, PlayState* play) {
         Matrix_Scale(baseScale, baseScale, baseScale, MTXMODE_APPLY);
 
         // Apply the generated matrix to the display list
-        gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
+                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_OPA_DISP++, g_spinner_dl);
 
         CLOSE_DISPS(play->state.gfxCtx);

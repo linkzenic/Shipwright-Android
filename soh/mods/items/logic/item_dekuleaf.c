@@ -30,7 +30,8 @@ static s8 sDekuLeafPrevInvinc = 0;
 static u8 sDekuLeafBlowEffectFired = 0;
 
 static void DekuLeaf_Stop(Player* p, PlayState* play) {
-    if (!dlActive) return;
+    if (!dlActive)
+        return;
 
     dlActive = 0;
     dlMode = DEKULEAF_MODE_INACTIVE;
@@ -54,7 +55,8 @@ static void DekuLeaf_StartGlide(Player* p, PlayState* play) {
 }
 
 static void DekuLeaf_StartBlow(Player* p, PlayState* play) {
-    if (gSaveContext.magic < DEKULEAF_BLOW_MAGIC_COST) return;
+    if (gSaveContext.magic < DEKULEAF_BLOW_MAGIC_COST)
+        return;
 
     dlActive = 1;
     dlMode = DEKULEAF_MODE_BLOWING;
@@ -73,7 +75,7 @@ static void DekuLeaf_StartBlow(Player* p, PlayState* play) {
 static void DekuLeaf_UpdateGlide(Player* p, PlayState* play) {
     if (p->skelAnime.animation != &DEKULEAF_ANIM_GLIDE) {
         LinkAnimation_Change(play, &p->skelAnime, &DEKULEAF_ANIM_GLIDE, 1.0f, 0.0f,
-            Animation_GetLastFrame(&DEKULEAF_ANIM_GLIDE), ANIMMODE_LOOP, -4.0f);
+                             Animation_GetLastFrame(&DEKULEAF_ANIM_GLIDE), ANIMMODE_LOOP, -4.0f);
     }
 
     if (p->actor.velocity.y < DEKULEAF_FALL_VELOCITY) {
@@ -139,8 +141,10 @@ static void DekuLeaf_BlowEnemies(Player* p, PlayState* play) {
 // ============================================================================
 
 s32 Player_UpperAction_DekuLeaf(Player* player, PlayState* play) {
-    if (!dlActive) return 0;
-    if (!dlBlowing) return 0;
+    if (!dlActive)
+        return 0;
+    if (!dlBlowing)
+        return 0;
 
     // Update the skeletal animation
     if (LinkAnimation_Update(play, &player->upperSkelAnime)) {
@@ -186,12 +190,14 @@ void Handle_DekuLeaf(Player* p, PlayState* play) {
     ItemInput_Update(&in, ITEM_DEKU_LEAF, p, play);
 
     if (!in.wasEquipped) {
-        if (dlActive) DekuLeaf_Stop(p, play);
+        if (dlActive)
+            DekuLeaf_Stop(p, play);
         return;
     }
 
     if (ItemInput_IsBlocked(p, play)) {
-        if (dlActive) DekuLeaf_Stop(p, play);
+        if (dlActive)
+            DekuLeaf_Stop(p, play);
         return;
     }
 
@@ -226,8 +232,10 @@ void Handle_DekuLeaf(Player* p, PlayState* play) {
                 DekuLeaf_StartGlide(p, play);
             }
         } else {
-            if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
-            if (p->meleeWeaponState != 0) return;
+            if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+                return;
+            if (p->meleeWeaponState != 0)
+                return;
             DekuLeaf_StartBlow(p, play);
         }
         return;

@@ -274,9 +274,8 @@ void FX_SpawnRodFireball(PlayState* play, Vec3f* pos, s16 yaw, RodColor* color) 
         fireVel.y += Rand_CenteredFloat(2.0f);
         fireVel.z += Rand_CenteredFloat(2.0f);
 
-        EffectSsDFire_Spawn(play, &firePos, &fireVel, &accel,
-                            (s16)(100 + Rand_ZeroOne() * 50), 20,
-                            (s16)(255 - i * 30), (s16)(i + 2), 12);
+        EffectSsDFire_Spawn(play, &firePos, &fireVel, &accel, (s16)(100 + Rand_ZeroOne() * 50), 20, (s16)(255 - i * 30),
+                            (s16)(i + 2), 12);
     }
 
     for (s32 i = 0; i < 3; i++) {
@@ -336,9 +335,8 @@ void FX_SpawnRodEnergyBall(PlayState* play, Vec3f* pos, s16 yaw, s16 pitch, RodC
         fireVel.y += Rand_CenteredFloat(2.0f);
         fireVel.z += Rand_CenteredFloat(2.0f);
 
-        EffectSsDFire_Spawn(play, &firePos, &fireVel, &accel,
-                            (s16)(100 + Rand_ZeroOne() * 50), 20,
-                            (s16)(255 - i * 30), (s16)(i + 2), 12);
+        EffectSsDFire_Spawn(play, &firePos, &fireVel, &accel, (s16)(100 + Rand_ZeroOne() * 50), 20, (s16)(255 - i * 30),
+                            (s16)(i + 2), 12);
     }
 
     for (s32 i = 0; i < 3; i++) {
@@ -388,8 +386,7 @@ void FX_DrawRodFireball(PlayState* play, Vec3f* pos, f32 scale, RodColor* color,
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
 
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0,
-                                (frame * -20) % 0x200, 0x20, 0x80));
+               Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, (frame * -20) % 0x200, 0x20, 0x80));
 
     gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, color->primR, color->primG, color->primB, color->primA);
     gDPSetEnvColor(POLY_XLU_DISP++, color->envR, color->envG, color->envB, 0);
@@ -410,8 +407,7 @@ void FX_DrawRodFireSmoke(PlayState* play, Vec3f* pos, f32 scale, RodColor* color
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
 
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0,
-                                (frame * -15) % 0x200, 0x20, 0x80));
+               Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, (frame * -15) % 0x200, 0x20, 0x80));
 
     for (s32 i = 0; i < 5; i++) {
         Vec3f smokePos = *pos;
@@ -546,9 +542,9 @@ void FX_DrawChargeAura(PlayState* play, Player* player, f32 chargeLevel, RodColo
     pos.z = player->actor.world.pos.z;
 
     u32 scroll = play->gameplayFrames;
-    gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, scroll & 0x7F, 0, 0x20, 0x40, 1, 0,
-                                (scroll * -15) & 0xFF, 0x20, 0x40));
+    gSPSegment(
+        POLY_XLU_DISP++, 0x08,
+        Gfx_TwoTexScroll(play->state.gfxCtx, 0, scroll & 0x7F, 0, 0x20, 0x40, 1, 0, (scroll * -15) & 0xFF, 0x20, 0x40));
 
     gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, primR, primG, primB, alpha);
     gDPSetEnvColor(POLY_XLU_DISP++, envR, envG, envB, 0);
@@ -586,9 +582,9 @@ void FX_DrawSpinFireCylinder(PlayState* play, Player* player, f32 radius, u8 isB
     pos.z = player->actor.world.pos.z;
 
     u32 scroll = play->gameplayFrames;
-    gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0, scroll & 0x7F, 0, 0x20, 0x40, 1, 0,
-                                (scroll * -20) & 0xFF, 0x20, 0x40));
+    gSPSegment(
+        POLY_XLU_DISP++, 0x08,
+        Gfx_TwoTexScroll(play->state.gfxCtx, 0, scroll & 0x7F, 0, 0x20, 0x40, 1, 0, (scroll * -20) & 0xFF, 0x20, 0x40));
 
     gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, primR, primG, primB, alpha);
     gDPSetEnvColor(POLY_XLU_DISP++, envR, envG, envB, 0);

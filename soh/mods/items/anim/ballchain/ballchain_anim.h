@@ -19,7 +19,7 @@ void BallChain_SetEquipPose(Player* p);
 void BallChain_SetSpinPose(Player* p, f32 stickX, f32 stickY);
 
 // Lean multiplier constant (exported for external use)
-#define BALLCHAIN_POSE_LEAN_MULT  3500.0f
+#define BALLCHAIN_POSE_LEAN_MULT 3500.0f
 
 #ifdef __cplusplus
 }

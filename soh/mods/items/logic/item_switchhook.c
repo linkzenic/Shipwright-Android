@@ -16,14 +16,18 @@
 #include "macros.h"
 #include "functions.h"
 
-void Player_InitSwitchHookIA(PlayState* play, Player* this) {}
+void Player_InitSwitchHookIA(PlayState* play, Player* this) {
+}
 
 void Handle_SwitchHook(Player* this, PlayState* play) {
     ItemInputState input;
     ItemInput_Update(&input, ITEM_SWITCH_HOOK, this, play);
-    if (!input.wasEquipped) return;
+    if (!input.wasEquipped)
+        return;
 
     // TODO: Implement switch hook mechanics
 }
 
-s32 Player_UpperAction_SwitchHook(Player* this, PlayState* play) { return 0; }
+s32 Player_UpperAction_SwitchHook(Player* this, PlayState* play) {
+    return 0;
+}

@@ -25,15 +25,18 @@ void Handle_RocsCape(Player* p, PlayState* play) {
     ItemInputState in;
     ItemInput_Update(&in, ITEM_ROCS_CAPE, p, play);
 
-    if (!in.wasEquipped) return;
+    if (!in.wasEquipped)
+        return;
 
     s32 isOnGround = (p->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
     s32 inWater = (p->stateFlags1 & PLAYER_STATE1_IN_WATER);
 
     // Reset double jump when on ground
-    if (isOnGround) rcJumpCount = 0;
+    if (isOnGround)
+        rcJumpCount = 0;
 
-    if (!in.isPressed) return;
+    if (!in.isPressed)
+        return;
 
     if (isOnGround || inWater) {
         // Ground/water jump

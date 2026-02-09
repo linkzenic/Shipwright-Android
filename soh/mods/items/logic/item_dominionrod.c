@@ -39,7 +39,8 @@ static u8 sLinkWasJumping = 0;
 // ============================================================================
 
 static void DomRod_InitCollider(PlayState* play, Player* p) {
-    if (sDomRodColInitialized) return;
+    if (sDomRodColInitialized)
+        return;
     Collider_InitCylinder(play, &domRodCollider);
     Collider_SetCylinder(play, &domRodCollider, &p->actor, &sDomRodColliderInit);
     sDomRodColInitialized = 1;
@@ -55,8 +56,7 @@ static void DomRod_UpdateCollider(PlayState* play, Vec3f* pos) {
 }
 
 static void DomRod_PlaySound(Vec3f* pos, u16 sfxId) {
-    Audio_PlaySoundGeneral(sfxId, pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(sfxId, pos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void DomRod_PlayLoopSound(Actor* actor, u16 sfxId) {
@@ -69,16 +69,14 @@ static void DomRod_PlayLoopSound(Actor* actor, u16 sfxId) {
 
 static void DomRod_CreateLight(PlayState* play) {
     domRodLightNode = LightContext_InsertLight(play, &play->lightCtx, &domRodLightInfo);
-    Lights_PointNoGlowSetInfo(&domRodLightInfo,
-        (s16)domRodOrbPos.x, (s16)domRodOrbPos.y, (s16)domRodOrbPos.z,
-        DOMROD_ORB_ENV_R, DOMROD_ORB_ENV_G, DOMROD_ORB_ENV_B, DOMROD_ORB_LIGHT_RADIUS);
+    Lights_PointNoGlowSetInfo(&domRodLightInfo, (s16)domRodOrbPos.x, (s16)domRodOrbPos.y, (s16)domRodOrbPos.z,
+                              DOMROD_ORB_ENV_R, DOMROD_ORB_ENV_G, DOMROD_ORB_ENV_B, DOMROD_ORB_LIGHT_RADIUS);
 }
 
 static void DomRod_UpdateLight(void) {
     if (domRodLightNode != NULL) {
-        Lights_PointNoGlowSetInfo(&domRodLightInfo,
-            (s16)domRodOrbPos.x, (s16)domRodOrbPos.y, (s16)domRodOrbPos.z,
-            DOMROD_ORB_ENV_R, DOMROD_ORB_ENV_G, DOMROD_ORB_ENV_B, DOMROD_ORB_LIGHT_RADIUS);
+        Lights_PointNoGlowSetInfo(&domRodLightInfo, (s16)domRodOrbPos.x, (s16)domRodOrbPos.y, (s16)domRodOrbPos.z,
+                                  DOMROD_ORB_ENV_R, DOMROD_ORB_ENV_G, DOMROD_ORB_ENV_B, DOMROD_ORB_LIGHT_RADIUS);
     }
 }
 
@@ -94,12 +92,13 @@ static void DomRod_RemoveLight(PlayState* play) {
 // ============================================================================
 
 static u8 DomRod_IsActorControllable(Actor* actor) {
-    if (actor == NULL || actor->update == NULL) return DOMROD_CONTROL_NONE;
+    if (actor == NULL || actor->update == NULL)
+        return DOMROD_CONTROL_NONE;
 
     switch (actor->id) {
-        case ACTOR_EN_VM:      // Beamos - mimics Link + jumps
+        case ACTOR_EN_VM: // Beamos - mimics Link + jumps
             return DOMROD_CONTROL_MOVEMENT;
-        case ACTOR_EN_AM:      // Armos - mimics Link + jumps
+        case ACTOR_EN_AM: // Armos - mimics Link + jumps
             return DOMROD_CONTROL_MOVEMENT;
         case ACTOR_EN_ANUBICE: // Anubis - mimics Link (floats, Y axis too)
             return DOMROD_CONTROL_MOVEMENT;
@@ -133,7 +132,8 @@ static void DomRod_Stop(Player* p, PlayState* play) {
 }
 
 static void DomRod_Start(Player* p, PlayState* play) {
-    if (domRodActive) return;
+    if (domRodActive)
+        return;
 
     domRodActive = 1;
     domRodState = DOMROD_STATE_AIMING;
@@ -274,8 +274,8 @@ static u8 DomRod_CheckGeometryHit(PlayState* play) {
     prevPos.y += sinP * DOMROD_ORB_SPEED;
     prevPos.z -= cosY * cosP * DOMROD_ORB_SPEED;
 
-    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &domRodOrbPos, &hitPoint,
-            &hitPoly, true, true, true, true, &hitDynaId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &domRodOrbPos, &hitPoint, &hitPoly, true, true, true, true,
+                                &hitDynaId)) {
         domRodOrbPos = hitPoint;
         DomRod_PlaySound(&domRodOrbPos, DOMROD_SFX_HIT_WALL);
         return 1;
@@ -353,7 +353,8 @@ static void DomRod_ControlBeamos(Player* p, PlayState* play, Actor* actor) {
         domRodAttackCooldown = DOMROD_BEAMOS_LASER_COOLDOWN;
     }
 
-    if (domRodAttackCooldown > 0) domRodAttackCooldown--;
+    if (domRodAttackCooldown > 0)
+        domRodAttackCooldown--;
     domRodOrbPos = actor->focus.pos;
 }
 
@@ -376,9 +377,8 @@ static void DomRod_ControlArmos(Player* p, PlayState* play, Actor* actor) {
 
     // C-button = Self-destruct (explode)
     if (CHECK_BTN_ALL(input->press.button, domRodButtonMask)) {
-        Actor* bomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM,
-            actor->world.pos.x, actor->world.pos.y, actor->world.pos.z,
-            0, 0, 0x6FF, BOMB_BODY, true);
+        Actor* bomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, actor->world.pos.x, actor->world.pos.y,
+                                  actor->world.pos.z, 0, 0, 0x6FF, BOMB_BODY, true);
         if (bomb != NULL) {
             EnBom* bombActor = (EnBom*)bomb;
             bombActor->timer = 0;
@@ -418,14 +418,14 @@ static void DomRod_ControlAnubis(Player* p, PlayState* play, Actor* actor) {
         firePos.y = actor->world.pos.y + 30.0f;
         firePos.z = actor->world.pos.z + Math_CosS(fireYaw) * 30.0f;
 
-        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ANUBICE_FIRE,
-            firePos.x, firePos.y, firePos.z,
-            0, fireYaw, 0, 0, true);
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ANUBICE_FIRE, firePos.x, firePos.y, firePos.z, 0, fireYaw, 0, 0,
+                    true);
         DomRod_PlaySound(&actor->world.pos, NA_SE_EN_ANUBIS_FIRE);
         domRodAttackCooldown = DOMROD_ANUBIS_FIRE_COOLDOWN;
     }
 
-    if (domRodAttackCooldown > 0) domRodAttackCooldown--;
+    if (domRodAttackCooldown > 0)
+        domRodAttackCooldown--;
     domRodOrbPos = actor->focus.pos;
 }
 
@@ -442,8 +442,8 @@ static void DomRod_SpawnOrbParticles(PlayState* play) {
     particlePos.y += Rand_CenteredFloat(15.0f);
     particlePos.z += Rand_CenteredFloat(15.0f);
 
-    EffectSsFhgFlash_SpawnLightBall(play, &particlePos, &vel, &accel,
-        (s16)(Rand_ZeroOne() * 60.0f) + 100, FHGFLASH_LIGHTBALL_GREEN);
+    EffectSsFhgFlash_SpawnLightBall(play, &particlePos, &vel, &accel, (s16)(Rand_ZeroOne() * 60.0f) + 100,
+                                    FHGFLASH_LIGHTBALL_GREEN);
 }
 
 // ============================================================================
@@ -574,10 +574,10 @@ static void DomRod_StateControlling(Player* p, PlayState* play, ItemInputState* 
     if (!domRodDamagePaused) {
         // Route to actor-specific control handler (only 3 actors)
         switch (domRodControlledActor->id) {
-            case ACTOR_EN_VM:      // Beamos
+            case ACTOR_EN_VM: // Beamos
                 DomRod_ControlBeamos(p, play, domRodControlledActor);
                 break;
-            case ACTOR_EN_AM:      // Armos
+            case ACTOR_EN_AM: // Armos
                 DomRod_ControlArmos(p, play, domRodControlledActor);
                 break;
             case ACTOR_EN_ANUBICE: // Anubis
@@ -612,23 +612,24 @@ static void DomRod_StateCatching(Player* p, PlayState* play) {
 // ============================================================================
 
 void Handle_DominionRod(Player* p, PlayState* play) {
-    if (!sDomRodColInitialized) DomRod_InitCollider(play, p);
+    if (!sDomRodColInitialized)
+        DomRod_InitCollider(play, p);
 
     ItemInputState in;
     ItemInput_Update(&in, ITEM_DOMINION_ROD, p, play);
     domRodButtonMask = in.equippedButton;
 
     if (!in.wasEquipped) {
-        if (domRodActive) DomRod_Stop(p, play);
+        if (domRodActive)
+            DomRod_Stop(p, play);
         return;
     }
 
-    if (domRodState != DOMROD_STATE_CONTROLLING &&
-        domRodState != DOMROD_STATE_ORB_FLYING &&
-        domRodState != DOMROD_STATE_ORB_RETURN &&
-        domRodState != DOMROD_STATE_CATCHING) {
+    if (domRodState != DOMROD_STATE_CONTROLLING && domRodState != DOMROD_STATE_ORB_FLYING &&
+        domRodState != DOMROD_STATE_ORB_RETURN && domRodState != DOMROD_STATE_CATCHING) {
         if (ItemInput_IsBlocked(p, play)) {
-            if (domRodActive) DomRod_Stop(p, play);
+            if (domRodActive)
+                DomRod_Stop(p, play);
             return;
         }
     }
@@ -639,8 +640,7 @@ void Handle_DominionRod(Player* p, PlayState* play) {
         if (ItemInput_CheckDamage(p, &domRodPrevInvinc)) {
             if (domRodState == DOMROD_STATE_ORB_FLYING) {
                 DomRod_StartReturn(p, play);
-            } else if (domRodActive && domRodState != DOMROD_STATE_ORB_RETURN &&
-                       domRodState != DOMROD_STATE_CATCHING) {
+            } else if (domRodActive && domRodState != DOMROD_STATE_ORB_RETURN && domRodState != DOMROD_STATE_CATCHING) {
                 DomRod_Stop(p, play);
             }
             return;
@@ -648,12 +648,12 @@ void Handle_DominionRod(Player* p, PlayState* play) {
     }
 
     if (!domRodActive) {
-        if (in.isPressed) DomRod_Start(p, play);
+        if (in.isPressed)
+            DomRod_Start(p, play);
         return;
     }
 
-    if (domRodState == DOMROD_STATE_AIMING &&
-        CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+    if (domRodState == DOMROD_STATE_AIMING && CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
         DomRod_Stop(p, play);
         return;
     }
@@ -712,10 +712,11 @@ s32 Player_UpperAction_DominionRod(Player* this, PlayState* play) {
 // ============================================================================
 
 void CustomItems_DrawDominionRod(Player* p, PlayState* play) {
-    if (!domRodActive) return;
-    if (domRodState != DOMROD_STATE_ORB_FLYING &&
-        domRodState != DOMROD_STATE_ORB_RETURN &&
-        domRodState != DOMROD_STATE_CONTROLLING) return;
+    if (!domRodActive)
+        return;
+    if (domRodState != DOMROD_STATE_ORB_FLYING && domRodState != DOMROD_STATE_ORB_RETURN &&
+        domRodState != DOMROD_STATE_CONTROLLING)
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -728,14 +729,11 @@ void CustomItems_DrawDominionRod(Player* p, PlayState* play) {
 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
 
-    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0,
-        DOMROD_ORB_PRIM_R, DOMROD_ORB_PRIM_G, DOMROD_ORB_PRIM_B, DOMROD_ORB_PRIM_A);
-    gDPSetEnvColor(POLY_XLU_DISP++,
-        DOMROD_ORB_ENV_R, DOMROD_ORB_ENV_G, DOMROD_ORB_ENV_B, DOMROD_ORB_ENV_A);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, DOMROD_ORB_PRIM_R, DOMROD_ORB_PRIM_G, DOMROD_ORB_PRIM_B, DOMROD_ORB_PRIM_A);
+    gDPSetEnvColor(POLY_XLU_DISP++, DOMROD_ORB_ENV_R, DOMROD_ORB_ENV_G, DOMROD_ORB_ENV_B, DOMROD_ORB_ENV_A);
     gDPPipeSync(POLY_XLU_DISP++);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-        G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -746,8 +744,10 @@ void CustomItems_DrawDominionRod(Player* p, PlayState* play) {
 // ============================================================================
 
 void CustomItems_DrawDominionRodReticle(Player* p, PlayState* play) {
-    if (!domRodActive || !domRodFirstPerson) return;
-    if (domRodState != DOMROD_STATE_AIMING) return;
+    if (!domRodActive || !domRodFirstPerson)
+        return;
+    if (domRodState != DOMROD_STATE_AIMING)
+        return;
 
     FirstPerson_DrawReticle(p, play, 0.0f, DOMROD_RETICLE_R, DOMROD_RETICLE_G, DOMROD_RETICLE_B);
 }

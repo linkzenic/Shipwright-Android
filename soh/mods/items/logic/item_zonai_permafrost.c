@@ -29,14 +29,14 @@ static s32 sZPermPhaseEnd = 0;
 
 // Actor categories to freeze
 static const u8 sFreezeCats[] = {
-    ACTORCAT_SWITCH,      // 0x00 - buttons, switches
-    ACTORCAT_BG,          // 0x01 - background actors
-    ACTORCAT_EXPLOSIVE,   // 0x03 - bombs
-    ACTORCAT_NPC,         // 0x04 - NPCs
-    ACTORCAT_ENEMY,       // 0x05 - enemies
-    ACTORCAT_ITEMACTION,  // 0x07 - projectiles
-    ACTORCAT_MISC,        // 0x08 - misc
-    ACTORCAT_BOSS,        // 0x09 - bosses
+    ACTORCAT_SWITCH,     // 0x00 - buttons, switches
+    ACTORCAT_BG,         // 0x01 - background actors
+    ACTORCAT_EXPLOSIVE,  // 0x03 - bombs
+    ACTORCAT_NPC,        // 0x04 - NPCs
+    ACTORCAT_ENEMY,      // 0x05 - enemies
+    ACTORCAT_ITEMACTION, // 0x07 - projectiles
+    ACTORCAT_MISC,       // 0x08 - misc
+    ACTORCAT_BOSS,       // 0x09 - bosses
 };
 
 // ============================================================================
@@ -86,8 +86,8 @@ static void ZPerm_UnfreezeAllTargets(PlayState* play) {
  */
 static void ZPerm_SpawnCastRunes(Player* p, PlayState* play, f32 expandRadius) {
     Vec3f accel = { 0.0f, 0.0f, 0.0f };
-    Color_RGBA8 primColor = { 100, 255, 150, 255 };  // Bright Zonai green
-    Color_RGBA8 envColor  = { 0, 200, 80, 255 };     // Deep green
+    Color_RGBA8 primColor = { 100, 255, 150, 255 }; // Bright Zonai green
+    Color_RGBA8 envColor = { 0, 200, 80, 255 };     // Deep green
 
     for (u8 i = 0; i < 8; i++) {
         f32 angle = (f32)i * (65536.0f / 8.0f);
@@ -113,9 +113,9 @@ static void ZPerm_SpawnCastRunes(Player* p, PlayState* play, f32 expandRadius) {
  */
 static void ZPerm_SpawnFrozenParticles(Player* p, PlayState* play) {
     Vec3f accel = { 0.0f, 0.0f, 0.0f };
-    Vec3f vel   = { 0.0f, 0.0f, 0.0f };
+    Vec3f vel = { 0.0f, 0.0f, 0.0f };
     Color_RGBA8 primColor = { 120, 255, 160, 200 };
-    Color_RGBA8 envColor  = { 0, 180, 60, 150 };
+    Color_RGBA8 envColor = { 0, 180, 60, 150 };
 
     for (u8 i = 0; i < 2; i++) {
         Vec3f pos;
@@ -132,7 +132,8 @@ static void ZPerm_SpawnFrozenParticles(Player* p, PlayState* play) {
 // ============================================================================
 
 static void ZPerm_Stop(Player* p, PlayState* play) {
-    if (!zpActive) return;
+    if (!zpActive)
+        return;
 
     // If in ACTIVE or ENDING, unfreeze actors and restore time
     if (zpState == ZPERM_STATE_ACTIVE || zpState == ZPERM_STATE_ENDING) {
@@ -155,15 +156,17 @@ static void ZPerm_Stop(Player* p, PlayState* play) {
 }
 
 static void ZPerm_Start(Player* p, PlayState* play) {
-    if (zpActive) return;
+    if (zpActive)
+        return;
 
     if (!ItemMagic_HasEnough(play, ZPERM_MAGIC_COST)) {
-        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
-    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) return;
+    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND))
+        return;
 
     zpActive = 1;
     zpState = ZPERM_STATE_CASTING;
@@ -184,7 +187,8 @@ static void ZPerm_Start(Player* p, PlayState* play) {
 
 static void ZPerm_ComputePhaseEnd(s32 baseTimer, f32 lastFrame) {
     f32 rate = ZPERM_ANIM_SPEED * R_UPDATE_RATE;
-    if (rate < 0.1f) rate = 0.415f;  // Safety fallback
+    if (rate < 0.1f)
+        rate = 0.415f; // Safety fallback
     sZPermPhaseEnd = baseTimer + (s32)(lastFrame / rate) + 1;
 }
 
@@ -206,12 +210,11 @@ static void ZPerm_StateCasting(Player* p, PlayState* play) {
 
     // Frame 0: Start first animation
     if (zpTimer == 0) {
-        LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_honoo1,
-            ZPERM_ANIM_SPEED, 0.0f,
-            Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo1), ANIMMODE_ONCE, -8.0f);
+        LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_honoo1, ZPERM_ANIM_SPEED, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo1), ANIMMODE_ONCE, -8.0f);
         ZPerm_ComputePhaseEnd(zpTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo1));
-        Audio_PlaySoundGeneral(NA_SE_VO_LI_MAGIC_NALE, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_VO_LI_MAGIC_NALE, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Double-update: vanilla calls LinkAnimation_Update once, we call it again (Demise pattern)
@@ -223,17 +226,15 @@ static void ZPerm_StateCasting(Player* p, PlayState* play) {
     if (zpTimer > 0 && zpTimer >= sZPermPhaseEnd) {
         switch (zpSubPhase) {
             case ZPERM_CAST_HONOO1:
-                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_honoo2,
-                    ZPERM_ANIM_SPEED, 0.0f,
-                    Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo2), ANIMMODE_ONCE, 0.0f);
+                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_honoo2, ZPERM_ANIM_SPEED, 0.0f,
+                                     Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo2), ANIMMODE_ONCE, 0.0f);
                 ZPerm_ComputePhaseEnd(zpTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo2));
                 zpSubPhase = ZPERM_CAST_HONOO2;
                 break;
 
             case ZPERM_CAST_HONOO2:
-                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_honoo3,
-                    ZPERM_ANIM_SPEED, 0.0f,
-                    Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo3), ANIMMODE_ONCE, 0.0f);
+                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_honoo3, ZPERM_ANIM_SPEED, 0.0f,
+                                     Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo3), ANIMMODE_ONCE, 0.0f);
                 ZPerm_ComputePhaseEnd(zpTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_honoo3));
                 zpSubPhase = ZPERM_CAST_HONOO3;
                 break;
@@ -264,8 +265,8 @@ static void ZPerm_StateCasting(Player* p, PlayState* play) {
                 func_800AA000(300.0f, 150, 20, 60);
 
                 // Freeze activation SFX
-                Audio_PlaySoundGeneral(NA_SE_EV_ICE_FREEZE, &p->actor.world.pos, 4,
-                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                Audio_PlaySoundGeneral(NA_SE_EV_ICE_FREEZE, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                 break;
         }
     }
@@ -273,7 +274,8 @@ static void ZPerm_StateCasting(Player* p, PlayState* play) {
     // Green rune particles expanding outward during casting
     if (zpState == ZPERM_STATE_CASTING && zpTimer > 5 && play->gameplayFrames % 3 == 0) {
         f32 expandRadius = 20.0f + ((f32)(zpTimer - 5)) * 4.0f;
-        if (expandRadius > 200.0f) expandRadius = 200.0f;
+        if (expandRadius > 200.0f)
+            expandRadius = 200.0f;
         ZPerm_SpawnCastRunes(p, play, expandRadius);
     }
 }
@@ -303,8 +305,8 @@ static void ZPerm_StateActive(Player* p, PlayState* play) {
 
     // Ambient SFX
     if (play->gameplayFrames % 40 == 0) {
-        Audio_PlaySoundGeneral(NA_SE_EV_ICE_MELT, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_EV_ICE_MELT, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Timer expired
@@ -329,8 +331,8 @@ static void ZPerm_StateEnding(Player* p, PlayState* play) {
     func_800AA000(200.0f, 100, 15, 40);
 
     // Unfreeze SFX
-    Audio_PlaySoundGeneral(NA_SE_EV_ICE_MELT, &p->actor.world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_EV_ICE_MELT, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
     // Reset to idle
     zpActive = 0;
@@ -350,7 +352,8 @@ void Handle_ZonaiPermafrost(Player* p, PlayState* play) {
 
     // Unequipped: cleanup if active
     if (!in.wasEquipped) {
-        if (zpActive) ZPerm_Stop(p, play);
+        if (zpActive)
+            ZPerm_Stop(p, play);
         return;
     }
 
@@ -363,19 +366,30 @@ void Handle_ZonaiPermafrost(Player* p, PlayState* play) {
     }
 
     // Cannot use in water
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+        return;
 
     if (!zpActive) {
-        if (ItemInput_IsBlocked(p, play)) return;
-        if (in.isPressed) ZPerm_Start(p, play);
+        if (ItemInput_IsBlocked(p, play))
+            return;
+        if (in.isPressed)
+            ZPerm_Start(p, play);
         return;
     }
 
     switch (zpState) {
-        case ZPERM_STATE_CASTING: ZPerm_StateCasting(p, play); break;
-        case ZPERM_STATE_ACTIVE:  ZPerm_StateActive(p, play); break;
-        case ZPERM_STATE_ENDING:  ZPerm_StateEnding(p, play); break;
-        default: ZPerm_Stop(p, play); break;
+        case ZPERM_STATE_CASTING:
+            ZPerm_StateCasting(p, play);
+            break;
+        case ZPERM_STATE_ACTIVE:
+            ZPerm_StateActive(p, play);
+            break;
+        case ZPERM_STATE_ENDING:
+            ZPerm_StateEnding(p, play);
+            break;
+        default:
+            ZPerm_Stop(p, play);
+            break;
     }
 }
 
@@ -391,4 +405,6 @@ void Player_InitZonaiPermafrostIA(PlayState* play, Player* p) {
     zpSavedTime = 0;
 }
 
-s32 Player_UpperAction_ZonaiPermafrost(Player* p, PlayState* play) { return 0; }
+s32 Player_UpperAction_ZonaiPermafrost(Player* p, PlayState* play) {
+    return 0;
+}

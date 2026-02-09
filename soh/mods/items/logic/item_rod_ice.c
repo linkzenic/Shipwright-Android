@@ -32,24 +32,22 @@ static u8 sIceSpinColliderInited = 0;
 static u8 sIceWaveCollidersInited = 0;
 static u8 sIceMultiCollidersInited = 0;
 
-static RodColor sIceRodColor = {
-    ICE_ROD_PRIM_R, ICE_ROD_PRIM_G, ICE_ROD_PRIM_B, ICE_ROD_PRIM_A,
-    ICE_ROD_ENV_R, ICE_ROD_ENV_G, ICE_ROD_ENV_B, ICE_ROD_ENV_A
-};
+static RodColor sIceRodColor = { ICE_ROD_PRIM_R, ICE_ROD_PRIM_G, ICE_ROD_PRIM_B, ICE_ROD_PRIM_A,
+                                 ICE_ROD_ENV_R,  ICE_ROD_ENV_G,  ICE_ROD_ENV_B,  ICE_ROD_ENV_A };
 
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 
 // Aliases for multi-projectile system
-#define iceRodProjPos2     gCustomItemState.iceRodProjPos2
-#define iceRodProjPos3     gCustomItemState.iceRodProjPos3
-#define iceRodProjVel      gCustomItemState.iceRodProjVel
-#define iceRodProjCount    gCustomItemState.iceRodProjCount
-#define iceRodCollider2    gCustomItemState.iceRodCollider2
-#define iceRodCollider3    gCustomItemState.iceRodCollider3
-#define iceRodWaveActive   gCustomItemState.iceRodWaveActive
-#define iceRodWaveTimer    gCustomItemState.iceRodWaveTimer
-#define iceRodWavePos      gCustomItemState.iceRodWavePos
+#define iceRodProjPos2 gCustomItemState.iceRodProjPos2
+#define iceRodProjPos3 gCustomItemState.iceRodProjPos3
+#define iceRodProjVel gCustomItemState.iceRodProjVel
+#define iceRodProjCount gCustomItemState.iceRodProjCount
+#define iceRodCollider2 gCustomItemState.iceRodCollider2
+#define iceRodCollider3 gCustomItemState.iceRodCollider3
+#define iceRodWaveActive gCustomItemState.iceRodWaveActive
+#define iceRodWaveTimer gCustomItemState.iceRodWaveTimer
+#define iceRodWavePos gCustomItemState.iceRodWavePos
 #define iceRodWaveColliders gCustomItemState.iceRodWaveColliders
 
 // =============================================================================
@@ -57,7 +55,8 @@ extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 // =============================================================================
 
 // func_80837C0C: Handles player hit response including freeze
-extern void func_80837C0C(PlayState* play, Player* this, s32 hitResponse, f32 damageSpeed, f32 damageRot, s16 damageRotType, s32 invincibility);
+extern void func_80837C0C(PlayState* play, Player* this, s32 hitResponse, f32 damageSpeed, f32 damageRot,
+                          s16 damageRotType, s32 invincibility);
 
 static void IceRod_Backfire(Player* p, PlayState* play) {
     Audio_PlayActorSound2(&p->actor, ICE_ROD_SFX_BACKFIRE_HIT);
@@ -68,7 +67,8 @@ static void IceRod_Backfire(Player* p, PlayState* play) {
 }
 
 static u8 IceRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 backfireChance) {
-    if (ItemMagic_HasEnough(play, magicCost)) return 0;
+    if (ItemMagic_HasEnough(play, magicCost))
+        return 0;
 
     u8 roll = (u8)(Rand_ZeroOne() * 100.0f);
     if (roll < backfireChance) {
@@ -85,7 +85,8 @@ static u8 IceRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 bac
 // =============================================================================
 
 static void IceRod_InitColliders(Player* p, PlayState* play) {
-    if (sIceMultiCollidersInited) return;
+    if (sIceMultiCollidersInited)
+        return;
 
     Collider_InitCylinder(play, &iceRodCollider);
     Collider_SetCylinder(play, &iceRodCollider, &p->actor, &sIceRodProjColInit);
@@ -114,13 +115,16 @@ static void IceRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* start
     iceRodProjCount = 1;
     iceRodProjPos = *startPos;
     iceRodProjTimer = (s16)(maxRange / ICE_ROD_PROJ_SPEED);
-    if (iceRodProjTimer < 10) iceRodProjTimer = 10;
-    if (iceRodProjTimer > 30) iceRodProjTimer = 30;
+    if (iceRodProjTimer < 10)
+        iceRodProjTimer = 10;
+    if (iceRodProjTimer > 30)
+        iceRodProjTimer = 30;
 
     iceRodProjScale = 0.0f;
     iceRodProjRotZ = 0;
     iceRodProjTrailIdx = 0;
-    for (s32 i = 0; i < 6; i++) iceRodProjTrail[i] = *startPos;
+    for (s32 i = 0; i < 6; i++)
+        iceRodProjTrail[i] = *startPos;
 
     iceRodProjYaw = yaw;
     iceRodProjPitch = pitch;
@@ -137,7 +141,8 @@ static void IceRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* start
 
     s16 spreadAngle = (s16)(ICE_ROD_SLASH_SPREAD * (0x10000 / 360));
     s16 timer = (s16)(ICE_ROD_SLASH_RANGE / ICE_ROD_PROJ_SPEED);
-    if (timer < 10) timer = 10;
+    if (timer < 10)
+        timer = 10;
     iceRodProjTimer = timer;
 
     iceRodProjScale = 0.0f;
@@ -149,7 +154,8 @@ static void IceRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* start
     iceRodProjYaw = baseYaw;
     iceRodProjPitch = pitch;
     IceRod_CalcVelocity(&iceRodProjVel[0], baseYaw, pitch);
-    for (s32 i = 0; i < 6; i++) iceRodProjTrail[i] = *startPos;
+    for (s32 i = 0; i < 6; i++)
+        iceRodProjTrail[i] = *startPos;
 
     // Left iceball (-spread angle)
     iceRodProjPos2 = *startPos;
@@ -200,12 +206,15 @@ static void IceRod_SpawnIceSparks(PlayState* play, Vec3f* pos, f32 scale) {
 }
 
 static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
-    if (!iceRodProjActive) return;
+    if (!iceRodProjActive)
+        return;
 
     iceRodProjRotZ += 5000;
 
-    if (iceRodProjTimer > 0) iceRodProjTimer--;
-    if (iceRodProjTimer == 0) sIceRodTargetScale = 0.0f;
+    if (iceRodProjTimer > 0)
+        iceRodProjTimer--;
+    if (iceRodProjTimer == 0)
+        sIceRodTargetScale = 0.0f;
 
     Math_ApproachF(&iceRodProjScale, sIceRodTargetScale, 0.2f, 0.4f);
 
@@ -233,27 +242,34 @@ static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
 
     // Trail for center projectile
     iceRodProjTrail[0] = iceRodProjPos;
-    for (s32 i = 4; i >= 0; i--) iceRodProjTrail[i + 1] = iceRodProjTrail[i];
+    for (s32 i = 4; i >= 0; i--)
+        iceRodProjTrail[i + 1] = iceRodProjTrail[i];
 
     // Sparks and sound
     if (iceRodProjScale >= 0.4f) {
         IceRod_SpawnIceSparks(play, &iceRodProjPos, iceRodProjScale);
-        if (iceRodProjCount >= 2) IceRod_SpawnIceSparks(play, &iceRodProjPos2, iceRodProjScale);
-        if (iceRodProjCount >= 3) IceRod_SpawnIceSparks(play, &iceRodProjPos3, iceRodProjScale);
+        if (iceRodProjCount >= 2)
+            IceRod_SpawnIceSparks(play, &iceRodProjPos2, iceRodProjScale);
+        if (iceRodProjCount >= 3)
+            IceRod_SpawnIceSparks(play, &iceRodProjPos3, iceRodProjScale);
         Audio_PlayActorSound2(&p->actor, ICE_ROD_SFX_ICE_LOOP - SFX_FLAG);
     }
 
     // Colliders
     if (iceRodProjScale >= 0.6f) {
         IceRod_UpdateCollider(&iceRodCollider, &iceRodProjPos, iceRodProjScale, play);
-        if (iceRodProjCount >= 2) IceRod_UpdateCollider(&iceRodCollider2, &iceRodProjPos2, iceRodProjScale, play);
-        if (iceRodProjCount >= 3) IceRod_UpdateCollider(&iceRodCollider3, &iceRodProjPos3, iceRodProjScale, play);
+        if (iceRodProjCount >= 2)
+            IceRod_UpdateCollider(&iceRodCollider2, &iceRodProjPos2, iceRodProjScale, play);
+        if (iceRodProjCount >= 3)
+            IceRod_UpdateCollider(&iceRodCollider3, &iceRodProjPos3, iceRodProjScale, play);
     }
 
     // Hit detection
     u8 anyHit = IceRod_CheckHit(&iceRodCollider, &iceRodProjPos, play, p);
-    if (iceRodProjCount >= 2) anyHit |= IceRod_CheckHit(&iceRodCollider2, &iceRodProjPos2, play, p);
-    if (iceRodProjCount >= 3) anyHit |= IceRod_CheckHit(&iceRodCollider3, &iceRodProjPos3, play, p);
+    if (iceRodProjCount >= 2)
+        anyHit |= IceRod_CheckHit(&iceRodCollider2, &iceRodProjPos2, play, p);
+    if (iceRodProjCount >= 3)
+        anyHit |= IceRod_CheckHit(&iceRodCollider3, &iceRodProjPos3, play, p);
 
     if (anyHit) {
         iceRodProjVel[0].x = iceRodProjVel[0].y = iceRodProjVel[0].z = 0.0f;
@@ -269,7 +285,8 @@ static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
 // =============================================================================
 
 static void IceRod_InitWaveColliders(Player* p, PlayState* play) {
-    if (sIceWaveCollidersInited) return;
+    if (sIceWaveCollidersInited)
+        return;
 
     for (s32 i = 0; i < ICE_ROD_WAVE_COUNT; i++) {
         Collider_InitCylinder(play, &iceRodWaveColliders[i]);
@@ -305,7 +322,8 @@ static void IceRod_StartIceWave(Player* p, PlayState* play) {
 }
 
 static void IceRod_UpdateIceWave(Player* p, PlayState* play) {
-    if (!iceRodWaveActive) return;
+    if (!iceRodWaveActive)
+        return;
 
     if (iceRodWaveTimer > 0) {
         iceRodWaveTimer--;
@@ -331,7 +349,8 @@ static void IceRod_UpdateIceWave(Player* p, PlayState* play) {
 
 // Slash: 3 iceballs spread at short range
 static void IceRod_SlashEffect(Player* p, PlayState* play) {
-    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_SLASH, ICE_ROD_BACKFIRE_SLASH)) return;
+    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_SLASH, ICE_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, ICE_ROD_MAGIC_SLASH);
 
     Vec3f* tipPos = &p->meleeWeaponInfo[0].tip;
@@ -352,7 +371,8 @@ static void IceRod_SlashEffect(Player* p, PlayState* play) {
 
 // Stab: Single iceball at long range - uses weapon direction from base to tip
 static void IceRod_StabEffect(Player* p, PlayState* play) {
-    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_STAB, ICE_ROD_BACKFIRE_SLASH)) return;
+    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_STAB, ICE_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, ICE_ROD_MAGIC_STAB);
 
     Vec3f* tipPos = &p->meleeWeaponInfo[0].tip;
@@ -375,14 +395,16 @@ static void IceRod_StabEffect(Player* p, PlayState* play) {
 
 // Jump Slash: Ice wave cone
 static void IceRod_JumpEffect(Player* p, PlayState* play) {
-    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_JUMP, ICE_ROD_BACKFIRE_JUMP)) return;
+    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_JUMP, ICE_ROD_BACKFIRE_JUMP))
+        return;
     ItemMagic_Consume(play, ICE_ROD_MAGIC_JUMP);
     IceRod_StartIceWave(p, play);
 }
 
 // First Person: Fires stab in aimed direction
 static void IceRod_FirstPersonFire(Player* p, PlayState* play) {
-    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_STAB, ICE_ROD_BACKFIRE_SLASH)) return;
+    if (IceRod_CheckBackfire(p, play, ICE_ROD_MAGIC_STAB, ICE_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, ICE_ROD_MAGIC_STAB);
 
     s16 aimYaw = FirstPerson_GetAimYaw(p);
@@ -419,8 +441,8 @@ static void IceRod_SwingParticles(Player* p, PlayState* play) {
 }
 
 static u8 IceRod_IsSpinAttack(u8 mwa) {
-    return (mwa == PLAYER_MWA_SPIN_ATTACK_1H || mwa == PLAYER_MWA_SPIN_ATTACK_2H ||
-            mwa == PLAYER_MWA_BIG_SPIN_1H || mwa == PLAYER_MWA_BIG_SPIN_2H);
+    return (mwa == PLAYER_MWA_SPIN_ATTACK_1H || mwa == PLAYER_MWA_SPIN_ATTACK_2H || mwa == PLAYER_MWA_BIG_SPIN_1H ||
+            mwa == PLAYER_MWA_BIG_SPIN_2H);
 }
 
 // =============================================================================
@@ -443,14 +465,17 @@ static void IceRod_StartSpinIce(Player* p, PlayState* play, u8 isBigSpin) {
 }
 
 static void IceRod_UpdateSpinIce(Player* p, PlayState* play) {
-    if (!iceRodSpinActive) return;
+    if (!iceRodSpinActive)
+        return;
 
     f32 expandSpeed = iceRodSpinIsBig ? 30.0f : 15.0f;
     iceRodSpinRadius += expandSpeed;
-    if (iceRodSpinRadius >= iceRodSpinMaxRadius) iceRodSpinRadius = iceRodSpinMaxRadius;
+    if (iceRodSpinRadius >= iceRodSpinMaxRadius)
+        iceRodSpinRadius = iceRodSpinMaxRadius;
 
     sIceSpinExpandProgress = iceRodSpinRadius / iceRodSpinMaxRadius;
-    if (sIceSpinExpandProgress > 1.0f) sIceSpinExpandProgress = 1.0f;
+    if (sIceSpinExpandProgress > 1.0f)
+        sIceSpinExpandProgress = 1.0f;
 
     iceRodSpinCollider.dim.radius = (s16)iceRodSpinRadius;
     iceRodSpinCollider.dim.height = 80;
@@ -486,10 +511,12 @@ static void IceRod_ProcessSwing(Player* p, PlayState* play) {
         }
         IceRod_UpdateSpinIce(p, play);
     } else {
-        if (iceRodSpinActive) IceRod_StopSpinIce();
+        if (iceRodSpinActive)
+            IceRod_StopSpinIce();
     }
 
-    if (mwa == sIceLastSwingType) return;
+    if (mwa == sIceLastSwingType)
+        return;
     sIceLastSwingType = mwa;
 
     switch (mwa) {
@@ -538,12 +565,15 @@ static void IceRod_ProcessSwing(Player* p, PlayState* play) {
 // =============================================================================
 
 static u8 IceRod_CanCharge(Player* p, PlayState* play) {
-    if (p->meleeWeaponState > 0) return 0;
-    if (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                          PLAYER_STATE1_DAMAGED | PLAYER_STATE1_LOADING |
-                          PLAYER_STATE1_HOOKSHOT_FALLING)) return 0;
-    if (!(p->actor.bgCheckFlags & 1)) return 0;
-    if (p->stateFlags2 & PLAYER_STATE2_HOPPING) return 0;
+    if (p->meleeWeaponState > 0)
+        return 0;
+    if (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_DAMAGED |
+                          PLAYER_STATE1_LOADING | PLAYER_STATE1_HOOKSHOT_FALLING))
+        return 0;
+    if (!(p->actor.bgCheckFlags & 1))
+        return 0;
+    if (p->stateFlags2 & PLAYER_STATE2_HOPPING)
+        return 0;
     return 1;
 }
 
@@ -557,13 +587,15 @@ static void IceRod_StartCharge(Player* p, PlayState* play) {
 }
 
 static void IceRod_UpdateCharge(Player* p, PlayState* play) {
-    if (!iceRodCharging) return;
+    if (!iceRodCharging)
+        return;
 
     iceRodChargeTimer++;
 
     if (iceRodChargeLevel < 1.0f) {
         iceRodChargeLevel += ICE_ROD_CHARGE_RATE;
-        if (iceRodChargeLevel > 1.0f) iceRodChargeLevel = 1.0f;
+        if (iceRodChargeLevel > 1.0f)
+            iceRodChargeLevel = 1.0f;
     }
 
     if (!iceRodChargeReady && iceRodChargeLevel >= ICE_ROD_CHARGE_MIN) {
@@ -589,7 +621,8 @@ static void IceRod_UpdateCharge(Player* p, PlayState* play) {
 }
 
 static void IceRod_ReleaseCharge(Player* p, PlayState* play) {
-    if (!iceRodCharging) return;
+    if (!iceRodCharging)
+        return;
 
     s32 spinType;
     u8 isBigSpin = 0;
@@ -669,7 +702,8 @@ static void IceRod_UpdateFirstPerson(Player* p, PlayState* play, ItemInputState*
 
     // Exit on B, other C-buttons, or damage/cutscene
     u16 exitButtons = BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
-    if (in->equippedButton) exitButtons &= ~in->equippedButton;
+    if (in->equippedButton)
+        exitButtons &= ~in->equippedButton;
 
     if (CHECK_BTN_ANY(play->state.input[0].press.button, exitButtons) ||
         (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_DAMAGED))) {
@@ -703,7 +737,8 @@ static void IceRod_OnEquip(PlayState* play, Player* p) {
 }
 
 static void IceRod_OnUnequip(PlayState* play, Player* p) {
-    if (iceRodFirstPerson) IceRod_ExitFirstPerson(p, play);
+    if (iceRodFirstPerson)
+        IceRod_ExitFirstPerson(p, play);
 
     iceRodActive = 0;
     iceRodState = ICE_ROD_STATE_INACTIVE;
@@ -724,7 +759,8 @@ static void IceRod_OnUnequip(PlayState* play, Player* p) {
         iceRodBlureIdx = -1;
     }
 
-    if (iceRodSpinActive) IceRod_StopSpinIce();
+    if (iceRodSpinActive)
+        IceRod_StopSpinIce();
     ItemEquip_PlayUnequipSFX(play, p);
 }
 
@@ -741,7 +777,8 @@ void Handle_IceRod(Player* p, PlayState* play) {
     iceRodButtonMask = in.equippedButton;
 
     if (!in.wasEquipped) {
-        if (iceRodActive) IceRod_OnUnequip(play, p);
+        if (iceRodActive)
+            IceRod_OnUnequip(play, p);
         sIceEquipState.isEquipped = 0;
         return;
     }
@@ -760,32 +797,39 @@ void Handle_IceRod(Player* p, PlayState* play) {
     }
 
     if (!iceRodActive) {
-        if (ItemInput_IsBlockedEx(p, play, 1)) return;
+        if (ItemInput_IsBlockedEx(p, play, 1))
+            return;
     } else {
         u32 criticalBlocks = (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
-            PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
-            PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
-            PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
+                              PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
+                              PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+                              PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
         if (p->stateFlags1 & criticalBlocks) {
-            if (iceRodCharging) IceRod_CancelCharge(p);
+            if (iceRodCharging)
+                IceRod_CancelCharge(p);
             return;
         }
     }
 
     if (ItemInput_CheckDamage(p, &sIcePrevInvinc)) {
-        if (iceRodCharging) IceRod_CancelCharge(p);
-        if (iceRodActive) IceRod_OnUnequip(play, p);
+        if (iceRodCharging)
+            IceRod_CancelCharge(p);
+        if (iceRodActive)
+            IceRod_OnUnequip(play, p);
         sIceEquipState.isEquipped = 0;
         return;
     }
 
     ItemEquip_Update(&sIceEquipState, &in, IceRod_OnEquip, IceRod_OnUnequip, p, play);
 
-    if (!iceRodActive) return;
+    if (!iceRodActive)
+        return;
 
     if (iceRodCharging) {
-        if (in.isHeld) IceRod_UpdateCharge(p, play);
-        else IceRod_ReleaseCharge(p, play);
+        if (in.isHeld)
+            IceRod_UpdateCharge(p, play);
+        else
+            IceRod_ReleaseCharge(p, play);
     } else if (in.isHeld && IceRod_CanCharge(p, play)) {
         if (!sIceChargeButtonHeld) {
             sIceChargeButtonHeld = 1;
@@ -803,13 +847,15 @@ void Handle_IceRod(Player* p, PlayState* play) {
     if (p->meleeWeaponState > 0) {
         iceRodState = ICE_ROD_STATE_SWINGING;
         IceRod_ProcessSwing(p, play);
-        if (iceRodCharging) IceRod_CancelCharge(p);
+        if (iceRodCharging)
+            IceRod_CancelCharge(p);
     } else {
         if (!iceRodCharging) {
             iceRodState = ICE_ROD_STATE_EQUIPPED;
             sIceLastSwingType = 0;
         }
-        if (iceRodSpinActive) IceRod_StopSpinIce();
+        if (iceRodSpinActive)
+            IceRod_StopSpinIce();
     }
 }
 
@@ -853,6 +899,7 @@ void Player_InitIceRodIA(PlayState* play, Player* p) {
 }
 
 void CustomItems_DrawIceRodReticle(Player* p, PlayState* play) {
-    if (!iceRodFirstPerson || iceRodState != ICE_ROD_STATE_AIMING) return;
+    if (!iceRodFirstPerson || iceRodState != ICE_ROD_STATE_AIMING)
+        return;
     FirstPerson_DrawReticle(p, play, 0.0f, ICE_ROD_RETICLE_R, ICE_ROD_RETICLE_G, ICE_ROD_RETICLE_B);
 }

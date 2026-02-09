@@ -182,7 +182,8 @@ static void GustJar_HandleCaptureDrop(PlayState* play, Player* link, Actor* enem
     GustJar_RestoreAndRemoveScale(enemy);
 }
 static void GustJar_SpawnSuctionFX(PlayState* play, Vec3f* origin, s16 yaw, s16 pitch) {
-    if (play->gameplayFrames % 2 != 0) return;
+    if (play->gameplayFrames % 2 != 0)
+        return;
     FX_SpawnSuction(play, origin, yaw, pitch);
 }
 void CustomItems_DrawGustJar(Player* this, PlayState* play) {
@@ -311,9 +312,12 @@ void Handle_GustJar(Player* this, PlayState* play) {
         u8 type = gCustomItemState.gustJarAmmoType;
         // Spawn trail effects using FX helper
         FX_Type fxType = FX_DUST;
-        if (type == GUST_AMMO_FIRE) fxType = FX_FIRE;
-        else if (type == GUST_AMMO_ICE) fxType = FX_ICE;
-        else if (type == GUST_AMMO_SHOCK) fxType = FX_SHOCK;
+        if (type == GUST_AMMO_FIRE)
+            fxType = FX_FIRE;
+        else if (type == GUST_AMMO_ICE)
+            fxType = FX_ICE;
+        else if (type == GUST_AMMO_SHOCK)
+            fxType = FX_SHOCK;
         FX_SpawnProjectileTrail(play, &gCustomItemState.gustJarProjPos, fxType);
         ColliderCylinder* collider = &gCustomItemState.gustJarCollider;
         collider->dim.pos.x = (s16)gCustomItemState.gustJarProjPos.x;

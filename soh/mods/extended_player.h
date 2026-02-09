@@ -17,16 +17,16 @@ extern "C" {
 #endif
 
 // Vanilla array sizes (these are the original array sizes before custom items)
-#define VANILLA_SITEMACTIONS_SIZE 56      // Original sItemActions size (up to ITEM_CLAIM_CHECK)
-#define VANILLA_PLAYER_IA_COUNT 67        // PLAYER_IA 0x00-0x42 (67 actions)
+#define VANILLA_SITEMACTIONS_SIZE 56 // Original sItemActions size (up to ITEM_CLAIM_CHECK)
+#define VANILLA_PLAYER_IA_COUNT 67   // PLAYER_IA 0x00-0x42 (67 actions)
 
 // Custom item range in ITEM_xxx enum
-#define CUSTOM_ITEM_START 0x9D            // ITEM_ROCS_FEATHER_SKIJER
-#define CUSTOM_ITEM_END 0xB6              // ITEM_PENDING_3
+#define CUSTOM_ITEM_START 0x9D // ITEM_ROCS_FEATHER_SKIJER
+#define CUSTOM_ITEM_END 0xB6   // ITEM_PENDING_3
 
 // Custom PLAYER_IA range
-#define CUSTOM_PLAYER_IA_START 0x43       // PLAYER_IA_ROCS_FEATHER_SKIJER
-#define CUSTOM_PLAYER_IA_END 0x5C         // PLAYER_IA_PENDING_3
+#define CUSTOM_PLAYER_IA_START 0x43 // PLAYER_IA_ROCS_FEATHER_SKIJER
+#define CUSTOM_PLAYER_IA_END 0x5C   // PLAYER_IA_PENDING_3
 
 // ============================================================================
 // FUNCTION POINTER TYPES

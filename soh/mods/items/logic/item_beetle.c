@@ -32,13 +32,18 @@ static void Beetle_DropGrabbedActor(Player* p);
 
 static ColliderCylinderInit sBeetleColliderInit = {
     { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE, OC1_ON | OC1_TYPE_ALL, OC2_TYPE_PLAYER, COLSHAPE_CYLINDER },
-    { ELEMTYPE_UNK2, { BEETLE_DMG_FLAGS, 0x00, 0x01 }, { 0xFFCFFFFF, 0x00, 0x00 },
-      TOUCH_ON | TOUCH_NEAREST | TOUCH_SFX_NORMAL, BUMP_NONE, OCELEM_ON },
+    { ELEMTYPE_UNK2,
+      { BEETLE_DMG_FLAGS, 0x00, 0x01 },
+      { 0xFFCFFFFF, 0x00, 0x00 },
+      TOUCH_ON | TOUCH_NEAREST | TOUCH_SFX_NORMAL,
+      BUMP_NONE,
+      OCELEM_ON },
     { (s16)BEETLE_DAMAGE_RADIUS, (s16)BEETLE_DAMAGE_HEIGHT, 0, { 0, 0, 0 } }
 };
 
 static void Beetle_InitCollider(PlayState* play, Player* p) {
-    if (sBeetleColInitialized) return;
+    if (sBeetleColInitialized)
+        return;
     Collider_InitCylinder(play, &beetleCollider);
     Collider_SetCylinder(play, &beetleCollider, &p->actor, &sBeetleColliderInit);
     sBeetleColInitialized = 1;
@@ -54,8 +59,7 @@ static void Beetle_UpdateCollider(PlayState* play, Vec3f* pos) {
 }
 
 static void Beetle_PlaySound(Vec3f* pos, u16 sfxId) {
-    Audio_PlaySoundGeneral(sfxId, pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(sfxId, pos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Beetle_PlayLoopSound(Actor* actor, u16 sfxId) {
@@ -83,7 +87,8 @@ static void Beetle_CreateSubCam(PlayState* play) {
 }
 
 static void Beetle_UpdateSubCam(PlayState* play) {
-    if (beetleSubCamId == SUBCAM_FREE) return;
+    if (beetleSubCamId == SUBCAM_FREE)
+        return;
 
     f32 sinY = Math_SinS(beetleRot.y);
     f32 cosY = Math_CosS(beetleRot.y);
@@ -116,7 +121,8 @@ static void Beetle_Stop(Player* p, PlayState* play) {
 }
 
 static void Beetle_Start(Player* p, PlayState* play) {
-    if (beetleActive) return;
+    if (beetleActive)
+        return;
     beetleActive = 1;
     beetleState = BEETLE_STATE_AIMING;
     beetleFirstPerson = 1;
@@ -154,10 +160,8 @@ static void Beetle_Launch(Player* p, PlayState* play) {
     Beetle_CreateSubCam(play);
 
     Beetle_PlaySound(&p->actor.world.pos, BEETLE_SFX_LAUNCH);
-    Audio_PlaySoundGeneral(
-        LINK_IS_ADULT ? NA_SE_VO_LI_SWORD_N : NA_SE_VO_LI_SWORD_N_KID,
-        &p->actor.world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(LINK_IS_ADULT ? NA_SE_VO_LI_SWORD_N : NA_SE_VO_LI_SWORD_N_KID, &p->actor.world.pos, 4,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Beetle_StartReturn(Player* p, PlayState* play) {
@@ -172,10 +176,8 @@ static void Beetle_Catch(Player* p, PlayState* play) {
     LinkAnimation_PlayOnce(play, &p->upperSkelAnime, &gPlayerAnim_link_boom_catch);
 
     Beetle_PlaySound(&p->actor.world.pos, BEETLE_SFX_CATCH);
-    Audio_PlaySoundGeneral(
-        LINK_IS_ADULT ? NA_SE_VO_LI_SWORD_N : NA_SE_VO_LI_SWORD_N_KID,
-        &p->actor.world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(LINK_IS_ADULT ? NA_SE_VO_LI_SWORD_N : NA_SE_VO_LI_SWORD_N_KID, &p->actor.world.pos, 4,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
     Beetle_DropGrabbedActor(p);
 
@@ -195,7 +197,8 @@ static void Beetle_Move(f32 speed) {
 }
 
 static u8 Beetle_CheckActorCollision(Player* p, PlayState* play) {
-    if (!(beetleCollider.base.atFlags & AT_HIT)) return 0;
+    if (!(beetleCollider.base.atFlags & AT_HIT))
+        return 0;
 
     Actor* hitActor = beetleCollider.base.at;
     u8 shouldReturn = 0;
@@ -230,8 +233,8 @@ static u8 Beetle_CheckGeometryCollision(PlayState* play) {
     prevPos.y += sinP * BEETLE_SPEED;
     prevPos.z -= cosY * cosP * BEETLE_SPEED;
 
-    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &beetlePos, &hitPoint,
-            &hitPoly, true, true, true, true, &hitDynaId)) {
+    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &beetlePos, &hitPoint, &hitPoly, true, true, true, true,
+                                &hitDynaId)) {
         beetlePos = hitPoint;
         Beetle_PlaySound(&beetlePos, BEETLE_SFX_HIT);
         return 1;
@@ -240,7 +243,8 @@ static u8 Beetle_CheckGeometryCollision(PlayState* play) {
 }
 
 static void Beetle_UpdateGrabbedActor(void) {
-    if (beetleGrabbed == NULL) return;
+    if (beetleGrabbed == NULL)
+        return;
     if (beetleGrabbed->update == NULL) {
         beetleGrabbed = NULL;
         return;
@@ -249,7 +253,8 @@ static void Beetle_UpdateGrabbedActor(void) {
 }
 
 static void Beetle_DropGrabbedActor(Player* p) {
-    if (beetleGrabbed == NULL) return;
+    if (beetleGrabbed == NULL)
+        return;
 
     Math_Vec3f_Copy(&beetleGrabbed->world.pos, &p->actor.world.pos);
     if (beetleGrabbed->id == ACTOR_EN_ITEM00) {
@@ -359,19 +364,22 @@ static void Beetle_StateReturning(Player* p, PlayState* play) {
 }
 
 void Handle_Beetle(Player* p, PlayState* play) {
-    if (!sBeetleColInitialized) Beetle_InitCollider(play, p);
+    if (!sBeetleColInitialized)
+        Beetle_InitCollider(play, p);
 
     ItemInputState in;
     ItemInput_Update(&in, ITEM_BEETLE, p, play);
 
     if (!in.wasEquipped) {
-        if (beetleActive) Beetle_Stop(p, play);
+        if (beetleActive)
+            Beetle_Stop(p, play);
         return;
     }
 
     if (beetleState != BEETLE_STATE_FLYING && beetleState != BEETLE_STATE_RETURNING) {
         if (ItemInput_IsBlocked(p, play)) {
-            if (beetleActive) Beetle_Stop(p, play);
+            if (beetleActive)
+                Beetle_Stop(p, play);
             return;
         }
     }
@@ -386,7 +394,8 @@ void Handle_Beetle(Player* p, PlayState* play) {
     }
 
     if (!beetleActive) {
-        if (in.isPressed) Beetle_Start(p, play);
+        if (in.isPressed)
+            Beetle_Start(p, play);
         return;
     }
 
@@ -396,9 +405,15 @@ void Handle_Beetle(Player* p, PlayState* play) {
     }
 
     switch (beetleState) {
-        case BEETLE_STATE_AIMING:    Beetle_StateAiming(p, play, &in); break;
-        case BEETLE_STATE_FLYING:    Beetle_StateFlying(p, play); break;
-        case BEETLE_STATE_RETURNING: Beetle_StateReturning(p, play); break;
+        case BEETLE_STATE_AIMING:
+            Beetle_StateAiming(p, play, &in);
+            break;
+        case BEETLE_STATE_FLYING:
+            Beetle_StateFlying(p, play);
+            break;
+        case BEETLE_STATE_RETURNING:
+            Beetle_StateReturning(p, play);
+            break;
         default:
             beetleState = BEETLE_STATE_IDLE;
             beetleActive = 0;

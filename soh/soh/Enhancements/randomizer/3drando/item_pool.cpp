@@ -80,7 +80,7 @@ const std::array<RandomizerGet, 84> alwaysItems = {
     RG_ARROWS_10,
     RG_TREASURE_GAME_HEART,
     // Custom Items (24 items for second inventory page)
-    RG_PROGRESSIVE_ROCS,  // First gives Feather, second gives Cape
+    RG_PROGRESSIVE_ROCS, // First gives Feather, second gives Cape
     RG_WHIP,
     RG_SPINNER,
     RG_BOMB_ARROWS,
@@ -95,7 +95,7 @@ const std::array<RandomizerGet, 84> alwaysItems = {
     RG_MOGMA_MITTS,
     RG_GUST_JAR,
     RG_BALL_AND_CHAIN,
-    RG_PROGRESSIVE_ROCS,  // Second progressive Roc's item
+    RG_PROGRESSIVE_ROCS, // Second progressive Roc's item
     RG_LIGHT_ROD,
     RG_HYLIAS_GRACE,
     RG_PENDING_2,

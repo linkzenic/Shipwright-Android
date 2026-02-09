@@ -30,11 +30,15 @@
 // Static Data
 // =============================================================================
 
-static ColliderCylinderInit sBallChainColInit = {
-    { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER | AT_TYPE_OTHER, AC_NONE, OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
-    { ELEMTYPE_UNK2, { DMG_JUMP_GIANT, 0x0F, BALLCHAIN_DAMAGE }, { 0, 0, 0 }, TOUCH_ON | TOUCH_SFX_NORMAL, BUMP_NONE, OCELEM_NONE },
-    { BALLCHAIN_COL_RADIUS, BALLCHAIN_COL_HEIGHT, 0, { 0, 0, 0 } }
-};
+static ColliderCylinderInit sBallChainColInit = { { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER | AT_TYPE_OTHER, AC_NONE,
+                                                    OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
+                                                  { ELEMTYPE_UNK2,
+                                                    { DMG_JUMP_GIANT, 0x0F, BALLCHAIN_DAMAGE },
+                                                    { 0, 0, 0 },
+                                                    TOUCH_ON | TOUCH_SFX_NORMAL,
+                                                    BUMP_NONE,
+                                                    OCELEM_NONE },
+                                                  { BALLCHAIN_COL_RADIUS, BALLCHAIN_COL_HEIGHT, 0, { 0, 0, 0 } } };
 
 static u8 sBallChainColInitialized = 0;
 static s8 sBallChainPrevInvinc = 0;
@@ -103,7 +107,8 @@ static void BallChain_SetSpinPose(Player* p, f32 stickX, f32 stickY) {
 // =============================================================================
 
 static void BallChain_InitCollider(PlayState* play, Player* p) {
-    if (sBallChainColInitialized) return;
+    if (sBallChainColInitialized)
+        return;
     Collider_InitCylinder(play, &bcCollider);
     Collider_SetCylinder(play, &bcCollider, &p->actor, &sBallChainColInit);
     sBallChainColInitialized = 1;
@@ -124,8 +129,8 @@ static void BallChain_UpdateCollider(PlayState* play, Vec3f* pos) {
 
 static void BallChain_CheckHit(Vec3f* pos) {
     if (bcCollider.base.atFlags & AT_HIT) {
-        Audio_PlaySoundGeneral(BALLCHAIN_SFX_HIT, pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(BALLCHAIN_SFX_HIT, pos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultReverb);
         bcCollider.base.atFlags &= ~AT_HIT;
     }
 }
@@ -163,10 +168,12 @@ static void BallChain_CheckDestructibles(PlayState* play, Vec3f* ballPos) {
 static void BallChain_ApplyDamageBonus(PlayState* play) {
     Actor* hit;
 
-    if (!(bcCollider.base.atFlags & AT_HIT)) return;
+    if (!(bcCollider.base.atFlags & AT_HIT))
+        return;
 
     hit = bcCollider.base.at;
-    if (hit == NULL || hit->update == NULL) return;
+    if (hit == NULL || hit->update == NULL)
+        return;
 
     if (hit->id == ACTOR_EN_ST || hit->id == ACTOR_EN_FZ) {
         if (hit->colChkInfo.health > 0) {
@@ -203,7 +210,8 @@ static void BallChain_Stop(Player* p, PlayState* play) {
 }
 
 static void BallChain_Start(Player* p, PlayState* play) {
-    if (bcActive) return;
+    if (bcActive)
+        return;
     bcActive = 1;
     bcCharge = 0;
     bcSpinAngle = 0;
@@ -233,8 +241,8 @@ static void StateEquip(Player* p, PlayState* play, ItemInputState* in) {
         bcState = BALLCHAIN_STATE_SPINNING;
         bcCharge = 0;
         bcThrowYaw = yaw;
-        Audio_PlaySoundGeneral(BALLCHAIN_SFX_SWING, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(BALLCHAIN_SFX_SWING, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -343,12 +351,11 @@ static void StateSpinning(Player* p, PlayState* play, ItemInputState* in) {
         bcThrowYaw = throwYaw;
         sBallChainThrownFirstFrame = 1;
 
-        Audio_PlaySoundGeneral(
-            LINK_IS_ADULT ? BALLCHAIN_SFX_VOICE_ADULT : BALLCHAIN_SFX_VOICE_CHILD,
-            &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-        Audio_PlaySoundGeneral(BALLCHAIN_SFX_SWING, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(LINK_IS_ADULT ? BALLCHAIN_SFX_VOICE_ADULT : BALLCHAIN_SFX_VOICE_CHILD,
+                               &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(BALLCHAIN_SFX_SWING, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -405,11 +412,11 @@ static void StateThrown(Player* p, PlayState* play) {
             bcBallPos.z += dz * norm;
 
             resultPos = bcBallPos;
-            if (BgCheck_EntitySphVsWall1(&play->colCtx, &resultPos, &bcBallPos, &prevPos,
-                    BALLCHAIN_WALL_RADIUS, &poly, BALLCHAIN_WALL_HEIGHT)) {
+            if (BgCheck_EntitySphVsWall1(&play->colCtx, &resultPos, &bcBallPos, &prevPos, BALLCHAIN_WALL_RADIUS, &poly,
+                                         BALLCHAIN_WALL_HEIGHT)) {
                 bcThrowDist = 0;
-                Audio_PlaySoundGeneral(BALLCHAIN_SFX_WALL_BOUNCE, &bcBallPos, 4,
-                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                Audio_PlaySoundGeneral(BALLCHAIN_SFX_WALL_BOUNCE, &bcBallPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             }
         } else {
             bcThrowDist = 0;
@@ -456,7 +463,8 @@ void Handle_BallAndChain(Player* p, PlayState* play) {
     ItemInput_Update(&in, ITEM_BALL_AND_CHAIN, p, play);
 
     if (!in.wasEquipped || ItemInput_IsBlocked(p, play) || ItemInput_CheckDamage(p, &sBallChainPrevInvinc)) {
-        if (bcActive) BallChain_Stop(p, play);
+        if (bcActive)
+            BallChain_Stop(p, play);
         return;
     }
     if (in.otherButtonPressed) {
@@ -472,10 +480,18 @@ void Handle_BallAndChain(Player* p, PlayState* play) {
     }
 
     switch (bcState) {
-        case BALLCHAIN_STATE_EQUIP:    StateEquip(p, play, &in);    break;
-        case BALLCHAIN_STATE_SPINNING: StateSpinning(p, play, &in); break;
-        case BALLCHAIN_STATE_THROWN:   StateThrown(p, play);        break;
-        default:                       bcState = BALLCHAIN_STATE_EQUIP; break;
+        case BALLCHAIN_STATE_EQUIP:
+            StateEquip(p, play, &in);
+            break;
+        case BALLCHAIN_STATE_SPINNING:
+            StateSpinning(p, play, &in);
+            break;
+        case BALLCHAIN_STATE_THROWN:
+            StateThrown(p, play);
+            break;
+        default:
+            bcState = BALLCHAIN_STATE_EQUIP;
+            break;
     }
 }
 

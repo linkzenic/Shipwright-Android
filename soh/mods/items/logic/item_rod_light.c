@@ -32,24 +32,22 @@ static u8 sLightSpinColliderInited = 0;
 static u8 sLightBeamCollidersInited = 0;
 static u8 sLightMultiCollidersInited = 0;
 
-static RodColor sLightRodColor = {
-    LIGHT_ROD_PRIM_R, LIGHT_ROD_PRIM_G, LIGHT_ROD_PRIM_B, LIGHT_ROD_PRIM_A,
-    LIGHT_ROD_ENV_R, LIGHT_ROD_ENV_G, LIGHT_ROD_ENV_B, LIGHT_ROD_ENV_A
-};
+static RodColor sLightRodColor = { LIGHT_ROD_PRIM_R, LIGHT_ROD_PRIM_G, LIGHT_ROD_PRIM_B, LIGHT_ROD_PRIM_A,
+                                   LIGHT_ROD_ENV_R,  LIGHT_ROD_ENV_G,  LIGHT_ROD_ENV_B,  LIGHT_ROD_ENV_A };
 
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 
 // Aliases for multi-projectile system
-#define lightRodProjPos2     gCustomItemState.lightRodProjPos2
-#define lightRodProjPos3     gCustomItemState.lightRodProjPos3
-#define lightRodProjVel      gCustomItemState.lightRodProjVel
-#define lightRodProjCount    gCustomItemState.lightRodProjCount
-#define lightRodCollider2    gCustomItemState.lightRodCollider2
-#define lightRodCollider3    gCustomItemState.lightRodCollider3
-#define lightRodBeamActive   gCustomItemState.lightRodBeamActive
-#define lightRodBeamTimer    gCustomItemState.lightRodBeamTimer
-#define lightRodBeamPos      gCustomItemState.lightRodBeamPos
+#define lightRodProjPos2 gCustomItemState.lightRodProjPos2
+#define lightRodProjPos3 gCustomItemState.lightRodProjPos3
+#define lightRodProjVel gCustomItemState.lightRodProjVel
+#define lightRodProjCount gCustomItemState.lightRodProjCount
+#define lightRodCollider2 gCustomItemState.lightRodCollider2
+#define lightRodCollider3 gCustomItemState.lightRodCollider3
+#define lightRodBeamActive gCustomItemState.lightRodBeamActive
+#define lightRodBeamTimer gCustomItemState.lightRodBeamTimer
+#define lightRodBeamPos gCustomItemState.lightRodBeamPos
 #define lightRodBeamColliders gCustomItemState.lightRodBeamColliders
 
 // =============================================================================
@@ -57,7 +55,8 @@ extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 // =============================================================================
 
 // func_80837C0C: Handles player hit response including electric shock
-extern void func_80837C0C(PlayState* play, Player* this, s32 hitResponse, f32 damageSpeed, f32 damageRot, s16 damageRotType, s32 invincibility);
+extern void func_80837C0C(PlayState* play, Player* this, s32 hitResponse, f32 damageSpeed, f32 damageRot,
+                          s16 damageRotType, s32 invincibility);
 
 // Helper function to spawn golden/yellow KiraKira sparkles (like Fire Rod but yellow)
 static void LightRod_SpawnKiraKira(PlayState* play, Vec3f* pos, f32 spread, s32 count) {
@@ -89,7 +88,8 @@ static void LightRod_Backfire(Player* p, PlayState* play) {
 }
 
 static u8 LightRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 backfireChance) {
-    if (ItemMagic_HasEnough(play, magicCost)) return 0;
+    if (ItemMagic_HasEnough(play, magicCost))
+        return 0;
 
     u8 roll = (u8)(Rand_ZeroOne() * 100.0f);
     if (roll < backfireChance) {
@@ -106,7 +106,8 @@ static u8 LightRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 b
 // =============================================================================
 
 static void LightRod_InitColliders(Player* p, PlayState* play) {
-    if (sLightMultiCollidersInited) return;
+    if (sLightMultiCollidersInited)
+        return;
 
     Collider_InitCylinder(play, &lightRodCollider);
     Collider_SetCylinder(play, &lightRodCollider, &p->actor, &sLightRodProjColInit);
@@ -127,7 +128,8 @@ static void LightRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
 }
 
 // Spawns single projectile (stab, first-person)
-static void LightRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch, f32 maxRange) {
+static void LightRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
+                                          f32 maxRange) {
     LightRod_InitColliders(p, play);
 
     sLightRodTargetScale = 2.0f;
@@ -135,13 +137,16 @@ static void LightRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* sta
     lightRodProjCount = 1;
     lightRodProjPos = *startPos;
     lightRodProjTimer = (s16)(maxRange / LIGHT_ROD_PROJ_SPEED);
-    if (lightRodProjTimer < 10) lightRodProjTimer = 10;
-    if (lightRodProjTimer > 25) lightRodProjTimer = 25;
+    if (lightRodProjTimer < 10)
+        lightRodProjTimer = 10;
+    if (lightRodProjTimer > 25)
+        lightRodProjTimer = 25;
 
     lightRodProjScale = 0.0f;
     lightRodProjRotZ = 0;
     lightRodProjTrailIdx = 0;
-    for (s32 i = 0; i < 6; i++) lightRodProjTrail[i] = *startPos;
+    for (s32 i = 0; i < 6; i++)
+        lightRodProjTrail[i] = *startPos;
 
     lightRodProjYaw = yaw;
     lightRodProjPitch = pitch;
@@ -158,7 +163,8 @@ static void LightRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* sta
 
     s16 spreadAngle = (s16)(LIGHT_ROD_SLASH_SPREAD * (0x10000 / 360));
     s16 timer = (s16)(LIGHT_ROD_SLASH_RANGE / LIGHT_ROD_PROJ_SPEED);
-    if (timer < 10) timer = 10;
+    if (timer < 10)
+        timer = 10;
     lightRodProjTimer = timer;
 
     lightRodProjScale = 0.0f;
@@ -170,7 +176,8 @@ static void LightRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* sta
     lightRodProjYaw = baseYaw;
     lightRodProjPitch = pitch;
     LightRod_CalcVelocity(&lightRodProjVel[0], baseYaw, pitch);
-    for (s32 i = 0; i < 6; i++) lightRodProjTrail[i] = *startPos;
+    for (s32 i = 0; i < 6; i++)
+        lightRodProjTrail[i] = *startPos;
 
     // Left light ball (-spread angle)
     lightRodProjPos2 = *startPos;
@@ -204,18 +211,23 @@ static u8 LightRod_CheckHit(ColliderCylinder* col, Vec3f* pos, PlayState* play, 
 static void LightRod_SpawnLightSparks(PlayState* play, Vec3f* pos, f32 scale) {
     // Use KiraKira sparkles for projectile trail (like Fire Rod pattern)
     s32 count = (s32)(scale * 3.0f);
-    if (count < 2) count = 2;
-    if (count > 8) count = 8;
+    if (count < 2)
+        count = 2;
+    if (count > 8)
+        count = 8;
     LightRod_SpawnKiraKira(play, pos, scale * 10.0f, count);
 }
 
 static void LightRod_UpdateProjectile(Player* p, PlayState* play) {
-    if (!lightRodProjActive) return;
+    if (!lightRodProjActive)
+        return;
 
     lightRodProjRotZ += 6000;
 
-    if (lightRodProjTimer > 0) lightRodProjTimer--;
-    if (lightRodProjTimer == 0) sLightRodTargetScale = 0.0f;
+    if (lightRodProjTimer > 0)
+        lightRodProjTimer--;
+    if (lightRodProjTimer == 0)
+        sLightRodTargetScale = 0.0f;
 
     Math_ApproachF(&lightRodProjScale, sLightRodTargetScale, 0.2f, 0.5f);
 
@@ -243,15 +255,18 @@ static void LightRod_UpdateProjectile(Player* p, PlayState* play) {
 
     // Trail for center projectile
     lightRodProjTrail[0] = lightRodProjPos;
-    for (s32 i = 4; i >= 0; i--) lightRodProjTrail[i + 1] = lightRodProjTrail[i];
+    for (s32 i = 4; i >= 0; i--)
+        lightRodProjTrail[i + 1] = lightRodProjTrail[i];
 
     // Sparks and sound - throttle particle spawning like Dominion Rod does
     if (lightRodProjScale >= 0.4f) {
         // Only spawn particles every 3 frames to avoid overwhelming the effect system
         if ((play->gameplayFrames % 3) == 0) {
             LightRod_SpawnLightSparks(play, &lightRodProjPos, lightRodProjScale);
-            if (lightRodProjCount >= 2) LightRod_SpawnLightSparks(play, &lightRodProjPos2, lightRodProjScale);
-            if (lightRodProjCount >= 3) LightRod_SpawnLightSparks(play, &lightRodProjPos3, lightRodProjScale);
+            if (lightRodProjCount >= 2)
+                LightRod_SpawnLightSparks(play, &lightRodProjPos2, lightRodProjScale);
+            if (lightRodProjCount >= 3)
+                LightRod_SpawnLightSparks(play, &lightRodProjPos3, lightRodProjScale);
         }
         Audio_PlayActorSound2(&p->actor, LIGHT_ROD_SFX_LIGHT_LOOP - SFX_FLAG);
     }
@@ -259,14 +274,18 @@ static void LightRod_UpdateProjectile(Player* p, PlayState* play) {
     // Colliders
     if (lightRodProjScale >= 0.6f) {
         LightRod_UpdateCollider(&lightRodCollider, &lightRodProjPos, lightRodProjScale, play);
-        if (lightRodProjCount >= 2) LightRod_UpdateCollider(&lightRodCollider2, &lightRodProjPos2, lightRodProjScale, play);
-        if (lightRodProjCount >= 3) LightRod_UpdateCollider(&lightRodCollider3, &lightRodProjPos3, lightRodProjScale, play);
+        if (lightRodProjCount >= 2)
+            LightRod_UpdateCollider(&lightRodCollider2, &lightRodProjPos2, lightRodProjScale, play);
+        if (lightRodProjCount >= 3)
+            LightRod_UpdateCollider(&lightRodCollider3, &lightRodProjPos3, lightRodProjScale, play);
     }
 
     // Hit detection
     u8 anyHit = LightRod_CheckHit(&lightRodCollider, &lightRodProjPos, play, p);
-    if (lightRodProjCount >= 2) anyHit |= LightRod_CheckHit(&lightRodCollider2, &lightRodProjPos2, play, p);
-    if (lightRodProjCount >= 3) anyHit |= LightRod_CheckHit(&lightRodCollider3, &lightRodProjPos3, play, p);
+    if (lightRodProjCount >= 2)
+        anyHit |= LightRod_CheckHit(&lightRodCollider2, &lightRodProjPos2, play, p);
+    if (lightRodProjCount >= 3)
+        anyHit |= LightRod_CheckHit(&lightRodCollider3, &lightRodProjPos3, play, p);
 
     if (anyHit) {
         lightRodProjVel[0].x = lightRodProjVel[0].y = lightRodProjVel[0].z = 0.0f;
@@ -290,8 +309,10 @@ static void LightRod_SpawnJumpSparkles(PlayState* play, Vec3f* pos, f32 scale) {
     Vec3f accel = { 0.0f, -0.05f, 0.0f };
 
     s32 count = (s32)(scale * 0.05f);
-    if (count < 3) count = 3;
-    if (count > 15) count = 15;
+    if (count < 3)
+        count = 3;
+    if (count > 15)
+        count = 15;
 
     for (s32 i = 0; i < count; i++) {
         Vec3f sparkPos;
@@ -308,7 +329,8 @@ static void LightRod_SpawnJumpSparkles(PlayState* play, Vec3f* pos, f32 scale) {
 }
 
 static void LightRod_InitBeamColliders(Player* p, PlayState* play) {
-    if (sLightBeamCollidersInited) return;
+    if (sLightBeamCollidersInited)
+        return;
 
     for (s32 i = 0; i < LIGHT_ROD_BEAM_COUNT; i++) {
         Collider_InitCylinder(play, &lightRodBeamColliders[i]);
@@ -344,7 +366,8 @@ static void LightRod_StartLightBeam(Player* p, PlayState* play) {
 }
 
 static void LightRod_UpdateLightBeam(Player* p, PlayState* play) {
-    if (!lightRodBeamActive) return;
+    if (!lightRodBeamActive)
+        return;
 
     if (lightRodBeamTimer > 0) {
         lightRodBeamTimer--;
@@ -378,7 +401,8 @@ static void LightRod_UpdateLightBeam(Player* p, PlayState* play) {
 
 // Slash: 3 light balls spread at short range
 static void LightRod_SlashEffect(Player* p, PlayState* play) {
-    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_SLASH, LIGHT_ROD_BACKFIRE_SLASH)) return;
+    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_SLASH, LIGHT_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, LIGHT_ROD_MAGIC_SLASH);
 
     Vec3f* tipPos = &p->meleeWeaponInfo[0].tip;
@@ -399,7 +423,8 @@ static void LightRod_SlashEffect(Player* p, PlayState* play) {
 
 // Stab: Single light ball at long range
 static void LightRod_StabEffect(Player* p, PlayState* play) {
-    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_STAB, LIGHT_ROD_BACKFIRE_SLASH)) return;
+    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_STAB, LIGHT_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, LIGHT_ROD_MAGIC_STAB);
 
     Vec3f* tipPos = &p->meleeWeaponInfo[0].tip;
@@ -421,14 +446,16 @@ static void LightRod_StabEffect(Player* p, PlayState* play) {
 
 // Jump Slash: Light beam
 static void LightRod_JumpEffect(Player* p, PlayState* play) {
-    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_JUMP, LIGHT_ROD_BACKFIRE_JUMP)) return;
+    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_JUMP, LIGHT_ROD_BACKFIRE_JUMP))
+        return;
     ItemMagic_Consume(play, LIGHT_ROD_MAGIC_JUMP);
     LightRod_StartLightBeam(p, play);
 }
 
 // First Person: Fires stab in aimed direction
 static void LightRod_FirstPersonFire(Player* p, PlayState* play) {
-    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_STAB, LIGHT_ROD_BACKFIRE_SLASH)) return;
+    if (LightRod_CheckBackfire(p, play, LIGHT_ROD_MAGIC_STAB, LIGHT_ROD_BACKFIRE_SLASH))
+        return;
     ItemMagic_Consume(play, LIGHT_ROD_MAGIC_STAB);
 
     s16 aimYaw = FirstPerson_GetAimYaw(p);
@@ -465,8 +492,8 @@ static void LightRod_SwingParticles(Player* p, PlayState* play) {
 }
 
 static u8 LightRod_IsSpinAttack(u8 mwa) {
-    return (mwa == PLAYER_MWA_SPIN_ATTACK_1H || mwa == PLAYER_MWA_SPIN_ATTACK_2H ||
-            mwa == PLAYER_MWA_BIG_SPIN_1H || mwa == PLAYER_MWA_BIG_SPIN_2H);
+    return (mwa == PLAYER_MWA_SPIN_ATTACK_1H || mwa == PLAYER_MWA_SPIN_ATTACK_2H || mwa == PLAYER_MWA_BIG_SPIN_1H ||
+            mwa == PLAYER_MWA_BIG_SPIN_2H);
 }
 
 // =============================================================================
@@ -489,14 +516,17 @@ static void LightRod_StartSpinLight(Player* p, PlayState* play, u8 isBigSpin) {
 }
 
 static void LightRod_UpdateSpinLight(Player* p, PlayState* play) {
-    if (!lightRodSpinActive) return;
+    if (!lightRodSpinActive)
+        return;
 
     f32 expandSpeed = lightRodSpinIsBig ? 30.0f : 15.0f;
     lightRodSpinRadius += expandSpeed;
-    if (lightRodSpinRadius >= lightRodSpinMaxRadius) lightRodSpinRadius = lightRodSpinMaxRadius;
+    if (lightRodSpinRadius >= lightRodSpinMaxRadius)
+        lightRodSpinRadius = lightRodSpinMaxRadius;
 
     sLightSpinExpandProgress = lightRodSpinRadius / lightRodSpinMaxRadius;
-    if (sLightSpinExpandProgress > 1.0f) sLightSpinExpandProgress = 1.0f;
+    if (sLightSpinExpandProgress > 1.0f)
+        sLightSpinExpandProgress = 1.0f;
 
     lightRodSpinCollider.dim.radius = (s16)lightRodSpinRadius;
     lightRodSpinCollider.dim.height = 80;
@@ -530,10 +560,12 @@ static void LightRod_ProcessSwing(Player* p, PlayState* play) {
         }
         LightRod_UpdateSpinLight(p, play);
     } else {
-        if (lightRodSpinActive) LightRod_StopSpinLight();
+        if (lightRodSpinActive)
+            LightRod_StopSpinLight();
     }
 
-    if (mwa == sLightLastSwingType) return;
+    if (mwa == sLightLastSwingType)
+        return;
     sLightLastSwingType = mwa;
 
     switch (mwa) {
@@ -582,12 +614,15 @@ static void LightRod_ProcessSwing(Player* p, PlayState* play) {
 // =============================================================================
 
 static u8 LightRod_CanCharge(Player* p, PlayState* play) {
-    if (p->meleeWeaponState > 0) return 0;
-    if (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                          PLAYER_STATE1_DAMAGED | PLAYER_STATE1_LOADING |
-                          PLAYER_STATE1_HOOKSHOT_FALLING)) return 0;
-    if (!(p->actor.bgCheckFlags & 1)) return 0;
-    if (p->stateFlags2 & PLAYER_STATE2_HOPPING) return 0;
+    if (p->meleeWeaponState > 0)
+        return 0;
+    if (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_DAMAGED |
+                          PLAYER_STATE1_LOADING | PLAYER_STATE1_HOOKSHOT_FALLING))
+        return 0;
+    if (!(p->actor.bgCheckFlags & 1))
+        return 0;
+    if (p->stateFlags2 & PLAYER_STATE2_HOPPING)
+        return 0;
     return 1;
 }
 
@@ -601,13 +636,15 @@ static void LightRod_StartCharge(Player* p, PlayState* play) {
 }
 
 static void LightRod_UpdateCharge(Player* p, PlayState* play) {
-    if (!lightRodCharging) return;
+    if (!lightRodCharging)
+        return;
 
     lightRodChargeTimer++;
 
     if (lightRodChargeLevel < 1.0f) {
         lightRodChargeLevel += LIGHT_ROD_CHARGE_RATE;
-        if (lightRodChargeLevel > 1.0f) lightRodChargeLevel = 1.0f;
+        if (lightRodChargeLevel > 1.0f)
+            lightRodChargeLevel = 1.0f;
     }
 
     if (!lightRodChargeReady && lightRodChargeLevel >= LIGHT_ROD_CHARGE_MIN) {
@@ -624,8 +661,14 @@ static void LightRod_UpdateCharge(Player* p, PlayState* play) {
     RodColor chargeColor;
     if (lightRodChargeLevel >= LIGHT_ROD_CHARGE_BIG) {
         // Bright yellow for max charge - intense light magic
-        chargeColor.primR = 255; chargeColor.primG = 255; chargeColor.primB = 0; chargeColor.primA = 255;
-        chargeColor.envR = 255; chargeColor.envG = 255; chargeColor.envB = 100; chargeColor.envA = 255;
+        chargeColor.primR = 255;
+        chargeColor.primG = 255;
+        chargeColor.primB = 0;
+        chargeColor.primA = 255;
+        chargeColor.envR = 255;
+        chargeColor.envG = 255;
+        chargeColor.envB = 100;
+        chargeColor.envA = 255;
     } else {
         chargeColor = sLightRodColor;
     }
@@ -642,7 +685,8 @@ static void LightRod_UpdateCharge(Player* p, PlayState* play) {
 }
 
 static void LightRod_ReleaseCharge(Player* p, PlayState* play) {
-    if (!lightRodCharging) return;
+    if (!lightRodCharging)
+        return;
 
     s32 spinType;
     u8 isBigSpin = 0;
@@ -719,7 +763,8 @@ static void LightRod_UpdateFirstPerson(Player* p, PlayState* play, ItemInputStat
     }
 
     u16 exitButtons = BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
-    if (in->equippedButton) exitButtons &= ~in->equippedButton;
+    if (in->equippedButton)
+        exitButtons &= ~in->equippedButton;
 
     if (CHECK_BTN_ANY(play->state.input[0].press.button, exitButtons) ||
         (p->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_DAMAGED))) {
@@ -753,7 +798,8 @@ static void LightRod_OnEquip(PlayState* play, Player* p) {
 }
 
 static void LightRod_OnUnequip(PlayState* play, Player* p) {
-    if (lightRodFirstPerson) LightRod_ExitFirstPerson(p, play);
+    if (lightRodFirstPerson)
+        LightRod_ExitFirstPerson(p, play);
 
     lightRodActive = 0;
     lightRodState = LIGHT_ROD_STATE_INACTIVE;
@@ -774,7 +820,8 @@ static void LightRod_OnUnequip(PlayState* play, Player* p) {
         lightRodBlureIdx = -1;
     }
 
-    if (lightRodSpinActive) LightRod_StopSpinLight();
+    if (lightRodSpinActive)
+        LightRod_StopSpinLight();
     ItemEquip_PlayUnequipSFX(play, p);
 }
 
@@ -791,7 +838,8 @@ void Handle_LightRod(Player* p, PlayState* play) {
     lightRodButtonMask = in.equippedButton;
 
     if (!in.wasEquipped) {
-        if (lightRodActive) LightRod_OnUnequip(play, p);
+        if (lightRodActive)
+            LightRod_OnUnequip(play, p);
         sLightEquipState.isEquipped = 0;
         return;
     }
@@ -810,32 +858,39 @@ void Handle_LightRod(Player* p, PlayState* play) {
     }
 
     if (!lightRodActive) {
-        if (ItemInput_IsBlockedEx(p, play, 1)) return;
+        if (ItemInput_IsBlockedEx(p, play, 1))
+            return;
     } else {
         u32 criticalBlocks = (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
-            PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
-            PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
-            PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
+                              PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
+                              PLAYER_STATE1_DAMAGED | PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
+                              PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_HOOKSHOT_FALLING);
         if (p->stateFlags1 & criticalBlocks) {
-            if (lightRodCharging) LightRod_CancelCharge(p);
+            if (lightRodCharging)
+                LightRod_CancelCharge(p);
             return;
         }
     }
 
     if (ItemInput_CheckDamage(p, &sLightPrevInvinc)) {
-        if (lightRodCharging) LightRod_CancelCharge(p);
-        if (lightRodActive) LightRod_OnUnequip(play, p);
+        if (lightRodCharging)
+            LightRod_CancelCharge(p);
+        if (lightRodActive)
+            LightRod_OnUnequip(play, p);
         sLightEquipState.isEquipped = 0;
         return;
     }
 
     ItemEquip_Update(&sLightEquipState, &in, LightRod_OnEquip, LightRod_OnUnequip, p, play);
 
-    if (!lightRodActive) return;
+    if (!lightRodActive)
+        return;
 
     if (lightRodCharging) {
-        if (in.isHeld) LightRod_UpdateCharge(p, play);
-        else LightRod_ReleaseCharge(p, play);
+        if (in.isHeld)
+            LightRod_UpdateCharge(p, play);
+        else
+            LightRod_ReleaseCharge(p, play);
     } else if (in.isHeld && LightRod_CanCharge(p, play)) {
         if (!sLightChargeButtonHeld) {
             sLightChargeButtonHeld = 1;
@@ -853,13 +908,15 @@ void Handle_LightRod(Player* p, PlayState* play) {
     if (p->meleeWeaponState > 0) {
         lightRodState = LIGHT_ROD_STATE_SWINGING;
         LightRod_ProcessSwing(p, play);
-        if (lightRodCharging) LightRod_CancelCharge(p);
+        if (lightRodCharging)
+            LightRod_CancelCharge(p);
     } else {
         if (!lightRodCharging) {
             lightRodState = LIGHT_ROD_STATE_EQUIPPED;
             sLightLastSwingType = 0;
         }
-        if (lightRodSpinActive) LightRod_StopSpinLight();
+        if (lightRodSpinActive)
+            LightRod_StopSpinLight();
     }
 }
 
@@ -903,6 +960,7 @@ void Player_InitLightRodIA(PlayState* play, Player* p) {
 }
 
 void CustomItems_DrawLightRodReticle(Player* p, PlayState* play) {
-    if (!lightRodFirstPerson || lightRodState != LIGHT_ROD_STATE_AIMING) return;
+    if (!lightRodFirstPerson || lightRodState != LIGHT_ROD_STATE_AIMING)
+        return;
     FirstPerson_DrawReticle(p, play, 0.0f, LIGHT_ROD_RETICLE_R, LIGHT_ROD_RETICLE_G, LIGHT_ROD_RETICLE_B);
 }

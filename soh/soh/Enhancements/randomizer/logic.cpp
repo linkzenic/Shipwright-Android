@@ -97,6 +97,9 @@ bool Logic::HasItem(RandomizerGet itemName) {
             return CurrentUpgrade(UPG_BOMB_BAG);
         case RG_MAGIC_SINGLE:
             return GetSaveContext()->magicLevel >= 1 || GetSaveContext()->isMagicAcquired;
+            // Custom Item
+        case RG_SHOVEL:
+            return CheckInventory(ITEM_SHOVEL, true);
             // Songs
         case RG_ZELDAS_LULLABY:
         case RG_EPONAS_SONG:
@@ -558,7 +561,7 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             switch (distance) {
                 case ED_CLOSE:
                     // hammer jumpslash cannot damage these, but hammer swing can
-                    killed = CanUse(RG_MEGATON_HAMMER);
+                    killed = CanUse(RG_MEGATON_HAMMER) /*|| HasItem(RG_SHOVEL) Wait add damage on SHOVEL ITEM*/;
                     [[fallthrough]];
                 case ED_SHORT_JUMPSLASH:
                     killed = killed || CanUse(RG_KOKIRI_SWORD);
@@ -1349,7 +1352,7 @@ bool Logic::BlastOrSmash() {
 }
 
 bool Logic::CanSpawnSoilSkull(RandomizerGet bean) {
-    return IsChild && CanUse(RG_BOTTLE_WITH_BUGS) && HasItem(bean);
+    return IsChild && (CanUse(RG_BOTTLE_WITH_BUGS) || HasItem(RG_SHOVEL)) && HasItem(bean);
 }
 
 bool Logic::CanReflectNuts() {
@@ -1431,11 +1434,13 @@ bool Logic::TakeDamage() {
 }
 
 bool Logic::CanOpenBombGrotto() {
-    return BlastOrSmash() && (HasItem(RG_STONE_OF_AGONY) || ctx->GetTrickOption(RT_GROTTOS_WITHOUT_AGONY));
+    return (BlastOrSmash() || HasItem(RG_SHOVEL)) &&
+           (HasItem(RG_STONE_OF_AGONY) || ctx->GetTrickOption(RT_GROTTOS_WITHOUT_AGONY));
 }
 
 bool Logic::CanOpenStormsGrotto() {
-    return CanUse(RG_SONG_OF_STORMS) && (HasItem(RG_STONE_OF_AGONY) || ctx->GetTrickOption(RT_GROTTOS_WITHOUT_AGONY));
+    return (CanUse(RG_SONG_OF_STORMS) || HasItem(RG_SHOVEL)) &&
+           (HasItem(RG_STONE_OF_AGONY) || ctx->GetTrickOption(RT_GROTTOS_WITHOUT_AGONY));
 }
 
 bool Logic::CanGetNightTimeGS() {
@@ -1974,6 +1979,7 @@ void Logic::ApplyItemEffect(Item& item, bool state) {
                     auto current = GetAmmo(ITEM_BEAN);
                     SetAmmo(ITEM_BEAN, current + (!state ? -change : change));
                 } break;
+                case RG_SHOVEL:
                 case RG_EMPTY_BOTTLE:
                 case RG_BOTTLE_WITH_MILK:
                 case RG_BOTTLE_WITH_RED_POTION:

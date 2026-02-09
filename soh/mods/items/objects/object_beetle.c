@@ -24,8 +24,7 @@ static void Beetle_DrawBody(PlayState* play, Vec3f* pos, Vec3s* rot, f32 scale) 
     Matrix_RotateY(M_PI / 2.0f, MTXMODE_APPLY);
     Matrix_Scale(scale * 3.0f, scale * 3.0f, scale * 3.0f, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, g_beetle_body_dl);
 
     CLOSE_DISPS(play->state.gfxCtx);
@@ -36,8 +35,7 @@ static void Beetle_DrawWings(PlayState* play, f32 wingScale) {
 
     Matrix_Push();
     Matrix_Scale(1.0f, wingScale, 1.0f, MTXMODE_APPLY);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, g_beetle_wings_dl);
     Matrix_Pop();
 
@@ -57,7 +55,8 @@ void Beetle_UpdateWingAnimation(f32* scale, s8* direction) {
 }
 
 void CustomItems_DrawBeetle(Player* player, PlayState* play) {
-    if (!beetleActive) return;
+    if (!beetleActive)
+        return;
 
     Beetle_SetupGeometryMode(play->state.gfxCtx);
 

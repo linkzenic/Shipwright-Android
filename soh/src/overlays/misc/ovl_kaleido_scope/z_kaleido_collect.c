@@ -467,8 +467,9 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
         gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[sp21A], 4, 0);
 
         POLY_OPA_DISP = KaleidoScope_QuadTextureIA8(
-            POLY_OPA_DISP, ExtInv_GetItemIcon(0x79 + (((gSaveContext.inventory.questItems & 0xF0000000) & 0xF0000000) >> 0x1C)),
-            48, 48, 0);
+            POLY_OPA_DISP,
+            ExtInv_GetItemIcon(0x79 + (((gSaveContext.inventory.questItems & 0xF0000000) & 0xF0000000) >> 0x1C)), 48,
+            48, 0);
     }
 
     if (pauseCtx->state == 6) {

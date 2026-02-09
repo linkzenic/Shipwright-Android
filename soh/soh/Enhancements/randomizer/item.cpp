@@ -10,7 +10,6 @@
 #include "functions.h"
 #include "../../OTRGlobals.h"
 
-
 // Extended Inventory for Custom Items (Page 2)
 extern "C" {
 #include "mods/items/custom_items.h"

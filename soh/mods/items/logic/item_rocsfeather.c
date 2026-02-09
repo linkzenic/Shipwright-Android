@@ -22,7 +22,8 @@ void Handle_RocsFeather(Player* p, PlayState* play) {
     ItemInputState in;
     ItemInput_Update(&in, ITEM_ROCS_FEATHER_SKIJER, p, play);
 
-    if (!in.wasEquipped || !in.isPressed) return;
+    if (!in.wasEquipped || !in.isPressed)
+        return;
 
     s32 isOnGround = (p->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
     s32 inWater = (p->stateFlags1 & PLAYER_STATE1_IN_WATER);

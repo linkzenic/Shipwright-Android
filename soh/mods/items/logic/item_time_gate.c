@@ -26,7 +26,7 @@
 extern void SwitchAge(void);
 
 static s8 sTGPrevInvinc = 0;
-static s32 sTGPhaseEnd = 0;  // Absolute tgTimer value when current anim phase ends
+static s32 sTGPhaseEnd = 0; // Absolute tgTimer value when current anim phase ends
 
 // Halved from vanilla 0.83f to compensate for double LinkAnimation_Update
 // (vanilla's Player_Action_Idle calls it once, we call it again — Demise pattern).
@@ -39,7 +39,8 @@ static s32 sTGPhaseEnd = 0;  // Absolute tgTimer value when current anim phase e
 
 static void TGate_ComputePhaseEnd(s32 baseTimer, f32 lastFrame) {
     f32 rate = TGATE_ANIM_SPEED * R_UPDATE_RATE;
-    if (rate < 0.1f) rate = 0.415f;  // Safety fallback
+    if (rate < 0.1f)
+        rate = 0.415f; // Safety fallback
     sTGPhaseEnd = baseTimer + (s32)(lastFrame / rate) + 1;
 }
 
@@ -48,7 +49,8 @@ static void TGate_ComputePhaseEnd(s32 baseTimer, f32 lastFrame) {
 // =============================================================================
 
 static void TimeGate_Stop(Player* p, PlayState* play) {
-    if (!tgActive) return;
+    if (!tgActive)
+        return;
 
     // Close any open textbox
     if (tgPromptShown) {
@@ -75,26 +77,29 @@ static void TimeGate_Stop(Player* p, PlayState* play) {
 }
 
 static void TimeGate_Start(Player* p, PlayState* play) {
-    if (tgActive) return;
+    if (tgActive)
+        return;
 
     // Validate magic (don't consume yet - only on Yes)
     if (!ItemMagic_HasEnough(play, TGATE_MAGIC_COST)) {
-        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
     // Must be on ground
-    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) return;
+    if (!(p->actor.bgCheckFlags & BGCHECKFLAG_GROUND))
+        return;
 
     // Cannot use in water
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+        return;
 
     // Activate
     tgActive = 1;
     tgState = TGATE_STATE_CASTING;
     tgSubPhase = TGATE_CAST_TAMASHII1;
-    tgTimer = -2;  // Deferred setup on frame -1
+    tgTimer = -2; // Deferred setup on frame -1
     tgPromptShown = 0;
     tgItemVisible = 0;
     tgPortalActive = 0;
@@ -132,10 +137,10 @@ static void TimeGate_StateCasting(Player* p, PlayState* play) {
     // Start first animation on frame 0
     if (tgTimer == 0) {
         LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_tamashii1, TGATE_ANIM_SPEED, 0.0f,
-            Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii1), ANIMMODE_ONCE, -8.0f);
+                             Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii1), ANIMMODE_ONCE, -8.0f);
         TGate_ComputePhaseEnd(tgTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii1));
-        Audio_PlaySoundGeneral(NA_SE_VO_LI_MAGIC_NALE, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_VO_LI_MAGIC_NALE, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Double-update: vanilla calls LinkAnimation_Update once, we call it again (Demise pattern)
@@ -147,17 +152,15 @@ static void TimeGate_StateCasting(Player* p, PlayState* play) {
     if (tgTimer > 0 && tgTimer >= sTGPhaseEnd) {
         switch (tgSubPhase) {
             case TGATE_CAST_TAMASHII1:
-                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_tamashii2,
-                    TGATE_ANIM_SPEED, 0.0f,
-                    Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii2), ANIMMODE_ONCE, 0.0f);
+                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_tamashii2, TGATE_ANIM_SPEED, 0.0f,
+                                     Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii2), ANIMMODE_ONCE, 0.0f);
                 TGate_ComputePhaseEnd(tgTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii2));
                 tgSubPhase = TGATE_CAST_TAMASHII2;
                 break;
 
             case TGATE_CAST_TAMASHII2:
-                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_tamashii3,
-                    TGATE_ANIM_SPEED, 0.0f,
-                    Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii3), ANIMMODE_ONCE, 0.0f);
+                LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_tamashii3, TGATE_ANIM_SPEED, 0.0f,
+                                     Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii3), ANIMMODE_ONCE, 0.0f);
                 TGate_ComputePhaseEnd(tgTimer, Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii3));
                 tgSubPhase = TGATE_CAST_TAMASHII3;
                 break;
@@ -176,21 +179,23 @@ static void TimeGate_StateCasting(Player* p, PlayState* play) {
     if (tgSubPhase == TGATE_CAST_TAMASHII1 && p->skelAnime.curFrame >= TGATE_CAST_ITEM_FRAME && !tgItemVisible) {
         tgItemVisible = 1;
         tgPortalActive = 1;
-        tgPortalAlpha = 0.0f;  // Will fade in
-        tgPortalScale = 0.0f;  // Will grow
-        Audio_PlaySoundGeneral(NA_SE_EV_WARP_HOLE, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        tgPortalAlpha = 0.0f; // Will fade in
+        tgPortalScale = 0.0f; // Will grow
+        Audio_PlaySoundGeneral(NA_SE_EV_WARP_HOLE, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Grow portal during casting
     if (tgPortalActive) {
         if (tgPortalAlpha < 255.0f) {
             tgPortalAlpha += 8.0f;
-            if (tgPortalAlpha > 255.0f) tgPortalAlpha = 255.0f;
+            if (tgPortalAlpha > 255.0f)
+                tgPortalAlpha = 255.0f;
         }
         if (tgPortalScale < 1.0f) {
             tgPortalScale += 0.05f;
-            if (tgPortalScale > 1.0f) tgPortalScale = 1.0f;
+            if (tgPortalScale > 1.0f)
+                tgPortalScale = 1.0f;
         }
     }
 
@@ -225,9 +230,9 @@ static void TimeGate_StateHovering(Player* p, PlayState* play) {
     // Play warp hover animation on entry - start with ANIMMODE_ONCE to play through once
     if (tgTimer == 1) {
         LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_demo_warp, TGATE_ANIM_SPEED, 0.0f,
-            Animation_GetLastFrame(&gPlayerAnim_link_demo_warp), ANIMMODE_ONCE, -8.0f);
-        Audio_PlaySoundGeneral(NA_SE_PL_MAGIC_WIND_WARP, &p->actor.world.pos, 4,
-            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                             Animation_GetLastFrame(&gPlayerAnim_link_demo_warp), ANIMMODE_ONCE, -8.0f);
+        Audio_PlaySoundGeneral(NA_SE_PL_MAGIC_WIND_WARP, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Double-update (Demise pattern)
@@ -240,7 +245,8 @@ static void TimeGate_StateHovering(Player* p, PlayState* play) {
     {
         f32 lastFrame = Animation_GetLastFrame(&gPlayerAnim_link_demo_warp);
         f32 loopStart = lastFrame - 2.0f;
-        if (loopStart < 0.0f) loopStart = 0.0f;
+        if (loopStart < 0.0f)
+            loopStart = 0.0f;
 
         // If we've reached near the end, reset to loop start
         if (p->skelAnime.curFrame >= lastFrame - 0.5f) {
@@ -302,8 +308,8 @@ static void TimeGate_StateSwitching(Player* p, PlayState* play) {
     func_800AA000(400.0f, 200, 30, 100);
 
     // Play transition sound
-    Audio_PlaySoundGeneral(NA_SE_SY_WHITE_OUT_T, &p->actor.world.pos, 4,
-        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_SY_WHITE_OUT_T, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
     // Release player state before SwitchAge (it triggers scene reload)
     p->stateFlags1 &= ~(PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_INPUT_DISABLED);
@@ -338,7 +344,7 @@ static void TimeGate_StateCancel(Player* p, PlayState* play) {
     // Play exit animation (tamashii3 = Nayru's Love descend)
     if (tgTimer == 1) {
         LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_magic_tamashii3, TGATE_ANIM_SPEED, 0.0f,
-            Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii3), ANIMMODE_ONCE, -8.0f);
+                             Animation_GetLastFrame(&gPlayerAnim_link_magic_tamashii3), ANIMMODE_ONCE, -8.0f);
     }
 
     // Double-update (Demise pattern)
@@ -354,7 +360,8 @@ static void TimeGate_StateCancel(Player* p, PlayState* play) {
             tgPortalAlpha = 0.0f;
             tgPortalActive = 0;
         }
-        if (tgPortalScale < 0.0f) tgPortalScale = 0.0f;
+        if (tgPortalScale < 0.0f)
+            tgPortalScale = 0.0f;
     }
 
     // End after cancel duration
@@ -384,7 +391,8 @@ void Handle_TimeGate(Player* p, PlayState* play) {
 
     // Unequipped while active - stop
     if (!in.wasEquipped) {
-        if (tgActive) TimeGate_Stop(p, play);
+        if (tgActive)
+            TimeGate_Stop(p, play);
         return;
     }
 
@@ -397,30 +405,45 @@ void Handle_TimeGate(Player* p, PlayState* play) {
     }
 
     // Cannot use in water
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) return;
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
+        return;
 
     // Not active - check activation
     // otherButtonPressed only checked here (Hylia's Grace pattern).
     // When active, A/B are used by the textbox — must not cancel the spell.
     if (!tgActive) {
-        if (in.otherButtonPressed) return;
-        if (ItemInput_IsBlocked(p, play)) return;
-        if (in.isPressed) TimeGate_Start(p, play);
+        if (in.otherButtonPressed)
+            return;
+        if (ItemInput_IsBlocked(p, play))
+            return;
+        if (in.isPressed)
+            TimeGate_Start(p, play);
         return;
     }
 
     // Dispatch to current state
     switch (tgState) {
-        case TGATE_STATE_CASTING:   TimeGate_StateCasting(p, play); break;
-        case TGATE_STATE_HOVERING:  TimeGate_StateHovering(p, play); break;
-        case TGATE_STATE_SWITCHING: TimeGate_StateSwitching(p, play); break;
-        case TGATE_STATE_CANCEL:    TimeGate_StateCancel(p, play); break;
-        default: TimeGate_Stop(p, play); break;
+        case TGATE_STATE_CASTING:
+            TimeGate_StateCasting(p, play);
+            break;
+        case TGATE_STATE_HOVERING:
+            TimeGate_StateHovering(p, play);
+            break;
+        case TGATE_STATE_SWITCHING:
+            TimeGate_StateSwitching(p, play);
+            break;
+        case TGATE_STATE_CANCEL:
+            TimeGate_StateCancel(p, play);
+            break;
+        default:
+            TimeGate_Stop(p, play);
+            break;
     }
 }
 
 void Player_InitTimeGateIA(PlayState* play, Player* p) {
-    if (tgActive) return;
+    if (tgActive)
+        return;
     tgState = TGATE_STATE_IDLE;
     tgSubPhase = 0;
     tgTimer = 0;
@@ -431,4 +454,6 @@ void Player_InitTimeGateIA(PlayState* play, Player* p) {
     tgPortalScale = 0.0f;
 }
 
-s32 Player_UpperAction_TimeGate(Player* p, PlayState* play) { return 0; }
+s32 Player_UpperAction_TimeGate(Player* p, PlayState* play) {
+    return 0;
+}

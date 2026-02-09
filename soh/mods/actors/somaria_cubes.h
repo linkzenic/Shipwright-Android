@@ -19,24 +19,24 @@
 // CUBE PROPERTIES
 // ============================================================================
 
-#define SOMARIA_MAX_CUBES       3
-#define SOMARIA_CUBE_SCALE      1.0f
-#define SOMARIA_CUBE_SIZE       30
-#define SOMARIA_SPAWN_FRAMES    15
+#define SOMARIA_MAX_CUBES 3
+#define SOMARIA_CUBE_SCALE 1.0f
+#define SOMARIA_CUBE_SIZE 30
+#define SOMARIA_SPAWN_FRAMES 15
 
 // Physics
-#define SOMARIA_GRAVITY         -2.0f
-#define SOMARIA_THROW_VEL_Y     8.0f
-#define SOMARIA_THROW_SPEED_XZ  6.0f
-#define SOMARIA_MIN_VEL_Y       -20.0f
+#define SOMARIA_GRAVITY -2.0f
+#define SOMARIA_THROW_VEL_Y 8.0f
+#define SOMARIA_THROW_SPEED_XZ 6.0f
+#define SOMARIA_MIN_VEL_Y -20.0f
 
 // Collision cylinder
-#define SOMARIA_CYL_RADIUS      15
-#define SOMARIA_CYL_HEIGHT      30
-#define SOMARIA_MASS            180
+#define SOMARIA_CYL_RADIUS 15
+#define SOMARIA_CYL_HEIGHT 30
+#define SOMARIA_MASS 180
 
 // Knockback (AT damage when thrown)
-#define SOMARIA_KNOCKBACK_DAMAGE    4
+#define SOMARIA_KNOCKBACK_DAMAGE 4
 
 // ============================================================================
 // COLOR PRESETS (random on spawn)
@@ -57,11 +57,11 @@ typedef enum {
 // STATE MACROS (using hijacked actor fields)
 // ============================================================================
 
-#define SOMARIA_GET_STATE(actor)    ((actor)->home.rot.x)
+#define SOMARIA_GET_STATE(actor) ((actor)->home.rot.x)
 #define SOMARIA_SET_STATE(actor, s) ((actor)->home.rot.x = (s))
-#define SOMARIA_GET_TIMER(actor)    ((actor)->home.rot.z)
+#define SOMARIA_GET_TIMER(actor) ((actor)->home.rot.z)
 #define SOMARIA_SET_TIMER(actor, t) ((actor)->home.rot.z = (t))
-#define SOMARIA_GET_COLOR(actor)    ((actor)->home.rot.y)
+#define SOMARIA_GET_COLOR(actor) ((actor)->home.rot.y)
 #define SOMARIA_SET_COLOR(actor, c) ((actor)->home.rot.y = (c))
 
 typedef enum {
@@ -76,15 +76,15 @@ typedef enum {
 // ============================================================================
 
 // Flag for switchhook compatibility (future use)
-#define ACTOR_FLAG_SWITCHHOOKABLE   (1 << 28)
+#define ACTOR_FLAG_SWITCHHOOKABLE (1 << 28)
 
 // ============================================================================
 // BGCHECK FLAGS
 // ============================================================================
 
 #ifndef BGCHECKFLAG_GROUND
-#define BGCHECKFLAG_GROUND      0x0001
-#define BGCHECKFLAG_WALL        0x0008
+#define BGCHECKFLAG_GROUND 0x0001
+#define BGCHECKFLAG_WALL 0x0008
 #endif
 
 // ============================================================================

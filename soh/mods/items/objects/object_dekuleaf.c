@@ -14,7 +14,7 @@
 #include "variables.h"
 
 // Angle to radians conversion for s16 angles
-#define DEKULEAF_ANGLE_TO_RAD  (M_PI / 0x8000)
+#define DEKULEAF_ANGLE_TO_RAD (M_PI / 0x8000)
 
 static void DekuLeaf_SetupGeometryMode(GraphicsContext* gfxCtx) {
     OPEN_DISPS(gfxCtx);
@@ -47,7 +47,8 @@ static void DekuLeaf_DrawModel(PlayState* play, f32 posX, f32 posY, f32 posZ, s1
 }
 
 void CustomItems_DrawDekuLeaf(Player* p, PlayState* play) {
-    if (!dlGliding && !dlBlowing) return;
+    if (!dlGliding && !dlBlowing)
+        return;
 
     DekuLeaf_SetupGeometryMode(play->state.gfxCtx);
 

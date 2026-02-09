@@ -82,12 +82,12 @@ void Handle_MogmaMitts(Player* this, PlayState* play) {
 
     // Blocking check
     if (!mmActive) {
-        if (ItemInput_IsBlockedEx(this, play, 1)) return;
+        if (ItemInput_IsBlockedEx(this, play, 1))
+            return;
     } else {
-        u32 criticalBlocks = (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                              PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
-                              PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM |
-                              PLAYER_STATE1_ON_HORSE);
+        u32 criticalBlocks =
+            (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
+             PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_ON_HORSE);
         if (this->stateFlags1 & criticalBlocks) {
             return;
         }
@@ -123,7 +123,8 @@ void Handle_MogmaMitts(Player* this, PlayState* play) {
         }
     }
 
-    if (!mmActive) return;
+    if (!mmActive)
+        return;
 
     // ========================================================================
     // MP Drain - 1 MP every MITTS_DRAIN_INTERVAL frames
@@ -155,5 +156,5 @@ void Player_InitMogmaMittsIA(PlayState* play, Player* this) {
 }
 
 s32 Player_UpperAction_MogmaMitts(Player* this, PlayState* play) {
-    return 0;  // Passive item - no upper body animation override
+    return 0; // Passive item - no upper body animation override
 }

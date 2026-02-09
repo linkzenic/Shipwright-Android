@@ -13,21 +13,21 @@
 #include <math.h>
 
 // State constants (must match item_whip.h)
-#define WHIP_STATE_EQUIP      1
-#define WHIP_STATE_EXTENDING  2
-#define WHIP_STATE_HIT_ENEMY  3
-#define WHIP_STATE_ATTACHED   4
-#define WHIP_STATE_SWINGING   5
+#define WHIP_STATE_EQUIP 1
+#define WHIP_STATE_EXTENDING 2
+#define WHIP_STATE_HIT_ENEMY 3
+#define WHIP_STATE_ATTACHED 4
+#define WHIP_STATE_SWINGING 5
 #define WHIP_STATE_RETRACTING 6
 
 // Visual constants
-#define WHIP_BODY_SEGMENT  15.0f   // World units per body segment
+#define WHIP_BODY_SEGMENT 15.0f // World units per body segment
 #define WHIP_BODY_MAX_SEGS 40
-#define WHIP_BODY_SCALE    0.015f  // Body segment render scale
-#define WHIP_HEAD_SCALE    0.022f  // Snake head render scale
-#define WHIP_TAIL_SCALE    0.018f  // Tail crystal render scale
-#define WHIP_EQUIP_SCALE   0.016f  // Scale for equipped head
-#define WHIP_EQUIP_BODY_COUNT 2    // Short body extension when equipped
+#define WHIP_BODY_SCALE 0.015f  // Body segment render scale
+#define WHIP_HEAD_SCALE 0.022f  // Snake head render scale
+#define WHIP_TAIL_SCALE 0.018f  // Tail crystal render scale
+#define WHIP_EQUIP_SCALE 0.016f // Scale for equipped head
+#define WHIP_EQUIP_BODY_COUNT 2 // Short body extension when equipped
 
 // =============================================================================
 // SNAKE BODY SEGMENT — Hexagonal tube along Z axis
@@ -36,19 +36,19 @@
 // At scale 0.015: ~9 units diameter, ~15 units long
 static Vtx sWhipBodyVtx[] = {
     // Bottom ring (z=-500)
-    {{{ 300,    0, -500}, 0, {0, 0}, {127, 0, 0, 255}}},     // [0]
-    {{{ 150,  260, -500}, 0, {0, 0}, {64, 110, 0, 255}}},    // [1]
-    {{{-150,  260, -500}, 0, {0, 0}, {-64, 110, 0, 255}}},   // [2]
-    {{{-300,    0, -500}, 0, {0, 0}, {-127, 0, 0, 255}}},    // [3]
-    {{{-150, -260, -500}, 0, {0, 0}, {-64, -110, 0, 255}}},  // [4]
-    {{{ 150, -260, -500}, 0, {0, 0}, {64, -110, 0, 255}}},   // [5]
+    { { { 300, 0, -500 }, 0, { 0, 0 }, { 127, 0, 0, 255 } } },        // [0]
+    { { { 150, 260, -500 }, 0, { 0, 0 }, { 64, 110, 0, 255 } } },     // [1]
+    { { { -150, 260, -500 }, 0, { 0, 0 }, { -64, 110, 0, 255 } } },   // [2]
+    { { { -300, 0, -500 }, 0, { 0, 0 }, { -127, 0, 0, 255 } } },      // [3]
+    { { { -150, -260, -500 }, 0, { 0, 0 }, { -64, -110, 0, 255 } } }, // [4]
+    { { { 150, -260, -500 }, 0, { 0, 0 }, { 64, -110, 0, 255 } } },   // [5]
     // Top ring (z=500)
-    {{{ 300,    0,  500}, 0, {0, 0}, {127, 0, 0, 255}}},     // [6]
-    {{{ 150,  260,  500}, 0, {0, 0}, {64, 110, 0, 255}}},    // [7]
-    {{{-150,  260,  500}, 0, {0, 0}, {-64, 110, 0, 255}}},   // [8]
-    {{{-300,    0,  500}, 0, {0, 0}, {-127, 0, 0, 255}}},    // [9]
-    {{{-150, -260,  500}, 0, {0, 0}, {-64, -110, 0, 255}}},  // [10]
-    {{{ 150, -260,  500}, 0, {0, 0}, {64, -110, 0, 255}}},   // [11]
+    { { { 300, 0, 500 }, 0, { 0, 0 }, { 127, 0, 0, 255 } } },        // [6]
+    { { { 150, 260, 500 }, 0, { 0, 0 }, { 64, 110, 0, 255 } } },     // [7]
+    { { { -150, 260, 500 }, 0, { 0, 0 }, { -64, 110, 0, 255 } } },   // [8]
+    { { { -300, 0, 500 }, 0, { 0, 0 }, { -127, 0, 0, 255 } } },      // [9]
+    { { { -150, -260, 500 }, 0, { 0, 0 }, { -64, -110, 0, 255 } } }, // [10]
+    { { { 150, -260, 500 }, 0, { 0, 0 }, { 64, -110, 0, 255 } } },   // [11]
 };
 
 static Gfx sWhipBodyDL[] = {
@@ -56,7 +56,7 @@ static Gfx sWhipBodyDL[] = {
     gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE),
     gsSPClearGeometryMode(G_LIGHTING | G_CULL_BACK | G_CULL_FRONT | G_TEXTURE_GEN),
     gsSPSetGeometryMode(G_SHADING_SMOOTH),
-    gsDPSetPrimColor(0, 0, 230, 90, 20, 255),  // Orange-red
+    gsDPSetPrimColor(0, 0, 230, 90, 20, 255), // Orange-red
     gsSPVertex(sWhipBodyVtx, 12, 0),
     // 6 side quads = 12 triangles
     gsSP2Triangles(0, 6, 7, 0, 0, 7, 1, 0),
@@ -75,21 +75,21 @@ static Gfx sWhipBodyDL[] = {
 // Plus small green eye triangles on upper front surface
 static Vtx sWhipHeadVtx[] = {
     // [0] Mouth tip
-    {{{   0,   20,  500}, 0, {0, 0}, {0, 0, 127, 255}}},
+    { { { 0, 20, 500 }, 0, { 0, 0 }, { 0, 0, 127, 255 } } },
     // [1-4] Base rectangle (widest point at z=0)
-    {{{-250,  120,    0}, 0, {0, 0}, {-90, 90, 0, 255}}},    // [1] top-left
-    {{{ 250,  120,    0}, 0, {0, 0}, {90, 90, 0, 255}}},     // [2] top-right
-    {{{ 250,  -80,    0}, 0, {0, 0}, {90, -60, 0, 255}}},    // [3] bottom-right
-    {{{-250,  -80,    0}, 0, {0, 0}, {-90, -60, 0, 255}}},   // [4] bottom-left
+    { { { -250, 120, 0 }, 0, { 0, 0 }, { -90, 90, 0, 255 } } },  // [1] top-left
+    { { { 250, 120, 0 }, 0, { 0, 0 }, { 90, 90, 0, 255 } } },    // [2] top-right
+    { { { 250, -80, 0 }, 0, { 0, 0 }, { 90, -60, 0, 255 } } },   // [3] bottom-right
+    { { { -250, -80, 0 }, 0, { 0, 0 }, { -90, -60, 0, 255 } } }, // [4] bottom-left
     // [5] Back tip (connects to body)
-    {{{   0,   10, -250}, 0, {0, 0}, {0, 0, -127, 255}}},
+    { { { 0, 10, -250 }, 0, { 0, 0 }, { 0, 0, -127, 255 } } },
     // [6-11] Eye vertices (green triangles on upper front)
-    {{{-100,  100,  300}, 0, {0, 0}, {0, 127, 0, 255}}},     // [6] left eye top
-    {{{-140,   80,  270}, 0, {0, 0}, {0, 127, 0, 255}}},     // [7] left eye outer
-    {{{ -80,   80,  270}, 0, {0, 0}, {0, 127, 0, 255}}},     // [8] left eye inner
-    {{{ 100,  100,  300}, 0, {0, 0}, {0, 127, 0, 255}}},     // [9] right eye top
-    {{{ 140,   80,  270}, 0, {0, 0}, {0, 127, 0, 255}}},     // [10] right eye outer
-    {{{  80,   80,  270}, 0, {0, 0}, {0, 127, 0, 255}}},     // [11] right eye inner
+    { { { -100, 100, 300 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } }, // [6] left eye top
+    { { { -140, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },  // [7] left eye outer
+    { { { -80, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },   // [8] left eye inner
+    { { { 100, 100, 300 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },  // [9] right eye top
+    { { { 140, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },   // [10] right eye outer
+    { { { 80, 80, 270 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },    // [11] right eye inner
 };
 
 static Gfx sWhipHeadDL[] = {
@@ -117,12 +117,12 @@ static Gfx sWhipHeadDL[] = {
 // TAIL CRYSTAL — Purple octahedron
 // =============================================================================
 static Vtx sWhipTailVtx[] = {
-    {{{   0,  250,    0}, 0, {0, 0}, {0, 127, 0, 255}}},     // [0] Top
-    {{{ 150,    0,  150}, 0, {0, 0}, {90, 0, 90, 255}}},     // [1] Front-right
-    {{{ 150,    0, -150}, 0, {0, 0}, {90, 0, -90, 255}}},    // [2] Back-right
-    {{{-150,    0, -150}, 0, {0, 0}, {-90, 0, -90, 255}}},   // [3] Back-left
-    {{{-150,    0,  150}, 0, {0, 0}, {-90, 0, 90, 255}}},    // [4] Front-left
-    {{{   0, -180,    0}, 0, {0, 0}, {0, -127, 0, 255}}},    // [5] Bottom
+    { { { 0, 250, 0 }, 0, { 0, 0 }, { 0, 127, 0, 255 } } },       // [0] Top
+    { { { 150, 0, 150 }, 0, { 0, 0 }, { 90, 0, 90, 255 } } },     // [1] Front-right
+    { { { 150, 0, -150 }, 0, { 0, 0 }, { 90, 0, -90, 255 } } },   // [2] Back-right
+    { { { -150, 0, -150 }, 0, { 0, 0 }, { -90, 0, -90, 255 } } }, // [3] Back-left
+    { { { -150, 0, 150 }, 0, { 0, 0 }, { -90, 0, 90, 255 } } },   // [4] Front-left
+    { { { 0, -180, 0 }, 0, { 0, 0 }, { 0, -127, 0, 255 } } },     // [5] Bottom
 };
 
 static Gfx sWhipTailDL[] = {
@@ -130,7 +130,7 @@ static Gfx sWhipTailDL[] = {
     gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE),
     gsSPClearGeometryMode(G_LIGHTING | G_CULL_BACK | G_CULL_FRONT | G_TEXTURE_GEN),
     gsSPSetGeometryMode(G_SHADING_SMOOTH),
-    gsDPSetPrimColor(0, 0, 130, 40, 180, 255),  // Purple
+    gsDPSetPrimColor(0, 0, 130, 40, 180, 255), // Purple
     gsSPVertex(sWhipTailVtx, 6, 0),
     // Top pyramid
     gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
@@ -155,8 +155,10 @@ static void Whip_DrawSnakeBody(PlayState* play, Vec3f* start, Vec3f* end, f32 sa
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    if (segCount < 1) segCount = 1;
-    if (segCount > WHIP_BODY_MAX_SEGS) segCount = WHIP_BODY_MAX_SEGS;
+    if (segCount < 1)
+        segCount = 1;
+    if (segCount > WHIP_BODY_MAX_SEGS)
+        segCount = WHIP_BODY_MAX_SEGS;
 
     yaw = Math_FAtan2F(dx, dz);
     pitch = Math_FAtan2F(-dy, sqrtf(dx * dx + dz * dz));
@@ -313,7 +315,8 @@ void CustomItems_DrawWhip(Player* player, PlayState* play) {
     Vec3f handPos;
     u8 state;
 
-    if (!gCustomItemState.whipActive) return;
+    if (!gCustomItemState.whipActive)
+        return;
 
     handPos = player->bodyPartsPos[PLAYER_BODYPART_R_HAND];
     state = gCustomItemState.whipState;
@@ -335,8 +338,7 @@ void CustomItems_DrawWhip(Player* player, PlayState* play) {
         case WHIP_STATE_SWINGING:
             Whip_DrawTailCrystal(play, &handPos);
             Whip_DrawSnakeBody(play, &handPos, &gCustomItemState.whipAttachPos, 15.0f);
-            Whip_DrawSnakeHeadAtSurface(play, &gCustomItemState.whipAttachPos,
-                                         &gCustomItemState.whipAttachNormal);
+            Whip_DrawSnakeHeadAtSurface(play, &gCustomItemState.whipAttachPos, &gCustomItemState.whipAttachNormal);
             break;
 
         default:

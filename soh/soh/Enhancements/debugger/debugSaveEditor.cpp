@@ -666,12 +666,12 @@ void DrawInventoryTab() {
         // Draw custom items grid (4 rows x 6 columns = 24 items)
         for (int32_t y = 0; y < 4; y++) {
             for (int32_t x = 0; x < 6; x++) {
-                int32_t visualIndex = x + y * 6;  // 0-23 visual position
-                int32_t slotIndex = 24 + visualIndex;  // 24-47 actual slot
+                int32_t visualIndex = x + y * 6;      // 0-23 visual position
+                int32_t slotIndex = 24 + visualIndex; // 24-47 actual slot
                 static int32_t selectedCustomIndex = -1;
                 static const char* customItemPopupPicker = "customItemPopupPicker";
 
-                ImGui::PushID(1000 + slotIndex);  // Unique ID offset to avoid conflicts
+                ImGui::PushID(1000 + slotIndex); // Unique ID offset to avoid conflicts
 
                 if (x != 0) {
                     ImGui::SameLine();
@@ -687,12 +687,14 @@ void DrawInventoryTab() {
                     char buttonLabel[64];
                     snprintf(buttonLabel, sizeof(buttonLabel), "%s##customslot%d", itemName, slotIndex);
                     PushStyleButton(Colors::DarkGray);
-                    clicked = ImGui::Button(buttonLabel, ImVec2(IMAGE_SIZE + 20, IMAGE_SIZE) + ImGui::GetStyle().FramePadding * 2);
+                    clicked = ImGui::Button(buttonLabel,
+                                            ImVec2(IMAGE_SIZE + 20, IMAGE_SIZE) + ImGui::GetStyle().FramePadding * 2);
                     PopStyleButton();
                 } else {
                     // Empty slot
                     PushStyleButton(Colors::DarkGray);
-                    clicked = ImGui::Button("##customItemNone", ImVec2(IMAGE_SIZE, IMAGE_SIZE) + ImGui::GetStyle().FramePadding * 2);
+                    clicked = ImGui::Button("##customItemNone",
+                                            ImVec2(IMAGE_SIZE, IMAGE_SIZE) + ImGui::GetStyle().FramePadding * 2);
                     PopStyleButton();
                 }
                 if (clicked) {

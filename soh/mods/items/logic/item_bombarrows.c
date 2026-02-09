@@ -31,8 +31,10 @@ static s32 sBaAnimState = -1; // Tracks which animation state the upper action l
 
 // Check if player can use bomb arrows
 static u8 BombArrows_CanUse(Player* p, PlayState* play) {
-    if (AMMO(ITEM_BOW) <= 0 || AMMO(ITEM_BOMB) <= 0) return 0;
-    if (!LINK_IS_ADULT && !CVarGetInteger(CVAR_ENHANCEMENT("BowSlingshotAmmoFix"), 0)) return 0;
+    if (AMMO(ITEM_BOW) <= 0 || AMMO(ITEM_BOMB) <= 0)
+        return 0;
+    if (!LINK_IS_ADULT && !CVarGetInteger(CVAR_ENHANCEMENT("BowSlingshotAmmoFix"), 0))
+        return 0;
     return 1;
 }
 
@@ -45,15 +47,15 @@ static void BombArrows_ConsumeAmmo(void) {
 // Get bomb position offset for Link (near his hands/bow)
 static void BombArrows_GetBombOffset(Player* p, Vec3f* out) {
     out->x = p->actor.world.pos.x;
-    out->y = p->actor.world.pos.y + 45.0f;  // Above hands
+    out->y = p->actor.world.pos.y + 45.0f; // Above hands
     out->z = p->actor.world.pos.z;
 }
 
 // Spawn a real bomb that explodes instantly at impact position
 // Combines both arrow and bomb damage types for full damage coverage
 static void BombArrows_SpawnInstantBomb(PlayState* play, Vec3f* pos) {
-    EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM,
-        pos->x, pos->y, pos->z, 0, 0, 0, BOMB_BODY, true);
+    EnBom* bomb =
+        (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, pos->x, pos->y, pos->z, 0, 0, 0, BOMB_BODY, true);
 
     if (bomb != NULL) {
         // Timer=1 will decrement to 0 on first update and trigger explosion
@@ -93,8 +95,10 @@ static void BombArrows_Stop(Player* p, PlayState* play) {
 
     // Clean up arrow actor reference
     if (baArrowActor != NULL) {
-        if (p->heldActor == baArrowActor) p->heldActor = NULL;
-        if (p->actor.child == baArrowActor) p->actor.child = NULL;
+        if (p->heldActor == baArrowActor)
+            p->heldActor = NULL;
+        if (p->actor.child == baArrowActor)
+            p->actor.child = NULL;
     }
     baArrowActor = NULL;
 
@@ -116,8 +120,8 @@ static void BombArrows_StartCharge(Player* p, PlayState* play) {
     BombArrows_GetBombOffset(p, &bombPos);
 
     // Spawn real bomb actor with normal fuse (timer=70)
-    EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM,
-        bombPos.x, bombPos.y, bombPos.z, 0, 0, 0, BOMB_BODY, true);
+    EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, bombPos.x, bombPos.y, bombPos.z, 0, 0, 0,
+                                      BOMB_BODY, true);
 
     if (bomb == NULL) {
         Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
@@ -145,7 +149,8 @@ static void BombArrows_StartCharge(Player* p, PlayState* play) {
 
 // Get aim yaw based on camera mode
 static s16 BombArrows_GetAimYaw(Player* p, PlayState* play) {
-    if (baFirstPerson) return FirstPerson_GetAimYaw(p);
+    if (baFirstPerson)
+        return FirstPerson_GetAimYaw(p);
     if (Player_IsZTargeting(p) && p->focusActor != NULL)
         return Math_Vec3f_Yaw(&p->actor.world.pos, &p->focusActor->focus.pos);
     return p->actor.shape.rot.y;
@@ -186,7 +191,7 @@ static void BombArrows_UpdateCharging(Player* p, PlayState* play, ItemInputState
         if (baBombActor->params == BOMB_EXPLOSION || bomb->timer <= 0) {
             // Bomb exploded on Link! Consume ammo and stop
             BombArrows_ConsumeAmmo();
-            baBombActor = NULL;  // Don't kill it, let it finish its explosion
+            baBombActor = NULL; // Don't kill it, let it finish its explosion
             baActive = 0;
             baState = BOMBARROW_STATE_IDLE;
             if (baFirstPerson) {
@@ -234,9 +239,9 @@ static void BombArrows_FireArrow(Player* p, PlayState* play) {
     BombArrows_ConsumeAmmo();
 
     // Spawn arrow
-    baArrowActor = Actor_SpawnAsChild(&play->actorCtx, &p->actor, play, ACTOR_EN_ARROW,
-        p->actor.world.pos.x, p->actor.world.pos.y + 40.0f, p->actor.world.pos.z,
-        aimPitch, aimYaw, 0, ARROW_NORMAL);
+    baArrowActor =
+        Actor_SpawnAsChild(&play->actorCtx, &p->actor, play, ACTOR_EN_ARROW, p->actor.world.pos.x,
+                           p->actor.world.pos.y + 40.0f, p->actor.world.pos.z, aimPitch, aimYaw, 0, ARROW_NORMAL);
 
     if (baArrowActor != NULL) {
         baArrowActor->world.rot.x = aimPitch;
@@ -308,8 +313,8 @@ static void BombArrows_UpdateFlying(Player* p, PlayState* play) {
         Vec3f effAccel = { 0.0f, 0.0f, 0.0f };
         Color_RGBA8 primColor = { 255, 255, 150, 255 };
         Color_RGBA8 envColor = { 255, 0, 0, 0 };
-        EffectSsGSpk_SpawnAccel(play, baArrowActor, &baArrowActor->world.pos,
-            &effVelocity, &effAccel, &primColor, &envColor, 40, 2);
+        EffectSsGSpk_SpawnAccel(play, baArrowActor, &baArrowActor->world.pos, &effVelocity, &effAccel, &primColor,
+                                &envColor, 40, 2);
     }
 
     // Fuse sound while flying
@@ -323,23 +328,27 @@ void Handle_BombArrows(Player* p, PlayState* play) {
     baButtonMask = in.equippedButton;
 
     if (!in.wasEquipped) {
-        if (baActive) BombArrows_Stop(p, play);
+        if (baActive)
+            BombArrows_Stop(p, play);
         return;
     }
 
     if (ItemInput_IsBlocked(p, play)) {
-        if (baActive) BombArrows_Stop(p, play);
+        if (baActive)
+            BombArrows_Stop(p, play);
         return;
     }
 
     if (ItemInput_CheckDamage(p, &sBombArrowPrevInvinc)) {
-        if (baActive) BombArrows_Stop(p, play);
+        if (baActive)
+            BombArrows_Stop(p, play);
         return;
     }
 
     switch (baState) {
         case BOMBARROW_STATE_IDLE:
-            if (in.isPressed) BombArrows_StartCharge(p, play);
+            if (in.isPressed)
+                BombArrows_StartCharge(p, play);
             break;
         case BOMBARROW_STATE_CHARGING:
             BombArrows_UpdateCharging(p, play, &in);
@@ -408,7 +417,8 @@ s32 Player_UpperAction_BombArrows(Player* this, PlayState* play) {
 
 // Draw reticle when aiming bomb arrows
 void CustomItems_DrawBombArrowsReticle(Player* p, PlayState* play) {
-    if (!baFirstPerson || baState != BOMBARROW_STATE_CHARGING) return;
+    if (!baFirstPerson || baState != BOMBARROW_STATE_CHARGING)
+        return;
 
     // Use shared reticle function - red color (255, 0, 0)
     FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);

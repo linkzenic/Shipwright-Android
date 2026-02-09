@@ -1439,18 +1439,18 @@ extern "C" void Randomizer_DrawOverworldKey(PlayState* play, GetItemEntry* getIt
 
 // Embedded object models - Green cubes for all items except Ice Rod (blue)
 static Vtx object_rando_rocsfeatherVtx[] = {
-    VTX(-10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX( 10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX( 10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX(-10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX( 10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX( 10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX(-10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX( 10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
-    VTX( 10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(-10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),  VTX(10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),    VTX(-10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),   VTX(-10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(-10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),   VTX(-10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),  VTX(10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),    VTX(10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(-10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),  VTX(10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),    VTX(-10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
+    VTX(10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),   VTX(-10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),
 };
 
 Gfx gRandoRocsfeatherDL[] = {
@@ -1460,40 +1460,47 @@ Gfx gRandoRocsfeatherDL[] = {
     gsSPClearGeometryMode(G_CULL_BACK | G_FOG | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR),
     gsSPSetGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH),
     gsSPVertex(object_rando_rocsfeatherVtx, 24, 0),
-    gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0), gsSP2Triangles(4, 6, 5, 0, 4, 7, 6, 0),
-    gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0), gsSP2Triangles(12, 14, 13, 0, 12, 15, 14, 0),
-    gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0), gsSP2Triangles(20, 22, 21, 0, 20, 23, 22, 0),
+    gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
+    gsSP2Triangles(4, 6, 5, 0, 4, 7, 6, 0),
+    gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),
+    gsSP2Triangles(12, 14, 13, 0, 12, 15, 14, 0),
+    gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),
+    gsSP2Triangles(20, 22, 21, 0, 20, 23, 22, 0),
     gsSPEndDisplayList(),
 };
 
 // Copy the same structure for all other items (I'll create a macro to reduce repetition)
-#define DEFINE_GREEN_CUBE_ITEM(name) \
-static Vtx object_rando_##name##Vtx[] = { \
-    VTX(-10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX( 10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX( 10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX(-10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX( 10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX( 10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX(-10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10,  10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX( 10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10,  10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX( 10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    VTX( 10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10, -10,  10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-}; \
-Gfx gRando##name##DL[] = { \
-    gsDPPipeSync(), \
-    gsDPSetCombineLERP(PRIMITIVE, 0, SHADE, 0, PRIMITIVE, 0, SHADE, 0, PRIMITIVE, 0, SHADE, 0, PRIMITIVE, 0, SHADE, 0), \
-    gsDPSetPrimColor(0, 0, 0x00, 0xFF, 0x00, 0xFF), \
-    gsSPClearGeometryMode(G_CULL_BACK | G_FOG | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR), \
-    gsSPSetGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH), \
-    gsSPVertex(object_rando_##name##Vtx, 24, 0), \
-    gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0), gsSP2Triangles(4, 6, 5, 0, 4, 7, 6, 0), \
-    gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0), gsSP2Triangles(12, 14, 13, 0, 12, 15, 14, 0), \
-    gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0), gsSP2Triangles(20, 22, 21, 0, 20, 23, 22, 0), \
-    gsSPEndDisplayList(), \
-};
+#define DEFINE_GREEN_CUBE_ITEM(name)                                                                             \
+    static Vtx object_rando_##name##Vtx[] = {                                                                    \
+        VTX(-10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),  VTX(10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),        \
+        VTX(10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),    VTX(-10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),        \
+        VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),       \
+        VTX(10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),   VTX(-10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),       \
+        VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(-10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),       \
+        VTX(-10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),   VTX(-10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),       \
+        VTX(10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),  VTX(10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),        \
+        VTX(10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),    VTX(10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),        \
+        VTX(-10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),  VTX(10, 10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),        \
+        VTX(10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),    VTX(-10, 10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),        \
+        VTX(-10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF), VTX(10, -10, -10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),       \
+        VTX(10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),   VTX(-10, -10, 10, 0, 0, 0x00, 0xFF, 0x00, 0xFF),       \
+    };                                                                                                           \
+    Gfx gRando##name##DL[] = {                                                                                   \
+        gsDPPipeSync(),                                                                                          \
+        gsDPSetCombineLERP(PRIMITIVE, 0, SHADE, 0, PRIMITIVE, 0, SHADE, 0, PRIMITIVE, 0, SHADE, 0, PRIMITIVE, 0, \
+                           SHADE, 0),                                                                            \
+        gsDPSetPrimColor(0, 0, 0x00, 0xFF, 0x00, 0xFF),                                                          \
+        gsSPClearGeometryMode(G_CULL_BACK | G_FOG | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR),          \
+        gsSPSetGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH),                                             \
+        gsSPVertex(object_rando_##name##Vtx, 24, 0),                                                             \
+        gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),                                                                  \
+        gsSP2Triangles(4, 6, 5, 0, 4, 7, 6, 0),                                                                  \
+        gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),                                                               \
+        gsSP2Triangles(12, 14, 13, 0, 12, 15, 14, 0),                                                            \
+        gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),                                                            \
+        gsSP2Triangles(20, 22, 21, 0, 20, 23, 22, 0),                                                            \
+        gsSPEndDisplayList(),                                                                                    \
+    };
 
 Gfx gRandoRocsCapeDL[] = {
     gsSPDisplayList(rocs_cape_mesh_dl),

@@ -15,24 +15,24 @@
 // Thresholds for beam/bar shape detection (OoT world units)
 // =============================================================================
 // Adult Link height = 68 units for reference
-#define GRAPPLE_MIN_LENGTH        30.0f   // Min beam length (relaxed)
-#define GRAPPLE_MAX_CROSS_SECTION 200.0f  // Max cross-section dim (relaxed)
-#define GRAPPLE_MIN_THICKNESS     2.0f    // Min thickness (avoid degenerate polys)
-#define GRAPPLE_MAX_CROSS_SUM     350.0f  // Sum of 2 smallest dims (relaxed)
-#define GRAPPLE_ASPECT_RATIO      1.5f    // Min ratio of largest to middle dim for elongated shape
-#define GRAPPLE_NEIGHBOR_DIST     50.0f   // Max distance to consider polys as neighbors
+#define GRAPPLE_MIN_LENGTH 30.0f         // Min beam length (relaxed)
+#define GRAPPLE_MAX_CROSS_SECTION 200.0f // Max cross-section dim (relaxed)
+#define GRAPPLE_MIN_THICKNESS 2.0f       // Min thickness (avoid degenerate polys)
+#define GRAPPLE_MAX_CROSS_SUM 350.0f     // Sum of 2 smallest dims (relaxed)
+#define GRAPPLE_ASPECT_RATIO 1.5f        // Min ratio of largest to middle dim for elongated shape
+#define GRAPPLE_NEIGHBOR_DIST 50.0f      // Max distance to consider polys as neighbors
 
 // =============================================================================
 // GrappleTarget: result of surface analysis
 // =============================================================================
 typedef struct {
-    Vec3f attachPoint;     // World-space intersection point
-    Vec3f surfaceNormal;   // Normal of hit surface (float)
-    f32   dims[3];         // Sorted bounding box dimensions [smallest, middle, largest]
-    s32   bgId;            // Background ID (BGCHECK_SCENE or dynamic actor index)
-    CollisionPoly* poly;   // Hit collision polygon pointer
-    s32   isGraspable;     // 1 if meets beam/bar proportions for swing
-    s32   isHookshottable; // 1 if surface has hookshot flag set
+    Vec3f attachPoint;   // World-space intersection point
+    Vec3f surfaceNormal; // Normal of hit surface (float)
+    f32 dims[3];         // Sorted bounding box dimensions [smallest, middle, largest]
+    s32 bgId;            // Background ID (BGCHECK_SCENE or dynamic actor index)
+    CollisionPoly* poly; // Hit collision polygon pointer
+    s32 isGraspable;     // 1 if meets beam/bar proportions for swing
+    s32 isHookshottable; // 1 if surface has hookshot flag set
 } GrappleTarget;
 
 // =============================================================================
@@ -64,7 +64,6 @@ s32 Grapple_FindTarget(PlayState* play, Player* player, f32 maxRange, GrappleTar
  * @param outTarget Output: filled with analysis results
  * @return          1 if surface is graspable, 0 if not
  */
-s32 Grapple_AnalyzeSurface(PlayState* play, CollisionPoly* poly, s32 bgId,
-                           Vec3f* hitPos, GrappleTarget* outTarget);
+s32 Grapple_AnalyzeSurface(PlayState* play, CollisionPoly* poly, s32 bgId, Vec3f* hitPos, GrappleTarget* outTarget);
 
 #endif // GRAPPLING_HELPER_H
