@@ -113,6 +113,14 @@ uint8_t ExtInv_GetItemAgeReq(uint16_t itemId) {
 extern uint8_t gSlotAgeReqs[];
 
 uint8_t ExtInv_GetSlotAgeReq(uint8_t slot) {
+    // Transformation mask restriction: restricted items return opposite age so they gray out
+    if (ExtInv_IsSlotTransformRestricted(slot)) {
+        extern SaveContext gSaveContext;
+        // Return opposite of current age: child(1)→adult(0), adult(0)→child(1)
+        // CHECK_AGE_REQ_SLOT compares this vs linkAge, so opposite always fails → grayed out
+        return 1 - gSaveContext.linkAge;
+    }
+
     // Vanilla slots (0-23) use the original array
     if (slot < 24) {
         return gSlotAgeReqs[slot];
@@ -123,6 +131,29 @@ uint8_t ExtInv_GetSlotAgeReq(uint8_t slot) {
     }
     return 9; // AGE_REQ_NONE for out-of-range
 }
+
+extern u8 gEquipAgeReqs[][4];
+
+uint8_t ExtInv_GetEquipAgeReq(uint8_t row, uint8_t col) {
+    // FD skin mode: allow swords (row 0) and shields (row 1), block tunics (row 2) and boots (row 3)
+    if (TransformMasks_IsEnabled() && TransformMasks_IsFDSkinMode()) {
+        extern SaveContext gSaveContext;
+        if (row <= 1) {
+            return 9; // AGE_REQ_NONE: swords/shields always available
+        }
+        // Tunics/boots: return opposite age to block them
+        return 1 - gSaveContext.linkAge;
+    }
+
+    // Other transformations (Goron/Zora/Deku): block all equipment changes
+    if (TransformMasks_IsEnabled() && TransformMasks_IsTransformedAny()) {
+        extern SaveContext gSaveContext;
+        return 1 - gSaveContext.linkAge;
+    }
+
+    return gEquipAgeReqs[row][col];
+}
+
 void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     extern const unsigned char gRocsFeatherNameTex[];
     extern const unsigned char gRocsCapeNameTex[];

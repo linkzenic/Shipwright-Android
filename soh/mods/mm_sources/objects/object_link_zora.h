@@ -93,4 +93,24 @@ typedef enum {
     LINK_ZORA_LIMB_MAX
 } LinkZoraLimb;
 
+// ============================================================================
+// Forearm Fin/Shield DLs (from 2Ship func_80126BD0, z_player_lib.c:3001)
+// Zora's fin blades extend from forearms during guard, swimming, and attacks.
+// Drawn at PLAYER_LIMB_LEFT_FOREARM and PLAYER_LIMB_RIGHT_FOREARM in PostLimbDraw.
+// ============================================================================
+
+#define gLinkZoraLeftForearmShieldDL "__OTR__objects/object_link_zora/object_link_zora_DL_00CC38"
+#define gLinkZoraRightForearmShieldDL "__OTR__objects/object_link_zora/object_link_zora_DL_00CDA0"
+
+// ============================================================================
+// Electric Barrier Assets (from 2Ship object_link_zora offsets 0x11210-0x12A80)
+// Used by Player_DrawZoraShield / func_8082F1AC
+// ============================================================================
+
+// Pure #define format (matches object_link_goron.h style, no ALIGN_ASSET dependency)
+#define gLinkZoraBarrierDL "__OTR__objects/object_link_zora/object_link_zora_DL_011760"
+#define gLinkZoraBarrierVtx "__OTR__objects/object_link_zora/object_link_zora_Vtx_011210"
+#define gLinkZoraBarrierAlpha "__OTR__objects/object_link_zora/object_link_zora_U8_011710"
+#define gLinkZoraBarrierMatAnim "__OTR__objects/object_link_zora/object_link_zora_Matanimheader_012A80"
+
 #endif // MM_OBJECT_LINK_ZORA_H

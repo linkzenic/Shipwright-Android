@@ -15,11 +15,18 @@
 extern void MmForm_Init(PlayState* play, Player* player);
 extern u8 MmForm_IsEnabled(void);
 extern u8 MmForm_IsTransformed(void);
+extern u8 MmForm_IsTransformedAny(void);
+extern u8 MmForm_HasSkeleton(void);
+extern u8 MmForm_IsFDSkinMode(void);
+extern u8 MmForm_IsItemAllowed(s32 item);
+extern u8 MmForm_OnWaterSwimAttempt(PlayState* play, Player* player);
 extern TransformMaskId MmForm_GetMaskType(s32 item);
 extern void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item);
 extern void MmForm_Update(PlayState* play, Player* player);
 extern void MmForm_Draw(PlayState* play, Player* player);
 extern void MmForm_Reset(void);
+extern f32 MmForm_GetCameraHeight(void);
+extern u8 MmForm_BlocksLedgeGrab(void);
 
 // =============================================================================
 // Cached MM Assets (loaded once, used forever)
@@ -88,6 +95,10 @@ u8 TransformMasks_IsTransformed(void) {
     return MmForm_IsTransformed();
 }
 
+u8 TransformMasks_HasSkeleton(void) {
+    return MmForm_HasSkeleton();
+}
+
 TransformMaskId TransformMasks_GetMaskType(s32 item) {
     return MmForm_GetMaskType(item);
 }
@@ -110,6 +121,30 @@ void TransformMasks_Draw(PlayState* play, Player* player) {
 
 void TransformMasks_Reset(void) {
     MmForm_Reset();
+}
+
+u8 TransformMasks_IsFDSkinMode(void) {
+    return MmForm_IsFDSkinMode();
+}
+
+u8 TransformMasks_IsTransformedAny(void) {
+    return MmForm_IsTransformedAny();
+}
+
+u8 TransformMasks_IsItemAllowed(s32 item) {
+    return MmForm_IsItemAllowed(item);
+}
+
+u8 TransformMasks_OnWaterSwimAttempt(PlayState* play, Player* player) {
+    return MmForm_OnWaterSwimAttempt(play, player);
+}
+
+f32 TransformMasks_GetFormHeight(void) {
+    return MmForm_GetCameraHeight();
+}
+
+u8 TransformMasks_BlocksLedgeGrab(void) {
+    return MmForm_BlocksLedgeGrab();
 }
 
 // =============================================================================

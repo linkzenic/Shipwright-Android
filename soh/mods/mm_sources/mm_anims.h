@@ -21,6 +21,10 @@
 
 #include "z64.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // ============================================================================
 // Animation Definition Struct
 // ============================================================================
@@ -938,5 +942,9 @@ typedef enum MmAnimId {
 // ============================================================================
 
 extern const MmAnimDef gMmAnims[MM_ANIM_MAX];
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MM_ANIMS_H

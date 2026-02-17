@@ -24,6 +24,10 @@
 
 #include "z64.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Animation definitions
 #include "../mm_sources/mm_anims.h"
 
@@ -72,8 +76,10 @@ void MmAnim_GetCacheStats(s32* outEntryCount, s32* outTotalBytes);
 // Constants
 // ============================================================================
 
-// Cache size limit
-#define MM_ANIM_CACHE_SIZE 64
+// Cache size limit (must be larger than total animations loaded per form)
+// Zora loads ~62 anims, Goron ~46, plus shared ~29 = could reach 90+
+// NEVER evict during gameplay - freed data causes 0xDDDDDDDD use-after-free crashes
+#define MM_ANIM_CACHE_SIZE 256
 
 // Frame format constants
 #define MM_ANIM_FRAME_S16_COUNT 67 // 66 components + 1 appearanceInfo
@@ -82,5 +88,9 @@ void MmAnim_GetCacheStats(s32* outEntryCount, s32* outTotalBytes);
 #define MM_ANIM_BASE_TRANSL_X (-57)
 #define MM_ANIM_BASE_TRANSL_Y (3377)
 #define MM_ANIM_BASE_TRANSL_Z (0)
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // MM_ANIM_LOADER_H

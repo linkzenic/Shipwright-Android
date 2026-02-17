@@ -95,32 +95,12 @@ static MmAnimCacheEntry* MmAnimCache_GetFreeEntry(void) {
         }
     }
 
-    // Cache is full - evict oldest entry (simple FIFO for now)
-    if (sCacheCount > 0) {
-        MmAnimCacheEntry* entry = &sCache[0];
-
-        // Free old entry
-        if (entry->rawData != NULL) {
-            free(entry->rawData);
-        }
-        if (entry->anim != NULL) {
-            free(entry->anim);
-        }
-        if (entry->path != NULL) {
-            free((void*)entry->path);
-        }
-        sCacheTotalBytes -= entry->sizeBytes;
-
-        // Shift entries
-        for (s32 i = 0; i < sCacheCount - 1; i++) {
-            sCache[i] = sCache[i + 1];
-        }
-        sCacheCount--;
-
-        // Return last slot
-        return &sCache[sCacheCount++];
-    }
-
+    // Cache is full - do NOT evict! OOT's SkelAnime holds raw pointers to
+    // anim->segment data. Freeing cached entries causes use-after-free crashes
+    // (0xDDDDDDDD MSVC freed-memory pattern in AnimationContext_SetLoadFrame).
+    // Only MmAnim_FlushCache() should free entries (on scene transitions).
+    MMANIM_LOG("[MmAnim] WARNING: Cache full (%d/%d entries). Animation will load but not be cached.",
+               sCacheCount, MM_ANIM_CACHE_SIZE);
     return NULL;
 }
 

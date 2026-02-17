@@ -531,6 +531,7 @@ void SohMenu::AddMenuSettings() {
                                            "Each mask has unique visual enhancements."));
 
     // Option 2: Enable Transformation Masks - requires mm.o2r
+    // When enabled, auto-activates all mask replacement CVars (Deku, Stone, Fierce Deity)
     AddWidget(path, "Enable Transformation Masks", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.TransformMasks.Enabled")
         .RaceDisable(false)
@@ -542,8 +543,18 @@ void SohMenu::AddMenuSettings() {
                                                 "Download 2Ship, extract your MM ROM, then copy mm.o2r here.";
             }
         })
+        .PostFunc([](WidgetInfo& info) {
+            // When Transformation Masks is enabled, auto-enable all mask replacements
+            if (CVarGetInteger("gMods.TransformMasks.Enabled", 0)) {
+                CVarSetInteger("gMods.TransformMasks.DekuReplacesSkull", 1);
+                CVarSetInteger("gMods.TransformMasks.StoneReplacesSpooky", 1);
+                CVarSetInteger("gMods.TransformMasks.FierceReplacesGerudo", 1);
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            }
+        })
         .Options(CheckboxOptions().Tooltip("Allows you to transform with certain masks like in Majora's Mask.\n"
-                                           "Goron and Zora Masks become transformation masks with unique abilities.\n\n"
+                                           "Goron, Zora, and Skull Masks become transformation masks.\n"
+                                           "Also enables Deku/Stone/Fierce Deity mask visual replacements.\n\n"
                                            "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 
     // Option 3: Instant Transform - requires Extra Mask Effects AND mm.o2r

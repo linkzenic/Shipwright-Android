@@ -39,6 +39,7 @@ static std::shared_ptr<Ship::Archive> sMmArchive; // Reference to mm.o2r archive
 static bool sModO2rDetected = false;
 static bool sModO2rLoaded = false;
 static std::string sModO2rPath;
+static std::shared_ptr<Ship::Archive> sModArchive; // Reference to mod archive
 
 // Mod archive names to search for (in priority order)
 static const char* sModArchiveNames[] = {
@@ -132,6 +133,7 @@ static bool LoadModO2r() {
     if (archiveManager) {
         auto archive = archiveManager->AddArchive(sModO2rPath);
         if (archive != nullptr) {
+            sModArchive = archive;
             sModO2rLoaded = true;
             MMASSETS_LOG("[MM Assets] Loaded mod override archive: %s", sModO2rPath.c_str());
             return true;
@@ -155,14 +157,42 @@ static bool LoadMmO2r() {
         return false;
     }
 
-    // Add mm.o2r to the archive manager - same as oot.o2r/oot-mq.o2r
+    // Add mm.o2r to the archive manager, then REORDER so it has LOWEST priority.
+    // CRITICAL: mm.o2r contains resources with the SAME paths as oot.otr
+    // (e.g., objects/object_okuta/gOctorokSkel) but with different data
+    // (MM Octorok has 16 limbs, OOT has 38). Ship uses "last-added-wins" priority,
+    // so without reordering, mm.o2r shadows OOT → assertion crash.
+    //
+    // By moving mm.o2r to the FRONT of the archive list (lowest priority):
+    // - MM-unique paths (icon_item_static_yar, object_link_goron, etc.) are found
+    //   → icon replacements (Deku replaces Skull) work
+    // - Shared paths (objects/object_okuta) resolve to OOT version (higher priority)
+    //   → no assertion crashes
     auto archiveManager = OTRGlobals::Instance->context->GetResourceManager()->GetArchiveManager();
     if (archiveManager) {
         auto archive = archiveManager->AddArchive(sMmO2rPath);
         if (archive != nullptr) {
             sMmO2rLoaded = true;
-            sMmArchive = archive; // Store for archive-specific loading
-            MMASSETS_LOG("[MM Assets] Successfully loaded mm.o2r as archive (ptr=%p)", (void*)archive.get());
+            sMmArchive = archive;
+
+            // Reorder: move mm.o2r to FRONT (lowest priority), keep OOT archives after
+            auto currentArchives = archiveManager->GetArchives();
+            if (currentArchives && currentArchives->size() > 1) {
+                auto reordered = std::make_shared<std::vector<std::shared_ptr<Ship::Archive>>>();
+                // mm.o2r first (lowest priority)
+                reordered->push_back(archive);
+                // All other archives after (higher priority = OOT wins for shared paths)
+                for (auto& existing : *currentArchives) {
+                    if (existing != archive) {
+                        reordered->push_back(existing);
+                    }
+                }
+                archiveManager->SetArchives(reordered);
+                MMASSETS_LOG("[MM Assets] Loaded mm.o2r at lowest priority (pos 0 of %zu archives)",
+                             reordered->size());
+            } else {
+                MMASSETS_LOG("[MM Assets] Loaded mm.o2r (single archive, ptr=%p)", (void*)archive.get());
+            }
             return true;
         } else {
             MMASSETS_LOG("[MM Assets] Failed to add mm.o2r as archive");
@@ -242,8 +272,63 @@ const char* MmAssets_GetPath(void) {
 }
 
 /**
- * Load a resource from mm.o2r
+ * Check if any user mod archive (not mm.o2r, not mm-mod.o2r) overrides a MM resource.
+ * This allows .otr files in the mods/ folder to override mm.o2r assets.
+ *
+ * Priority order (highest first):
+ *   1. User mods in mods/ folder (if they contain MM paths)
+ *   2. mm-mod.o2r / mm-custom.o2r / mm-override.o2r
+ *   3. mm.o2r (base MM archive)
+ *
+ * OOT mods don't interfere because OOT and MM use different path namespaces
+ * (e.g., "textures/icon_item_static/..." vs "icon_item_static_yar/...").
+ *
+ * @param path Resource path (with or without __OTR__ prefix)
+ * @return Archive containing the override, or nullptr if no mod override exists
+ */
+static std::shared_ptr<Ship::Archive> MmAssets_FindModOverride(const char* path) {
+    auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
+    if (!resourceManager) return nullptr;
+
+    auto archiveManager = resourceManager->GetArchiveManager();
+    if (!archiveManager) return nullptr;
+
+    auto archives = archiveManager->GetArchives();
+    if (!archives) return nullptr;
+
+    // Strip __OTR__ prefix - archives index files without it
+    std::string cleanPath = path;
+    if (cleanPath.length() > 7 && cleanPath.substr(0, 7) == "__OTR__") {
+        cleanPath = cleanPath.substr(7);
+    }
+
+    // Iterate in reverse (last-added archives have highest priority in Ship)
+    for (auto it = archives->rbegin(); it != archives->rend(); ++it) {
+        auto& archive = *it;
+
+        // Skip mm.o2r - we want mods to override it
+        if (archive == sMmArchive) continue;
+
+        // Skip mm-mod.o2r if loaded (it's handled by the standard loading path)
+        if (sModO2rLoaded && !sModO2rPath.empty() && archive->GetPath() == sModO2rPath) continue;
+
+        if (archive->HasFile(cleanPath)) {
+            MMASSETS_LOG("[MM Assets] Mod override found: %s in %s", path, archive->GetPath().c_str());
+            return archive;
+        }
+    }
+
+    return nullptr;
+}
+
+/**
+ * Load a resource from mm.o2r, with support for mod overrides from the mods/ folder.
  * Path format follows 2Ship convention: "objects/object_link_goron/gLinkGoronSkel"
+ *
+ * Loading priority:
+ *   1. User .otr in mods/ folder (if it contains this MM path)
+ *   2. mm-mod.o2r (via standard archive priority)
+ *   3. mm.o2r (base)
  *
  * @param path Resource path within mm.o2r
  * @return Pointer to loaded resource, or NULL if not found/not loaded
@@ -263,12 +348,32 @@ void* MmAssets_LoadResource(const char* path) {
         return nullptr;
     }
 
-    // Load resource from mm.o2r using standard resource loading
-    auto resource = resourceManager->LoadResource(path);
-    if (resource) {
-        void* ptr = resource->GetRawPointer();
-        MMASSETS_LOG("[MM Assets] Loaded: %s -> %p", path, ptr);
-        return ptr;
+    // Check if a mod archive in the mods/ folder overrides this MM resource.
+    // mm.o2r is loaded after the mods/ folder so it wins in mFileToArchive (last-added-wins).
+    // We explicitly check mod archives here to restore user mod priority over mm.o2r.
+    auto modArchive = MmAssets_FindModOverride(path);
+    if (modArchive) {
+        Ship::ResourceIdentifier identifier(path, 0, modArchive);
+        auto resource = resourceManager->LoadResource(identifier);
+        if (resource) {
+            void* ptr = resource->GetRawPointer();
+            MMASSETS_LOG("[MM Assets] Loaded from mod: %s -> %p", path, ptr);
+            return ptr;
+        }
+    }
+
+    // No mod override - load explicitly from mm.o2r via ResourceIdentifier.
+    // We do NOT use the general resourceManager->LoadResource(path) because
+    // that would search ALL archives (including oot.otr) and might return
+    // OOT data for paths that exist in both games.
+    if (sMmArchive) {
+        Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
+        auto resource = resourceManager->LoadResource(identifier);
+        if (resource) {
+            void* ptr = resource->GetRawPointer();
+            MMASSETS_LOG("[MM Assets] Loaded from mm.o2r: %s -> %p", path, ptr);
+            return ptr;
+        }
     }
 
     MMASSETS_LOG("[MM Assets] Failed to load: %s", path);
@@ -276,7 +381,7 @@ void* MmAssets_LoadResource(const char* path) {
 }
 
 /**
- * Load a resource from mm.o2r and get its size
+ * Load a resource from mm.o2r and get its size, with mod override support.
  * @param path Resource path
  * @param outSize Output: size in bytes
  * @return Pointer to loaded resource, or NULL if not found
@@ -299,14 +404,32 @@ void* MmAssets_LoadResourceWithSize(const char* path, size_t* outSize) {
         return nullptr;
     }
 
-    auto resource = resourceManager->LoadResource(path);
-    if (resource) {
-        void* ptr = resource->GetRawPointer();
-        size_t size = resource->GetPointerSize();
-        if (outSize)
-            *outSize = size;
-        MMASSETS_LOG("[MM Assets] Loaded with size: %s -> %p (%zu bytes)", path, ptr, size);
-        return ptr;
+    // Check mod override (if a mod archive is loaded)
+    if (sModArchive) {
+        Ship::ResourceIdentifier modId(path, 0, sModArchive);
+        auto resource = resourceManager->LoadResource(modId);
+        if (resource) {
+            void* ptr = resource->GetRawPointer();
+            size_t size = resource->GetPointerSize();
+            if (outSize)
+                *outSize = size;
+            MMASSETS_LOG("[MM Assets] Loaded from mod with size: %s -> %p (%zu bytes)", path, ptr, size);
+            return ptr;
+        }
+    }
+
+    // No mod override - load explicitly from mm.o2r
+    if (sMmArchive) {
+        Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
+        auto resource = resourceManager->LoadResource(identifier);
+        if (resource) {
+            void* ptr = resource->GetRawPointer();
+            size_t size = resource->GetPointerSize();
+            if (outSize)
+                *outSize = size;
+            MMASSETS_LOG("[MM Assets] Loaded from mm.o2r with size: %s -> %p (%zu bytes)", path, ptr, size);
+            return ptr;
+        }
     }
 
     MMASSETS_LOG("[MM Assets] Failed to load: %s", path);
@@ -723,14 +846,15 @@ void* MmAssets_LoadFierceMaskWornDL(void) {
 // MM Goron SFX IDs
 #define MM_NA_SE_PL_GORON_ROLL 0x0990
 #define MM_NA_SE_PL_GORON_BALL_CHARGE 0x08EB
-#define MM_NA_SE_SY_TRANSFORM_MASK_FLASH 0x4835
+#define MM_NA_SE_SY_TRANSFORM_MASK_FLASH 0x484F
 
-#define MM_SFX_MAX_FONTS 16
+#define MM_SFX_MAX_FONTS 42 // MM has 41 soundfonts (0-40)
 #define MM_SFX_FONT_PATH_FMT "audio/fonts/Soundfont_%d"
 
-// MM SFX sequence (NA_BGM_GENERAL_SFX) uses soundfont 0 as the main SFX font for all banks.
-// Soundfont 0 contains both soundEffects[] (for banks 0-5) and drums[] (for voice bank 6).
-static const s32 sMmBankToFontMap[] = { 0, 0, 0, 0, 0, 0, 0 };
+// MM SFX sequence (NA_BGM_GENERAL_SFX) uses soundfont 0 as the main SFX font.
+// Player/Item/Env/System/Ocarina banks use instruments[]. Voice bank uses soundEffects[] (FONTANY_INSTR_SFX).
+// Enemy bank uses Soundfont_1.
+static const s32 sMmBankToFontMap[] = { 0, 0, 0, 1, 0, 0, 0 };
 
 // --- Font cache ---
 typedef struct {
@@ -790,7 +914,7 @@ void MmSfx_Shutdown(void) {
 SoundFont* MmSfx_LoadFont(s32 fontId) {
     if (!sSfxInitialized)
         MmSfxCache_Init();
-    if (fontId < 0 || fontId >= 7)
+    if (fontId < 0 || fontId >= 41) // MM has 41 soundfonts (0-40)
         return nullptr;
     if (!MmAssets_IsAvailable())
         return nullptr;
@@ -967,45 +1091,307 @@ typedef struct {
 
 static MmPlayingSound sPlayingSounds[MM_DIRECT_MAX_SOUNDS];
 
-// Get SoundFontSound for an MM SFX ID (handles voice bank drum mapping)
-static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
-    SoundFont* font = MmSfx_GetFontForSfx(mmSfxId);
-    if (!font)
-        return nullptr;
+// =============================================================================
+// SFX → Instrument Mapping Table (derived from seq_0.prg.seq analysis)
+// =============================================================================
+// In MM, SFX IDs do NOT index directly into soundEffects[] or drums[].
+// They go through the SFX sequence (seq_0) which selects specific instruments
+// from Soundfont_0 and plays them at specific pitches.
+//
+// This table maps each known Goron SFX to its primary instrument and note,
+// giving us the correct sample with correct pitch - matching MM 1:1.
 
-    s32 bank = MM_SFX_BANK_INDEX(mmSfxId);
-    s32 sfxIndex = MM_SFX_SOUND_INDEX(mmSfxId);
+typedef struct {
+    u16 sfxId;         // MM SFX ID (with SFX_FLAG)
+    u8  instrumentIdx; // Index into font->instruments[] (Soundfont_0)
+    u8  midiNote;      // MIDI note number for pitch calculation
+} MmSfxInstrMapEntry;
 
-    // Voice bank (6) stores voices as drums in soundfont 0.
-    // The drum index IS the SFX index directly (e.g., 0xC5 = drum 197 for Goron damage).
-    if (bank == 6 && font->numDrums > 0) {
-        MMSFX_LOG("[MmDirectAudio] Voice lookup: sfxId=0x%04X, sfxIndex=%d, numDrums=%u", mmSfxId, sfxIndex,
-                  font->numDrums);
+// Mapping from seq_0.prg.seq channel handlers (primary layer of each SFX)
+static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
+    // === Player Bank: Common SFX (shared by all forms) ===
+    { 0x0811,   0,  49 }, // JUMP: INST_0, PITCH_CS3
+    { 0x0812,   0,  61 }, // LAND: INST_0, PITCH_CS4
+    { 0x0814,   9,  66 }, // CLIMB_CLIFF: INST_9, PITCH_FS4
+    { 0x08D0,  12,  60 }, // SLIP_LEVEL: INST_12, PITCH_C4
+    // === Player Bank: Deku SFX ===
+    { 0x08E0,  74,  49 }, // DEKUNUTS_FIRE: INST_74, PITCH_E3 (bubble spit)
+    // === Player Bank: Goron SFX ===
+    { 0x08E1, 102,  55 }, // GORON_BALLJUMP: INST_102, PITCH_G3
+    { 0x08E4,  68,  78 }, // TRANSFORM: INST_68, PITCH_GF5 (primary of 3 layers)
+    { 0x08E5,  47,  55 }, // TRANSFORM_DEMO: INST_47, PITCH_G3
+    { 0x08E6,  47,  55 }, // GORON_TO_BALL: INST_47 (same channel as TRANSFORM_DEMO)
+    { 0x08E7,  47,  35 }, // BALL_TO_GORON: INST_47, PITCH_B1
+    { 0x08E8,  65,  53 }, // GORON_PUNCH: INST_65, PITCH_F3 (primary of 2 layers)
+    { 0x08EB,  35,  65 }, // GORON_BALL_CHARGE: INST_35, PITCH_F4 (primary, looping)
+    // === Player Bank: Zora SFX ===
+    { 0x08EC,  20,  73 }, // ZORA_SWIM_DASH: INST_20, PITCH_DF5
+    { 0x08ED,  72,  38 }, // ZORA_SWIM_LV: INST_72, PITCH_F2
+    { 0x08EE, 105,  28 }, // ZORA_SWIM_ROLL: INST_105, PITCH_E2
+    { 0x08EF,  47,  35 }, // GORON_SQUAT: INST_47, PITCH_B1
+    // === Player Bank: Zora SFX (0x8F0 range - CHAN_PL_DUMMY_240) ===
+    { 0x08F0,  31,  23 }, // ZORA_SWIM: INST_31, PITCH_B0 (CHAN_PL_DUMMY_240 primary)
+    { 0x08F1,  31,  23 }, // ZORA_KICK: INST_31, PITCH_B0 (same channel)
+    { 0x08F2,  31,  23 }, // ZORA_DIVE: INST_31, PITCH_B0 (same channel)
+    { 0x08F3,  31,  23 }, // ZORA_ELECTRIC_BARRIER: INST_31, PITCH_B0 (same channel)
+    { 0x08F4,  31,  23 }, // ZORA_BOOMERANG_THROW: INST_31, PITCH_B0 (same channel)
+    { 0x08F5,  31,  23 }, // ZORA_BOOMERANG_CATCH: INST_31, PITCH_B0 (same channel)
+    // === Player Bank: Goron roll SFX ===
+    { 0x0980,  35,  67 }, // GORON_CHG_ROLL: INST_35, PITCH_G4
+    { 0x0990,  77,  58 }, // GORON_ROLL: INST_77, PITCH_BF3 (primary of 3 layers)
+    // === Player Bank: Deku SFX (0x9A0 range) ===
+    { 0x09A1,  74,  54 }, // DEKUNUTS_BUBLE_BREATH: INST_74, PITCH_A3 (looping)
+    { 0x09A2,  35,  36 }, // GORON_BALL_CHARGE_FAILED: INST_35, PITCH_C2
+    { 0x09A3,  75,  71 }, // GORON_BALL_CHARGE_DASH: INST_75, PITCH_B4
+    { 0x09A9,  27,  24 }, // DEKUNUTS_ATTACK: INST_27, PITCH_C1 (spin attack)
+    { 0x09AD, 111,  60 }, // GORON_SLIP: INST_111, PITCH_C4 (looping)
+    { 0x09AF,  46,  63 }, // ZORA_SPARK_BARRIER: INST_46, PITCH_E4
+    { 0x09B8,  77,  77 }, // GORON_STOMACH_EXPLOSION: INST_77, PITCH_F5
+    { 0x09B9, 106,  47 }, // GORON_DRINK_BOMB: INST_106, PITCH_B2
+    // === Item Bank: Form-specific ===
+    { 0x184F,  32,  60 }, // IT_GORON_BALLFANG: INST_32, PITCH_C4
+    { 0x1857,  27,  24 }, // IT_GORON_PUNCH_SWING: INST_27, PITCH_C1
+    { 0x1859,  39,  42 }, // IT_ZORA_KICK_SWING: INST_39, PITCH_GF2
+    { 0x185E, 102,  45 }, // IT_GORON_ROLLING_REFLECTION: INST_102, PITCH_A2
+    // === System Bank: Transform flash ===
+    { 0x484F,  64,  84 }, // SY_TRANSFORM_MASK_FLASH: INST_64, C4+24 transpose
+    { 0x4835,  64,  84 }, // (legacy ID - same sound)
+};
+static const s32 sMmSfxInstrMapSize = sizeof(sMmSfxInstrMap) / sizeof(sMmSfxInstrMap[0]);
 
-        if ((u32)sfxIndex >= font->numDrums || !font->drums || !font->drums[sfxIndex])
-            return nullptr;
-        return &font->drums[sfxIndex]->sound;
-    }
+// =============================================================================
+// Voice Bank: Goron voices = Human Link voices with transpose +4
+// =============================================================================
+// From seq_0.prg.seq: Goron voice channels (DUMMY_192-223) call CHAN_BD84
+// which sets transpose=4, then jump to the corresponding human Link voice
+// channel. The voice channels use FONTANY_INSTR_SFX mode which indexes into
+// font->soundEffects[].
+//
+// For voices with directly defined effect indices (from seq_0):
+typedef struct {
+    u16 sfxId;      // MM Voice SFX ID
+    u16 effectIdx;  // SF0_EFFECT_X index into soundEffects[]
+    s8  transpose;  // Semitone transpose (4 for Goron, 1 for some others)
+} MmVoiceMapEntry;
 
-    // Regular SFX bank - uses soundEffects[] array
-    if ((u32)sfxIndex >= font->numSfx)
-        return nullptr;
-    return &font->soundEffects[sfxIndex];
+static const MmVoiceMapEntry sMmVoiceMap[] = {
+    // Directly defined in seq_0 with explicit SF0_EFFECT indices:
+    { 0x68CA,  23,  4 }, // DUMMY_202 (GORON_DOWN alt): SF0_EFFECT_23, transpose 4
+    { 0x68CB,  20,  4 }, // DUMMY_203 (GORON_DOWN): SF0_EFFECT_20, transpose 4
+    { 0x68D0,  17,  4 }, // DUMMY_208: SF0_EFFECT_17, transpose 4 (looping)
+    { 0x68D8,   6,  4 }, // DUMMY_216: SF0_EFFECT_6, transpose 4
+    { 0x68DA,  24,  4 }, // DUMMY_218: SF0_EFFECT_24, transpose 4
+    { 0x68E1,  35,  1 }, // DUMMY_225: SF0_EFFECT_35, transpose 1
+    { 0x68E5,  36,  1 }, // DUMMY_229: SF0_EFFECT_36, transpose 1
+};
+static const s32 sMmVoiceMapSize = sizeof(sMmVoiceMap) / sizeof(sMmVoiceMap[0]);
+
+// =============================================================================
+// Goron voice → human Link voice redirect table
+// =============================================================================
+// Goron voices (0x68C0-0x68DF) that redirect to human Link voice channels
+// via CHAN_BD84 (transpose +4). The human Link voices are at bank 6 offset 0x00.
+// Each Goron voice index maps to a human Link voice that uses a specific
+// SF0_EFFECT. These effect indices were traced from seq_0 channel handlers.
+//
+// Human Link voice channels and their SF0_EFFECT indices:
+//   LI_SWORD_N  → effect 0    LI_SWORD_L  → effect 1
+//   LI_LASH     → effect 2    LI_HANG     → effect 3
+//   LI_CLIMB_END→ effect 4    LI_DAMAGE_S → effect 5
+//   LI_FREEZE   → effect 6    LI_FALL_S   → effect 7
+//   LI_FALL_L   → effect 8    LI_BREATH_REST→ effect 9
+//
+// Goron voices at 0x68C0-0x68C9 map to human Link voices 0-9:
+static const s32 sGoronVoiceToEffect[] = {
+     0, // 0x68C0 GORON_SWORD_N  → LI_SWORD_N  → SF0_EFFECT_0
+     1, // 0x68C1 GORON_SWORD_L  → LI_SWORD_L  → SF0_EFFECT_1
+     0, // 0x68C2 GORON_LASH     → LI_SWORD_N  → SF0_EFFECT_0 (same as DUMMY_192)
+     3, // 0x68C3 GORON_HANG     → LI_HANG     → SF0_EFFECT_3
+     4, // 0x68C4 GORON_CLIMB_END→ LI_CLIMB_END→ SF0_EFFECT_4
+     5, // 0x68C5 GORON_DAMAGE_S → LI_DAMAGE_S → SF0_EFFECT_5
+     6, // 0x68C6 GORON_FREEZE   → LI_FREEZE   → SF0_EFFECT_6
+     7, // 0x68C7 GORON_FALL_S   → LI_FALL_S   → SF0_EFFECT_7
+     8, // 0x68C8 GORON_FALL_L   → LI_FALL_L   → SF0_EFFECT_8
+     9, // 0x68C9 GORON_BREATH_REST→LI_BREATH_REST→SF0_EFFECT_9
+};
+static const s32 sGoronVoiceToEffectSize = sizeof(sGoronVoiceToEffect) / sizeof(sGoronVoiceToEffect[0]);
+
+// Pitch factor for semitone transpose: 2^(semitones/12)
+static f32 MmDirectAudio_TransposeFactor(s32 semitones) {
+    // Fast lookup for common values
+    if (semitones == 0) return 1.0f;
+    if (semitones == 4) return 1.259921f; // 2^(4/12) - Goron voice pitch
+    if (semitones == 1) return 1.059463f; // 2^(1/12)
+    // General case
+    return powf(2.0f, (f32)semitones / 12.0f);
 }
 
-// Start playing an MM sound
-static void MmDirectAudio_Play(u16 mmSfxId, f32 freqScale) {
+// Helper: check if a SoundFontSound has a valid sample loaded
+static inline bool MmDirectAudio_SoundValid(SoundFontSound* s) {
+    return s && s->sample && s->sample->sampleAddr;
+}
+
+// Get SoundFontSound from an instrument at a specific MIDI note.
+// Many MM instruments only populate normalNotesSound, leaving low/high splits NULL.
+// If the MIDI note selects a split with no sample, we fall back to any valid split.
+static SoundFontSound* MmDirectAudio_GetInstrumentSound(SoundFont* font, u8 instrumentIdx, u8 midiNote) {
+    if (!font || !font->instruments)
+        return nullptr;
+    if (instrumentIdx >= font->numInstruments)
+        return nullptr;
+
+    Instrument* inst = font->instruments[instrumentIdx];
+    if (!inst || !inst->loaded)
+        return nullptr;
+
+    // Select the correct pitch split based on MIDI note
+    SoundFontSound* sound;
+    if (midiNote < inst->normalRangeLo) {
+        sound = &inst->lowNotesSound;
+    } else if (midiNote <= inst->normalRangeHi) {
+        sound = &inst->normalNotesSound;
+    } else {
+        sound = &inst->highNotesSound;
+    }
+
+    // If the selected split has a valid sample, use it
+    if (MmDirectAudio_SoundValid(sound))
+        return sound;
+
+    // Fallback: most instruments only populate normalNotesSound.
+    // Try normalNotesSound first (most common), then low, then high.
+    if (MmDirectAudio_SoundValid(&inst->normalNotesSound))
+        return &inst->normalNotesSound;
+    if (MmDirectAudio_SoundValid(&inst->lowNotesSound))
+        return &inst->lowNotesSound;
+    if (MmDirectAudio_SoundValid(&inst->highNotesSound))
+        return &inst->highNotesSound;
+
+    return nullptr;
+}
+
+// Stored pitch scale for the most recent GetSound call
+static f32 sMmLastPitchScale = 1.0f;
+
+// Get SoundFontSound for an MM SFX ID with correct instrument/effect mapping
+static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
+    s32 bank = MM_SFX_BANK_INDEX(mmSfxId);
+    s32 sfxIndex = MM_SFX_SOUND_INDEX(mmSfxId);
+    sMmLastPitchScale = 1.0f;
+
+    SoundFont* font0 = MmSfx_LoadFont(0); // Soundfont_0 - main SFX font
+    if (!font0) {
+        MMSFX_LOG("[MmDirectAudio] Failed to load Soundfont_0");
+        return nullptr;
+    }
+
+    // =========================================================================
+    // Voice bank (6): uses soundEffects[] in FONTANY_INSTR_SFX mode
+    // Goron voices = human Link voices with transpose +4 semitones
+    // =========================================================================
+    if (bank == 6) {
+        // First check the explicit voice map (directly-defined effect indices)
+        for (s32 i = 0; i < sMmVoiceMapSize; i++) {
+            if (sMmVoiceMap[i].sfxId == mmSfxId) {
+                u16 effectIdx = sMmVoiceMap[i].effectIdx;
+                if (effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
+                    font0->soundEffects[effectIdx].sample->sampleAddr) {
+                    sMmLastPitchScale = MmDirectAudio_TransposeFactor(sMmVoiceMap[i].transpose);
+                    MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d], transpose %d (pitch %.3f)",
+                              mmSfxId, effectIdx, sMmVoiceMap[i].transpose, sMmLastPitchScale);
+                    return &font0->soundEffects[effectIdx];
+                }
+            }
+        }
+
+        // Goron voice redirect: 0x68C0-0x68C9 → human Link voices with transpose +4
+        if (mmSfxId >= 0x68C0 && mmSfxId < 0x68C0 + (u16)sGoronVoiceToEffectSize) {
+            s32 goronIdx = mmSfxId - 0x68C0;
+            s32 effectIdx = sGoronVoiceToEffect[goronIdx];
+            if (effectIdx >= 0 && (u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
+                font0->soundEffects[effectIdx].sample->sampleAddr) {
+                sMmLastPitchScale = MmDirectAudio_TransposeFactor(4); // Goron transpose +4
+                MMSFX_LOG("[MmDirectAudio] Goron voice 0x%04X: soundEffects[%d], transpose +4",
+                          mmSfxId, effectIdx);
+                return &font0->soundEffects[effectIdx];
+            }
+        }
+
+        // Remaining Goron voices (0x68CA-0x68DF) not in explicit map:
+        // Try mapping by offset from 0x68C0 to soundEffects index
+        if (mmSfxId >= 0x68C0 && mmSfxId <= 0x68DF) {
+            s32 offset = mmSfxId - 0x68C0;
+            // These voices redirect to various human Link voices
+            // Use the offset as a best-effort effect index
+            if ((u32)offset < font0->numSfx && font0->soundEffects[offset].sample &&
+                font0->soundEffects[offset].sample->sampleAddr) {
+                sMmLastPitchScale = MmDirectAudio_TransposeFactor(4);
+                MMSFX_LOG("[MmDirectAudio] Goron voice 0x%04X: soundEffects[%d] (offset fallback), transpose +4",
+                          mmSfxId, offset);
+                return &font0->soundEffects[offset];
+            }
+        }
+
+        // Non-Goron voices: use sfxIndex as effect index (human Link, Zora, etc.)
+        if ((u32)sfxIndex < font0->numSfx && font0->soundEffects[sfxIndex].sample &&
+            font0->soundEffects[sfxIndex].sample->sampleAddr) {
+            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (direct index)",
+                      mmSfxId, sfxIndex);
+            return &font0->soundEffects[sfxIndex];
+        }
+
+        MMSFX_LOG("[MmDirectAudio] Voice: No valid soundEffect for 0x%04X (sfxIndex=%d, numSfx=%d)",
+                  mmSfxId, sfxIndex, font0->numSfx);
+        return nullptr;
+    }
+
+    // =========================================================================
+    // Player/Item/Environment/System/Ocarina banks:
+    // SFX IDs map to specific instruments[] at specific pitches via seq_0
+    // =========================================================================
+
+    // Check the instrument mapping table first
+    for (s32 i = 0; i < sMmSfxInstrMapSize; i++) {
+        if (sMmSfxInstrMap[i].sfxId == mmSfxId) {
+            u8 instIdx = sMmSfxInstrMap[i].instrumentIdx;
+            u8 note = sMmSfxInstrMap[i].midiNote;
+            SoundFontSound* sound = MmDirectAudio_GetInstrumentSound(font0, instIdx, note);
+            if (sound) {
+                // Pitch correction: the tuning is calibrated for MIDI note 60 (middle C)
+                // Adjust for the actual note
+                sMmLastPitchScale = powf(2.0f, ((f32)note - 60.0f) / 12.0f);
+                MMSFX_LOG("[MmDirectAudio] Mapped 0x%04X: instruments[%d], note=%d, pitch=%.3f",
+                          mmSfxId, instIdx, note, sMmLastPitchScale);
+                return sound;
+            }
+            MMSFX_LOG("[MmDirectAudio] Mapped 0x%04X: instruments[%d] exists but no valid sample", mmSfxId, instIdx);
+            break;
+        }
+    }
+
+    // SFX not found in instrument map - return NULL (silence).
+    // DO NOT use soundEffects[sfxIndex] as fallback - SFX IDs do not map to soundEffects
+    // indices for non-voice banks. The seq_0 program routes them to specific instruments
+    // at specific pitches. Without a mapping entry, we'd play the wrong sound.
+    MMSFX_LOG("[MmDirectAudio] No mapping for 0x%04X (bank=%d, idx=%d) - no sound",
+              mmSfxId, bank, sfxIndex);
+    return nullptr;
+}
+
+// Start playing an MM sound. Returns 1 if played, 0 if no valid sample found.
+static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale) {
     SoundFontSound* sfxSound = MmDirectAudio_GetSound(mmSfxId);
+    f32 pitchScale = sMmLastPitchScale; // Saved by GetSound
     if (!sfxSound || !sfxSound->sample) {
         MMSFX_LOG("[MmDirectAudio] No sample for 0x%04X", mmSfxId);
-        return;
+        return 0;
     }
 
     u32 pcmLength = 0;
     s16* pcm = MmDirectAudio_DecodeADPCM(sfxSound->sample, &pcmLength);
     if (!pcm || pcmLength == 0) {
         MMSFX_LOG("[MmDirectAudio] Decode failed for 0x%04X", mmSfxId);
-        return;
+        return 0;
     }
 
     // Find free slot (or evict oldest)
@@ -1031,17 +1417,16 @@ static void MmDirectAudio_Play(u16 mmSfxId, f32 freqScale) {
     snd->pcmData = pcm;
     snd->pcmLength = pcmLength;
     snd->pcmPosition = 0.0f;
-    snd->advance = sfxSound->tuning * freqScale;
+    // Apply both the sample's base tuning, pitch correction for the note, and user freq scale
+    snd->advance = sfxSound->tuning * pitchScale * freqScale;
     snd->volume = 0.8f;
     snd->pan = 0.5f;
     snd->mmSfxId = mmSfxId;
     snd->active = 1;
 
-    MMSFX_LOG("[MmDirectAudio] Playing 0x%04X: %u samples, tuning=%.3f, freq=%.3f, advance=%.3f, codec=%d, size=%u, "
-              "order=%d, npred=%d",
-              mmSfxId, pcmLength, sfxSound->tuning, freqScale, snd->advance, sfxSound->sample->codec,
-              sfxSound->sample->size, sfxSound->sample->book ? sfxSound->sample->book->order : -1,
-              sfxSound->sample->book ? sfxSound->sample->book->npredictors : -1);
+    MMSFX_LOG("[MmDirectAudio] Playing 0x%04X: %u samples, tuning=%.3f, pitch=%.3f, freq=%.3f, advance=%.3f",
+              mmSfxId, pcmLength, sfxSound->tuning, pitchScale, freqScale, snd->advance);
+    return 1;
 }
 
 // Mix all active MM sounds into the output buffer (called from audio thread)
@@ -1110,15 +1495,15 @@ void MmDirectAudio_StopAll(void) {
 // MmSfx Public API (unchanged interface, new direct audio backend)
 // =============================================================================
 
-void MmSfx_PlayAtPos(u16 sfxId, Vec3f* pos) {
-    MmSfx_PlayEx(sfxId, pos, 4, nullptr, nullptr, nullptr);
+s32 MmSfx_PlayAtPos(u16 sfxId, Vec3f* pos) {
+    return MmSfx_PlayEx(sfxId, pos, 4, nullptr, nullptr, nullptr);
 }
 
-void MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd) {
+s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd) {
     if (!MmAssets_IsAvailable())
-        return;
+        return 0;
     f32 freq = freqScale ? *freqScale : 1.0f;
-    MmDirectAudio_Play(sfxId, freq);
+    return MmDirectAudio_Play(sfxId, freq);
 }
 
 void MmSfx_Stop(u16 sfxId) {

@@ -21,7 +21,7 @@ extern u8 gAreaGsFlags[];
 #define AGE_REQ_CHILD LINK_AGE_CHILD
 #define AGE_REQ_NONE 9
 
-#define CHECK_AGE_REQ_EQUIP(i, j) (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (gEquipAgeReqs[i][j] == AGE_REQ_NONE) || (gEquipAgeReqs[i][j] == ((void)0, gSaveContext.linkAge)))
+#define CHECK_AGE_REQ_EQUIP(i, j) (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (ExtInv_GetEquipAgeReq(i, j) == AGE_REQ_NONE) || (ExtInv_GetEquipAgeReq(i, j) == ((void)0, gSaveContext.linkAge)))
 // Uses ExtInv_GetSlotAgeReq() helper to handle both vanilla (0-23) and custom (24-47) slots
 #define CHECK_AGE_REQ_SLOT(slotIndex) (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (ExtInv_GetSlotAgeReq(slotIndex) == AGE_REQ_NONE) || ExtInv_GetSlotAgeReq(slotIndex) == ((void)0, gSaveContext.linkAge))
 

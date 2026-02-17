@@ -3441,6 +3441,14 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
     s32 temp;
     s32 nextAnimType;
 
+    // Transformation Masks: block items not in current form's allow list
+    if (TransformMasks_IsEnabled() && TransformMasks_IsTransformedAny()) {
+        if (!TransformMasks_IsItemAllowed(item)) {
+            Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
+            return;
+        }
+    }
+
     itemAction = Player_ItemToItemAction(item);
 
     if (((this->heldItemAction == this->itemAction) &&
@@ -4805,6 +4813,18 @@ s32 func_808382DC(Player* this, PlayState* play) {
             Player_PlayVoiceSfx(this, NA_SE_VO_LI_TAKEN_AWAY);
             play->unk_11DE9 = 1;
             Sfx_PlaySfxCentered(NA_SE_OC_ABYSS);
+        } else if (TransformMasks_IsTransformed()) {
+            // Transformation masks: MM form system handles its own damage/knockback.
+            // Save AC_HIT info before Collider_ResetCylinderAC clears it later.
+            // MmForm_CheckDamage reads gMmFormPendingDamage instead of AC_HIT.
+            if (this->cylinder.base.acFlags & AC_HIT) {
+                gMmFormPendingDamage.hasPending = 1;
+                gMmFormPendingDamage.damage = this->actor.colChkInfo.damage;
+                gMmFormPendingDamage.acHitEffect = this->actor.colChkInfo.acHitEffect;
+                gMmFormPendingDamage.attacker = this->cylinder.base.ac;
+                return 1;
+            }
+            return 0;
         } else if ((this->knockbackType != PLAYER_KNOCKBACK_NONE) &&
                    ((this->knockbackType >= PLAYER_KNOCKBACK_LARGE) || (this->invincibilityTimer == 0))) {
             u8 knockbackResponse[] = {
@@ -4963,7 +4983,10 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
     f32 wallPolyNormalZ;
     f32 sp24;
 
-    if (!(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && (this->ledgeClimbType >= 2) &&
+    // Transformation masks: Goron cannot climb medium/high ledges (MM z_player.c:6209)
+    // Instead, Goron handles ledges with a ground-based jump in MmForm_UpdateActive.
+    if (!TransformMasks_BlocksLedgeGrab() &&
+        !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && (this->ledgeClimbType >= 2) &&
         (!(this->stateFlags1 & PLAYER_STATE1_IN_WATER) || (this->ageProperties->unk_14 > this->yDistToLedge))) {
         sp3C = 0;
 
@@ -5063,6 +5086,8 @@ void func_80838E70(PlayState* play, Player* this, f32 arg2, s16 arg3) {
 }
 
 void func_80838F18(PlayState* play, Player* this) {
+    // Transformation masks: MM form handles all water actions
+    if (TransformMasks_IsTransformed()) return;
     Player_SetupAction(play, this, Player_Action_8084D610, 0);
     Player_AnimChangeLoopSlowMorph(play, this, &gPlayerAnim_link_swimer_swim_wait);
 }
@@ -5724,6 +5749,12 @@ void func_8083A5C4(PlayState* play, Player* this, CollisionPoly* arg2, f32 arg3,
 }
 
 s32 func_8083A6AC(Player* this, PlayState* play) {
+    // Transformation masks: Goron/Deku cannot grab ledges or climb from edge slip
+    // From 2Ship z_player.c line 15227: this->transformation != PLAYER_FORM_GORON
+    if (TransformMasks_IsTransformed()) {
+        return 0;
+    }
+
     //! @bug `floorPitch` and `floorPitchAlt` are cleared to 0 before this function is called, because the player
     //! left the ground. The angles will always be zero and therefore will always pass these checks.
     //! The intention seems to be to prevent ledge hanging or vine grabbing when walking off of a steep enough slope.
@@ -6373,6 +6404,12 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
 s32 Player_ActionHandler_10(Player* this, PlayState* play) {
     s32 controlStickDirection;
 
+    // Transformation masks: form handles its own A-button actions (jump/sidehop/backflip/roll)
+    // From 2Ship Player_ActionHandler_10: Goron can't jump slash, curls to roll instead
+    if (TransformMasks_IsTransformed()) {
+        return 0;
+    }
+
     if (CHECK_BTN_ALL(sControlInput->press.button, BTN_A) &&
         (play->roomCtx.curRoom.behaviorType1 != ROOM_BEHAVIOR_TYPE1_2) && (sFloorType != 7) &&
         (SurfaceType_GetSlope(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId) != 1)) {
@@ -6482,6 +6519,12 @@ void func_8083C148(Player* this, PlayState* play) {
  * even if they occur.
  */
 s32 Player_ActionHandler_Roll(Player* this, PlayState* play) {
+    // Transformation masks: form handles its own A-button actions (roll/curl/spin)
+    // Without this, OOT's roll fires simultaneously with form actions, causing forward momentum conflicts
+    if (TransformMasks_IsTransformed()) {
+        return 0;
+    }
+
     if (!Player_UpdateHostileLockOn(this) && !sUpperBodyIsBusy && !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE) &&
         CHECK_BTN_ALL(sControlInput->press.button, BTN_A)) {
         if (Player_TryRoll(this, play)) {
@@ -6679,6 +6722,11 @@ s32 func_8083C910(PlayState* play, Player* this, f32 arg2) {
         0) {
         sp28 -= this->actor.world.pos.y;
         if (this->ageProperties->unk_24 <= sp28) {
+            // Transformation masks: MM form handles water entry
+            if (TransformMasks_IsTransformed()) {
+                this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
+                return 0;
+            }
             Player_SetupAction(play, this, Player_Action_8084D7C4, 0);
             Player_AnimChangeLoopSlowMorph(play, this, &gPlayerAnim_link_swimer_swim);
             this->stateFlags1 |= PLAYER_STATE1_IN_WATER | PLAYER_STATE1_IN_CUTSCENE;
@@ -6840,6 +6888,8 @@ void func_8083D0A8(PlayState* play, Player* this, f32 arg2) {
 }
 
 s32 func_8083D12C(PlayState* play, Player* this, Input* arg2) {
+    // Transformation masks: MM form handles diving
+    if (TransformMasks_IsTransformed()) return 0;
     if (!(this->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && !(this->stateFlags2 & PLAYER_STATE2_UNDERWATER)) {
         if ((arg2 == NULL) || (CHECK_BTN_ALL(arg2->press.button, BTN_A) && (ABS(this->unk_6C2) < 12000) &&
                                (this->currentBoots != PLAYER_BOOTS_IRON))) {
@@ -6911,6 +6961,16 @@ void func_8083D330(PlayState* play, Player* this) {
 }
 
 void func_8083D36C(PlayState* play, Player* this) {
+    // Transformation masks: Goron/Deku can't swim.
+    // When entering deep water, start curl → void out instead of swimming.
+    if (TransformMasks_IsTransformed() && TransformMasks_OnWaterSwimAttempt(play, this)) {
+        // Swimming was blocked. Set IN_WATER flag to match OOT expectations,
+        // clear jumping flags (we're in water now, not airborne).
+        this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
+        this->stateFlags1 &= ~(PLAYER_STATE1_JUMPING | PLAYER_STATE1_FREEFALL);
+        return;
+    }
+
     if ((this->currentBoots != PLAYER_BOOTS_IRON) || !(this->actor.bgCheckFlags & 1)) {
         func_80832564(play, this);
 
@@ -6959,6 +7019,19 @@ void func_8083D53C(PlayState* play, Player* this) {
     }
 
     if ((Player_Action_80845668 != this->actionFunc) && (Player_Action_8084BDFC != this->actionFunc)) {
+        // Transformation masks: skip ALL OOT water action transitions.
+        // MM form system handles water for each form (swim, void-out, etc.)
+        if (TransformMasks_IsTransformed()) {
+            // Just track IN_WATER flag for other OOT systems (damage, camera, etc.)
+            if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
+                this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
+            } else if ((this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
+                       (this->actor.yDistToWater < this->ageProperties->unk_24)) {
+                this->stateFlags1 &= ~PLAYER_STATE1_IN_WATER;
+            }
+            return;
+        }
+
         if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
             if (!(this->stateFlags1 & PLAYER_STATE1_IN_WATER) ||
                 (!((this->currentBoots == PLAYER_BOOTS_IRON) && (this->actor.bgCheckFlags & 1)) &&
@@ -9751,7 +9824,10 @@ void Player_Action_8084411C(Player* this, PlayState* play) {
                         func_80843E14(this, NA_SE_VO_LI_FALL_L);
                     }
 
-                    if (!GameInteractor_GetDisableLedgeGrabsActive() && (this->actor.bgCheckFlags & 0x200) &&
+                    // Transformation masks: Goron cannot grab ledges (MM z_player.c:6209)
+                    // Other forms (Zora, Deku, FD) CAN grab ledges; Deku limited by unk_14=49
+                    if (!GameInteractor_GetDisableLedgeGrabsActive() && !TransformMasks_BlocksLedgeGrab() &&
+                        (this->actor.bgCheckFlags & 0x200) &&
                         !(this->stateFlags2 & PLAYER_STATE2_HOPPING) &&
                         !(this->stateFlags1 & (PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_IN_WATER)) &&
                         (this->linearVelocity > 0.0f)) {
@@ -10866,6 +10942,12 @@ void Player_Init(Actor* thisx, PlayState* play2) {
     this->itemAction = this->heldItemAction = -1;
     this->heldItemId = ITEM_NONE;
 
+    // TRANSFORMATION MASKS: Init BEFORE Player_UseItem so IsTransformed() returns false.
+    // Otherwise Player_UseItem checks IsTransformedAny() → true (stale state from old scene)
+    // → IsItemAllowed(ITEM_NONE) → false → Player_UseItem returns early → heldItemAction stays -1
+    // → ExtPlayer_GetItemActionUpdateFunc(-1) reads sItemActionUpdateFuncs[-1] → garbage upperActionFunc → crash
+    TransformMasks_Init(play, this);
+
     Player_UseItem(play, this, ITEM_NONE);
     Player_SetEquipmentData(play, this);
     this->prevBoots = this->currentBoots;
@@ -10969,9 +11051,6 @@ void Player_Init(Actor* thisx, PlayState* play2) {
 
     Map_SavePlayerInitialInfo(play);
     MREG(64) = 0;
-
-    // TRANSFORMATION MASKS: Initialize system
-    TransformMasks_Init(play, this);
 }
 
 void Player_ApproachZeroBinang(s16* pValue) {
@@ -12687,10 +12766,30 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     Vec3s rot;
     f32 scale;
 
-    // Transformation Masks: If transformed, draw MM form instead of OOT Link
-    if (TransformMasks_IsTransformed()) {
+    // Transformation Masks: If transformed, draw MM form instead of OOT Link.
+    // MmForm_Draw handles both skeleton draw (when loaded) and flash overlay (always).
+    // When skeleton isn't loaded yet (pre-flash phase), MmForm_Draw only draws the flash
+    // overlay and falls through to let OOT draw Link normally underneath.
+    if (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode()) {
+        if (TransformMasks_HasSkeleton()) {
+            // Skeleton loaded: draw MM form + flash overlay, skip OOT Link skeleton
+            TransformMasks_Draw(play, this);
+
+            // Still draw get-item animations and custom items on MM forms.
+            // Player_DrawGetItem reads sGetItemRefPos (set by MmForm_PostLimbDraw).
+            // CustomItems_OverrideDraw renders custom swords/shields/tools.
+            OPEN_DISPS(play->state.gfxCtx);
+            if (!(this->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW)) {
+                if (this->unk_862 > 0) {
+                    Player_DrawGetItem(play, this);
+                }
+                CustomItems_OverrideDraw(this, play);
+            }
+            CLOSE_DISPS(play->state.gfxCtx);
+            return;
+        }
+        // Skeleton not loaded: draw flash overlay only, then fall through to OOT Link draw
         TransformMasks_Draw(play, this);
-        return; // Skip OOT Link draw - MM form is already drawn
     }
 
     if (LINK_AGE_IN_YEARS == YEARS_CHILD) {

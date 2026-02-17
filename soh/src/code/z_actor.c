@@ -18,6 +18,7 @@
 
 #include "soh/ActorDB.h"
 #include "soh/OTRGlobals.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -1402,6 +1403,15 @@ f32 Actor_HeightDiff(Actor* actorA, Actor* actorB) {
 f32 Player_GetHeight(Player* player) {
     f32 offset = (player->stateFlags1 & PLAYER_STATE1_ON_HORSE) ? 32.0f : 0.0f;
 
+    // Transformation Masks: use form-specific height from MM decomp z_actor.c:1374-1400.
+    // Fixes camera positioning during get-item, Z-targeting, and general gameplay.
+    {
+        f32 formHeight = TransformMasks_GetFormHeight();
+        if (formHeight > 0.0f) {
+            return offset + formHeight;
+        }
+    }
+
     if (LINK_IS_ADULT) {
         return offset + 68.0f;
     } else {
@@ -2237,6 +2247,13 @@ void func_8002F7A0(PlayState* play, Actor* actor, f32 arg2, s16 arg3, f32 arg4) 
 }
 
 void Player_PlaySfx(Actor* actor, u16 sfxId) {
+    // Suppress OOT Link SFX when MM transformation form is active.
+    // The MM form plays its own SFX via MmSfx_PlayAtPos.
+    extern u8 TransformMasks_IsTransformed(void);
+    if (actor->id == ACTOR_PLAYER && TransformMasks_IsTransformed()) {
+        return;
+    }
+
     if (actor->id != ACTOR_PLAYER || sfxId < NA_SE_VO_LI_SWORD_N || sfxId > NA_SE_VO_LI_ELECTRIC_SHOCK_LV_KID) {
         Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultReverb);

@@ -23,7 +23,7 @@
 #define GORON_ANIM(name, frames) \
     { "misc/link_animetion/" name "_Data", frames, MM_LIMB_COUNT_GORON }
 
-// Helper macro for Zora animations (23 limbs)
+// Helper macro for Zora animations (22 limbs)
 #define ZORA_ANIM(name, frames) \
     { "misc/link_animetion/" name "_Data", frames, MM_LIMB_COUNT_ZORA }
 
@@ -538,9 +538,167 @@ const MmAnimDef gMmAnims[MM_ANIM_MAX] = {
     [MM_ANIM_LINK_DEMO_BARU_OP2] = LINK_ANIM("gPlayerAnim_link_demo_baru_op2", 30),
     [MM_ANIM_LINK_DEMO_BARU_OP3] = LINK_ANIM("gPlayerAnim_link_demo_baru_op3", 30),
 
-    // Remaining animations use placeholder definitions
-    // This file would be completed by parsing the full MM decomp
+    // ========================================
+    // Goron Animations (pg_)
+    // Frame counts are hints - actual count computed from file size in loader
+    // ========================================
 
-    // Initialize remaining entries with placeholder to avoid undefined behavior
+    // Goron idle (form-specific)
+    [MM_ANIM_PG_WAIT] = GORON_ANIM("gPlayerAnim_pg_wait", 79),
+
+    // Goron punch combo (from z_player.c line 3569-3574)
+    [MM_ANIM_PG_PUNCHA] = GORON_ANIM("gPlayerAnim_pg_punchA", 12),
+    [MM_ANIM_PG_PUNCHB] = GORON_ANIM("gPlayerAnim_pg_punchB", 19),
+    [MM_ANIM_PG_PUNCHC] = GORON_ANIM("gPlayerAnim_pg_punchC", 20),
+
+    // Goron punch end (recovery from standing)
+    [MM_ANIM_PG_PUNCHAEND] = GORON_ANIM("gPlayerAnim_pg_punchAend", 13),
+    [MM_ANIM_PG_PUNCHBEND] = GORON_ANIM("gPlayerAnim_pg_punchBend", 10),
+    [MM_ANIM_PG_PUNCHCEND] = GORON_ANIM("gPlayerAnim_pg_punchCend", 10),
+
+    // Goron punch end running (recovery while moving)
+    [MM_ANIM_PG_PUNCHAENDR] = GORON_ANIM("gPlayerAnim_pg_punchAendR", 13),
+    [MM_ANIM_PG_PUNCHBENDR] = GORON_ANIM("gPlayerAnim_pg_punchBendR", 10),
+    [MM_ANIM_PG_PUNCHCENDR] = GORON_ANIM("gPlayerAnim_pg_punchCendR", 10),
+
+    // Goron curl -> ball (from z_player.c line 8469, 19834)
+    [MM_ANIM_PG_MARU_CHANGE] = GORON_ANIM("gPlayerAnim_pg_maru_change", 11),
+
+    // Goron mask removal
+    [MM_ANIM_PG_MASKOFFSTART] = GORON_ANIM("gPlayerAnim_pg_maskoffstart", 15),
+
+    // Goron climb animations
+    [MM_ANIM_PG_CLIMB_STARTA] = GORON_ANIM("gPlayerAnim_pg_climb_startA", 20),
+    [MM_ANIM_PG_CLIMB_STARTB] = GORON_ANIM("gPlayerAnim_pg_climb_startB", 20),
+    [MM_ANIM_PG_CLIMB_ENDAL] = GORON_ANIM("gPlayerAnim_pg_climb_endAL", 20),
+    [MM_ANIM_PG_CLIMB_ENDAR] = GORON_ANIM("gPlayerAnim_pg_climb_endAR", 20),
+    [MM_ANIM_PG_CLIMB_ENDBL] = GORON_ANIM("gPlayerAnim_pg_climb_endBL", 20),
+    [MM_ANIM_PG_CLIMB_ENDBR] = GORON_ANIM("gPlayerAnim_pg_climb_endBR", 20),
+    [MM_ANIM_PG_CLIMB_UPL] = GORON_ANIM("gPlayerAnim_pg_climb_upL", 10),
+    [MM_ANIM_PG_CLIMB_UPR] = GORON_ANIM("gPlayerAnim_pg_climb_upR", 10),
+
+    // Goron door animations
+    [MM_ANIM_PG_DOORA_OPEN] = GORON_ANIM("gPlayerAnim_pg_doorA_open", 30),
+    [MM_ANIM_PG_DOORB_OPEN] = GORON_ANIM("gPlayerAnim_pg_doorB_open", 30),
+
+    // Goron treasure box
+    [MM_ANIM_PG_TBOX_OPEN] = GORON_ANIM("gPlayerAnim_pg_Tbox_open", 30),
+
+    // Goron instrument (drums)
+    [MM_ANIM_PG_GAKKISTART] = GORON_ANIM("gPlayerAnim_pg_gakkistart", 20),
+    [MM_ANIM_PG_GAKKIWAIT] = GORON_ANIM("gPlayerAnim_pg_gakkiwait", 4),
+    [MM_ANIM_PG_GAKKIPLAY] = GORON_ANIM("gPlayerAnim_pg_gakkiplay", 4),
+    [MM_ANIM_PG_GAKKIPLAYA] = GORON_ANIM("gPlayerAnim_pg_gakkiplayA", 10),
+    [MM_ANIM_PG_GAKKIPLAYD] = GORON_ANIM("gPlayerAnim_pg_gakkiplayD", 10),
+    [MM_ANIM_PG_GAKKIPLAYL] = GORON_ANIM("gPlayerAnim_pg_gakkiplayL", 10),
+    [MM_ANIM_PG_GAKKIPLAYR] = GORON_ANIM("gPlayerAnim_pg_gakkiplayR", 10),
+    [MM_ANIM_PG_GAKKIPLAYU] = GORON_ANIM("gPlayerAnim_pg_gakkiplayU", 10),
+
+    // ========================================
+    // Zora Animations (pz_)
+    // Frame counts from MM decomp gameplay_keep.c
+    // ========================================
+
+    // Zora idle
+    [MM_ANIM_PZ_WAIT] = ZORA_ANIM("gPlayerAnim_pz_wait", 59),
+
+    // Zora punch combo (from z_player.c sMeleeAttackAnimInfo)
+    [MM_ANIM_PZ_ATTACKA] = ZORA_ANIM("gPlayerAnim_pz_attackA", 7),
+    [MM_ANIM_PZ_ATTACKB] = ZORA_ANIM("gPlayerAnim_pz_attackB", 10),
+    [MM_ANIM_PZ_ATTACKC] = ZORA_ANIM("gPlayerAnim_pz_attackC", 20),
+
+    // Zora punch end (recovery from standing)
+    [MM_ANIM_PZ_ATTACKAEND] = ZORA_ANIM("gPlayerAnim_pz_attackAend", 9),
+    [MM_ANIM_PZ_ATTACKBEND] = ZORA_ANIM("gPlayerAnim_pz_attackBend", 12),
+    [MM_ANIM_PZ_ATTACKCEND] = ZORA_ANIM("gPlayerAnim_pz_attackCend", 10),
+
+    // Zora punch end running (recovery while moving)
+    [MM_ANIM_PZ_ATTACKAENDR] = ZORA_ANIM("gPlayerAnim_pz_attackAendR", 6),
+    [MM_ANIM_PZ_ATTACKBENDR] = ZORA_ANIM("gPlayerAnim_pz_attackBendR", 6),
+    [MM_ANIM_PZ_ATTACKCENDR] = ZORA_ANIM("gPlayerAnim_pz_attackCendR", 3),
+
+    // Zora weapon equip
+    [MM_ANIM_PZ_BLADEON] = ZORA_ANIM("gPlayerAnim_pz_bladeon", 9),
+
+    // Zora boomerang (cutter)
+    [MM_ANIM_PZ_CUTTERATTACK] = ZORA_ANIM("gPlayerAnim_pz_cutterattack", 9),
+    [MM_ANIM_PZ_CUTTERCATCH] = ZORA_ANIM("gPlayerAnim_pz_cuttercatch", 6),
+    [MM_ANIM_PZ_CUTTERWAITA] = ZORA_ANIM("gPlayerAnim_pz_cutterwaitA", 9),
+    [MM_ANIM_PZ_CUTTERWAITB] = ZORA_ANIM("gPlayerAnim_pz_cutterwaitB", 9),
+    [MM_ANIM_PZ_CUTTERWAITC] = ZORA_ANIM("gPlayerAnim_pz_cutterwaitC", 9),
+    [MM_ANIM_PZ_CUTTERWAITANIM] = ZORA_ANIM("gPlayerAnim_pz_cutterwaitanim", 29),
+
+    // Zora jump attack
+    [MM_ANIM_PZ_JUMPAT] = ZORA_ANIM("gPlayerAnim_pz_jumpAT", 13),
+    [MM_ANIM_PZ_JUMPATEND] = ZORA_ANIM("gPlayerAnim_pz_jumpATend", 13),
+
+    // Zora swimming
+    [MM_ANIM_PZ_FISHSWIM] = ZORA_ANIM("gPlayerAnim_pz_fishswim", 10),
+    [MM_ANIM_PZ_WATERROLL] = ZORA_ANIM("gPlayerAnim_pz_waterroll", 18),
+    [MM_ANIM_PZ_SWIMTOWAIT] = ZORA_ANIM("gPlayerAnim_pz_swimtowait", 10),
+
+    // Zora climb animations
+    [MM_ANIM_PZ_CLIMB_STARTA] = ZORA_ANIM("gPlayerAnim_pz_climb_startA", 30),
+    [MM_ANIM_PZ_CLIMB_STARTB] = ZORA_ANIM("gPlayerAnim_pz_climb_startB", 56),
+    [MM_ANIM_PZ_CLIMB_ENDAL] = ZORA_ANIM("gPlayerAnim_pz_climb_endAL", 27),
+    [MM_ANIM_PZ_CLIMB_ENDAR] = ZORA_ANIM("gPlayerAnim_pz_climb_endAR", 27),
+    [MM_ANIM_PZ_CLIMB_ENDBL] = ZORA_ANIM("gPlayerAnim_pz_climb_endBL", 56),
+    [MM_ANIM_PZ_CLIMB_ENDBR] = ZORA_ANIM("gPlayerAnim_pz_climb_endBR", 56),
+    [MM_ANIM_PZ_CLIMB_UPL] = ZORA_ANIM("gPlayerAnim_pz_climb_upL", 21),
+    [MM_ANIM_PZ_CLIMB_UPR] = ZORA_ANIM("gPlayerAnim_pz_climb_upR", 21),
+
+    // Zora door animations
+    [MM_ANIM_PZ_DOORA_OPEN] = ZORA_ANIM("gPlayerAnim_pz_doorA_open", 100),
+    [MM_ANIM_PZ_DOORB_OPEN] = ZORA_ANIM("gPlayerAnim_pz_doorB_open", 100),
+
+    // Zora treasure box
+    [MM_ANIM_PZ_TBOX_OPEN] = ZORA_ANIM("gPlayerAnim_pz_Tbox_open", 133),
+
+    // Zora mask removal
+    [MM_ANIM_PZ_MASKOFFSTART] = ZORA_ANIM("gPlayerAnim_pz_maskoffstart", 15),
+
+    // Zora instrument (guitar)
+    [MM_ANIM_PZ_GAKKISTART] = ZORA_ANIM("gPlayerAnim_pz_gakkistart", 15),
+    [MM_ANIM_PZ_GAKKIPLAY] = ZORA_ANIM("gPlayerAnim_pz_gakkiplay", 7),
+
+    // ========================================
+    // Deku (pn_) animations - 22 limbs (same as human Link)
+    // Frame counts from MM decomp link_animetion.xml
+    // ========================================
+
+    // Deku combat
+    [MM_ANIM_PN_ATTACK] = DEKU_ANIM("gPlayerAnim_pn_attack", 2),
+    [MM_ANIM_PN_GURD] = DEKU_ANIM("gPlayerAnim_pn_gurd", 4),
+    [MM_ANIM_PN_TAMAHAKI] = DEKU_ANIM("gPlayerAnim_pn_tamahaki", 8),
+    [MM_ANIM_PN_TAMAHAKIDF] = DEKU_ANIM("gPlayerAnim_pn_tamahakidf", 2),
+
+    // Deku get item
+    [MM_ANIM_PN_GETA] = DEKU_ANIM("gPlayerAnim_pn_getA", 22),
+    [MM_ANIM_PN_GETB] = DEKU_ANIM("gPlayerAnim_pn_getB", 22),
+
+    // Deku flight/flower
+    [MM_ANIM_PN_BATABATA] = DEKU_ANIM("gPlayerAnim_pn_batabata", 14),
+    [MM_ANIM_PN_KAKKU] = DEKU_ANIM("gPlayerAnim_pn_kakku", 12),
+    [MM_ANIM_PN_KAKKUFINISH] = DEKU_ANIM("gPlayerAnim_pn_kakkufinish", 15),
+    [MM_ANIM_PN_RAKKAFINISH] = DEKU_ANIM("gPlayerAnim_pn_rakkafinish", 11),
+
+    // Deku drink/potion
+    [MM_ANIM_PN_DRINK] = DEKU_ANIM("gPlayerAnim_pn_drink", 15),
+    [MM_ANIM_PN_DRINKSTART] = DEKU_ANIM("gPlayerAnim_pn_drinkstart", 29),
+    [MM_ANIM_PN_DRINKEND] = DEKU_ANIM("gPlayerAnim_pn_drinkend", 20),
+
+    // Deku doors/chests
+    [MM_ANIM_PN_DOORA_OPEN] = DEKU_ANIM("gPlayerAnim_pn_doorA_open", 100),
+    [MM_ANIM_PN_DOORB_OPEN] = DEKU_ANIM("gPlayerAnim_pn_doorB_open", 100),
+    [MM_ANIM_PN_TBOX_OPEN] = DEKU_ANIM("gPlayerAnim_pn_Tbox_open", 133),
+
+    // Deku mask removal
+    [MM_ANIM_PN_MASKOFFSTART] = DEKU_ANIM("gPlayerAnim_pn_maskoffstart", 15),
+
+    // Deku instrument (pipes)
+    [MM_ANIM_PN_GAKKISTART] = DEKU_ANIM("gPlayerAnim_pn_gakkistart", 12),
+    [MM_ANIM_PN_GAKKIPLAY] = DEKU_ANIM("gPlayerAnim_pn_gakkiplay", 8),
+
+    // Remaining animations use placeholder definitions
     // Each entry that isn't explicitly defined will have NULL path and 0 frames
 };

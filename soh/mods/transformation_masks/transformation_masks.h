@@ -159,9 +159,37 @@ void MmPlayer_StartTransformation(PlayState* play, MmPlayerTransformation target
 // No-op action function (C linkage, replaces OOT actionFunc while transformed)
 void MmForm_OotNoopAction(Player* thisx, PlayState* play);
 
-// Stub function declarations
+// =============================================================================
+// Pending Damage System
+//
+// OOT's func_808382DC in Player_UpdateCommon handles damage (AC_HIT) BEFORE
+// TransformMasks_Update runs. Then Collider_ResetCylinderAC clears the AC_HIT
+// flag. To let the MM form system handle its own damage:
+//   1. func_808382DC saves hit info here and skips OOT processing when transformed
+//   2. MmForm_CheckDamage reads this instead of checking AC_HIT directly
+// =============================================================================
+typedef struct {
+    u8 hasPending;    // 1 if damage detected this frame, 0 otherwise
+    s32 damage;       // actor.colChkInfo.damage
+    u8 acHitEffect;   // actor.colChkInfo.acHitEffect
+    Actor* attacker;  // cylinder.base.ac (may be NULL)
+} MmFormPendingDamage;
+
+extern MmFormPendingDamage gMmFormPendingDamage;
+
+// Core state queries
 u8 TransformMasks_IsEnabled(void);
 u8 TransformMasks_IsTransformed(void);
+u8 TransformMasks_HasSkeleton(void);
+
+// FD skin mode: returns true when FD is active (OOT handles gameplay, only DLs swapped)
+u8 TransformMasks_IsFDSkinMode(void);
+
+// Returns true if ANY form is active (including FD skin mode)
+u8 TransformMasks_IsTransformedAny(void);
+
+// Item restriction: returns true if item is allowed for current form
+u8 TransformMasks_IsItemAllowed(s32 item);
 
 // Replacement check functions (returns 1 if CVar enabled AND mm.o2r available)
 u8 TransformMasks_DekuReplacesSkull(void);    // Skull Mask -> Deku Mask
@@ -176,6 +204,16 @@ void TransformMasks_Draw(PlayState* play, Player* player);
 
 // Reset transformation state (call on scene transition, death, etc.)
 void TransformMasks_Reset(void);
+
+// Water entry: called when player enters deep water (swim depth).
+// Returns 1 if swimming was blocked (Goron/Deku can't swim), 0 if allowed (Zora/FD).
+u8 TransformMasks_OnWaterSwimAttempt(PlayState* play, Player* player);
+
+// Camera height for current form (from MM Player_GetHeight). Returns 0 if not transformed.
+f32 TransformMasks_GetFormHeight(void);
+
+// Returns 1 if current form blocks ledge grab (only Goron). Returns 0 otherwise.
+u8 TransformMasks_BlocksLedgeGrab(void);
 
 // Asset replacement getters (returns MM asset if replacement active, else NULL)
 Gfx* TransformMasks_GetMaskDL(s32 playerMask);   // For worn mask DL

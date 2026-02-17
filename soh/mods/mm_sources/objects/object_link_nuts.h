@@ -15,6 +15,13 @@
 #define gLinkDekuSkel "__OTR__objects/object_link_nuts/gLinkDekuSkel"
 
 // ============================================================================
+// Shield DL (drawn at TORSO during pn_gurd animation with scaling)
+// From 2Ship z_player_lib.c:4005 — object_link_nuts_DL_00A348
+// ============================================================================
+
+#define gLinkDekuShieldDL "__OTR__objects/object_link_nuts/object_link_nuts_DL_00A348"
+
+// ============================================================================
 // Flower DLs
 // ============================================================================
 

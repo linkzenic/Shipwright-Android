@@ -207,13 +207,15 @@ SoundFont* MmSfx_GetFontForSfx(u16 sfxId);
  * Play MM sound effect at position
  * @param sfxId MM SFX ID
  * @param pos World position (NULL for 2D)
+ * @return 1 if played successfully, 0 if no valid sample (caller should use OOT fallback)
  */
-void MmSfx_PlayAtPos(u16 sfxId, Vec3f* pos);
+s32 MmSfx_PlayAtPos(u16 sfxId, Vec3f* pos);
 
 /**
  * Play MM sound effect with full control
+ * @return 1 if played successfully, 0 if no valid sample
  */
-void MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd);
+s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd);
 
 /**
  * Stop a MM sound effect

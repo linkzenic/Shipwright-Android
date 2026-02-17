@@ -83,6 +83,13 @@ uint8_t ExtInv_GetItemAgeReq(uint16_t itemId);
 uint8_t ExtInv_GetSlotAgeReq(uint8_t slot);
 
 /**
+ * @param row - Equipment row (0=swords, 1=shields, 2=tunics, 3=boots)
+ * @param col - Equipment column within row
+ * @return Age requirement, accounting for transformation restrictions
+ */
+uint8_t ExtInv_GetEquipAgeReq(uint8_t row, uint8_t col);
+
+/**
  * @param itemId - Custom item ID
  * @param language - Language index for localization
  * @return Pointer to item name texture, or NULL if not found
@@ -179,6 +186,35 @@ static inline void ExtInv_VerifyConsistency(void) {
     const int ageReqSize = sizeof(gPage2ItemAgeReqs) / sizeof(gPage2ItemAgeReqs[0]);
     if (ageReqSize != expectedSize) {}
 }
+
+// =============================================================================
+// Transformation Mask Item Restriction
+//
+// When a transformation mask is active, items not in the form's allow list
+// are restricted (grayed out in KaleidoScope, can't be equipped/used).
+// This integrates with CHECK_AGE_REQ_ITEM/SLOT macros so all existing
+// usage sites automatically get the restriction without per-site changes.
+// =============================================================================
+
+extern u8 TransformMasks_IsEnabled(void);
+extern u8 TransformMasks_IsTransformedAny(void);
+extern u8 TransformMasks_IsFDSkinMode(void);
+extern u8 TransformMasks_IsItemAllowed(s32 item);
+
+// Returns true if item is restricted by active transformation mask
+static inline bool ExtInv_IsTransformRestricted(int itemId) {
+    if (itemId == ITEM_NONE) return false; // Empty slot = no restriction
+    if (!TransformMasks_IsEnabled() || !TransformMasks_IsTransformedAny()) return false;
+    return !TransformMasks_IsItemAllowed(itemId);
+}
+
+// Returns true if the item in a given slot is restricted by active transformation mask
+static inline bool ExtInv_IsSlotTransformRestricted(uint8_t slot) {
+    extern SaveContext gSaveContext;
+    uint8_t itemId = gSaveContext.inventory.items[slot];
+    return ExtInv_IsTransformRestricted(itemId);
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,10 @@
 
 #define gLinkGoronSkel "__OTR__objects/object_link_goron/gLinkGoronSkel"
 #define gLinkGoronShieldingSkel "__OTR__objects/object_link_goron/gLinkGoronShieldingSkel"
+#define gLinkGoronShieldingAnim "__OTR__objects/object_link_goron/gLinkGoronShieldingAnim"
+
+// Shielding skeleton has 4 limbs (from 2Ship: Root, Body, Head, ArmsAndLegs)
+#define LINK_GORON_SHIELDING_LIMB_MAX 5
 
 // ============================================================================
 // Ball/Curled Form DLs
@@ -22,6 +26,12 @@
 
 #define gLinkGoronCurledDL "__OTR__objects/object_link_goron/gLinkGoronCurledDL"
 #define gLinkGoronRollingSpikesAndEffectDL "__OTR__objects/object_link_goron/gLinkGoronRollingSpikesAndEffectDL"
+
+// Individual sub-DLs of gLinkGoronRollingSpikesAndEffectDL
+// (for drawing spike geometry on OPA and energy effects on XLU separately)
+#define object_link_goron_DL_00C540 "__OTR__objects/object_link_goron/object_link_goron_DL_00C540"  // lg_spike_model (physical spikes)
+#define object_link_goron_DL_0127B0 "__OTR__objects/object_link_goron/object_link_goron_DL_0127B0"  // grt_01_model (energy effect 1)
+#define object_link_goron_DL_0134D0 "__OTR__objects/object_link_goron/object_link_goron_DL_0134D0"  // grt_02_model (energy effect 2)
 
 // ============================================================================
 // Hand DLs
