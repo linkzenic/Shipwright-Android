@@ -312,7 +312,7 @@ void RegionTable_Init_FireTemple() {
 
     areaTable[RR_FIRE_TEMPLE_FIRE_MAZE_PLATFORMS] = Region("Fire Temple Fire Maze Platforms", SCENE_FIRE_TEMPLE, {
         //Events
-        EVENT_ACCESS(LOGIC_FIRE_HIT_PLATFORM,    logic->CanUse(RG_MEGATON_HAMMER)),
+        EVENT_ACCESS(LOGIC_FIRE_HIT_PLATFORM,    logic->CanUse(RG_MEGATON_HAMMER) || logic->CanUse(RG_DEMISE_DESTRUCTION)),
     }, {}, {
         //Exits
         ENTRANCE(RR_FIRE_TEMPLE_FIRE_MAZE_MAIN,      true),
@@ -905,7 +905,7 @@ void RegionTable_Init_FireTemple() {
 
     areaTable[RR_FIRE_TEMPLE_MQ_FIRE_MAZE_PLATFORMS] = Region("Fire Temple MQ Fire Maze Platforms", SCENE_FIRE_TEMPLE, {
         //Events
-        EVENT_ACCESS(LOGIC_FIRE_HIT_PLATFORM, logic->CanUse(RG_MEGATON_HAMMER)),
+        EVENT_ACCESS(LOGIC_FIRE_HIT_PLATFORM, logic->CanUse(RG_MEGATON_HAMMER) || logic->CanUse(RG_DEMISE_DESTRUCTION)),
     }, {}, {
         //Exits
         ENTRANCE(RR_FIRE_TEMPLE_MQ_FIRE_MAZE_MAIN,          true),
