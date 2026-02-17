@@ -543,18 +543,8 @@ void SohMenu::AddMenuSettings() {
                                                 "Download 2Ship, extract your MM ROM, then copy mm.o2r here.";
             }
         })
-        .PostFunc([](WidgetInfo& info) {
-            // When Transformation Masks is enabled, auto-enable all mask replacements
-            if (CVarGetInteger("gMods.TransformMasks.Enabled", 0)) {
-                CVarSetInteger("gMods.TransformMasks.DekuReplacesSkull", 1);
-                CVarSetInteger("gMods.TransformMasks.StoneReplacesSpooky", 1);
-                CVarSetInteger("gMods.TransformMasks.FierceReplacesGerudo", 1);
-                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
-            }
-        })
         .Options(CheckboxOptions().Tooltip("Allows you to transform with certain masks like in Majora's Mask.\n"
-                                           "Goron, Zora, and Skull Masks become transformation masks.\n"
-                                           "Also enables Deku/Stone/Fierce Deity mask visual replacements.\n\n"
+                                           "Equip transformation masks from the MM Masks inventory page.\n\n"
                                            "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 
     // Option 3: Instant Transform - requires Extra Mask Effects AND mm.o2r
@@ -576,62 +566,89 @@ void SohMenu::AddMenuSettings() {
                                            "Transform instantly when equipping a transformation mask.\n\n"
                                            "REQUIRES: Extra Mask Effects + mm.o2r"));
 
-    AddWidget(path, "MM Mask Replacements (Visual Only)", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "MM Masks Inventory", WIDGET_SEPARATOR_TEXT);
 
-    // Option 4: Deku Replaces Skull - requires ONLY mm.o2r (independent)
-    AddWidget(path, "Deku Mask replaces Skull Mask", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.TransformMasks.DekuReplacesSkull")
+    // Include MM Masks Inventory - parent toggle for 3rd inventory page
+    AddWidget(path, "Include MM Masks Inventory", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.MmMasks.InventoryEnabled")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
             if (!MmAssets_IsAvailable()) {
-                CVarSetInteger("gMods.TransformMasks.DekuReplacesSkull", 0);
+                CVarSetInteger("gMods.MmMasks.InventoryEnabled", 0);
                 info.options->disabled = true;
-                info.options->disabledTooltip = "[!] REQUIRES mm.o2r\n\n"
-                                                "Download 2Ship2Harkinian, extract your MM ROM,\n"
-                                                "then copy mm.o2r to the Ship folder.";
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
             }
         })
-        .Options(CheckboxOptions().Tooltip("Replaces Skull Mask icon, name and model with Deku Mask from MM.\n\n"
-                                           "VISUAL ONLY - No gameplay effect yet.\n"
-                                           "Future: Will enable Deku form transformation.\n\n"
-                                           "[!] REQUIRES: mm.o2r from 2Ship2Harkinian"));
+        .PostFunc([](WidgetInfo& info) {
+            // Auto-enable transformation masks when MM masks inventory is on
+            if (CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+                CVarSetInteger("gMods.TransformMasks.Enabled", 1);
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            }
+        })
+        .Options(CheckboxOptions().Tooltip(
+            "Adds a 3rd inventory page with all 24 MM masks.\n"
+            "Transformation masks (Deku, Goron, Zora, Fierce Deity) trigger transformations.\n"
+            "Removes OOT Goron/Zora masks from randomizer pool.\n\n"
+            "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 
-    // Option 5: Stone Replaces Spooky - requires ONLY mm.o2r (independent)
-    AddWidget(path, "Stone Mask replaces Spooky Mask", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.TransformMasks.StoneReplacesSpooky")
+    // Add All MM Masks to Rando Pool
+    AddWidget(path, "Add All MM Masks to Rando", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.MmMasks.RandoAllMasks")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
-            if (!MmAssets_IsAvailable()) {
-                CVarSetInteger("gMods.TransformMasks.StoneReplacesSpooky", 0);
+            if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+                CVarSetInteger("gMods.MmMasks.RandoAllMasks", 0);
                 info.options->disabled = true;
-                info.options->disabledTooltip = "[!] REQUIRES mm.o2r\n\n"
-                                                "Download 2Ship2Harkinian, extract your MM ROM,\n"
-                                                "then copy mm.o2r to the Ship folder.";
+                info.options->disabledTooltip = "Enable 'Include MM Masks Inventory' first.";
             }
         })
-        .Options(CheckboxOptions().Tooltip("Replaces Spooky Mask icon, name and model with Stone Mask from MM.\n\n"
-                                           "VISUAL ONLY - No gameplay effect yet.\n"
-                                           "Future: Enemies won't detect you while wearing it.\n\n"
-                                           "[!] REQUIRES: mm.o2r from 2Ship2Harkinian"));
+        .PostFunc([](WidgetInfo& info) {
+            if (CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0)) {
+                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Adds all 24 MM masks to the randomizer item pool.\n"
+                                           "Masks can be found at random locations like custom items.\n"
+                                           "Removes OOT Goron/Zora masks from pool.\n\n"
+                                           "REQUIRES: 'Include MM Masks Inventory' enabled"));
 
-    // Option 6: Fierce Deity Replaces Gerudo - requires ONLY mm.o2r (independent)
-    AddWidget(path, "Fierce Deity Mask replaces Gerudo Mask", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.TransformMasks.FierceReplacesGerudo")
+    // Add Just Transformation Masks to Rando Pool
+    AddWidget(path, "Add Transformation Masks to Rando", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.MmMasks.RandoTransformOnly")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
-            if (!MmAssets_IsAvailable()) {
-                CVarSetInteger("gMods.TransformMasks.FierceReplacesGerudo", 0);
+            if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
                 info.options->disabled = true;
-                info.options->disabledTooltip = "[!] REQUIRES mm.o2r\n\n"
-                                                "Download 2Ship2Harkinian, extract your MM ROM,\n"
-                                                "then copy mm.o2r to the Ship folder.";
+                info.options->disabledTooltip = "Enable 'Include MM Masks Inventory' first.";
+            } else if (CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0)) {
+                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "'Add All MM Masks to Rando' already includes transformation masks.";
             }
         })
-        .Options(
-            CheckboxOptions().Tooltip("Replaces Gerudo Mask icon, name and model with Fierce Deity Mask from MM.\n\n"
-                                      "VISUAL ONLY - No gameplay effect yet.\n"
-                                      "Future: Will enable Fierce Deity form transformation.\n\n"
-                                      "[!] REQUIRES: mm.o2r from 2Ship2Harkinian"));
+        .Options(CheckboxOptions().Tooltip("Adds only the 4 transformation masks (Deku, Goron, Zora, Fierce Deity)\n"
+                                           "to the randomizer item pool.\n"
+                                           "Removes OOT Goron/Zora masks from pool.\n\n"
+                                           "REQUIRES: 'Include MM Masks Inventory' enabled"));
+
+    AddWidget(path, "Page Navigation", WIDGET_SEPARATOR_TEXT);
+
+    static std::map<int32_t, const char*> pageSwitchMap = {
+        { 0, "L Button" },
+        { 1, "A Button" },
+        { 2, "Both (L + A)" },
+    };
+    AddWidget(path, "Page Switch Button", WIDGET_CVAR_COMBOBOX)
+        .CVar("gMods.PageSwitch.Button")
+        .RaceDisable(false)
+        .Options(ComboboxOptions()
+                     .ComboMap(pageSwitchMap)
+                     .DefaultIndex(2)
+                     .Tooltip("Choose which button switches inventory pages in the pause menu.\n"
+                              "Applies to all inventory pages (vanilla, custom items, MM masks)."));
 
     AddWidget(path, "Developer Tests", WIDGET_SEPARATOR_TEXT);
 

@@ -123,6 +123,56 @@ int8_t ExtPlayer_GetItemAction(int32_t item) {
             return PLAYER_IA_PENDING_2;
         case ITEM_PENDING_3:
             return PLAYER_IA_PENDING_3;
+
+        // MM Mask items (0xB7-0xCE)
+        case ITEM_MM_MASK_POSTMAN:
+            return PLAYER_IA_MM_MASK_POSTMAN;
+        case ITEM_MM_MASK_ALL_NIGHT:
+            return PLAYER_IA_MM_MASK_ALL_NIGHT;
+        case ITEM_MM_MASK_BLAST:
+            return PLAYER_IA_MM_MASK_BLAST;
+        case ITEM_MM_MASK_STONE:
+            return PLAYER_IA_MM_MASK_STONE;
+        case ITEM_MM_MASK_GREAT_FAIRY:
+            return PLAYER_IA_MM_MASK_GREAT_FAIRY;
+        case ITEM_MM_MASK_DEKU:
+            return PLAYER_IA_MM_MASK_DEKU;
+        case ITEM_MM_MASK_KEATON:
+            return PLAYER_IA_MM_MASK_KEATON;
+        case ITEM_MM_MASK_BREMEN:
+            return PLAYER_IA_MM_MASK_BREMEN;
+        case ITEM_MM_MASK_BUNNY:
+            return PLAYER_IA_MM_MASK_BUNNY;
+        case ITEM_MM_MASK_DON_GERO:
+            return PLAYER_IA_MM_MASK_DON_GERO;
+        case ITEM_MM_MASK_SCENTS:
+            return PLAYER_IA_MM_MASK_SCENTS;
+        case ITEM_MM_MASK_GORON:
+            return PLAYER_IA_MM_MASK_GORON;
+        case ITEM_MM_MASK_ROMANI:
+            return PLAYER_IA_MM_MASK_ROMANI;
+        case ITEM_MM_MASK_CIRCUS_LEADER:
+            return PLAYER_IA_MM_MASK_CIRCUS_LEADER;
+        case ITEM_MM_MASK_KAFEI:
+            return PLAYER_IA_MM_MASK_KAFEI;
+        case ITEM_MM_MASK_COUPLE:
+            return PLAYER_IA_MM_MASK_COUPLE;
+        case ITEM_MM_MASK_TRUTH:
+            return PLAYER_IA_MM_MASK_TRUTH;
+        case ITEM_MM_MASK_ZORA:
+            return PLAYER_IA_MM_MASK_ZORA;
+        case ITEM_MM_MASK_KAMARO:
+            return PLAYER_IA_MM_MASK_KAMARO;
+        case ITEM_MM_MASK_GIBDO:
+            return PLAYER_IA_MM_MASK_GIBDO;
+        case ITEM_MM_MASK_GARO:
+            return PLAYER_IA_MM_MASK_GARO;
+        case ITEM_MM_MASK_CAPTAIN:
+            return PLAYER_IA_MM_MASK_CAPTAIN;
+        case ITEM_MM_MASK_GIANT:
+            return PLAYER_IA_MM_MASK_GIANT;
+        case ITEM_MM_MASK_FIERCE_DEITY:
+            return PLAYER_IA_MM_MASK_FIERCE_DEITY;
         default:
             break;
     }
@@ -196,6 +246,32 @@ uint8_t ExtPlayer_GetActionModelGroup(int32_t itemAction) {
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_PENDING_3:
             return PLAYER_MODELGROUP_DEFAULT;
+        // MM Mask IAs (all no-op, default model)
+        case PLAYER_IA_MM_MASK_POSTMAN:
+        case PLAYER_IA_MM_MASK_ALL_NIGHT:
+        case PLAYER_IA_MM_MASK_BLAST:
+        case PLAYER_IA_MM_MASK_STONE:
+        case PLAYER_IA_MM_MASK_GREAT_FAIRY:
+        case PLAYER_IA_MM_MASK_DEKU:
+        case PLAYER_IA_MM_MASK_KEATON:
+        case PLAYER_IA_MM_MASK_BREMEN:
+        case PLAYER_IA_MM_MASK_BUNNY:
+        case PLAYER_IA_MM_MASK_DON_GERO:
+        case PLAYER_IA_MM_MASK_SCENTS:
+        case PLAYER_IA_MM_MASK_GORON:
+        case PLAYER_IA_MM_MASK_ROMANI:
+        case PLAYER_IA_MM_MASK_CIRCUS_LEADER:
+        case PLAYER_IA_MM_MASK_KAFEI:
+        case PLAYER_IA_MM_MASK_COUPLE:
+        case PLAYER_IA_MM_MASK_TRUTH:
+        case PLAYER_IA_MM_MASK_ZORA:
+        case PLAYER_IA_MM_MASK_KAMARO:
+        case PLAYER_IA_MM_MASK_GIBDO:
+        case PLAYER_IA_MM_MASK_GARO:
+        case PLAYER_IA_MM_MASK_CAPTAIN:
+        case PLAYER_IA_MM_MASK_GIANT:
+        case PLAYER_IA_MM_MASK_FIERCE_DEITY:
+            return PLAYER_MODELGROUP_DEFAULT;
         default:
             break;
     }
@@ -268,6 +344,32 @@ ItemActionUpdateFunc ExtPlayer_GetItemActionUpdateFunc(int32_t itemAction) {
             return func_8083485C;
         case PLAYER_IA_PENDING_3:
             return func_8083485C;
+        // MM Mask IAs (all no-op)
+        case PLAYER_IA_MM_MASK_POSTMAN:
+        case PLAYER_IA_MM_MASK_ALL_NIGHT:
+        case PLAYER_IA_MM_MASK_BLAST:
+        case PLAYER_IA_MM_MASK_STONE:
+        case PLAYER_IA_MM_MASK_GREAT_FAIRY:
+        case PLAYER_IA_MM_MASK_DEKU:
+        case PLAYER_IA_MM_MASK_KEATON:
+        case PLAYER_IA_MM_MASK_BREMEN:
+        case PLAYER_IA_MM_MASK_BUNNY:
+        case PLAYER_IA_MM_MASK_DON_GERO:
+        case PLAYER_IA_MM_MASK_SCENTS:
+        case PLAYER_IA_MM_MASK_GORON:
+        case PLAYER_IA_MM_MASK_ROMANI:
+        case PLAYER_IA_MM_MASK_CIRCUS_LEADER:
+        case PLAYER_IA_MM_MASK_KAFEI:
+        case PLAYER_IA_MM_MASK_COUPLE:
+        case PLAYER_IA_MM_MASK_TRUTH:
+        case PLAYER_IA_MM_MASK_ZORA:
+        case PLAYER_IA_MM_MASK_KAMARO:
+        case PLAYER_IA_MM_MASK_GIBDO:
+        case PLAYER_IA_MM_MASK_GARO:
+        case PLAYER_IA_MM_MASK_CAPTAIN:
+        case PLAYER_IA_MM_MASK_GIANT:
+        case PLAYER_IA_MM_MASK_FIERCE_DEITY:
+            return func_8083485C;
         default:
             break;
     }
@@ -339,6 +441,32 @@ ItemActionInitFunc ExtPlayer_GetItemActionInitFunc(int32_t itemAction) {
             return Player_InitDefaultIA;
         case PLAYER_IA_PENDING_3:
             return Player_InitPending3IA;
+        // MM Mask IAs (all default init)
+        case PLAYER_IA_MM_MASK_POSTMAN:
+        case PLAYER_IA_MM_MASK_ALL_NIGHT:
+        case PLAYER_IA_MM_MASK_BLAST:
+        case PLAYER_IA_MM_MASK_STONE:
+        case PLAYER_IA_MM_MASK_GREAT_FAIRY:
+        case PLAYER_IA_MM_MASK_DEKU:
+        case PLAYER_IA_MM_MASK_KEATON:
+        case PLAYER_IA_MM_MASK_BREMEN:
+        case PLAYER_IA_MM_MASK_BUNNY:
+        case PLAYER_IA_MM_MASK_DON_GERO:
+        case PLAYER_IA_MM_MASK_SCENTS:
+        case PLAYER_IA_MM_MASK_GORON:
+        case PLAYER_IA_MM_MASK_ROMANI:
+        case PLAYER_IA_MM_MASK_CIRCUS_LEADER:
+        case PLAYER_IA_MM_MASK_KAFEI:
+        case PLAYER_IA_MM_MASK_COUPLE:
+        case PLAYER_IA_MM_MASK_TRUTH:
+        case PLAYER_IA_MM_MASK_ZORA:
+        case PLAYER_IA_MM_MASK_KAMARO:
+        case PLAYER_IA_MM_MASK_GIBDO:
+        case PLAYER_IA_MM_MASK_GARO:
+        case PLAYER_IA_MM_MASK_CAPTAIN:
+        case PLAYER_IA_MM_MASK_GIANT:
+        case PLAYER_IA_MM_MASK_FIERCE_DEITY:
+            return Player_InitDefaultIA;
         default:
             break;
     }

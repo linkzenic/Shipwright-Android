@@ -1,11 +1,12 @@
 /**
  * extended_inventory.h - Extended inventory system for custom items
  *
- * Manages a 2-page inventory system (48 total slots).
+ * Manages a multi-page inventory system (up to 72 total slots).
  * Page 1: Vanilla OOT items (slots 0-23)
  * Page 2: Custom items (slots 24-47)
+ * Page 3: MM Masks (slots 48-71) — requires mm.o2r and CVar enabled
  *
- * Page switching: Press L button in pause menu to toggle pages.
+ * Page switching: Press L/A button in pause menu to cycle pages.
  */
 #ifndef EXTENDED_INVENTORY_H
 #define EXTENDED_INVENTORY_H
@@ -17,7 +18,7 @@ extern "C" {
 #endif
 
 typedef struct {
-    int currentPage;         // 0 = vanilla, 1 = custom items
+    int currentPage;         // 0 = vanilla, 1 = custom items, 2 = MM masks
     int16_t pageSwitchTimer; // Cooldown to prevent rapid switching
 } ExtendedInventoryState;
 
@@ -37,24 +38,44 @@ void ExtInv_Reset(void);
 void ExtInv_Update(void);
 
 /**
+ * Clamp currentPage if it exceeds max pages (e.g., MM masks CVar toggled off)
+ */
+void ExtInv_ClampPage(void);
+
+/**
  * @return true if page switch cooldown has elapsed
  */
 bool ExtInv_CanSwitchPage(void);
 
 /**
- * Toggle between page 0 and page 1
+ * Cycle to next page (0 → 1 → 2 → 0, or fewer if MM masks disabled)
  */
 void ExtInv_SwitchPage(void);
 
 /**
- * @return Current inventory page (0 or 1)
+ * @return Current inventory page (0, 1, or 2)
  */
 int ExtInv_GetCurrentPage(void);
 
 /**
+ * @return Maximum number of pages (2 or 3 depending on MM masks CVar)
+ */
+int ExtInv_GetMaxPages(void);
+
+/**
+ * @return true if MM masks inventory CVar is enabled
+ */
+bool ExtInv_IsMmMasksEnabled(void);
+
+/**
+ * @return true if "Only Transformation Masks" sub-option is enabled
+ */
+bool ExtInv_IsOnlyTransformation(void);
+
+/**
  * Convert visual slot (0-23) to actual inventory slot based on current page
  * @param visualSlot - The slot position shown on screen (0-23)
- * @return Actual inventory slot index (0-47)
+ * @return Actual inventory slot index (0-71)
  */
 int ExtInv_GetInventorySlot(int visualSlot);
 
@@ -66,7 +87,7 @@ bool ExtInv_IsSlotOnCurrentPage(uint8_t slot);
 
 /**
  * @param slot - Inventory slot
- * @return Page number (0 or 1) where this slot belongs
+ * @return Page number (0, 1, or 2) where this slot belongs
  */
 int ExtInv_GetPageForSlot(uint8_t slot);
 
@@ -139,6 +160,35 @@ extern const uint8_t gPage2ItemAgeReqs[24];
 #define SLOT_CANE_OF_SOMARIA 45
 #define SLOT_SHOVEL 46
 #define SLOT_DOMINION_ROD 47
+
+// Page 3: MM Mask slots (48-71)
+#define SLOT_MM_MASK_POSTMAN 48
+#define SLOT_MM_MASK_ALL_NIGHT 49
+#define SLOT_MM_MASK_BLAST 50
+#define SLOT_MM_MASK_STONE 51
+#define SLOT_MM_MASK_GREAT_FAIRY 52
+#define SLOT_MM_MASK_DEKU 53
+#define SLOT_MM_MASK_KEATON 54
+#define SLOT_MM_MASK_BREMEN 55
+#define SLOT_MM_MASK_BUNNY 56
+#define SLOT_MM_MASK_DON_GERO 57
+#define SLOT_MM_MASK_SCENTS 58
+#define SLOT_MM_MASK_GORON 59
+#define SLOT_MM_MASK_ROMANI 60
+#define SLOT_MM_MASK_CIRCUS_LEADER 61
+#define SLOT_MM_MASK_KAFEI 62
+#define SLOT_MM_MASK_COUPLE 63
+#define SLOT_MM_MASK_TRUTH 64
+#define SLOT_MM_MASK_ZORA 65
+#define SLOT_MM_MASK_KAMARO 66
+#define SLOT_MM_MASK_GIBDO 67
+#define SLOT_MM_MASK_GARO 68
+#define SLOT_MM_MASK_CAPTAIN 69
+#define SLOT_MM_MASK_GIANT 70
+#define SLOT_MM_MASK_FIERCE_DEITY 71
+
+extern const uint8_t gPage3MaskItems[24];
+extern const uint8_t gPage3MaskAgeReqs[24];
 static inline uint8_t ExtInv_GetPage2AgeReq(uint8_t slot) {
     if (slot >= 24 && slot < 48) {
         return gPage2ItemAgeReqs[slot - 24];
@@ -179,6 +229,32 @@ static inline void ExtInv_SetItemById(uint8_t itemId) {
         gSaveContext.inventory.items[slot] = itemId;
     }
 }
+
+// Page 3: MM Mask helpers
+// "Only Transformation" mode: transformation masks go to rightmost column (positions 5,11,17,23)
+// Deku=pos5(slot53), Goron=pos11(slot59), Zora=pos17(slot65), FierceDeity=pos23(slot71)
+#define SLOT_MM_ONLY_DEKU 53
+#define SLOT_MM_ONLY_GORON 59
+#define SLOT_MM_ONLY_ZORA 65
+#define SLOT_MM_ONLY_FIERCE 71
+
+static inline void ExtInv_InitializePage3Masks(void) {
+    // No-op: masks are given individually (save editor, randomizer, etc.)
+    // This function exists for future initialization if needed
+}
+static inline void ExtInv_ClearPage3Masks(void) {
+    extern SaveContext gSaveContext;
+    for (int i = 48; i < 72; i++) {
+        gSaveContext.inventory.items[i] = ITEM_NONE;
+    }
+}
+static inline void ExtInv_GiveMask(uint8_t slot, uint8_t itemId) {
+    extern SaveContext gSaveContext;
+    if (slot >= 48 && slot < 72) {
+        gSaveContext.inventory.items[slot] = itemId;
+    }
+}
+
 static inline void ExtInv_VerifyConsistency(void) {
     const int expectedSize = 24;
     const int actualSize = sizeof(gPage2Items) / sizeof(gPage2Items[0]);
@@ -203,14 +279,18 @@ extern u8 TransformMasks_IsItemAllowed(s32 item);
 
 // Returns true if item is restricted by active transformation mask
 static inline bool ExtInv_IsTransformRestricted(int itemId) {
-    if (itemId == ITEM_NONE) return false; // Empty slot = no restriction
-    if (!TransformMasks_IsEnabled() || !TransformMasks_IsTransformedAny()) return false;
+    if (itemId == ITEM_NONE)
+        return false; // Empty slot = no restriction
+    if (!TransformMasks_IsEnabled() || !TransformMasks_IsTransformedAny())
+        return false;
     return !TransformMasks_IsItemAllowed(itemId);
 }
 
 // Returns true if the item in a given slot is restricted by active transformation mask
 static inline bool ExtInv_IsSlotTransformRestricted(uint8_t slot) {
     extern SaveContext gSaveContext;
+    if (slot >= 72)
+        return false; // Out of range
     uint8_t itemId = gSaveContext.inventory.items[slot];
     return ExtInv_IsTransformRestricted(itemId);
 }

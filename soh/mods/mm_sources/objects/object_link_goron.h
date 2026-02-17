@@ -29,9 +29,12 @@
 
 // Individual sub-DLs of gLinkGoronRollingSpikesAndEffectDL
 // (for drawing spike geometry on OPA and energy effects on XLU separately)
-#define object_link_goron_DL_00C540 "__OTR__objects/object_link_goron/object_link_goron_DL_00C540"  // lg_spike_model (physical spikes)
-#define object_link_goron_DL_0127B0 "__OTR__objects/object_link_goron/object_link_goron_DL_0127B0"  // grt_01_model (energy effect 1)
-#define object_link_goron_DL_0134D0 "__OTR__objects/object_link_goron/object_link_goron_DL_0134D0"  // grt_02_model (energy effect 2)
+#define object_link_goron_DL_00C540 \
+    "__OTR__objects/object_link_goron/object_link_goron_DL_00C540" // lg_spike_model (physical spikes)
+#define object_link_goron_DL_0127B0 \
+    "__OTR__objects/object_link_goron/object_link_goron_DL_0127B0" // grt_01_model (energy effect 1)
+#define object_link_goron_DL_0134D0 \
+    "__OTR__objects/object_link_goron/object_link_goron_DL_0134D0" // grt_02_model (energy effect 2)
 
 // ============================================================================
 // Hand DLs

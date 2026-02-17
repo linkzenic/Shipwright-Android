@@ -37,9 +37,9 @@ static const f32 sGoronPunchQuadParams[][6] = {
     // Punch A (left fist): extends 20-55 forward, offset 15 left, height 20-55
     { 20.0f, 55.0f, -15.0f, 15.0f, 20.0f, 55.0f },
     // Punch B (right fist): extends 20-55 forward, offset 15 right, height 20-55
-    { 20.0f, 55.0f,  15.0f, 15.0f, 20.0f, 55.0f },
+    { 20.0f, 55.0f, 15.0f, 15.0f, 20.0f, 55.0f },
     // Punch C (butt slam): extends -10 to 30 (behind to front), centered, height 5-30
-    { -10.0f, 30.0f,  0.0f, 30.0f,  5.0f, 30.0f },
+    { -10.0f, 30.0f, 0.0f, 30.0f, 5.0f, 30.0f },
 };
 
 /**
@@ -52,15 +52,16 @@ static const f32 sGoronPunchQuadParams[][6] = {
  * @param step    Combo step (0=left, 1=right, 2=butt)
  */
 static void MmForm_SetPunchQuadVertices(Player* player, u8 step) {
-    if (step > 2) step = 0;
+    if (step > 2)
+        step = 0;
 
     const f32* params = sGoronPunchQuadParams[step];
     f32 nearDist = params[0];
-    f32 farDist  = params[1];
-    f32 sideOff  = params[2];
-    f32 halfW    = params[3];
-    f32 yBottom  = params[4];
-    f32 yTop     = params[5];
+    f32 farDist = params[1];
+    f32 sideOff = params[2];
+    f32 halfW = params[3];
+    f32 yBottom = params[4];
+    f32 yTop = params[5];
 
     f32 sinYaw = Math_SinS(player->yaw);
     f32 cosYaw = Math_CosS(player->yaw);
@@ -173,12 +174,11 @@ static s32 MmForm_SpawnMovementDust(PlayState* play, Player* player) {
     u16 floorSfx = player->floorSfxOffset;
 
     // Ground, sand, or dirt floors
-    if (floorSfx == (NA_SE_PL_WALK_GROUND - SFX_FLAG) ||
-        floorSfx == (NA_SE_PL_WALK_SAND - SFX_FLAG) ||
+    if (floorSfx == (NA_SE_PL_WALK_GROUND - SFX_FLAG) || floorSfx == (NA_SE_PL_WALK_SAND - SFX_FLAG) ||
         floorSfx == (NA_SE_PL_WALK_DIRT - SFX_FLAG)) {
 
-        Actor_SpawnFloorDustRing(play, &player->actor, &player->actor.world.pos,
-                                 player->actor.shape.shadowScale, 1, 8.0f, 500, 10, 1);
+        Actor_SpawnFloorDustRing(play, &player->actor, &player->actor.world.pos, player->actor.shape.shadowScale, 1,
+                                 8.0f, 500, 10, 1);
         return 1;
     }
 

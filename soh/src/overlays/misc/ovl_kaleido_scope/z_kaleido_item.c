@@ -463,18 +463,17 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
             pauseCtx->cursorColorSet = 4;
 
             // Page switching logic
-            // If NGCKaleidoSwitcher is enabled, L button is used for tab switching, so only A button changes page
-            // If disabled, both L and A buttons can change the inventory page
+            // Page switch button preference: 0=L, 1=A, 2=Both (default)
+            // NGCKaleidoSwitcher overrides: L is reserved for tab switching when NGC mode is on
             bool ngcMode = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
-            bool inputL = CHECK_BTN_ALL(input->press.button, BTN_L);
-            bool inputA = CHECK_BTN_ALL(input->press.button, BTN_A);
+            int pageSwitchMode = CVarGetInteger("gMods.PageSwitch.Button", 2);
+            bool useLButton = (pageSwitchMode == 0 || pageSwitchMode == 2) && !ngcMode;
+            bool useAButton = (pageSwitchMode == 1 || pageSwitchMode == 2);
 
-            // A button only switches page if not currently in item cycling mode
-            bool canUseAForPageSwitch = inputA && !IsItemCycling();
+            bool inputL = CHECK_BTN_ALL(input->press.button, BTN_L) && useLButton;
+            bool inputA = CHECK_BTN_ALL(input->press.button, BTN_A) && useAButton && !IsItemCycling();
 
-            // Switch page if: (L button pressed AND NGCKaleidoSwitcher is off) OR (A button pressed AND not cycling)
-            if (ExtInv_CanSwitchPage() && ((inputL && !ngcMode) || canUseAForPageSwitch)) {
-                // Switch to next/previous page using modular system
+            if (ExtInv_CanSwitchPage() && (inputL || inputA)) {
                 ExtInv_SwitchPage();
                 Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                        &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);

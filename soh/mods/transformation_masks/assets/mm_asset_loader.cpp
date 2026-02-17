@@ -188,8 +188,7 @@ static bool LoadMmO2r() {
                     }
                 }
                 archiveManager->SetArchives(reordered);
-                MMASSETS_LOG("[MM Assets] Loaded mm.o2r at lowest priority (pos 0 of %zu archives)",
-                             reordered->size());
+                MMASSETS_LOG("[MM Assets] Loaded mm.o2r at lowest priority (pos 0 of %zu archives)", reordered->size());
             } else {
                 MMASSETS_LOG("[MM Assets] Loaded mm.o2r (single archive, ptr=%p)", (void*)archive.get());
             }
@@ -288,13 +287,16 @@ const char* MmAssets_GetPath(void) {
  */
 static std::shared_ptr<Ship::Archive> MmAssets_FindModOverride(const char* path) {
     auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
-    if (!resourceManager) return nullptr;
+    if (!resourceManager)
+        return nullptr;
 
     auto archiveManager = resourceManager->GetArchiveManager();
-    if (!archiveManager) return nullptr;
+    if (!archiveManager)
+        return nullptr;
 
     auto archives = archiveManager->GetArchives();
-    if (!archives) return nullptr;
+    if (!archives)
+        return nullptr;
 
     // Strip __OTR__ prefix - archives index files without it
     std::string cleanPath = path;
@@ -307,10 +309,12 @@ static std::shared_ptr<Ship::Archive> MmAssets_FindModOverride(const char* path)
         auto& archive = *it;
 
         // Skip mm.o2r - we want mods to override it
-        if (archive == sMmArchive) continue;
+        if (archive == sMmArchive)
+            continue;
 
         // Skip mm-mod.o2r if loaded (it's handled by the standard loading path)
-        if (sModO2rLoaded && !sModO2rPath.empty() && archive->GetPath() == sModO2rPath) continue;
+        if (sModO2rLoaded && !sModO2rPath.empty() && archive->GetPath() == sModO2rPath)
+            continue;
 
         if (archive->HasFile(cleanPath)) {
             MMASSETS_LOG("[MM Assets] Mod override found: %s in %s", path, archive->GetPath().c_str());
@@ -1102,60 +1106,60 @@ static MmPlayingSound sPlayingSounds[MM_DIRECT_MAX_SOUNDS];
 // giving us the correct sample with correct pitch - matching MM 1:1.
 
 typedef struct {
-    u16 sfxId;         // MM SFX ID (with SFX_FLAG)
-    u8  instrumentIdx; // Index into font->instruments[] (Soundfont_0)
-    u8  midiNote;      // MIDI note number for pitch calculation
+    u16 sfxId;        // MM SFX ID (with SFX_FLAG)
+    u8 instrumentIdx; // Index into font->instruments[] (Soundfont_0)
+    u8 midiNote;      // MIDI note number for pitch calculation
 } MmSfxInstrMapEntry;
 
 // Mapping from seq_0.prg.seq channel handlers (primary layer of each SFX)
 static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     // === Player Bank: Common SFX (shared by all forms) ===
-    { 0x0811,   0,  49 }, // JUMP: INST_0, PITCH_CS3
-    { 0x0812,   0,  61 }, // LAND: INST_0, PITCH_CS4
-    { 0x0814,   9,  66 }, // CLIMB_CLIFF: INST_9, PITCH_FS4
-    { 0x08D0,  12,  60 }, // SLIP_LEVEL: INST_12, PITCH_C4
+    { 0x0811, 0, 49 },  // JUMP: INST_0, PITCH_CS3
+    { 0x0812, 0, 61 },  // LAND: INST_0, PITCH_CS4
+    { 0x0814, 9, 66 },  // CLIMB_CLIFF: INST_9, PITCH_FS4
+    { 0x08D0, 12, 60 }, // SLIP_LEVEL: INST_12, PITCH_C4
     // === Player Bank: Deku SFX ===
-    { 0x08E0,  74,  49 }, // DEKUNUTS_FIRE: INST_74, PITCH_E3 (bubble spit)
+    { 0x08E0, 74, 49 }, // DEKUNUTS_FIRE: INST_74, PITCH_E3 (bubble spit)
     // === Player Bank: Goron SFX ===
-    { 0x08E1, 102,  55 }, // GORON_BALLJUMP: INST_102, PITCH_G3
-    { 0x08E4,  68,  78 }, // TRANSFORM: INST_68, PITCH_GF5 (primary of 3 layers)
-    { 0x08E5,  47,  55 }, // TRANSFORM_DEMO: INST_47, PITCH_G3
-    { 0x08E6,  47,  55 }, // GORON_TO_BALL: INST_47 (same channel as TRANSFORM_DEMO)
-    { 0x08E7,  47,  35 }, // BALL_TO_GORON: INST_47, PITCH_B1
-    { 0x08E8,  65,  53 }, // GORON_PUNCH: INST_65, PITCH_F3 (primary of 2 layers)
-    { 0x08EB,  35,  65 }, // GORON_BALL_CHARGE: INST_35, PITCH_F4 (primary, looping)
+    { 0x08E1, 102, 55 }, // GORON_BALLJUMP: INST_102, PITCH_G3
+    { 0x08E4, 68, 78 },  // TRANSFORM: INST_68, PITCH_GF5 (primary of 3 layers)
+    { 0x08E5, 47, 55 },  // TRANSFORM_DEMO: INST_47, PITCH_G3
+    { 0x08E6, 47, 55 },  // GORON_TO_BALL: INST_47 (same channel as TRANSFORM_DEMO)
+    { 0x08E7, 47, 35 },  // BALL_TO_GORON: INST_47, PITCH_B1
+    { 0x08E8, 65, 53 },  // GORON_PUNCH: INST_65, PITCH_F3 (primary of 2 layers)
+    { 0x08EB, 35, 65 },  // GORON_BALL_CHARGE: INST_35, PITCH_F4 (primary, looping)
     // === Player Bank: Zora SFX ===
-    { 0x08EC,  20,  73 }, // ZORA_SWIM_DASH: INST_20, PITCH_DF5
-    { 0x08ED,  72,  38 }, // ZORA_SWIM_LV: INST_72, PITCH_F2
-    { 0x08EE, 105,  28 }, // ZORA_SWIM_ROLL: INST_105, PITCH_E2
-    { 0x08EF,  47,  35 }, // GORON_SQUAT: INST_47, PITCH_B1
+    { 0x08EC, 20, 73 },  // ZORA_SWIM_DASH: INST_20, PITCH_DF5
+    { 0x08ED, 72, 38 },  // ZORA_SWIM_LV: INST_72, PITCH_F2
+    { 0x08EE, 105, 28 }, // ZORA_SWIM_ROLL: INST_105, PITCH_E2
+    { 0x08EF, 47, 35 },  // GORON_SQUAT: INST_47, PITCH_B1
     // === Player Bank: Zora SFX (0x8F0 range - CHAN_PL_DUMMY_240) ===
-    { 0x08F0,  31,  23 }, // ZORA_SWIM: INST_31, PITCH_B0 (CHAN_PL_DUMMY_240 primary)
-    { 0x08F1,  31,  23 }, // ZORA_KICK: INST_31, PITCH_B0 (same channel)
-    { 0x08F2,  31,  23 }, // ZORA_DIVE: INST_31, PITCH_B0 (same channel)
-    { 0x08F3,  31,  23 }, // ZORA_ELECTRIC_BARRIER: INST_31, PITCH_B0 (same channel)
-    { 0x08F4,  31,  23 }, // ZORA_BOOMERANG_THROW: INST_31, PITCH_B0 (same channel)
-    { 0x08F5,  31,  23 }, // ZORA_BOOMERANG_CATCH: INST_31, PITCH_B0 (same channel)
+    { 0x08F0, 31, 23 }, // ZORA_SWIM: INST_31, PITCH_B0 (CHAN_PL_DUMMY_240 primary)
+    { 0x08F1, 31, 23 }, // ZORA_KICK: INST_31, PITCH_B0 (same channel)
+    { 0x08F2, 31, 23 }, // ZORA_DIVE: INST_31, PITCH_B0 (same channel)
+    { 0x08F3, 31, 23 }, // ZORA_ELECTRIC_BARRIER: INST_31, PITCH_B0 (same channel)
+    { 0x08F4, 31, 23 }, // ZORA_BOOMERANG_THROW: INST_31, PITCH_B0 (same channel)
+    { 0x08F5, 31, 23 }, // ZORA_BOOMERANG_CATCH: INST_31, PITCH_B0 (same channel)
     // === Player Bank: Goron roll SFX ===
-    { 0x0980,  35,  67 }, // GORON_CHG_ROLL: INST_35, PITCH_G4
-    { 0x0990,  77,  58 }, // GORON_ROLL: INST_77, PITCH_BF3 (primary of 3 layers)
+    { 0x0980, 35, 67 }, // GORON_CHG_ROLL: INST_35, PITCH_G4
+    { 0x0990, 77, 58 }, // GORON_ROLL: INST_77, PITCH_BF3 (primary of 3 layers)
     // === Player Bank: Deku SFX (0x9A0 range) ===
-    { 0x09A1,  74,  54 }, // DEKUNUTS_BUBLE_BREATH: INST_74, PITCH_A3 (looping)
-    { 0x09A2,  35,  36 }, // GORON_BALL_CHARGE_FAILED: INST_35, PITCH_C2
-    { 0x09A3,  75,  71 }, // GORON_BALL_CHARGE_DASH: INST_75, PITCH_B4
-    { 0x09A9,  27,  24 }, // DEKUNUTS_ATTACK: INST_27, PITCH_C1 (spin attack)
-    { 0x09AD, 111,  60 }, // GORON_SLIP: INST_111, PITCH_C4 (looping)
-    { 0x09AF,  46,  63 }, // ZORA_SPARK_BARRIER: INST_46, PITCH_E4
-    { 0x09B8,  77,  77 }, // GORON_STOMACH_EXPLOSION: INST_77, PITCH_F5
-    { 0x09B9, 106,  47 }, // GORON_DRINK_BOMB: INST_106, PITCH_B2
+    { 0x09A1, 74, 54 },  // DEKUNUTS_BUBLE_BREATH: INST_74, PITCH_A3 (looping)
+    { 0x09A2, 35, 36 },  // GORON_BALL_CHARGE_FAILED: INST_35, PITCH_C2
+    { 0x09A3, 75, 71 },  // GORON_BALL_CHARGE_DASH: INST_75, PITCH_B4
+    { 0x09A9, 27, 24 },  // DEKUNUTS_ATTACK: INST_27, PITCH_C1 (spin attack)
+    { 0x09AD, 111, 60 }, // GORON_SLIP: INST_111, PITCH_C4 (looping)
+    { 0x09AF, 46, 63 },  // ZORA_SPARK_BARRIER: INST_46, PITCH_E4
+    { 0x09B8, 77, 77 },  // GORON_STOMACH_EXPLOSION: INST_77, PITCH_F5
+    { 0x09B9, 106, 47 }, // GORON_DRINK_BOMB: INST_106, PITCH_B2
     // === Item Bank: Form-specific ===
-    { 0x184F,  32,  60 }, // IT_GORON_BALLFANG: INST_32, PITCH_C4
-    { 0x1857,  27,  24 }, // IT_GORON_PUNCH_SWING: INST_27, PITCH_C1
-    { 0x1859,  39,  42 }, // IT_ZORA_KICK_SWING: INST_39, PITCH_GF2
-    { 0x185E, 102,  45 }, // IT_GORON_ROLLING_REFLECTION: INST_102, PITCH_A2
+    { 0x184F, 32, 60 },  // IT_GORON_BALLFANG: INST_32, PITCH_C4
+    { 0x1857, 27, 24 },  // IT_GORON_PUNCH_SWING: INST_27, PITCH_C1
+    { 0x1859, 39, 42 },  // IT_ZORA_KICK_SWING: INST_39, PITCH_GF2
+    { 0x185E, 102, 45 }, // IT_GORON_ROLLING_REFLECTION: INST_102, PITCH_A2
     // === System Bank: Transform flash ===
-    { 0x484F,  64,  84 }, // SY_TRANSFORM_MASK_FLASH: INST_64, C4+24 transpose
-    { 0x4835,  64,  84 }, // (legacy ID - same sound)
+    { 0x484F, 64, 84 }, // SY_TRANSFORM_MASK_FLASH: INST_64, C4+24 transpose
+    { 0x4835, 64, 84 }, // (legacy ID - same sound)
 };
 static const s32 sMmSfxInstrMapSize = sizeof(sMmSfxInstrMap) / sizeof(sMmSfxInstrMap[0]);
 
@@ -1169,20 +1173,20 @@ static const s32 sMmSfxInstrMapSize = sizeof(sMmSfxInstrMap) / sizeof(sMmSfxInst
 //
 // For voices with directly defined effect indices (from seq_0):
 typedef struct {
-    u16 sfxId;      // MM Voice SFX ID
-    u16 effectIdx;  // SF0_EFFECT_X index into soundEffects[]
-    s8  transpose;  // Semitone transpose (4 for Goron, 1 for some others)
+    u16 sfxId;     // MM Voice SFX ID
+    u16 effectIdx; // SF0_EFFECT_X index into soundEffects[]
+    s8 transpose;  // Semitone transpose (4 for Goron, 1 for some others)
 } MmVoiceMapEntry;
 
 static const MmVoiceMapEntry sMmVoiceMap[] = {
     // Directly defined in seq_0 with explicit SF0_EFFECT indices:
-    { 0x68CA,  23,  4 }, // DUMMY_202 (GORON_DOWN alt): SF0_EFFECT_23, transpose 4
-    { 0x68CB,  20,  4 }, // DUMMY_203 (GORON_DOWN): SF0_EFFECT_20, transpose 4
-    { 0x68D0,  17,  4 }, // DUMMY_208: SF0_EFFECT_17, transpose 4 (looping)
-    { 0x68D8,   6,  4 }, // DUMMY_216: SF0_EFFECT_6, transpose 4
-    { 0x68DA,  24,  4 }, // DUMMY_218: SF0_EFFECT_24, transpose 4
-    { 0x68E1,  35,  1 }, // DUMMY_225: SF0_EFFECT_35, transpose 1
-    { 0x68E5,  36,  1 }, // DUMMY_229: SF0_EFFECT_36, transpose 1
+    { 0x68CA, 23, 4 }, // DUMMY_202 (GORON_DOWN alt): SF0_EFFECT_23, transpose 4
+    { 0x68CB, 20, 4 }, // DUMMY_203 (GORON_DOWN): SF0_EFFECT_20, transpose 4
+    { 0x68D0, 17, 4 }, // DUMMY_208: SF0_EFFECT_17, transpose 4 (looping)
+    { 0x68D8, 6, 4 },  // DUMMY_216: SF0_EFFECT_6, transpose 4
+    { 0x68DA, 24, 4 }, // DUMMY_218: SF0_EFFECT_24, transpose 4
+    { 0x68E1, 35, 1 }, // DUMMY_225: SF0_EFFECT_35, transpose 1
+    { 0x68E5, 36, 1 }, // DUMMY_229: SF0_EFFECT_36, transpose 1
 };
 static const s32 sMmVoiceMapSize = sizeof(sMmVoiceMap) / sizeof(sMmVoiceMap[0]);
 
@@ -1203,25 +1207,28 @@ static const s32 sMmVoiceMapSize = sizeof(sMmVoiceMap) / sizeof(sMmVoiceMap[0]);
 //
 // Goron voices at 0x68C0-0x68C9 map to human Link voices 0-9:
 static const s32 sGoronVoiceToEffect[] = {
-     0, // 0x68C0 GORON_SWORD_N  → LI_SWORD_N  → SF0_EFFECT_0
-     1, // 0x68C1 GORON_SWORD_L  → LI_SWORD_L  → SF0_EFFECT_1
-     0, // 0x68C2 GORON_LASH     → LI_SWORD_N  → SF0_EFFECT_0 (same as DUMMY_192)
-     3, // 0x68C3 GORON_HANG     → LI_HANG     → SF0_EFFECT_3
-     4, // 0x68C4 GORON_CLIMB_END→ LI_CLIMB_END→ SF0_EFFECT_4
-     5, // 0x68C5 GORON_DAMAGE_S → LI_DAMAGE_S → SF0_EFFECT_5
-     6, // 0x68C6 GORON_FREEZE   → LI_FREEZE   → SF0_EFFECT_6
-     7, // 0x68C7 GORON_FALL_S   → LI_FALL_S   → SF0_EFFECT_7
-     8, // 0x68C8 GORON_FALL_L   → LI_FALL_L   → SF0_EFFECT_8
-     9, // 0x68C9 GORON_BREATH_REST→LI_BREATH_REST→SF0_EFFECT_9
+    0, // 0x68C0 GORON_SWORD_N  → LI_SWORD_N  → SF0_EFFECT_0
+    1, // 0x68C1 GORON_SWORD_L  → LI_SWORD_L  → SF0_EFFECT_1
+    0, // 0x68C2 GORON_LASH     → LI_SWORD_N  → SF0_EFFECT_0 (same as DUMMY_192)
+    3, // 0x68C3 GORON_HANG     → LI_HANG     → SF0_EFFECT_3
+    4, // 0x68C4 GORON_CLIMB_END→ LI_CLIMB_END→ SF0_EFFECT_4
+    5, // 0x68C5 GORON_DAMAGE_S → LI_DAMAGE_S → SF0_EFFECT_5
+    6, // 0x68C6 GORON_FREEZE   → LI_FREEZE   → SF0_EFFECT_6
+    7, // 0x68C7 GORON_FALL_S   → LI_FALL_S   → SF0_EFFECT_7
+    8, // 0x68C8 GORON_FALL_L   → LI_FALL_L   → SF0_EFFECT_8
+    9, // 0x68C9 GORON_BREATH_REST→LI_BREATH_REST→SF0_EFFECT_9
 };
 static const s32 sGoronVoiceToEffectSize = sizeof(sGoronVoiceToEffect) / sizeof(sGoronVoiceToEffect[0]);
 
 // Pitch factor for semitone transpose: 2^(semitones/12)
 static f32 MmDirectAudio_TransposeFactor(s32 semitones) {
     // Fast lookup for common values
-    if (semitones == 0) return 1.0f;
-    if (semitones == 4) return 1.259921f; // 2^(4/12) - Goron voice pitch
-    if (semitones == 1) return 1.059463f; // 2^(1/12)
+    if (semitones == 0)
+        return 1.0f;
+    if (semitones == 4)
+        return 1.259921f; // 2^(4/12) - Goron voice pitch
+    if (semitones == 1)
+        return 1.059463f; // 2^(1/12)
     // General case
     return powf(2.0f, (f32)semitones / 12.0f);
 }
@@ -1297,8 +1304,8 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                 if (effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
                     font0->soundEffects[effectIdx].sample->sampleAddr) {
                     sMmLastPitchScale = MmDirectAudio_TransposeFactor(sMmVoiceMap[i].transpose);
-                    MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d], transpose %d (pitch %.3f)",
-                              mmSfxId, effectIdx, sMmVoiceMap[i].transpose, sMmLastPitchScale);
+                    MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d], transpose %d (pitch %.3f)", mmSfxId,
+                              effectIdx, sMmVoiceMap[i].transpose, sMmLastPitchScale);
                     return &font0->soundEffects[effectIdx];
                 }
             }
@@ -1311,8 +1318,7 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             if (effectIdx >= 0 && (u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
                 font0->soundEffects[effectIdx].sample->sampleAddr) {
                 sMmLastPitchScale = MmDirectAudio_TransposeFactor(4); // Goron transpose +4
-                MMSFX_LOG("[MmDirectAudio] Goron voice 0x%04X: soundEffects[%d], transpose +4",
-                          mmSfxId, effectIdx);
+                MMSFX_LOG("[MmDirectAudio] Goron voice 0x%04X: soundEffects[%d], transpose +4", mmSfxId, effectIdx);
                 return &font0->soundEffects[effectIdx];
             }
         }
@@ -1335,13 +1341,12 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
         // Non-Goron voices: use sfxIndex as effect index (human Link, Zora, etc.)
         if ((u32)sfxIndex < font0->numSfx && font0->soundEffects[sfxIndex].sample &&
             font0->soundEffects[sfxIndex].sample->sampleAddr) {
-            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (direct index)",
-                      mmSfxId, sfxIndex);
+            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (direct index)", mmSfxId, sfxIndex);
             return &font0->soundEffects[sfxIndex];
         }
 
-        MMSFX_LOG("[MmDirectAudio] Voice: No valid soundEffect for 0x%04X (sfxIndex=%d, numSfx=%d)",
-                  mmSfxId, sfxIndex, font0->numSfx);
+        MMSFX_LOG("[MmDirectAudio] Voice: No valid soundEffect for 0x%04X (sfxIndex=%d, numSfx=%d)", mmSfxId, sfxIndex,
+                  font0->numSfx);
         return nullptr;
     }
 
@@ -1360,8 +1365,8 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                 // Pitch correction: the tuning is calibrated for MIDI note 60 (middle C)
                 // Adjust for the actual note
                 sMmLastPitchScale = powf(2.0f, ((f32)note - 60.0f) / 12.0f);
-                MMSFX_LOG("[MmDirectAudio] Mapped 0x%04X: instruments[%d], note=%d, pitch=%.3f",
-                          mmSfxId, instIdx, note, sMmLastPitchScale);
+                MMSFX_LOG("[MmDirectAudio] Mapped 0x%04X: instruments[%d], note=%d, pitch=%.3f", mmSfxId, instIdx, note,
+                          sMmLastPitchScale);
                 return sound;
             }
             MMSFX_LOG("[MmDirectAudio] Mapped 0x%04X: instruments[%d] exists but no valid sample", mmSfxId, instIdx);
@@ -1373,8 +1378,7 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
     // DO NOT use soundEffects[sfxIndex] as fallback - SFX IDs do not map to soundEffects
     // indices for non-voice banks. The seq_0 program routes them to specific instruments
     // at specific pitches. Without a mapping entry, we'd play the wrong sound.
-    MMSFX_LOG("[MmDirectAudio] No mapping for 0x%04X (bank=%d, idx=%d) - no sound",
-              mmSfxId, bank, sfxIndex);
+    MMSFX_LOG("[MmDirectAudio] No mapping for 0x%04X (bank=%d, idx=%d) - no sound", mmSfxId, bank, sfxIndex);
     return nullptr;
 }
 
@@ -1424,8 +1428,8 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale) {
     snd->mmSfxId = mmSfxId;
     snd->active = 1;
 
-    MMSFX_LOG("[MmDirectAudio] Playing 0x%04X: %u samples, tuning=%.3f, pitch=%.3f, freq=%.3f, advance=%.3f",
-              mmSfxId, pcmLength, sfxSound->tuning, pitchScale, freqScale, snd->advance);
+    MMSFX_LOG("[MmDirectAudio] Playing 0x%04X: %u samples, tuning=%.3f, pitch=%.3f, freq=%.3f, advance=%.3f", mmSfxId,
+              pcmLength, sfxSound->tuning, pitchScale, freqScale, snd->advance);
     return 1;
 }
 
@@ -1546,6 +1550,115 @@ void MmSfx_FlushCache(void) {
         sSfxCache[i].sizeBytes = 0;
     }
     sSfxCacheCount = 0;
+}
+
+// =============================================================================
+// MM Masks Inventory: Icon and Name Texture Loaders (24 masks)
+// =============================================================================
+// Paths verified from MM decomp: extracted/n64-us/assets/archives/icon_item_static/icon_item_static_yar.h
+// and item_name_static/item_name_static.h
+
+// Icon paths (32x32 RGBA textures from icon_item_static_yar)
+static const char* sMmMaskIconPaths[24] = {
+    "__OTR__icon_item_static_yar/gItemIconPostmansHatTex",      // 0: Postman's Hat
+    "__OTR__icon_item_static_yar/gItemIconAllNightMaskTex",     // 1: All-Night Mask
+    "__OTR__icon_item_static_yar/gItemIconBlastMaskTex",        // 2: Blast Mask
+    "__OTR__icon_item_static_yar/gItemIconStoneMaskTex",        // 3: Stone Mask
+    "__OTR__icon_item_static_yar/gItemIconGreatFairyMaskTex",   // 4: Great Fairy Mask
+    "__OTR__icon_item_static_yar/gItemIconDekuMaskTex",         // 5: Deku Mask
+    "__OTR__icon_item_static_yar/gItemIconKeatonMaskTex",       // 6: Keaton Mask
+    "__OTR__icon_item_static_yar/gItemIconBremenMaskTex",       // 7: Bremen Mask
+    "__OTR__icon_item_static_yar/gItemIconBunnyHoodTex",        // 8: Bunny Hood
+    "__OTR__icon_item_static_yar/gItemIconDonGeroMaskTex",      // 9: Don Gero's Mask
+    "__OTR__icon_item_static_yar/gItemIconMaskOfScentsTex",     // 10: Mask of Scents
+    "__OTR__icon_item_static_yar/gItemIconGoronMaskTex",        // 11: Goron Mask
+    "__OTR__icon_item_static_yar/gItemIconRomaniMaskTex",       // 12: Romani's Mask
+    "__OTR__icon_item_static_yar/gItemIconCircusLeaderMaskTex", // 13: Circus Leader's Mask
+    "__OTR__icon_item_static_yar/gItemIconKafeisMaskTex",       // 14: Kafei's Mask
+    "__OTR__icon_item_static_yar/gItemIconCouplesMaskTex",      // 15: Couple's Mask
+    "__OTR__icon_item_static_yar/gItemIconMaskOfTruthTex",      // 16: Mask of Truth
+    "__OTR__icon_item_static_yar/gItemIconZoraMaskTex",         // 17: Zora Mask
+    "__OTR__icon_item_static_yar/gItemIconKamaroMaskTex",       // 18: Kamaro's Mask
+    "__OTR__icon_item_static_yar/gItemIconGibdoMaskTex",        // 19: Gibdo Mask
+    "__OTR__icon_item_static_yar/gItemIconGaroMaskTex",         // 20: Garo Mask
+    "__OTR__icon_item_static_yar/gItemIconCaptainsHatTex",      // 21: Captain's Hat
+    "__OTR__icon_item_static_yar/gItemIconGiantsMaskTex",       // 22: Giant's Mask
+    "__OTR__icon_item_static_yar/gItemIconFierceDeityMaskTex",  // 23: Fierce Deity Mask
+};
+
+// Name texture paths (from item_name_static)
+static const char* sMmMaskNamePaths[24] = {
+    "__OTR__item_name_static/gItemNamePostmansHatENGTex",
+    "__OTR__item_name_static/gItemNameAllNightMaskENGTex",
+    "__OTR__item_name_static/gItemNameBlastMaskENGTex",
+    "__OTR__item_name_static/gItemNameStoneMaskENGTex",
+    "__OTR__item_name_static/gItemNameGreatFairysMaskENGTex",
+    "__OTR__item_name_static/gItemNameDekuMaskENGTex",
+    "__OTR__item_name_static/gItemNameKeatonMaskENGTex",
+    "__OTR__item_name_static/gItemNameBremenMaskENGTex",
+    "__OTR__item_name_static/gItemNameBunnyHoodENGTex",
+    "__OTR__item_name_static/gItemNameDonGerosMaskENGTex",
+    "__OTR__item_name_static/gItemNameMaskOfScentsENGTex",
+    "__OTR__item_name_static/gItemNameGoronMaskENGTex",
+    "__OTR__item_name_static/gItemNameRomanisMaskENGTex",
+    "__OTR__item_name_static/gItemNameCircusLeadersMaskENGTex",
+    "__OTR__item_name_static/gItemNameKafeisMaskENGTex",
+    "__OTR__item_name_static/gItemNameCouplesMaskENGTex",
+    "__OTR__item_name_static/gItemNameMaskOfTruthENGTex",
+    "__OTR__item_name_static/gItemNameZoraMaskENGTex",
+    "__OTR__item_name_static/gItemNameKamarosMaskENGTex",
+    "__OTR__item_name_static/gItemNameGibdoMaskENGTex",
+    "__OTR__item_name_static/gItemNameGarosMaskENGTex",
+    "__OTR__item_name_static/gItemNameCaptainsHatENGTex",
+    "__OTR__item_name_static/gItemNameGiantsMaskENGTex",
+    "__OTR__item_name_static/gItemNameFierceDeitysMaskENGTex",
+};
+
+// Cached icon pointers (NULL = not yet loaded)
+static void* sCachedMaskIcons[24] = { 0 };
+static bool sMaskIconLoaded[24] = { false };
+
+// Cached name texture pointers
+static void* sCachedMaskNames[24] = { 0 };
+static bool sMaskNameLoaded[24] = { false };
+
+// ITEM_MM_MASK_POSTMAN = 0xB7, so index = itemId - 0xB7
+#define MM_MASK_ITEM_BASE 0xB7
+
+void* MmMasks_LoadIcon(uint16_t itemId) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (itemId < MM_MASK_ITEM_BASE || itemId >= MM_MASK_ITEM_BASE + 24)
+        return nullptr;
+
+    int idx = itemId - MM_MASK_ITEM_BASE;
+    if (sMaskIconLoaded[idx])
+        return sCachedMaskIcons[idx];
+
+    sMaskIconLoaded[idx] = true;
+    sCachedMaskIcons[idx] = MmAssets_LoadResource(sMmMaskIconPaths[idx]);
+    if (sCachedMaskIcons[idx]) {
+        MMASSETS_LOG("[MM Masks] Loaded icon %d: %s", idx, sMmMaskIconPaths[idx]);
+    }
+    return sCachedMaskIcons[idx];
+}
+
+void* MmMasks_LoadNameTex(uint16_t itemId) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (itemId < MM_MASK_ITEM_BASE || itemId >= MM_MASK_ITEM_BASE + 24)
+        return nullptr;
+
+    int idx = itemId - MM_MASK_ITEM_BASE;
+    if (sMaskNameLoaded[idx])
+        return sCachedMaskNames[idx];
+
+    sMaskNameLoaded[idx] = true;
+    sCachedMaskNames[idx] = MmAssets_LoadResource(sMmMaskNamePaths[idx]);
+    if (sCachedMaskNames[idx]) {
+        MMASSETS_LOG("[MM Masks] Loaded name %d: %s", idx, sMmMaskNamePaths[idx]);
+    }
+    return sCachedMaskNames[idx];
 }
 
 } // extern "C"

@@ -21,17 +21,22 @@ extern u8 gAreaGsFlags[];
 #define AGE_REQ_CHILD LINK_AGE_CHILD
 #define AGE_REQ_NONE 9
 
-#define CHECK_AGE_REQ_EQUIP(i, j) (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (ExtInv_GetEquipAgeReq(i, j) == AGE_REQ_NONE) || (ExtInv_GetEquipAgeReq(i, j) == ((void)0, gSaveContext.linkAge)))
+#define CHECK_AGE_REQ_EQUIP(i, j)                                                                           \
+    (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (ExtInv_GetEquipAgeReq(i, j) == AGE_REQ_NONE) || \
+     (ExtInv_GetEquipAgeReq(i, j) == ((void)0, gSaveContext.linkAge)))
 // Uses ExtInv_GetSlotAgeReq() helper to handle both vanilla (0-23) and custom (24-47) slots
-#define CHECK_AGE_REQ_SLOT(slotIndex) (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (ExtInv_GetSlotAgeReq(slotIndex) == AGE_REQ_NONE) || ExtInv_GetSlotAgeReq(slotIndex) == ((void)0, gSaveContext.linkAge))
+#define CHECK_AGE_REQ_SLOT(slotIndex)                                                                           \
+    (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || (ExtInv_GetSlotAgeReq(slotIndex) == AGE_REQ_NONE) || \
+     ExtInv_GetSlotAgeReq(slotIndex) == ((void)0, gSaveContext.linkAge))
 
 // Extended CHECK_AGE_REQ_ITEM that handles both vanilla and custom items
 // For custom items (>= 0x9C), uses ExtInv_GetItemAgeReq() to avoid gaps in gItemAgeReqs[]
-#define CHECK_AGE_REQ_ITEM(itemIndex) \
-    (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || \
-     ((itemIndex) >= 0x9C ? \
-        (ExtInv_GetItemAgeReq(itemIndex) == AGE_REQ_NONE || ExtInv_GetItemAgeReq(itemIndex) == gSaveContext.linkAge) : \
-        (gItemAgeReqs[itemIndex] == AGE_REQ_NONE || gItemAgeReqs[itemIndex] == gSaveContext.linkAge)))
+#define CHECK_AGE_REQ_ITEM(itemIndex)                                 \
+    (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) ||            \
+     ((itemIndex) >= 0x9C                                             \
+          ? (ExtInv_GetItemAgeReq(itemIndex) == AGE_REQ_NONE ||       \
+             ExtInv_GetItemAgeReq(itemIndex) == gSaveContext.linkAge) \
+          : (gItemAgeReqs[itemIndex] == AGE_REQ_NONE || gItemAgeReqs[itemIndex] == gSaveContext.linkAge)))
 
 void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx);
 s32 KaleidoScope_UpdateQuestStatusPoint(PauseContext* pauseCtx, s32 point);

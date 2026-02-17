@@ -2538,9 +2538,24 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
                 hasOnDpad |= Player_ItemIsItemAction(DPAD_ITEM(buttonIndex), maskItemAction);
             }
         }
-        if (!Player_ItemIsItemAction(C_BTN_ITEM(0), maskItemAction) &&
-            !Player_ItemIsItemAction(C_BTN_ITEM(1), maskItemAction) &&
-            !Player_ItemIsItemAction(C_BTN_ITEM(2), maskItemAction) && !hasOnDpad) {
+        bool maskOnButton = Player_ItemIsItemAction(C_BTN_ITEM(0), maskItemAction) ||
+                            Player_ItemIsItemAction(C_BTN_ITEM(1), maskItemAction) ||
+                            Player_ItemIsItemAction(C_BTN_ITEM(2), maskItemAction) || hasOnDpad;
+
+        // MM Bunny Hood uses a different IA (PLAYER_IA_MM_MASK_BUNNY) than OOT Bunny Hood
+        // (PLAYER_IA_MASK_BUNNY_HOOD). Check both so the mask isn't auto-removed.
+        if (!maskOnButton && this->currentMask == PLAYER_MASK_BUNNY) {
+            maskOnButton = Player_ItemIsItemAction(C_BTN_ITEM(0), PLAYER_IA_MM_MASK_BUNNY) ||
+                           Player_ItemIsItemAction(C_BTN_ITEM(1), PLAYER_IA_MM_MASK_BUNNY) ||
+                           Player_ItemIsItemAction(C_BTN_ITEM(2), PLAYER_IA_MM_MASK_BUNNY);
+            if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
+                for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
+                    maskOnButton |= Player_ItemIsItemAction(DPAD_ITEM(buttonIndex), PLAYER_IA_MM_MASK_BUNNY);
+                }
+            }
+        }
+
+        if (!maskOnButton) {
             this->currentMask = PLAYER_MASK_NONE;
         }
     }
@@ -3499,6 +3514,34 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                 } else {
                     Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
                 }
+            } else if (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY) {
+                // MM Mask items from 3rd inventory page
+                if (TransformMasks_IsEnabled()) {
+                    TransformMaskId maskType = TransformMasks_GetMaskType(item);
+                    if (maskType != TRANSFORM_MASK_NONE) {
+                        TransformMasks_HandleMaskUse(play, this, item);
+                        return;
+                    }
+                }
+                // MM Bunny Hood: use OOT Bunny Hood behavior (speed + jump)
+                if (item == ITEM_MM_MASK_BUNNY) {
+                    TransformMasks_WearClear(); // Clear any other MM worn mask
+                    if (this->currentMask != PLAYER_MASK_NONE) {
+                        this->currentMask = PLAYER_MASK_NONE;
+                    } else {
+                        this->currentMask = PLAYER_MASK_BUNNY;
+                    }
+                    gSaveContext.ship.maskMemory = this->currentMask;
+                    func_808328EC(this, NA_SE_PL_CHANGE_ARMS);
+                } else {
+                    // Non-transformation, non-bunny MM masks: toggle wearing visually
+                    // Clear any OOT mask when putting on MM mask
+                    if (TransformMasks_WearGetCurrent() == ITEM_NONE && this->currentMask != PLAYER_MASK_NONE) {
+                        this->currentMask = PLAYER_MASK_NONE;
+                        gSaveContext.ship.maskMemory = PLAYER_MASK_NONE;
+                    }
+                    TransformMasks_WearToggle(play, this, item);
+                }
             } else if (itemAction >= PLAYER_IA_MASK_KEATON && itemAction <= PLAYER_IA_MASK_TRUTH) {
                 // Handle wearable masks (ONLY actual masks, not Lens or custom items)
 
@@ -3512,7 +3555,9 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                     }
                 }
 
-                // Normal mask wearing behavior
+                // Normal OOT mask wearing behavior - clear any MM mask first
+                TransformMasks_WearClear();
+
                 if (this->currentMask != PLAYER_MASK_NONE) {
                     this->currentMask = PLAYER_MASK_NONE;
                 } else {
@@ -4985,8 +5030,8 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
 
     // Transformation masks: Goron cannot climb medium/high ledges (MM z_player.c:6209)
     // Instead, Goron handles ledges with a ground-based jump in MmForm_UpdateActive.
-    if (!TransformMasks_BlocksLedgeGrab() &&
-        !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && (this->ledgeClimbType >= 2) &&
+    if (!TransformMasks_BlocksLedgeGrab() && !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) &&
+        (this->ledgeClimbType >= 2) &&
         (!(this->stateFlags1 & PLAYER_STATE1_IN_WATER) || (this->ageProperties->unk_14 > this->yDistToLedge))) {
         sp3C = 0;
 
@@ -5087,7 +5132,8 @@ void func_80838E70(PlayState* play, Player* this, f32 arg2, s16 arg3) {
 
 void func_80838F18(PlayState* play, Player* this) {
     // Transformation masks: MM form handles all water actions
-    if (TransformMasks_IsTransformed()) return;
+    if (TransformMasks_IsTransformed())
+        return;
     Player_SetupAction(play, this, Player_Action_8084D610, 0);
     Player_AnimChangeLoopSlowMorph(play, this, &gPlayerAnim_link_swimer_swim_wait);
 }
@@ -6889,7 +6935,8 @@ void func_8083D0A8(PlayState* play, Player* this, f32 arg2) {
 
 s32 func_8083D12C(PlayState* play, Player* this, Input* arg2) {
     // Transformation masks: MM form handles diving
-    if (TransformMasks_IsTransformed()) return 0;
+    if (TransformMasks_IsTransformed())
+        return 0;
     if (!(this->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && !(this->stateFlags2 & PLAYER_STATE2_UNDERWATER)) {
         if ((arg2 == NULL) || (CHECK_BTN_ALL(arg2->press.button, BTN_A) && (ABS(this->unk_6C2) < 12000) &&
                                (this->currentBoots != PLAYER_BOOTS_IRON))) {
@@ -9827,8 +9874,7 @@ void Player_Action_8084411C(Player* this, PlayState* play) {
                     // Transformation masks: Goron cannot grab ledges (MM z_player.c:6209)
                     // Other forms (Zora, Deku, FD) CAN grab ledges; Deku limited by unk_14=49
                     if (!GameInteractor_GetDisableLedgeGrabsActive() && !TransformMasks_BlocksLedgeGrab() &&
-                        (this->actor.bgCheckFlags & 0x200) &&
-                        !(this->stateFlags2 & PLAYER_STATE2_HOPPING) &&
+                        (this->actor.bgCheckFlags & 0x200) && !(this->stateFlags2 & PLAYER_STATE2_HOPPING) &&
                         !(this->stateFlags1 & (PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_IN_WATER)) &&
                         (this->linearVelocity > 0.0f)) {
                         if ((this->yDistToLedge >= 150.0f) &&
@@ -12552,6 +12598,9 @@ void Player_Update(Actor* thisx, PlayState* play) {
 
         // TRANSFORMATION MASKS: Update system
         TransformMasks_Update(play, this);
+
+        // MM MASK WEARING: Per-mask effects update
+        TransformMasks_WearUpdate(play, this);
     }
 
     MREG(52) = this->actor.world.pos.x;
@@ -12683,34 +12732,7 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
         }
 
         if (this->currentMask != PLAYER_MASK_BUNNY || !CVarGetInteger(CVAR_ENHANCEMENT("HideBunnyHood"), 0)) {
-            // Check for MM transformation mask replacement
-            Gfx* maskDL = TransformMasks_GetMaskDL(this->currentMask);
-            u8 isMmMask = (maskDL != NULL);
-
-            if (maskDL == NULL) {
-                maskDL = sMaskDlists[this->currentMask - 1];
-            }
-
-            // MM masks need matrix correction - they're designed for MM Link's head
-            // which has different orientation than OOT Link's head
-            if (isMmMask) {
-                Matrix_Push();
-                Matrix_RotateY(DEG_TO_RAD(-90), MTXMODE_APPLY);
-                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-                Matrix_RotateX(DEG_TO_RAD(180), MTXMODE_APPLY);
-                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-                Matrix_Translate(0.0f, -2000.0f, 0.0f, MTXMODE_APPLY); // Move forward to face
-                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            }
-
-            gSPDisplayList(POLY_OPA_DISP++, maskDL);
-
-            if (isMmMask) {
-                Matrix_Pop();
-            }
+            gSPDisplayList(POLY_OPA_DISP++, sMaskDlists[this->currentMask - 1]);
         }
 
         if (CVarGetInteger(CVAR_GENERAL("FixIceTrapWithBunnyHood"), 1))

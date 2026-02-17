@@ -13,6 +13,7 @@
 #include "mods/items/custom_items.h"
 #include "mods/extended_player.h"
 #include "mods/items/logic/item_mitts.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #include <stdlib.h>
 
@@ -2076,6 +2077,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             }
         } else if (limbIndex == PLAYER_LIMB_HEAD) {
             Matrix_MultVec3f(&D_801260D4, &this->actor.focus.pos);
+
+            // Draw worn MM mask on Link's head (matrix is in head limb space)
+            TransformMasks_WearDraw(play, this);
         } else {
             Vec3f* vec = &sLeftRightFootLimbModelFootPos[(gSaveContext.linkAge)];
 

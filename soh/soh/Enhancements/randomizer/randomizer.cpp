@@ -121,6 +121,103 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "secondes.^Appuyez sur %y[C]%w pour activer&(nécessite une %rFée en Bouteille%w).^%yA%w = Monter  %yB%w = "
       "Descendre&%yL%w = Sprint&1 minute de recharge après utilisation." },
 
+    // MM Masks (Third Inventory Page)
+    { RG_MM_MASK_POSTMAN, static_cast<ItemID>(ITEM_MM_MASK_POSTMAN),
+      "You got the %yPostman's Hat%w!&A mask from Majora's Mask.",
+      "Du hast den %yBriefträgerhut%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yChapeau du Facteur%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_ALL_NIGHT, static_cast<ItemID>(ITEM_MM_MASK_ALL_NIGHT),
+      "You got the %yAll-Night Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yNachtmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Nuit%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_BLAST, static_cast<ItemID>(ITEM_MM_MASK_BLAST),
+      "You got the %yBlast Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yExplosionsmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque d'Explosion%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_STONE, static_cast<ItemID>(ITEM_MM_MASK_STONE),
+      "You got the %yStone Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %ySteinmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Pierre%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_GREAT_FAIRY, static_cast<ItemID>(ITEM_MM_MASK_GREAT_FAIRY),
+      "You got the %yGreat Fairy Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yFeenmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de la Grande Fée%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_DEKU, static_cast<ItemID>(ITEM_MM_MASK_DEKU),
+      "You got the %gDeku Mask%w!&A transformation mask from&Majora's Mask.",
+      "Du hast die %gDeku-Maske%w!&Eine Verwandlungsmaske aus&Majoras Mask.",
+      "Vous obtenez le %gMasque Mojo%w!&Un masque de transformation&de Majora's Mask." },
+    { RG_MM_MASK_KEATON, static_cast<ItemID>(ITEM_MM_MASK_KEATON),
+      "You got the %yKeaton Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yKeaton-Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Keaton%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_BREMEN, static_cast<ItemID>(ITEM_MM_MASK_BREMEN),
+      "You got the %yBremen Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yBremen-Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Brême%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_BUNNY, static_cast<ItemID>(ITEM_MM_MASK_BUNNY),
+      "You got the %yBunny Hood%w!&A mask from Majora's Mask.",
+      "Du hast die %yHasenohren%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Lapin%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_DON_GERO, static_cast<ItemID>(ITEM_MM_MASK_DON_GERO),
+      "You got %yDon Gero's Mask%w!&A mask from Majora's Mask.",
+      "Du hast %yDon Geros Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Don Gero%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_SCENTS, static_cast<ItemID>(ITEM_MM_MASK_SCENTS),
+      "You got the %yMask of Scents%w!&A mask from Majora's Mask.",
+      "Du hast die %yGeruchsmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque des Odeurs%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_GORON, static_cast<ItemID>(ITEM_MM_MASK_GORON),
+      "You got the %rGoron Mask%w!&A transformation mask from&Majora's Mask.",
+      "Du hast die %rGoronen-Maske%w!&Eine Verwandlungsmaske aus&Majoras Mask.",
+      "Vous obtenez le %rMasque de Goron%w!&Un masque de transformation&de Majora's Mask." },
+    { RG_MM_MASK_ROMANI, static_cast<ItemID>(ITEM_MM_MASK_ROMANI),
+      "You got %yRomani's Mask%w!&A mask from Majora's Mask.",
+      "Du hast %yRomanis Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Romani%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_CIRCUS_LEADER, static_cast<ItemID>(ITEM_MM_MASK_CIRCUS_LEADER),
+      "You got the %yCircus Leader's Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yZirkusleitermaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque du Chef de Cirque%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_KAFEI, static_cast<ItemID>(ITEM_MM_MASK_KAFEI), "You got %yKafei's Mask%w!&A mask from Majora's Mask.",
+      "Du hast %yKafeis Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Kafei%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_COUPLE, static_cast<ItemID>(ITEM_MM_MASK_COUPLE),
+      "You got the %yCouple's Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yPaarmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque des Amoureux%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_TRUTH, static_cast<ItemID>(ITEM_MM_MASK_TRUTH),
+      "You got the %yMask of Truth%w!&A mask from Majora's Mask.",
+      "Du hast die %yMaske der Wahrheit%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Vérité%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_ZORA, static_cast<ItemID>(ITEM_MM_MASK_ZORA),
+      "You got the %bZora Mask%w!&A transformation mask from&Majora's Mask.",
+      "Du hast die %bZora-Maske%w!&Eine Verwandlungsmaske aus&Majoras Mask.",
+      "Vous obtenez le %bMasque de Zora%w!&Un masque de transformation&de Majora's Mask." },
+    { RG_MM_MASK_KAMARO, static_cast<ItemID>(ITEM_MM_MASK_KAMARO),
+      "You got %yKamaro's Mask%w!&A mask from Majora's Mask.",
+      "Du hast %yKamaros Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Kamaro%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_GIBDO, static_cast<ItemID>(ITEM_MM_MASK_GIBDO),
+      "You got the %yGibdo Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yGibdo-Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Gibdo%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_GARO, static_cast<ItemID>(ITEM_MM_MASK_GARO),
+      "You got the %yGaro's Mask%w!&A mask from Majora's Mask.",
+      "Du hast %yGaros Maske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Garo%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_CAPTAIN, static_cast<ItemID>(ITEM_MM_MASK_CAPTAIN),
+      "You got the %yCaptain's Hat%w!&A mask from Majora's Mask.",
+      "Du hast den %yKapitänshut%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez la %yCasquette du Capitaine%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_GIANT, static_cast<ItemID>(ITEM_MM_MASK_GIANT),
+      "You got the %yGiant's Mask%w!&A mask from Majora's Mask.",
+      "Du hast die %yRiesenmaske%w!&Eine Maske aus Majoras Mask.",
+      "Vous obtenez le %yMasque de Géant%w!&Un masque de Majora's Mask." },
+    { RG_MM_MASK_FIERCE_DEITY, static_cast<ItemID>(ITEM_MM_MASK_FIERCE_DEITY),
+      "You got the %pFierce Deity Mask%w!&A transformation mask from&Majora's Mask.",
+      "Du hast %pMajoras Maske%w!&Eine Verwandlungsmaske aus&Majoras Mask.",
+      "Vous obtenez le %pMasque du Dieu Féroce%w!&Un masque de transformation&de Majora's Mask." },
+
     { RG_ZONAI_PERMAFROST, static_cast<ItemID>(ITEM_ZONAI_PERMAFROST),
       "You got %cZonai Permafrost%w!&Ancient Zonai technology that&freezes the flow of time itself.^Press %y[C]%w to "
       "cast the spell.&%rAll enemies%w, %ypuzzle elements%w,&and even the %cday/night cycle%w&freeze for %g10 "
@@ -4368,6 +4465,79 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_DOMINION_ROD:
             ExtInv_SetItemById(ITEM_DOMINION_ROD);
+            break;
+        // MM Masks (Third Inventory Page)
+        case RG_MM_MASK_POSTMAN:
+            ExtInv_SetItemById(ITEM_MM_MASK_POSTMAN);
+            break;
+        case RG_MM_MASK_ALL_NIGHT:
+            ExtInv_SetItemById(ITEM_MM_MASK_ALL_NIGHT);
+            break;
+        case RG_MM_MASK_BLAST:
+            ExtInv_SetItemById(ITEM_MM_MASK_BLAST);
+            break;
+        case RG_MM_MASK_STONE:
+            ExtInv_SetItemById(ITEM_MM_MASK_STONE);
+            break;
+        case RG_MM_MASK_GREAT_FAIRY:
+            ExtInv_SetItemById(ITEM_MM_MASK_GREAT_FAIRY);
+            break;
+        case RG_MM_MASK_DEKU:
+            ExtInv_SetItemById(ITEM_MM_MASK_DEKU);
+            break;
+        case RG_MM_MASK_KEATON:
+            ExtInv_SetItemById(ITEM_MM_MASK_KEATON);
+            break;
+        case RG_MM_MASK_BREMEN:
+            ExtInv_SetItemById(ITEM_MM_MASK_BREMEN);
+            break;
+        case RG_MM_MASK_BUNNY:
+            ExtInv_SetItemById(ITEM_MM_MASK_BUNNY);
+            break;
+        case RG_MM_MASK_DON_GERO:
+            ExtInv_SetItemById(ITEM_MM_MASK_DON_GERO);
+            break;
+        case RG_MM_MASK_SCENTS:
+            ExtInv_SetItemById(ITEM_MM_MASK_SCENTS);
+            break;
+        case RG_MM_MASK_GORON:
+            ExtInv_SetItemById(ITEM_MM_MASK_GORON);
+            break;
+        case RG_MM_MASK_ROMANI:
+            ExtInv_SetItemById(ITEM_MM_MASK_ROMANI);
+            break;
+        case RG_MM_MASK_CIRCUS_LEADER:
+            ExtInv_SetItemById(ITEM_MM_MASK_CIRCUS_LEADER);
+            break;
+        case RG_MM_MASK_KAFEI:
+            ExtInv_SetItemById(ITEM_MM_MASK_KAFEI);
+            break;
+        case RG_MM_MASK_COUPLE:
+            ExtInv_SetItemById(ITEM_MM_MASK_COUPLE);
+            break;
+        case RG_MM_MASK_TRUTH:
+            ExtInv_SetItemById(ITEM_MM_MASK_TRUTH);
+            break;
+        case RG_MM_MASK_ZORA:
+            ExtInv_SetItemById(ITEM_MM_MASK_ZORA);
+            break;
+        case RG_MM_MASK_KAMARO:
+            ExtInv_SetItemById(ITEM_MM_MASK_KAMARO);
+            break;
+        case RG_MM_MASK_GIBDO:
+            ExtInv_SetItemById(ITEM_MM_MASK_GIBDO);
+            break;
+        case RG_MM_MASK_GARO:
+            ExtInv_SetItemById(ITEM_MM_MASK_GARO);
+            break;
+        case RG_MM_MASK_CAPTAIN:
+            ExtInv_SetItemById(ITEM_MM_MASK_CAPTAIN);
+            break;
+        case RG_MM_MASK_GIANT:
+            ExtInv_SetItemById(ITEM_MM_MASK_GIANT);
+            break;
+        case RG_MM_MASK_FIERCE_DEITY:
+            ExtInv_SetItemById(ITEM_MM_MASK_FIERCE_DEITY);
             break;
         default:
             LUSLOG_WARN("Randomizer_Item_Give didn't have behaviour specified for getItemId=%d", item);

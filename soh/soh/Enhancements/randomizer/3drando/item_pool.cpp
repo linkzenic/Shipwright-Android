@@ -9,6 +9,7 @@
 #include "spoiler_log.hpp"
 #include "z64item.h"
 #include <spdlog/spdlog.h>
+#include "soh/OTRGlobals.h" // CVarGetInteger
 
 std::vector<RandomizerGet> itemPool = {};
 std::vector<RandomizerGet> lesserPool = {};
@@ -691,18 +692,58 @@ void GenerateItemPool() {
     }
 
     if (ctx->GetOption(RSK_MASK_QUEST).Is(RO_MASK_QUEST_SHUFFLE)) {
+        // Remove OOT Goron/Zora masks when MM masks are in the rando pool
+        bool mmMasksInPool = CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) != 0 ||
+                             CVarGetInteger("gMods.MmMasks.RandoTransformOnly", 0) != 0;
         AddItemToPool(RG_KEATON_MASK, 2, 1, 1, 1);
         AddItemToPool(RG_SKULL_MASK, 2, 1, 1, 1);
         AddItemToPool(RG_SPOOKY_MASK, 2, 1, 1, 1);
         AddItemToPool(RG_BUNNY_HOOD, 2, 1, 1, 1);
-        AddItemToPool(RG_GORON_MASK, 2, 1, 1, 1);
-        AddItemToPool(RG_ZORA_MASK, 2, 1, 1, 1);
+        if (!mmMasksInPool) {
+            AddItemToPool(RG_GORON_MASK, 2, 1, 1, 1);
+            AddItemToPool(RG_ZORA_MASK, 2, 1, 1, 1);
+        }
         AddItemToPool(RG_GERUDO_MASK, 2, 1, 1, 1);
         AddItemToPool(RG_MASK_OF_TRUTH, 2, 1, 1, 1);
     }
 
     if (ctx->GetOption(RSK_ROCS_FEATHER)) {
         AddItemToPool(RG_ROCS_FEATHER, 2, 1, 1, 1);
+    }
+
+    // MM Masks (Third Inventory Page) - All 24 masks
+    if (CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0)) {
+        AddItemToPool(RG_MM_MASK_POSTMAN, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_ALL_NIGHT, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_BLAST, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_STONE, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_GREAT_FAIRY, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_DEKU, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_KEATON, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_BREMEN, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_BUNNY, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_DON_GERO, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_SCENTS, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_GORON, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_ROMANI, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_CIRCUS_LEADER, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_KAFEI, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_COUPLE, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_TRUTH, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_ZORA, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_KAMARO, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_GIBDO, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_GARO, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_CAPTAIN, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_GIANT, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_FIERCE_DEITY, 2, 1, 1, 1);
+    }
+    // MM Masks - Transformation Only (4 masks)
+    else if (CVarGetInteger("gMods.MmMasks.RandoTransformOnly", 0)) {
+        AddItemToPool(RG_MM_MASK_DEKU, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_GORON, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_ZORA, 2, 1, 1, 1);
+        AddItemToPool(RG_MM_MASK_FIERCE_DEITY, 2, 1, 1, 1);
     }
 
     // Skijer's Custom Items (Second Inventory Page) - 24 items

@@ -822,10 +822,24 @@ void SohMenu::AddMenuEnhancements() {
                      .Tooltip("Wearing the Bunny Hood grants a speed and jump boost like in Majora's Mask.\n"
                               "Can also be limited to only the speed boost.\n"
                               "The effects of either option are not accounted for in Randomizer logic.\n"
-                              "Also disables NPC's reactions to wearing the Bunny Hood."));
+                              "Also disables NPC's reactions to wearing the Bunny Hood."))
+        .PreFunc([](WidgetInfo& info) {
+            if (CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+                CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"), 2); // Force Fast + Jump
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Automatically set to Fast + Jump by MM Masks Inventory";
+            }
+        });
     AddWidget(path, "Masks Equippable as Adult", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("AdultMasks"))
-        .Options(CheckboxOptions().Tooltip("Allows masks to be equipped normally from the pause menu as adult."));
+        .Options(CheckboxOptions().Tooltip("Allows masks to be equipped normally from the pause menu as adult."))
+        .PreFunc([](WidgetInfo& info) {
+            if (CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+                CVarSetInteger(CVAR_ENHANCEMENT("AdultMasks"), 1); // Force enabled
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Automatically enabled by MM Masks Inventory";
+            }
+        });
     AddWidget(path, "Persistent Masks", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("PersistentMasks"))
         .Options(

@@ -169,10 +169,10 @@ void MmForm_OotNoopAction(Player* thisx, PlayState* play);
 //   2. MmForm_CheckDamage reads this instead of checking AC_HIT directly
 // =============================================================================
 typedef struct {
-    u8 hasPending;    // 1 if damage detected this frame, 0 otherwise
-    s32 damage;       // actor.colChkInfo.damage
-    u8 acHitEffect;   // actor.colChkInfo.acHitEffect
-    Actor* attacker;  // cylinder.base.ac (may be NULL)
+    u8 hasPending;   // 1 if damage detected this frame, 0 otherwise
+    s32 damage;      // actor.colChkInfo.damage
+    u8 acHitEffect;  // actor.colChkInfo.acHitEffect
+    Actor* attacker; // cylinder.base.ac (may be NULL)
 } MmFormPendingDamage;
 
 extern MmFormPendingDamage gMmFormPendingDamage;
@@ -190,11 +190,6 @@ u8 TransformMasks_IsTransformedAny(void);
 
 // Item restriction: returns true if item is allowed for current form
 u8 TransformMasks_IsItemAllowed(s32 item);
-
-// Replacement check functions (returns 1 if CVar enabled AND mm.o2r available)
-u8 TransformMasks_DekuReplacesSkull(void);    // Skull Mask -> Deku Mask
-u8 TransformMasks_StoneReplacesSpooky(void);  // Spooky Mask -> Stone Mask
-u8 TransformMasks_FierceReplacesGerudo(void); // Gerudo Mask -> Fierce Deity Mask
 
 TransformMaskId TransformMasks_GetMaskType(s32 item);
 void TransformMasks_HandleMaskUse(PlayState* play, Player* player, s32 item);
@@ -215,9 +210,28 @@ f32 TransformMasks_GetFormHeight(void);
 // Returns 1 if current form blocks ledge grab (only Goron). Returns 0 otherwise.
 u8 TransformMasks_BlocksLedgeGrab(void);
 
-// Asset replacement getters (returns MM asset if replacement active, else NULL)
-Gfx* TransformMasks_GetMaskDL(s32 playerMask);   // For worn mask DL
-void* TransformMasks_GetMaskNameTex(s32 itemId); // For inventory name texture
+// OOT processed control stick magnitude (0-60, normalized to circle).
+// Defined in transformation_masks.c which is compiled inside z_player.c and sees the static.
+f32 TransformMasks_GetStickMagnitude(void);
+
+// =============================================================================
+// MM Mask Wearing (non-transformation masks drawn on Link's head)
+// =============================================================================
+
+// Toggle wearing an MM mask. Transformation masks are handled separately.
+void TransformMasks_WearToggle(PlayState* play, Player* player, s32 itemId);
+
+// Draw the currently worn MM mask (call from PostLimbDraw for HEAD limb).
+void TransformMasks_WearDraw(PlayState* play, Player* player);
+
+// Per-mask effect update (call each frame).
+void TransformMasks_WearUpdate(PlayState* play, Player* player);
+
+// Get current worn MM mask item ID (ITEM_NONE if none).
+s32 TransformMasks_WearGetCurrent(void);
+
+// Clear worn MM mask (scene transition, death, etc.).
+void TransformMasks_WearClear(void);
 
 #ifdef __cplusplus
 }

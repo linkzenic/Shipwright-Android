@@ -639,6 +639,49 @@ void DrawInventoryTab() {
     ImGui::Spacing();
 
     // ============================================================================
+    // AMMO SECTION
+    // ============================================================================
+    ImGui::Text("Ammo");
+    for (uint32_t ammoIndex = 0, drawnAmmoItems = 0; ammoIndex < 16; ammoIndex++) {
+        uint8_t item = (restrictToValid) ? gAmmoItems[ammoIndex] : gAllAmmoItems[ammoIndex];
+        if (item != ITEM_NONE) {
+            // For legal items, display as 1 row of 7. For unrestricted items, display rows of 6 to match
+            // inventory
+            if ((restrictToValid && (drawnAmmoItems != 0)) || ((drawnAmmoItems % 6) != 0)) {
+                ImGui::SameLine();
+            }
+            drawnAmmoItems++;
+
+            ImGui::PushID(ammoIndex);
+            ImGui::PushItemWidth(IMAGE_SIZE);
+            ImGui::BeginGroup();
+
+            ImGui::Image(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(itemMapping[item].name),
+                         ImVec2(IMAGE_SIZE, IMAGE_SIZE));
+            PushStyleInput(THEME_COLOR);
+            ImGui::InputScalar("##ammoInput", ImGuiDataType_S8, &AMMO(item));
+            PopStyleInput();
+
+            ImGui::EndGroup();
+            ImGui::PopItemWidth();
+            ImGui::PopID();
+        }
+    }
+
+    // Trade quest flags are only used when shuffling the trade sequence, so
+    // don't show this if it isn't needed.
+    if (IS_RANDO && OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_ADULT_TRADE) &&
+        ImGui::TreeNode("Adult trade quest items")) {
+        for (int i = ITEM_POCKET_EGG; i <= ITEM_CLAIM_CHECK; i++) {
+            DrawBGSItemFlag(i);
+        }
+        ImGui::TreePop();
+    }
+
+    ImGui::Spacing();
+    ImGui::Spacing();
+
+    // ============================================================================
     // CUSTOM ITEMS INVENTORY (Page 2 - Slots 24-47)
     // ============================================================================
     if (ImGui::CollapsingHeader("Custom Items Inventory (Page 2)", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -785,43 +828,157 @@ void DrawInventoryTab() {
     ImGui::Spacing();
 
     // ============================================================================
-    // AMMO SECTION
+    // MM MASKS INVENTORY (Page 3 - Slots 48-71)
     // ============================================================================
-    ImGui::Text("Ammo");
-    for (uint32_t ammoIndex = 0, drawnAmmoItems = 0; ammoIndex < 16; ammoIndex++) {
-        uint8_t item = (restrictToValid) ? gAmmoItems[ammoIndex] : gAllAmmoItems[ammoIndex];
-        if (item != ITEM_NONE) {
-            // For legal items, display as 1 row of 7. For unrestricted items, display rows of 6 to match
-            // inventory
-            if ((restrictToValid && (drawnAmmoItems != 0)) || ((drawnAmmoItems % 6) != 0)) {
-                ImGui::SameLine();
+    if (ImGui::CollapsingHeader("MM Masks Inventory (Page 3)")) {
+        static const char* sMmMaskNames[24] = {
+            "Postman's Hat", "All-Night Mask", "Blast Mask",   "Stone Mask",      "Great Fairy Mask", "Deku Mask",
+            "Keaton Mask",   "Bremen Mask",    "Bunny Hood",   "Don Gero's Mask", "Mask of Scents",   "Goron Mask",
+            "Romani's Mask", "Circus Leader",  "Kafei's Mask", "Couple's Mask",   "Mask of Truth",    "Zora Mask",
+            "Kamaro's Mask", "Gibdo Mask",     "Garo Mask",    "Captain's Hat",   "Giant's Mask",     "Fierce Deity",
+        };
+
+        // MM mask icon OTR paths for lazy registration
+        static const char* sMmMaskIconOtrPaths[24] = {
+            "__OTR__icon_item_static_yar/gItemIconPostmansHatTex",
+            "__OTR__icon_item_static_yar/gItemIconAllNightMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconBlastMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconStoneMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconGreatFairyMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconDekuMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconKeatonMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconBremenMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconBunnyHoodTex",
+            "__OTR__icon_item_static_yar/gItemIconDonGeroMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconMaskOfScentsTex",
+            "__OTR__icon_item_static_yar/gItemIconGoronMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconRomaniMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconCircusLeaderMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconKafeisMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconCouplesMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconMaskOfTruthTex",
+            "__OTR__icon_item_static_yar/gItemIconZoraMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconKamaroMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconGibdoMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconGaroMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconCaptainsHatTex",
+            "__OTR__icon_item_static_yar/gItemIconGiantsMaskTex",
+            "__OTR__icon_item_static_yar/gItemIconFierceDeityMaskTex",
+        };
+
+        // Lazy-register MM mask icon textures with the GUI system (once)
+        static bool sMmIconsRegistered = false;
+        if (!sMmIconsRegistered) {
+            sMmIconsRegistered = true;
+            auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+            for (int i = 0; i < 24; i++) {
+                gui->LoadGuiTexture(sMmMaskNames[i], sMmMaskIconOtrPaths[i], ImVec4(1, 1, 1, 1));
             }
-            drawnAmmoItems++;
-
-            ImGui::PushID(ammoIndex);
-            ImGui::PushItemWidth(IMAGE_SIZE);
-            ImGui::BeginGroup();
-
-            ImGui::Image(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(itemMapping[item].name),
-                         ImVec2(IMAGE_SIZE, IMAGE_SIZE));
-            PushStyleInput(THEME_COLOR);
-            ImGui::InputScalar("##ammoInput", ImGuiDataType_S8, &AMMO(item));
-            PopStyleInput();
-
-            ImGui::EndGroup();
-            ImGui::PopItemWidth();
-            ImGui::PopID();
         }
-    }
 
-    // Trade quest flags are only used when shuffling the trade sequence, so
-    // don't show this if it isn't needed.
-    if (IS_RANDO && OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_ADULT_TRADE) &&
-        ImGui::TreeNode("Adult trade quest items")) {
-        for (int i = ITEM_POCKET_EGG; i <= ITEM_CLAIM_CHECK; i++) {
-            DrawBGSItemFlag(i);
+        if (ImGui::Button("Give All MM Masks")) {
+            for (int i = 0; i < 24; i++) {
+                gSaveContext.inventory.items[48 + i] = gPage3MaskItems[i];
+            }
         }
-        ImGui::TreePop();
+        ImGui::SameLine();
+        if (ImGui::Button("Clear All MM Masks")) {
+            for (int i = 48; i < 72; i++) {
+                gSaveContext.inventory.items[i] = ITEM_NONE;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Give Random MM Mask")) {
+            // Find an empty slot and give a random mask
+            std::vector<int> emptySlots;
+            for (int i = 0; i < 24; i++) {
+                if (gSaveContext.inventory.items[48 + i] == ITEM_NONE) {
+                    emptySlots.push_back(i);
+                }
+            }
+            if (!emptySlots.empty()) {
+                int r = emptySlots[rand() % emptySlots.size()];
+                gSaveContext.inventory.items[48 + r] = gPage3MaskItems[r];
+            }
+        }
+
+        ImGui::Spacing();
+
+        // Draw MM masks grid (4 rows x 6 columns = 24 masks) with icons
+        for (int32_t y = 0; y < 4; y++) {
+            for (int32_t x = 0; x < 6; x++) {
+                int32_t visualIndex = x + y * 6;
+                int32_t slotIndex = 48 + visualIndex;
+
+                ImGui::PushID(2000 + slotIndex);
+
+                if (x != 0) {
+                    ImGui::SameLine();
+                }
+
+                uint8_t item = gSaveContext.inventory.items[slotIndex];
+                const char* maskName = sMmMaskNames[visualIndex];
+                bool hasItem = (item != ITEM_NONE);
+
+                // Try to get the registered icon texture
+                auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+                auto tex = gui->GetTextureByName(maskName);
+
+                if (tex) {
+                    // Icon available - render like vanilla inventory
+                    PushStyleButton(hasItem ? Colors::DarkGray : Colors::DarkGray);
+                    bool clicked;
+                    if (hasItem) {
+                        clicked = ImGui::ImageButton(maskName, tex, ImVec2(IMAGE_SIZE, IMAGE_SIZE), ImVec2(0, 0),
+                                                     ImVec2(1, 1));
+                    } else {
+                        // Faded/empty slot
+                        clicked = ImGui::ImageButton(maskName, tex, ImVec2(IMAGE_SIZE, IMAGE_SIZE), ImVec2(0, 0),
+                                                     ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
+                    }
+                    PopStyleButton();
+
+                    if (clicked) {
+                        if (hasItem) {
+                            gSaveContext.inventory.items[slotIndex] = ITEM_NONE;
+                        } else {
+                            gSaveContext.inventory.items[slotIndex] = gPage3MaskItems[visualIndex];
+                        }
+                    }
+                } else {
+                    // Fallback: text button (mm.o2r not available)
+                    char buttonLabel[64];
+                    if (hasItem) {
+                        snprintf(buttonLabel, sizeof(buttonLabel), "%s##mmslot%d", maskName, slotIndex);
+                        PushStyleButton(Colors::Green);
+                    } else {
+                        snprintf(buttonLabel, sizeof(buttonLabel), "---##mmslot%d", slotIndex);
+                        PushStyleButton(Colors::DarkGray);
+                    }
+
+                    if (ImGui::Button(buttonLabel,
+                                      ImVec2(IMAGE_SIZE + 20, IMAGE_SIZE) + ImGui::GetStyle().FramePadding * 2)) {
+                        if (hasItem) {
+                            gSaveContext.inventory.items[slotIndex] = ITEM_NONE;
+                        } else {
+                            gSaveContext.inventory.items[slotIndex] = gPage3MaskItems[visualIndex];
+                        }
+                    }
+                    PopStyleButton();
+                }
+
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Slot %d: %s", slotIndex, maskName);
+                    if (hasItem) {
+                        ImGui::Text("Item ID: 0x%02X", item);
+                    }
+                    ImGui::EndTooltip();
+                }
+
+                ImGui::PopID();
+            }
+        }
     }
 }
 

@@ -1,8 +1,10 @@
 /**
  * extended_inventory.c - Extended inventory system implementation
  *
- * Manages custom items in a second inventory page (slots 24-47).
- * Handles icon lookups, age requirements, and page switching.
+ * Manages custom items in multiple inventory pages.
+ * Page 1: Vanilla OOT items (slots 0-23)
+ * Page 2: Custom items (slots 24-47)
+ * Page 3: MM Masks (slots 48-71) — requires mm.o2r and CVar
  */
 
 #include "extended_inventory.h"
@@ -40,13 +42,6 @@ extern const unsigned char gItemIconPending2Tex[];
 extern const unsigned char gItemIconPending3Tex[];
 static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTimer = 0 };
 
-// Cached MM mask icons (loaded once from mm.o2r)
-static void* sCachedDekuMaskIcon = NULL;
-static u8 sDekuMaskIconLoaded = 0;
-static void* sCachedStoneMaskIcon = NULL;
-static u8 sStoneMaskIconLoaded = 0;
-static void* sCachedFierceMaskIcon = NULL;
-static u8 sFierceMaskIconLoaded = 0;
 // Page 2 item layout (slots 24-47)
 // Note: ITEM_ROCS_FEATHER_SKIJER at slot 24 is progressive - becomes ITEM_ROCS_CAPE when upgraded (shares slot)
 // Slot 15 (actual slot 39) now has ITEM_DESIRE_SENSOR instead of ITEM_ROCS_CAPE
@@ -67,12 +62,40 @@ const uint8_t gPage2ItemAgeReqs[24] = { AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NON
                                         AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_ADULT,
                                         AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE,
                                         AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE };
+
+// Page 3: MM Masks layout (slots 48-71)
+// Row 0: Postman, AllNight, Blast, Stone, GreatFairy, Deku
+// Row 1: Keaton, Bremen, Bunny, DonGero, Scents, Goron
+// Row 2: Romani, CircusLeader, Kafei, Couple, Truth, Zora
+// Row 3: Kamaro, Gibdo, Garo, Captain, Giant, FierceDeity
+const uint8_t gPage3MaskItems[24] = {
+    ITEM_MM_MASK_POSTMAN,     ITEM_MM_MASK_ALL_NIGHT,     ITEM_MM_MASK_BLAST,  ITEM_MM_MASK_STONE,
+    ITEM_MM_MASK_GREAT_FAIRY, ITEM_MM_MASK_DEKU,          ITEM_MM_MASK_KEATON, ITEM_MM_MASK_BREMEN,
+    ITEM_MM_MASK_BUNNY,       ITEM_MM_MASK_DON_GERO,      ITEM_MM_MASK_SCENTS, ITEM_MM_MASK_GORON,
+    ITEM_MM_MASK_ROMANI,      ITEM_MM_MASK_CIRCUS_LEADER, ITEM_MM_MASK_KAFEI,  ITEM_MM_MASK_COUPLE,
+    ITEM_MM_MASK_TRUTH,       ITEM_MM_MASK_ZORA,          ITEM_MM_MASK_KAMARO, ITEM_MM_MASK_GIBDO,
+    ITEM_MM_MASK_GARO,        ITEM_MM_MASK_CAPTAIN,       ITEM_MM_MASK_GIANT,  ITEM_MM_MASK_FIERCE_DEITY,
+};
+
+// All MM masks are usable by both child and adult
+const uint8_t gPage3MaskAgeReqs[24] = {
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE,
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE,
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE,
+};
 ExtendedInventoryState* ExtInv_GetState(void) {
     return &sExtInvState;
 }
 void ExtInv_Reset(void) {
     sExtInvState.currentPage = 0;
     sExtInvState.pageSwitchTimer = 0;
+}
+// Clamp page if MM masks CVar was toggled off while on page 2
+void ExtInv_ClampPage(void) {
+    int maxPages = ExtInv_GetMaxPages();
+    if (sExtInvState.currentPage >= maxPages) {
+        sExtInvState.currentPage = 0;
+    }
 }
 void ExtInv_Update(void) {
     if (sExtInvState.pageSwitchTimer > 0) {
@@ -83,11 +106,23 @@ bool ExtInv_CanSwitchPage(void) {
     return sExtInvState.pageSwitchTimer == 0;
 }
 void ExtInv_SwitchPage(void) {
-    sExtInvState.currentPage ^= 1;
+    int maxPages = ExtInv_GetMaxPages();
+    sExtInvState.currentPage = (sExtInvState.currentPage + 1) % maxPages;
     sExtInvState.pageSwitchTimer = 15;
 }
 int ExtInv_GetCurrentPage(void) {
     return sExtInvState.currentPage;
+}
+int ExtInv_GetMaxPages(void) {
+    if (CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0))
+        return 3;
+    return 2;
+}
+bool ExtInv_IsMmMasksEnabled(void) {
+    return CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0) != 0;
+}
+bool ExtInv_IsOnlyTransformation(void) {
+    return CVarGetInteger("gMods.MmMasks.OnlyTransformation", 0) != 0;
 }
 int ExtInv_GetInventorySlot(int visualSlot) {
     return visualSlot + (sExtInvState.currentPage * 24);
@@ -98,13 +133,21 @@ bool ExtInv_IsSlotOnCurrentPage(uint8_t slot) {
     return (slot >= pageStart && slot <= pageEnd);
 }
 int ExtInv_GetPageForSlot(uint8_t slot) {
-    return (slot >= 24) ? 1 : 0;
+    if (slot >= 48)
+        return 2;
+    if (slot >= 24)
+        return 1;
+    return 0;
 }
 uint8_t ExtInv_GetItemAgeReq(uint16_t itemId) {
     for (int i = 0; i < 24; i++) {
         if (gPage2Items[i] == itemId) {
             return gPage2ItemAgeReqs[i];
         }
+    }
+    // MM Mask items: all AGE_REQ_NONE
+    if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
+        return AGE_REQ_NONE;
     }
     return 9;
 }
@@ -128,6 +171,10 @@ uint8_t ExtInv_GetSlotAgeReq(uint8_t slot) {
     // Custom slots (24-47) use gPage2ItemAgeReqs
     if (slot < 48) {
         return gPage2ItemAgeReqs[slot - 24];
+    }
+    // MM Mask slots (48-71) use gPage3MaskAgeReqs
+    if (slot < 72) {
+        return gPage3MaskAgeReqs[slot - 48];
     }
     return 9; // AGE_REQ_NONE for out-of-range
 }
@@ -154,7 +201,13 @@ uint8_t ExtInv_GetEquipAgeReq(uint8_t row, uint8_t col) {
     return gEquipAgeReqs[row][col];
 }
 
+extern void* MmMasks_LoadNameTex(uint16_t itemId);
+
 void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
+    // MM Mask items: load name texture from mm.o2r
+    if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
+        return MmMasks_LoadNameTex(itemId);
+    }
     extern const unsigned char gRocsFeatherNameTex[];
     extern const unsigned char gRocsCapeNameTex[];
     extern const unsigned char gDesireSensorNameTex[];
@@ -235,41 +288,22 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return NULL;
     }
 }
-void* ExtInv_GetItemIcon(uint16_t itemId) {
-    // Override vanilla mask icons with MM mask icons
-    // Skull Mask -> Deku Mask
-    if (itemId == ITEM_MASK_SKULL && TransformMasks_DekuReplacesSkull()) {
-        if (!sDekuMaskIconLoaded) {
-            sCachedDekuMaskIcon = MmAssets_LoadDekuMaskIcon();
-            sDekuMaskIconLoaded = 1;
-        }
-        if (sCachedDekuMaskIcon != NULL) {
-            return sCachedDekuMaskIcon;
-        }
-    }
-    // Spooky Mask -> Stone Mask
-    if (itemId == ITEM_MASK_SPOOKY && TransformMasks_StoneReplacesSpooky()) {
-        if (!sStoneMaskIconLoaded) {
-            sCachedStoneMaskIcon = MmAssets_LoadStoneMaskIcon();
-            sStoneMaskIconLoaded = 1;
-        }
-        if (sCachedStoneMaskIcon != NULL) {
-            return sCachedStoneMaskIcon;
-        }
-    }
-    // Gerudo Mask -> Fierce Deity Mask
-    if (itemId == ITEM_MASK_GERUDO && TransformMasks_FierceReplacesGerudo()) {
-        if (!sFierceMaskIconLoaded) {
-            sCachedFierceMaskIcon = MmAssets_LoadFierceMaskIcon();
-            sFierceMaskIconLoaded = 1;
-        }
-        if (sCachedFierceMaskIcon != NULL) {
-            return sCachedFierceMaskIcon;
-        }
-    }
+extern void* MmMasks_LoadIcon(uint16_t itemId);
 
+void* ExtInv_GetItemIcon(uint16_t itemId) {
     if (itemId < 156) {
         return gItemIcons[itemId];
+    }
+    // MM Mask items: load icon from mm.o2r
+    if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
+        // Bunny Hood: use OOT icon (same appearance, enables OOT behavior)
+        if (itemId == ITEM_MM_MASK_BUNNY) {
+            return gItemIcons[ITEM_MASK_BUNNY];
+        }
+        void* icon = MmMasks_LoadIcon(itemId);
+        if (icon)
+            return icon;
+        return gItemIcons[0]; // Fallback
     }
     switch (itemId) {
         case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
@@ -334,9 +368,16 @@ uint8_t ExtInv_GetItemSlot(uint16_t itemId) {
     if (itemId == ITEM_ROCS_CAPE) {
         return SLOT_ROCS; // Same as SLOT_ROCS_FEATHER_SKIJER (24)
     }
+    // Page 2 items
     for (int i = 0; i < 24; i++) {
         if (gPage2Items[i] == itemId) {
             return 24 + i;
+        }
+    }
+    // Page 3 MM Mask items
+    for (int i = 0; i < 24; i++) {
+        if (gPage3MaskItems[i] == itemId) {
+            return 48 + i;
         }
     }
     return 0xFF;

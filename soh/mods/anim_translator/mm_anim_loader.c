@@ -99,8 +99,8 @@ static MmAnimCacheEntry* MmAnimCache_GetFreeEntry(void) {
     // anim->segment data. Freeing cached entries causes use-after-free crashes
     // (0xDDDDDDDD MSVC freed-memory pattern in AnimationContext_SetLoadFrame).
     // Only MmAnim_FlushCache() should free entries (on scene transitions).
-    MMANIM_LOG("[MmAnim] WARNING: Cache full (%d/%d entries). Animation will load but not be cached.",
-               sCacheCount, MM_ANIM_CACHE_SIZE);
+    MMANIM_LOG("[MmAnim] WARNING: Cache full (%d/%d entries). Animation will load but not be cached.", sCacheCount,
+               MM_ANIM_CACHE_SIZE);
     return NULL;
 }
 

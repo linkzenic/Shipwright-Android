@@ -2135,24 +2135,16 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                 // Save original item ID before any modulo/offset operations
                 u16 originalItemId = sp2A;
 
-                // Custom items (0x9C-0xB5) use ExtInv_GetCustomItemNameTex()
+                // Custom items (0x9C-0xB5) and MM masks (0xB7-0xCE) use ExtInv_GetCustomItemNameTex()
                 // Check original ID, not the modified sp2A
-                if (originalItemId >= 0x9C && originalItemId <= 0xB5) {
+                if ((originalItemId >= 0x9C && originalItemId <= 0xB5) ||
+                    (originalItemId >= ITEM_MM_MASK_POSTMAN && originalItemId <= ITEM_MM_MASK_FIERCE_DEITY)) {
                     textureName = (const char*)ExtInv_GetCustomItemNameTex(originalItemId, gSaveContext.language);
                     // If texture not found, use placeholder
                     if (textureName == NULL) {
                         textureName = iconNameTextures[0]; // Deku Stick as fallback
                     } else {
                         isCustomItem = true; // Custom texture data, not a string path
-                    }
-                }
-
-                // Check for MM transformation mask replacement (before vanilla processing)
-                if (!isCustomItem) {
-                    void* mmNameTex = TransformMasks_GetMaskNameTex(originalItemId);
-                    if (mmNameTex != NULL) {
-                        textureName = mmNameTex;
-                        isCustomItem = true; // MM textures are direct data like custom items
                     }
                 }
 

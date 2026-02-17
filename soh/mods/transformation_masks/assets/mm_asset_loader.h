@@ -130,6 +130,24 @@ u8 MmAssets_IsReplacementActive(const char* cvarName);
 const char* MmAssets_GetReplacement(const char* ootPath);
 
 // =============================================================================
+// MM Masks Inventory (3rd Page) Icon/Name Loaders
+// =============================================================================
+
+/**
+ * Load icon texture for any MM mask item
+ * @param itemId Item ID (ITEM_MM_MASK_POSTMAN through ITEM_MM_MASK_FIERCE_DEITY)
+ * @return Pointer to 32x32 RGBA icon texture, or NULL if not found
+ */
+void* MmMasks_LoadIcon(uint16_t itemId);
+
+/**
+ * Load name texture for any MM mask item
+ * @param itemId Item ID (ITEM_MM_MASK_POSTMAN through ITEM_MM_MASK_FIERCE_DEITY)
+ * @return Pointer to name texture, or NULL if not found
+ */
+void* MmMasks_LoadNameTex(uint16_t itemId);
+
+// =============================================================================
 // Transformation Mask Asset Loaders
 // =============================================================================
 
