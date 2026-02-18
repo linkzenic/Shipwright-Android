@@ -100,6 +100,8 @@ bool Logic::HasItem(RandomizerGet itemName) {
             // Custom Item
         case RG_SHOVEL:
             return CheckInventory(ITEM_SHOVEL, true);
+        case RG_DEMISE_DESTRUCTION:
+            return CheckInventory(ITEM_DEMISE_DESTRUCTION, true);
             // Songs
         case RG_ZELDAS_LULLABY:
         case RG_EPONAS_SONG:
@@ -326,6 +328,8 @@ bool Logic::CanUse(RandomizerGet itemName) {
         case RG_ICE_ARROWS:
         case RG_LIGHT_ARROWS:
             return CanUse(RG_MAGIC_SINGLE) && CanUse(RG_FAIRY_BOW);
+        case RG_DEMISE_DESTRUCTION:
+            return CanUse(RG_MAGIC_SINGLE);
 
         // Adult items
         // TODO: Uncomment those if we ever implement more item usability settings
@@ -561,7 +565,10 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             switch (distance) {
                 case ED_CLOSE:
                     // hammer jumpslash cannot damage these, but hammer swing can
-                    killed = CanUse(RG_MEGATON_HAMMER) /*|| HasItem(RG_SHOVEL) Wait add damage on SHOVEL ITEM*/;
+                    killed = CanUse(RG_MEGATON_HAMMER) ||
+                             CanUse(RG_DEMISE_DESTRUCTION) /*|| HasItem(RG_SHOVEL) Wait add damage on SHOVEL ITEM and
+                                                              add other Enemy*/
+                        ;
                     [[fallthrough]];
                 case ED_SHORT_JUMPSLASH:
                     killed = killed || CanUse(RG_KOKIRI_SWORD);
@@ -599,7 +606,7 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             switch (distance) {
                 case ED_CLOSE:
                     // hammer jumpslash cannot damage these, but hammer swing can
-                    killed = CanUse(RG_MEGATON_HAMMER);
+                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_DEMISE_DESTRUCTION);
                     [[fallthrough]];
                 case ED_SHORT_JUMPSLASH:
                     killed = killed || CanUse(RG_KOKIRI_SWORD);
@@ -627,17 +634,19 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             }
             return killed;
         case RE_DODONGO:
-            return CanUseSword() || CanUse(RG_MEGATON_HAMMER) || (quantity <= 5 && CanUse(RG_STICKS)) ||
-                   HasExplosives() || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW);
+            return CanUseSword() || CanUse(RG_MEGATON_HAMMER) || CanUse(RG_DEMISE_DESTRUCTION) ||
+                   (quantity <= 5 && CanUse(RG_STICKS)) || HasExplosives() || CanUse(RG_FAIRY_SLINGSHOT) ||
+                   CanUse(RG_FAIRY_BOW);
         case RE_LIZALFOS:
-            return CanJumpslash() || HasExplosives() || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW);
+            return CanJumpslash() || HasExplosives() || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW) ||
+                   CanUse(RG_DEMISE_DESTRUCTION);
         case RE_KEESE:
         case RE_FIRE_KEESE:
         case RE_GUAY:
             switch (distance) {
                 case ED_CLOSE:
                 case ED_SHORT_JUMPSLASH:
-                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_KOKIRI_SWORD);
+                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_KOKIRI_SWORD) || CanUse(RG_DEMISE_DESTRUCTION);
                     [[fallthrough]];
                 case ED_MASTER_SWORD_JUMPSLASH:
                     killed = killed || CanUse(RG_MASTER_SWORD);
@@ -673,9 +682,10 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
                     (CanUse(RG_NUTS) || HookshotOrBoomerang() || CanStandingShield()));
         case RE_DEAD_HAND:
             // RANDOTODO change Dead Hand trick to be sticks Dead Hand
-            return CanUseSword() || (CanUse(RG_STICKS) && ctx->GetTrickOption(RT_BOTW_CHILD_DEADHAND));
+            return CanUseSword() || CanUse(RG_DEMISE_DESTRUCTION) ||
+                   (CanUse(RG_STICKS) && ctx->GetTrickOption(RT_BOTW_CHILD_DEADHAND));
         case RE_WITHERED_DEKU_BABA:
-            return CanUseSword() || CanUse(RG_BOOMERANG);
+            return CanUseSword() || CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_BOOMERANG);
         case RE_LIKE_LIKE:
         case RE_FLOORMASTER:
             return CanDamage();
@@ -685,7 +695,7 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             switch (distance) {
                 case ED_CLOSE:
                 case ED_SHORT_JUMPSLASH:
-                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_KOKIRI_SWORD);
+                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_KOKIRI_SWORD);
                     [[fallthrough]];
                 case ED_MASTER_SWORD_JUMPSLASH:
                     killed = killed || CanUse(RG_MASTER_SWORD);
@@ -712,7 +722,7 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
         // bow and sling can wake them and damage after they shed their armour, so could reduce ammo requirements for
         // explosives to 10. requires 8 sticks to kill so would be a trick unless we apply higher stick bag logic
         case RE_IRON_KNUCKLE:
-            return CanUseSword() || CanUse(RG_MEGATON_HAMMER) || HasExplosives();
+            return CanUseSword() || CanUse(RG_MEGATON_HAMMER) || CanUse(RG_DEMISE_DESTRUCTION) || HasExplosives();
         // To stun flare dancer with chus, you have to hit the flame under it while it is spinning. It should eventually
         // return to spinning after dashing for a while if you miss the window it is possible to damage the core with
         // explosives, but difficult to get all 4 hits in even with chus, and if it reconstructs the core heals, so it
@@ -758,20 +768,20 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             return CanJumpslash() || HasExplosives() || CanUse(RG_FAIRY_BOW);
         case RE_FREEZARD:
             return CanUse(RG_MASTER_SWORD) || CanUse(RG_BIGGORON_SWORD) || CanUse(RG_MEGATON_HAMMER) ||
-                   CanUse(RG_STICKS) || HasExplosives() || CanUse(RG_HOOKSHOT) || CanUse(RG_DINS_FIRE) ||
-                   CanUse(RG_FIRE_ARROWS);
+                   CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_STICKS) || HasExplosives() || CanUse(RG_HOOKSHOT) ||
+                   CanUse(RG_DINS_FIRE) || CanUse(RG_FIRE_ARROWS);
         case RE_SHELL_BLADE:
             return CanJumpslash() || HasExplosives() || CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_BOW) ||
                    CanUse(RG_DINS_FIRE);
         case RE_SPIKE:
             return CanUse(RG_MASTER_SWORD) || CanUse(RG_BIGGORON_SWORD) || CanUse(RG_MEGATON_HAMMER) ||
-                   CanUse(RG_STICKS) || HasExplosives() || CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_BOW) ||
-                   CanUse(RG_DINS_FIRE);
+                   CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_STICKS) || HasExplosives() || CanUse(RG_HOOKSHOT) ||
+                   CanUse(RG_FAIRY_BOW) || CanUse(RG_DINS_FIRE);
         case RE_STINGER:
             switch (distance) {
                 case ED_CLOSE:
                 case ED_SHORT_JUMPSLASH:
-                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_KOKIRI_SWORD);
+                    killed = CanUse(RG_MEGATON_HAMMER) || CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_KOKIRI_SWORD);
                     [[fallthrough]];
                 case ED_MASTER_SWORD_JUMPSLASH:
                     killed = killed || CanUse(RG_MASTER_SWORD);
@@ -846,11 +856,12 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
                    // Boomerang is a relaible, infinite ammo stun, so it enables any way to get enough damage with the
                    // ammo we have Max HP dark link has 40 HP, bows and bombs do 2 so 20 ammo, stick jumpslash does 4 so
                    // 10 sticks
-                   (CanUse(RG_BOOMERANG) &&
-                    (CanUse(RG_FAIRY_BOW) || CanUse(RG_STICKS) || CanUse(RG_MEGATON_HAMMER) || HasExplosives())) ||
+                   (CanUse(RG_BOOMERANG) && (CanUse(RG_FAIRY_BOW) || CanUse(RG_STICKS) || CanUse(RG_MEGATON_HAMMER) ||
+                                             CanUse(RG_DEMISE_DESTRUCTION) || HasExplosives())) ||
                    // By using deku nuts against the wall, you can stun him roughly half the time, which makes 4 damage
                    // attacks reliable on base nuts
-                   (CanUse(RG_NUTS) && (CanUse(RG_STICKS) || CanUse(RG_MEGATON_HAMMER)));
+                   (CanUse(RG_NUTS) &&
+                    (CanUse(RG_STICKS) || CanUse(RG_MEGATON_HAMMER) || CanUse(RG_DEMISE_DESTRUCTION)));
             // Dins does 2 damage, but is reliable, so would need 20 casts for max HP dark link. normal magic gives 4
             // casts, double 8, and then potions can add more
         case RE_ANUBIS:
@@ -867,7 +878,8 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
             return CanUse(RG_BOOMERANG);
         case RE_BARI:
             return HookshotOrBoomerang() || CanUse(RG_FAIRY_BOW) || HasExplosives() || CanUse(RG_MEGATON_HAMMER) ||
-                   CanUse(RG_STICKS) || CanUse(RG_DINS_FIRE) || (TakeDamage() && CanUseSword());
+                   CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_STICKS) || CanUse(RG_DINS_FIRE) ||
+                   (TakeDamage() && CanUseSword());
         case RE_SHABOM:
             return CanUse(RG_BOOMERANG) || CanUse(RG_NUTS) || CanJumpslash() || CanUse(RG_DINS_FIRE) ||
                    CanUse(RG_ICE_ARROWS) || EffectiveHealth() * 2 > quantity;
@@ -1344,7 +1356,7 @@ bool Logic::CanBonkTrees() {
 }
 
 bool Logic::HasExplosives() {
-    return CanUse(RG_BOMB_BAG) || CanUse(RG_BOMBCHU_5);
+    return CanUse(RG_BOMB_BAG) || CanUse(RG_BOMBCHU_5) || CanUse(RG_DEMISE_DESTRUCTION);
 }
 
 bool Logic::BlastOrSmash() {
@@ -1980,6 +1992,7 @@ void Logic::ApplyItemEffect(Item& item, bool state) {
                     SetAmmo(ITEM_BEAN, current + (!state ? -change : change));
                 } break;
                 case RG_SHOVEL:
+                case RG_DEMISE_DESTRUCTION:
                 case RG_EMPTY_BOTTLE:
                 case RG_BOTTLE_WITH_MILK:
                 case RG_BOTTLE_WITH_RED_POTION:

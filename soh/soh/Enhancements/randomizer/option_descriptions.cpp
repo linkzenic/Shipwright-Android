@@ -794,7 +794,7 @@ void Settings::CreateOptionDescriptions() {
         "Time Gate, Beetle, Switch Hook, Mogma Mitts, Gust Jar, Ball and Chain, \n"
         "Cane of Somaria, Dominion Rod, and more. \n"
         "These items are not considered by logic. \n"
-        "1/24 | Logic Supported for : Shovel";
+        "2/24 | Logic Supported for : Shovel, Demise Destruction";
     mOptionDescriptions[RSK_SLINGBOW_BREAK_BEEHIVES] =
         "Allows Slingshot and Bow to break beehives when Beehive Shuffle is turned on.";
     mOptionDescriptions[RSK_LOGIC_RULES] =
