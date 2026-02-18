@@ -597,7 +597,11 @@ void SohMenu::AddMenuSettings() {
         .CVar("gMods.MmMasks.RandoAllMasks")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
-            if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.MmMasks.RandoAllMasks", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
+            } else if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
                 CVarSetInteger("gMods.MmMasks.RandoAllMasks", 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Enable 'Include MM Masks Inventory' first.";
@@ -619,7 +623,11 @@ void SohMenu::AddMenuSettings() {
         .CVar("gMods.MmMasks.RandoTransformOnly")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
-            if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
+            } else if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
                 CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Enable 'Include MM Masks Inventory' first.";

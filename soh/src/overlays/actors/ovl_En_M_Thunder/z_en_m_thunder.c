@@ -73,23 +73,35 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &D_80AA0420);
 
-    // Sword beam mode: spawned by FD Z-target + B attack
+    // Sword beam mode: spawned by FD Z-target + B attack.
+    // From MM z_en_m_thunder.c EnMThunder_Init lines 169-184.
+    // Uses OOT struct fields mapped to MM fields:
+    //   unk_1AC = lightColorFrac (lifetime: 1.0 → 0.0 at 0.05/frame = 20 frames)
+    //   unk_1B0 = alphaFrac (alpha for draw: derived from lightColorFrac)
+    //   unk_1B4 = scroll (texture animation counter)
+    //   unk_1BC = scaleTarget (12.0 in MM, beam grows to this)
     if (this->actor.params & EN_M_THUNDER_SWORD_BEAM_FLAG) {
         this->unk_1C6 = 2; // Sword beam type
-        this->unk_1C4 = 0; // Lifetime counter
-        this->unk_1CA = 0; // No magic tracking (consumed by player before spawn)
-        Actor_SetScale(&this->actor, 0.04f);
-        this->collider.dim.radius = 30;
+        this->unk_1CA = 0; // No magic tracking
+        // MM: scale starts at 0, ramps to scaleTarget (12) via Math_SmoothStepToF
+        Actor_SetScale(&this->actor, 0.0f);
+        this->unk_1BC = 12.0f; // scaleTarget (MM line 173)
+        this->unk_1AC = 1.0f;  // lightColorFrac starts at 1.0 (MM line 184)
+        this->unk_1B0 = 1.0f;  // alphaFrac starts at 1.0
+        this->unk_1B4 = 0.0f;  // scroll counter
+        this->unk_1C4 = 1;     // timer (MM line 172)
+        // Collider: MM uses DMG_SWORD_BEAM (0x02000000) damage flags, damage=3
+        this->collider.info.toucher.dmgFlags = 0x02000000; // DMG_SWORD_BEAM
+        this->collider.info.toucher.damage = 3;            // MM line 175
         this->collider.dim.height = 60;
         this->collider.dim.yShift = -30;
-        this->collider.info.toucher.damage = 4; // MM FD beam damage
         this->actor.room = -1;
-        // Light: blue glow
+        // Light (MM line 184: lightColorFrac = 1.0)
         Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
-                                  this->actor.world.pos.z, 100, 180, 255, 200);
+                                  this->actor.world.pos.z, 255, 255, 100, 800);
         this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
-        // Sword beam SFX
-        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &this->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
+        // SFX (MM line 181)
+        Audio_PlaySoundGeneral(NA_SE_IT_ROLLING_CUT_LV1, &player->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         func_80A9EFE0(this, EnMThunder_SwordBeamAction);
         return;
@@ -337,29 +349,51 @@ void func_80A9F9B4(EnMThunder* this, PlayState* play) {
 // Travels forward 80 units/frame for 20 frames, deals 4 damage on contact.
 // DL loaded from mm.o2r (gSwordBeamDL in gameplay_keep).
 
+// From MM z_en_m_thunder.c EnMThunder_SwordBeam_Attack (line 400-442).
+// Beam grows from scale 0 to scaleTarget(12), fades via lightColorFrac 1.0→0.0.
+// Movement: -80 * cos(pitch) along yaw, -80 * sin(pitch) vertically.
 static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play) {
-    // Move forward in the direction of shape.rot.y
-    this->actor.velocity.x = Math_SinS(this->actor.shape.rot.y) * 80.0f;
-    this->actor.velocity.z = Math_CosS(this->actor.shape.rot.y) * 80.0f;
-    Actor_UpdatePos(&this->actor);
-    Actor_UpdateBgCheckInfo(play, &this->actor, 10.0f, 30.0f, 30.0f, 3);
+    // Alpha from lightColorFrac (MM lines 404-408)
+    if (this->unk_1AC > (9.0f / 10.0f)) {
+        this->unk_1B0 = 1.0f; // alphaFrac
+    } else {
+        this->unk_1B0 = this->unk_1AC * (10.0f / 9.0f);
+    }
 
-    // Destroy on wall (0x08) or ground (0x01) collision
-    if (this->actor.bgCheckFlags & 0x09) {
+    // Lifetime: lightColorFrac steps toward 0 (MM line 410, rate 0.05 = ~20 frames)
+    if (Math_StepToF(&this->unk_1AC, 0.0f, 0.05f)) {
         Actor_Kill(&this->actor);
         return;
     }
 
-    // Lifetime counter (stored in unk_1C4 since it's u16, enough range)
-    this->unk_1C4++;
-    if (this->unk_1C4 > 20) {
-        Actor_Kill(&this->actor);
-        return;
-    }
+    // Movement: direct position update (MM lines 413-417)
+    f32 sp2C = -80.0f * Math_CosS(this->actor.world.rot.x);
+    this->actor.world.pos.x += sp2C * Math_SinS(this->actor.shape.rot.y);
+    this->actor.world.pos.z += sp2C * Math_CosS(this->actor.shape.rot.y);
+    this->actor.world.pos.y += -80.0f * Math_SinS(this->actor.world.rot.x);
 
-    // Collision
-    Collider_UpdateCylinder(&this->actor, &this->collider);
+    // Scale ramps up to scaleTarget (MM line 419-420)
+    Math_SmoothStepToF(&this->actor.scale.x, this->unk_1BC, 0.6f, 2.0f, 0.0f);
+    Actor_SetScale(&this->actor, this->actor.scale.x);
+
+    // Scroll counter for texture animation
+    this->unk_1B4 += 1.0f;
+
+    // Collider: radius grows with scale (MM line 422)
+    this->collider.dim.radius = (s16)(this->actor.scale.x * 5.0f);
+    // Position offset forward from actor (MM lines 428-432)
+    this->collider.dim.pos.x =
+        (s32)((Math_SinS(this->actor.shape.rot.y) * -5.0f * this->actor.scale.x) + this->actor.world.pos.x);
+    this->collider.dim.pos.y = (s32)this->actor.world.pos.y;
+    this->collider.dim.pos.z =
+        (s32)((Math_CosS(this->actor.shape.rot.y) * -5.0f * this->actor.scale.z) + this->actor.world.pos.z);
+
     CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+
+    // Timer (MM line 437-439)
+    if (this->unk_1C4 > 0) {
+        this->unk_1C4--;
+    }
 }
 
 void EnMThunder_Update(Actor* thisx, PlayState* play) {
@@ -369,11 +403,12 @@ void EnMThunder_Update(Actor* thisx, PlayState* play) {
 
     this->actionFunc(this, play);
 
-    // Sword beam: update blue light at beam position, skip environment light adjustment
+    // Sword beam: update light using lightColorFrac (MM EnMThunder_Update line 466-468)
     if (this->unk_1C6 == 2) {
+        f32 lcf = this->unk_1AC; // lightColorFrac
         Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
-                                  this->actor.world.pos.z, 100, 180, 255,
-                                  (s32)(200.0f * (1.0f - ((f32)this->unk_1C4 / 20.0f))));
+                                  this->actor.world.pos.z, (s32)(lcf * 255.0f), (s32)(lcf * 255.0f),
+                                  (s32)(lcf * 100.0f), (s32)(lcf * 800.0f));
         return;
     }
 
@@ -393,19 +428,26 @@ void EnMThunder_Draw(Actor* thisx, PlayState* play2) {
     f32 phi_f14;
     s32 phi_t1;
 
-    // Sword beam: draw blue crescent energy disk from mm.o2r
+    // Sword beam: draw blue crescent energy disk from mm.o2r.
+    // From MM EnMThunder_Draw (lines 480-535): uses Matrix_Scale(0.02f), segment 0x08 TwoTexScroll,
+    // alphaFrac for fade, prim/env colors matching ENMTHUNDER_SUBTYPE_SWORDBEAM_REGULAR.
     if (this->unk_1C6 == 2) {
         Gfx* beamDL = TransformMasks_GetFDSwordBeamDL(play);
         if (beamDL != NULL) {
+            u16 alpha = (u16)(this->unk_1B0 * 255.0f); // alphaFrac
+
             OPEN_DISPS(play->state.gfxCtx);
             Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-            // Segment 0x08: animated texture scroll (gSwordBeamDL contains gsSPDisplayList(0x08000000))
+            // MM line 490: scale 0.02f applied to actor matrix (actor scale ramps to 12 → final 0.24f)
+            Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            // Segment 0x08: animated texture scroll (MM lines 504-506)
             gSPSegment(POLY_XLU_DISP++, 0x08,
                        Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 16, 64, 1, 0,
-                                        0x1FF - ((u16)(play->gameplayFrames * 10) & 0x1FF), 32, 128));
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 170, 255, 255, 200);
+                                        0x1FF - ((u16)(s32)(this->unk_1B4 * 10.0f) & 0x1FF), 32, 128));
+            // Colors: MM SWORDBEAM_REGULAR (lines 527-529)
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 170, 255, 255, alpha);
             gDPSetEnvColor(POLY_XLU_DISP++, 0, 100, 255, 128);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
             gSPDisplayList(POLY_XLU_DISP++, beamDL);
             CLOSE_DISPS(play->state.gfxCtx);
         }

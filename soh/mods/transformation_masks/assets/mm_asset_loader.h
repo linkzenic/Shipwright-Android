@@ -148,6 +148,18 @@ void* MmMasks_LoadIcon(uint16_t itemId);
 void* MmMasks_LoadNameTex(uint16_t itemId);
 
 /**
+ * Get OTR path string for MM mask icon (for gDPLoadTextureBlock resolution).
+ * Returns __OTR__ path so the RSP can resolve actual texture dimensions from
+ * resource metadata, enabling HD mod textures to render at native resolution.
+ */
+const char* MmMasks_GetIconPath(uint16_t itemId);
+
+/**
+ * Get OTR path string for MM mask name texture.
+ */
+const char* MmMasks_GetNamePath(uint16_t itemId);
+
+/**
  * Load FD sword icon for B-button HUD override
  * @return Pointer to 32x32 RGBA icon texture, or NULL if not found
  */

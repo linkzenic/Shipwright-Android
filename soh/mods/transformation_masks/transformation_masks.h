@@ -240,6 +240,16 @@ void TransformMasks_WearClear(void);
 // Returns NULL if not loaded. Caller uses with gSPDisplayList on POLY_XLU_DISP.
 Gfx* TransformMasks_GetFDSwordBeamDL(PlayState* play);
 
+// FD melee weapon quad registration (sword damage). Called from MmForm_PostLimbDraw.
+// Defined in z_player_lib.c since it accesses static variables (D_80126080, etc.)
+void Player_FDMeleeWeaponPostLimb(PlayState* play, Player* player);
+
+// Returns the item/model scale multiplier for the current form.
+// FD = 1.5f (actor.scale 0.015f vs standard 0.01f), all others = 1.0f.
+// Custom item draw functions should multiply their model scale by this value
+// so items appear proportional to the current form's body size.
+f32 TransformMasks_GetItemScale(void);
+
 #ifdef __cplusplus
 }
 #endif

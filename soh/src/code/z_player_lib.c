@@ -1746,6 +1746,19 @@ void func_80090A28(Player* this, Vec3f* vecs) {
     Matrix_MultVec3f(&D_80126098, &vecs[2]);
 }
 
+// Wrapper for FD melee weapon collision quads. Called from MmForm_PostLimbDraw at PLAYER_LIMB_L_HAND.
+// FD skin mode uses MmForm_PostLimbDraw instead of Player_PostLimbDrawGameplay, so the melee weapon
+// quad code at line 1904-1922 never runs for FD. This function provides the same functionality.
+void Player_FDMeleeWeaponPostLimb(PlayState* play, Player* this) {
+    Vec3f tipPos[3];
+
+    D_80126080.x = 5500.0f; // FD sword reach (from MM z_player_lib.c)
+    // FD always uses BGS trail type (Player_GetMeleeWeaponHeld returns 3 for FD)
+    EffectBlure_ChangeType(Effect_GetByIndex(this->meleeWeaponEffectIndex), TRAIL_TYPE_BIGGORON_SWORD);
+    func_80090A28(this, tipPos);
+    func_800906D4(play, this, tipPos);
+}
+
 void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange) {
     static Vec3f D_801260C8 = { -500.0f, -100.0f, 0.0f };
     CollisionPoly* colPoly;

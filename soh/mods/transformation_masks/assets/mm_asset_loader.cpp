@@ -1661,6 +1661,21 @@ void* MmMasks_LoadNameTex(uint16_t itemId) {
     return sCachedMaskNames[idx];
 }
 
+// Path getters: return __OTR__ path strings instead of raw data.
+// When passed to gDPLoadTextureBlock, the RSP resolves actual texture dimensions
+// from resource metadata, so HD mod textures render at their native resolution.
+const char* MmMasks_GetIconPath(uint16_t itemId) {
+    if (itemId < MM_MASK_ITEM_BASE || itemId >= MM_MASK_ITEM_BASE + 24)
+        return nullptr;
+    return sMmMaskIconPaths[itemId - MM_MASK_ITEM_BASE];
+}
+
+const char* MmMasks_GetNamePath(uint16_t itemId) {
+    if (itemId < MM_MASK_ITEM_BASE || itemId >= MM_MASK_ITEM_BASE + 24)
+        return nullptr;
+    return sMmMaskNamePaths[itemId - MM_MASK_ITEM_BASE];
+}
+
 // =============================================================================
 // FD Sword Icon (for B-button HUD override)
 // =============================================================================

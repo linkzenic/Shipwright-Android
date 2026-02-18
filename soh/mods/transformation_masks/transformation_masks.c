@@ -171,3 +171,10 @@ extern Gfx* MmForm_GetFDSwordBeamDL(PlayState* play);
 Gfx* TransformMasks_GetFDSwordBeamDL(PlayState* play) {
     return MmForm_GetFDSwordBeamDL(play);
 }
+
+f32 TransformMasks_GetItemScale(void) {
+    if (TransformMasks_IsFDSkinMode()) {
+        return 1.5f; // FD actor.scale = 0.015f vs standard 0.01f
+    }
+    return 1.0f;
+}

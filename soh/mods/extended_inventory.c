@@ -77,11 +77,13 @@ const uint8_t gPage3MaskItems[24] = {
     ITEM_MM_MASK_GARO,        ITEM_MM_MASK_CAPTAIN,       ITEM_MM_MASK_GIANT,  ITEM_MM_MASK_FIERCE_DEITY,
 };
 
-// All MM masks are usable by both child and adult
+// MM masks age requirements: regular masks = AGE_REQ_NONE, transformation masks = AGE_REQ_CHILD
+// Transformation masks (Deku, Goron, Zora, Fierce Deity) are child-only unless TimelessEquipment cheat
 const uint8_t gPage3MaskAgeReqs[24] = {
-    AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_NONE,
-    AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,
-    AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD,
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_CHILD, // [5]=Deku
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_CHILD, // [11]=Goron
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_CHILD, // [17]=Zora
+    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_CHILD, // [23]=Fierce Deity
 };
 ExtendedInventoryState* ExtInv_GetState(void) {
     return &sExtInvState;
@@ -211,11 +213,16 @@ uint8_t ExtInv_GetEquipAgeReq(uint8_t row, uint8_t col) {
 }
 
 extern void* MmMasks_LoadNameTex(uint16_t itemId);
+extern const char* MmMasks_GetNamePath(uint16_t itemId);
 
 void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
-    // MM Mask items: load name texture from mm.o2r
+    // MM Mask items: return OTR path string so the RSP resolves actual texture
+    // dimensions from resource metadata (HD mod textures render at native resolution).
     if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
-        return MmMasks_LoadNameTex(itemId);
+        const char* path = MmMasks_GetNamePath(itemId);
+        if (path)
+            return (void*)path;
+        return NULL;
     }
     extern const unsigned char gRocsFeatherNameTex[];
     extern const unsigned char gRocsCapeNameTex[];
@@ -298,6 +305,7 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     }
 }
 extern void* MmMasks_LoadIcon(uint16_t itemId);
+extern const char* MmMasks_GetIconPath(uint16_t itemId);
 extern void* MmAssets_LoadFDSwordIcon(void);
 
 void* ExtInv_GetItemIcon(uint16_t itemId) {
@@ -312,15 +320,16 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     if (itemId < 156) {
         return gItemIcons[itemId];
     }
-    // MM Mask items: load icon from mm.o2r
+    // MM Mask items: return OTR path string so the RSP resolves actual texture
+    // dimensions from resource metadata (HD mod textures render at native resolution).
     if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
         // Bunny Hood: use OOT icon (same appearance, enables OOT behavior)
         if (itemId == ITEM_MM_MASK_BUNNY) {
             return gItemIcons[ITEM_MASK_BUNNY];
         }
-        void* icon = MmMasks_LoadIcon(itemId);
-        if (icon)
-            return icon;
+        const char* path = MmMasks_GetIconPath(itemId);
+        if (path)
+            return (void*)path;
         return gItemIcons[0]; // Fallback
     }
     switch (itemId) {

@@ -81,6 +81,19 @@ static Vec3s sMmMaskRotOffset[24] = {
 };
 
 // =============================================================================
+// Blast Mask segment 0x09 default (matches MM's D_801C0BC0 in Player_DrawBlastMask)
+// The Blast Mask DL references segment 0x09 for its material. Without this setup,
+// segment 0x09 contains garbage → RSP crash.
+// =============================================================================
+
+static Gfx sBlastMaskDefaultSeg9[] = {
+    gsDPSetEnvColor(0, 0, 0, 255),
+    gsSPEndDisplayList(),
+};
+
+#define MM_MASK_IDX_BLAST 2
+
+// =============================================================================
 // State
 // =============================================================================
 
@@ -138,6 +151,12 @@ extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
     Vec3s* rot = &sMmMaskRotOffset[idx];
 
     OPEN_DISPS(play->state.gfxCtx);
+
+    // Blast Mask requires segment 0x09 for its material (animated texture slot).
+    // In MM, Player_DrawBlastMask() sets this up before drawing.
+    if (idx == MM_MASK_IDX_BLAST) {
+        gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)sBlastMaskDefaultSeg9);
+    }
 
     if (rot->x != 0 || rot->y != 0 || rot->z != 0) {
         // Apply extra rotation offset if non-zero

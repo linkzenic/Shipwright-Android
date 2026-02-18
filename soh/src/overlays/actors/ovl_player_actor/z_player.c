@@ -4539,15 +4539,23 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
     func_80837918(this, 0, dmgFlags);
     func_80837918(this, 1, dmgFlags);
 
-    // FD sword beam: fire blue energy disk on every FD melee attack (costs 1 magic).
-    // In MM, FD fires beams on every B-attack regardless of Z-targeting.
-    // Use focusActor check (set by Player_UpdateZTargeting BEFORE action func) instead of
-    // PLAYER_STATE1_HOSTILE_LOCK_ON which may not be set yet (updated AFTER action handlers).
-    if (TransformMasks_IsFDSkinMode() && this->focusActor != NULL) {
-        if (Magic_RequestChange(play, 1, MAGIC_CONSUME_NOW)) {
+    // FD sword beam: fire blue energy disk on B-attack while Z-targeting.
+    // From MM z_player.c func_808332A0 (line 5465): spawns EN_M_THUNDER with pitch toward target.
+    // Magic: MM uses MAGIC_CONSUME_DEITY_BEAM (direct subtraction of 1 unit, bypasses state machine).
+    // Use focusActor check (set by Player_UpdateZTargeting BEFORE action func runs).
+    if (TransformMasks_IsFDSkinMode() && this->focusActor != NULL && gSaveContext.magic > 0) {
+        // Pitch toward target (MM line 5480-5482)
+        s16 beamPitch = Math_Vec3f_Pitch(&this->bodyPartsPos[PLAYER_BODYPART_WAIST], &this->focusActor->focus.pos);
+        Actor* beam =
             Actor_Spawn(&play->actorCtx, play, ACTOR_EN_M_THUNDER, this->bodyPartsPos[PLAYER_BODYPART_WAIST].x,
-                        this->bodyPartsPos[PLAYER_BODYPART_WAIST].y, this->bodyPartsPos[PLAYER_BODYPART_WAIST].z, 0,
-                        this->actor.shape.rot.y, 0, 0x80, true);
+                        this->bodyPartsPos[PLAYER_BODYPART_WAIST].y, this->bodyPartsPos[PLAYER_BODYPART_WAIST].z,
+                        beamPitch, this->actor.shape.rot.y, 0, 0x80, true);
+        if (beam != NULL) {
+            // Direct magic subtraction (MM MAGIC_CONSUME_DEITY_BEAM behavior)
+            gSaveContext.magic -= 1;
+            if (gSaveContext.magic < 0) {
+                gSaveContext.magic = 0;
+            }
         }
     }
 }
@@ -4872,6 +4880,12 @@ s32 func_808382DC(Player* this, PlayState* play) {
                 gMmFormPendingDamage.damage = this->actor.colChkInfo.damage;
                 gMmFormPendingDamage.acHitEffect = this->actor.colChkInfo.acHitEffect;
                 gMmFormPendingDamage.attacker = this->cylinder.base.ac;
+                return 1;
+            }
+            // Still in MM form damage state (e.g. strong knockback airborne) →
+            // return 1 to prevent OOT's func_8083AA10 from clearing PLAYER_STATE1_DAMAGED
+            // via Player_SetupAction and hijacking linearVelocity with the falling action.
+            if (this->stateFlags1 & PLAYER_STATE1_DAMAGED) {
                 return 1;
             }
             return 0;
