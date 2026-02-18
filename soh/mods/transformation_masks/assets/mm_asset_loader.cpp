@@ -1661,6 +1661,27 @@ void* MmMasks_LoadNameTex(uint16_t itemId) {
     return sCachedMaskNames[idx];
 }
 
+// =============================================================================
+// FD Sword Icon (for B-button HUD override)
+// =============================================================================
+
+static void* sCachedFDSwordIcon = nullptr;
+static bool sFDSwordIconLoaded = false;
+
+void* MmAssets_LoadFDSwordIcon(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (sFDSwordIconLoaded)
+        return sCachedFDSwordIcon;
+
+    sFDSwordIconLoaded = true;
+    sCachedFDSwordIcon = MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconFierceDeitySwordTex");
+    if (sCachedFDSwordIcon) {
+        MMASSETS_LOG("[MM Assets] Loaded FD sword icon");
+    }
+    return sCachedFDSwordIcon;
+}
+
 } // extern "C"
 
 // =============================================================================

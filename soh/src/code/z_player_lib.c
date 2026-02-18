@@ -888,10 +888,27 @@ s32 Player_ActionToMeleeWeapon(s32 actionParam) {
 }
 
 s32 Player_GetMeleeWeaponHeld(Player* this) {
+    // Transformation masks: block sword swings for all forms except Fierce Deity.
+    // Non-FD forms use form-specific B-button actions (punch, bubble, etc.).
+    if (TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode()) {
+        return 0;
+    }
+    // FD skin mode: always return BGS melee weapon index (3) when holding any sword.
+    // This gives FD BGS-equivalent damage flags, sword reach (5500), and sword trail type
+    // without forcing heldItemAction (which causes equip/unequip animation loops).
+    // Player_ActionToMeleeWeapon(PLAYER_IA_SWORD_BIGGORON) = 5 - 2 = 3
+    if (TransformMasks_IsFDSkinMode() && Player_ActionToMeleeWeapon(this->heldItemAction) > 0) {
+        return Player_ActionToMeleeWeapon(PLAYER_IA_SWORD_BIGGORON); // 3
+    }
     return Player_ActionToMeleeWeapon(this->heldItemAction);
 }
 
 s32 Player_HoldsTwoHandedWeapon(Player* this) {
+    // FD skin mode: FD's sword is two-handed (like BGS) regardless of actual equipped sword.
+    // This disables shield usage and enables two-handed attack patterns.
+    if (TransformMasks_IsFDSkinMode() && Player_ActionToMeleeWeapon(this->heldItemAction) > 0) {
+        return 1;
+    }
     if ((this->heldItemAction >= PLAYER_IA_SWORD_BIGGORON) && (this->heldItemAction <= PLAYER_IA_HAMMER)) {
         return 1;
     }
@@ -1887,7 +1904,13 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
         } else if ((this->actor.scale.y >= 0.0f) && (this->meleeWeaponState != 0)) {
             Vec3f spE4[3];
 
-            if (Player_HoldsBrokenKnife(this)) {
+            if (TransformMasks_IsFDSkinMode()) {
+                // Fierce Deity sword reach: 5500 units (from MM z_player_lib.c)
+                // Player_GetMeleeWeaponHeld returns BGS index (3) for FD
+                D_80126080.x = 5500.0f;
+                EffectBlure_ChangeType(Effect_GetByIndex(this->meleeWeaponEffectIndex),
+                                       sSwordTypes[Player_GetMeleeWeaponHeld(this)]);
+            } else if (Player_HoldsBrokenKnife(this)) {
                 D_80126080.x = 1500.0f;
             } else {
                 D_80126080.x = sMeleeWeaponLengths[Player_GetMeleeWeaponHeld(this)];

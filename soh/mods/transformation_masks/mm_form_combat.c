@@ -34,12 +34,15 @@
 // Per-punch quad geometry parameters
 // { forwardNear, forwardFar, sideOffset, halfWidth, yBottom, yTop }
 static const f32 sGoronPunchQuadParams[][6] = {
-    // Punch A (left fist): extends 20-55 forward, offset 15 left, height 20-55
+    // Step 0 - Punch A (left fist): extends 20-55 forward, offset 15 left, height 20-55
     { 20.0f, 55.0f, -15.0f, 15.0f, 20.0f, 55.0f },
-    // Punch B (right fist): extends 20-55 forward, offset 15 right, height 20-55
+    // Step 1 - Punch B (right fist): extends 20-55 forward, offset 15 right, height 20-55
     { 20.0f, 55.0f, 15.0f, 15.0f, 20.0f, 55.0f },
-    // Punch C (butt slam): extends -10 to 30 (behind to front), centered, height 5-30
+    // Step 2 - Punch C (butt slam): extends -10 to 30 (behind to front), centered, height 5-30
     { -10.0f, 30.0f, 0.0f, 30.0f, 5.0f, 30.0f },
+    // Step 3 - Jump kick (Zora): extends 10-70 forward, centered, height 0-40 (foot/leg level)
+    // From MM: Zora jump kick lunges forward with legs extended, long reach kick
+    { 10.0f, 70.0f, 0.0f, 18.0f, 0.0f, 40.0f },
 };
 
 /**
@@ -49,10 +52,10 @@ static const f32 sGoronPunchQuadParams[][6] = {
  * The quad is a 3D plane defined by 4 corners (a,b = far edge, c,d = near edge).
  *
  * @param player  OOT Player pointer
- * @param step    Combo step (0=left, 1=right, 2=butt)
+ * @param step    Combo step (0=left, 1=right, 2=butt, 3=jump kick)
  */
 static void MmForm_SetPunchQuadVertices(Player* player, u8 step) {
-    if (step > 2)
+    if (step > 3)
         step = 0;
 
     const f32* params = sGoronPunchQuadParams[step];
@@ -138,11 +141,56 @@ static void MmForm_EnablePunchQuad(Player* player, PlayState* play, u8 step, u8 
 }
 
 /**
- * Disable punch quad hit detection.
+ * Disable punch quad hit detection (quad[0] only).
  * Called when punch is outside hit frames or transitions to recovery/idle.
  */
 static void MmForm_DisablePunchQuad(Player* player) {
     player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+}
+
+/**
+ * Disable both melee weapon quads (used after jump kick which sets both).
+ */
+static void MmForm_DisableJumpKickQuads(Player* player) {
+    player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+    player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+}
+
+/**
+ * Configure and submit jump kick quads for collision checking.
+ *
+ * From MM z_player.c func_80833728/func_8083375C:
+ *   - DMG_ZORA_PUNCH (1 << 0x17) in MM → maps to DMG_JUMP_MASTER (1 << 0x1B) in OOT
+ *     (jumping physical attack, most combat enemies are vulnerable)
+ *   - Damage: 2 (dmgHumanStrong / dmgTransformedStrong from MM D_8085D09C)
+ *   - ATELEM_ON | ATELEM_NEAREST
+ *   - Uses BOTH meleeWeaponQuads[0] and [1] (from MM line 5661-5662)
+ *   - Hit frames 8-99 (from sMeleeAttackAnimInfo index 18)
+ *
+ * @param player  OOT Player pointer
+ * @param play    PlayState
+ * @param damage  Damage amount (2 for Zora jump kick)
+ */
+static void MmForm_EnableJumpKickQuad(Player* player, PlayState* play, u8 damage) {
+    // Set jump kick geometry (step=3: forward-extending, foot/leg height)
+    MmForm_SetPunchQuadVertices(player, 3);
+
+    // Copy quad[0] vertices to quad[1] (MM sets both quads identically)
+    Collider_SetQuadVertices(&player->meleeWeaponQuads[1], &player->meleeWeaponQuads[0].dim.quad[2],
+                             &player->meleeWeaponQuads[0].dim.quad[3], &player->meleeWeaponQuads[0].dim.quad[0],
+                             &player->meleeWeaponQuads[0].dim.quad[1]);
+
+    // Configure both quads with jump attack damage
+    // DMG_JUMP_MASTER = OOT equivalent of MM's DMG_ZORA_PUNCH (jumping physical attack)
+    for (s32 i = 0; i < 2; i++) {
+        ColliderQuad* quad = &player->meleeWeaponQuads[i];
+        Collider_ResetQuadAT(play, &quad->base);
+        quad->base.atFlags = AT_ON | AT_TYPE_PLAYER;
+        quad->info.toucher.dmgFlags = DMG_JUMP_MASTER;
+        quad->info.toucher.damage = damage;
+        quad->info.toucherFlags = TOUCH_ON | TOUCH_NEAREST;
+        CollisionCheck_SetAT(play, &play->colChkCtx, &quad->base);
+    }
 }
 
 // =============================================================================

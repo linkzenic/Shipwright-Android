@@ -17,6 +17,7 @@
 #include "../helpers/movement_helper.h"
 #include "../helpers/equip_helper.h"
 #include "../helpers/fx_helper.h"
+#include "transformation_masks/transformation_masks.h"
 #include "macros.h"
 #include "functions.h"
 #include "variables.h"
@@ -190,6 +191,10 @@ s32 Player_UpperAction_DekuLeaf(Player* player, PlayState* play) {
 // ============================================================================
 
 void Handle_DekuLeaf(Player* p, PlayState* play) {
+    // Deku form has its own Deku Leaf handling (flower burrow + flight)
+    if (TransformMasks_IsTransformed() && MmPlayer_GetForm() == MM_PLAYER_FORM_DEKU)
+        return;
+
     ItemInputState in;
     ItemInput_Update(&in, ITEM_DEKU_LEAF, p, play);
 

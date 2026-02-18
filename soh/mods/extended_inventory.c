@@ -79,9 +79,9 @@ const uint8_t gPage3MaskItems[24] = {
 
 // All MM masks are usable by both child and adult
 const uint8_t gPage3MaskAgeReqs[24] = {
-    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE,
-    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE,
-    AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE, AGE_REQ_NONE,
+    AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_NONE,
+    AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,
+    AGE_REQ_NONE, AGE_REQ_CHILD, AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_NONE,  AGE_REQ_NONE, AGE_REQ_CHILD,
 };
 ExtendedInventoryState* ExtInv_GetState(void) {
     return &sExtInvState;
@@ -145,8 +145,13 @@ uint8_t ExtInv_GetItemAgeReq(uint16_t itemId) {
             return gPage2ItemAgeReqs[i];
         }
     }
-    // MM Mask items: all AGE_REQ_NONE
+    // MM Mask items: use per-mask age requirements from gPage3MaskAgeReqs
     if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
+        for (int i = 0; i < 24; i++) {
+            if (gPage3MaskItems[i] == itemId) {
+                return gPage3MaskAgeReqs[i];
+            }
+        }
         return AGE_REQ_NONE;
     }
     return 9;
@@ -156,12 +161,16 @@ uint8_t ExtInv_GetItemAgeReq(uint16_t itemId) {
 extern uint8_t gSlotAgeReqs[];
 
 uint8_t ExtInv_GetSlotAgeReq(uint8_t slot) {
-    // Transformation mask restriction: restricted items return opposite age so they gray out
-    if (ExtInv_IsSlotTransformRestricted(slot)) {
-        extern SaveContext gSaveContext;
-        // Return opposite of current age: child(1)→adult(0), adult(0)→child(1)
-        // CHECK_AGE_REQ_SLOT compares this vs linkAge, so opposite always fails → grayed out
-        return 1 - gSaveContext.linkAge;
+    // Transformation mask override: the per-form allowlist IS the age requirement.
+    // Allowed slots return 9 (AGE_REQ_NONE = always passes), restricted slots return
+    // opposite age (always fails → greyed out). This lets child Link use adult items
+    // if the form permits it (e.g., Zora can use bow regardless of Link's age).
+    if (TransformMasks_IsEnabled() && TransformMasks_IsTransformedAny() && slot < 72) {
+        if (ExtInv_IsSlotTransformRestricted(slot)) {
+            extern SaveContext gSaveContext;
+            return 1 - gSaveContext.linkAge;
+        }
+        return 9; // Allowed by form → bypass vanilla age check
     }
 
     // Vanilla slots (0-23) use the original array
@@ -289,8 +298,17 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     }
 }
 extern void* MmMasks_LoadIcon(uint16_t itemId);
+extern void* MmAssets_LoadFDSwordIcon(void);
 
 void* ExtInv_GetItemIcon(uint16_t itemId) {
+    // FD skin mode: show FD sword icon for any equipped sword
+    if (TransformMasks_IsFDSkinMode() && (itemId == ITEM_SWORD_KOKIRI || itemId == ITEM_SWORD_MASTER ||
+                                          itemId == ITEM_SWORD_BGS || itemId == ITEM_SWORD_KNIFE)) {
+        void* fdIcon = MmAssets_LoadFDSwordIcon();
+        if (fdIcon)
+            return fdIcon;
+    }
+
     if (itemId < 156) {
         return gItemIcons[itemId];
     }

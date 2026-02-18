@@ -75,10 +75,9 @@ u8 ItemInput_CheckOtherButtons(u16 equippedButton, Input* input) {
 }
 
 u8 ItemInput_IsBlockedEx(Player* player, PlayState* play, u8 skipOptionalBlockers) {
-    // Block all custom items while transformed (Player2 active)
-    // In the future, specific items can be allowed for specific masks
-    if (TransformMasks_IsTransformed())
-        return 1;
+    // Custom items during transformation: allowed items stay on C-buttons
+    // (MmForm_SaveAndRestrictEquips unequips blocked items on transform).
+    // If an item is still equipped, the slot allowlist permits it.
 
     if (player->stateFlags1 & ITEM_BLOCK_STATE1)
         return 1;

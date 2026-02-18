@@ -8,12 +8,10 @@
  * Extra rotation offsets per mask are provided for future fine-tuning.
  */
 
-extern "C" {
 #include "z64.h"
 #include "z64item.h"
 #include "macros.h"
 #include "functions.h"
-}
 
 #include "mods/transformation_masks/mm_mask_wear.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"

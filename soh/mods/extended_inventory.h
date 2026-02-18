@@ -276,6 +276,7 @@ extern u8 TransformMasks_IsEnabled(void);
 extern u8 TransformMasks_IsTransformedAny(void);
 extern u8 TransformMasks_IsFDSkinMode(void);
 extern u8 TransformMasks_IsItemAllowed(s32 item);
+extern u8 TransformMasks_IsSlotAllowed(uint8_t slot);
 
 // Returns true if item is restricted by active transformation mask
 static inline bool ExtInv_IsTransformRestricted(int itemId) {
@@ -287,12 +288,13 @@ static inline bool ExtInv_IsTransformRestricted(int itemId) {
 }
 
 // Returns true if the item in a given slot is restricted by active transformation mask
+// Uses slot-based arrays (72 elements per form) for direct lookup
 static inline bool ExtInv_IsSlotTransformRestricted(uint8_t slot) {
-    extern SaveContext gSaveContext;
     if (slot >= 72)
-        return false; // Out of range
-    uint8_t itemId = gSaveContext.inventory.items[slot];
-    return ExtInv_IsTransformRestricted(itemId);
+        return false;
+    if (!TransformMasks_IsEnabled() || !TransformMasks_IsTransformedAny())
+        return false;
+    return !TransformMasks_IsSlotAllowed(slot);
 }
 
 #ifdef __cplusplus

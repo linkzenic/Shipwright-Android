@@ -245,7 +245,7 @@ void KaleidoScope_DrawItemCycleExtras(PlayState* play, u8 slot, u8 canCycle, u8 
         gSPVertex(POLY_OPA_DISP++, sCycleExtraItemVtx, 8, 0);
 
         if (showLeftItem) {
-            if (!CHECK_AGE_REQ_ITEM(leftItem)) {
+            if (!CHECK_AGE_REQ_ITEM(leftItem) || ExtInv_IsTransformRestricted(leftItem)) {
                 gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
                 gSPGrayscale(POLY_OPA_DISP++, true);
             }
@@ -253,7 +253,7 @@ void KaleidoScope_DrawItemCycleExtras(PlayState* play, u8 slot, u8 canCycle, u8 
             gSPGrayscale(POLY_OPA_DISP++, false);
         }
         if (showRightItem) {
-            if (!CHECK_AGE_REQ_ITEM(rightItem)) {
+            if (!CHECK_AGE_REQ_ITEM(rightItem) || ExtInv_IsTransformRestricted(rightItem)) {
                 gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
                 gSPGrayscale(POLY_OPA_DISP++, true);
             }
@@ -821,7 +821,7 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
 
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->itemVtx[j + 0], 4, 0);
             int itemId = gSaveContext.inventory.items[drawSlot];
-            bool not_acquired = !CHECK_AGE_REQ_ITEM(itemId);
+            bool not_acquired = !CHECK_AGE_REQ_SLOT(drawSlot);
             if (not_acquired) {
                 gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
                 gSPGrayscale(POLY_OPA_DISP++, true);

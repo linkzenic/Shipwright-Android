@@ -1,7 +1,11 @@
 #include "z_en_m_thunder.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #define FLAGS 0
+
+// Sword beam params: bit 7 in lower byte signals sword beam mode
+#define EN_M_THUNDER_SWORD_BEAM_FLAG 0x80
 
 void EnMThunder_Init(Actor* thisx, PlayState* play);
 void EnMThunder_Destroy(Actor* thisx, PlayState* play);
@@ -11,6 +15,7 @@ void EnMThunder_Draw(Actor* thisx, PlayState* play);
 void func_80A9F314(PlayState* play, f32 arg1);
 void func_80A9F408(EnMThunder* this, PlayState* play);
 void func_80A9F9B4(EnMThunder* this, PlayState* play);
+static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play);
 
 const ActorInit En_M_Thunder_InitVars = {
     ACTOR_EN_M_THUNDER,
@@ -67,6 +72,29 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
 
     Collider_InitCylinder(play, &this->collider);
     Collider_SetCylinder(play, &this->collider, &this->actor, &D_80AA0420);
+
+    // Sword beam mode: spawned by FD Z-target + B attack
+    if (this->actor.params & EN_M_THUNDER_SWORD_BEAM_FLAG) {
+        this->unk_1C6 = 2; // Sword beam type
+        this->unk_1C4 = 0; // Lifetime counter
+        this->unk_1CA = 0; // No magic tracking (consumed by player before spawn)
+        Actor_SetScale(&this->actor, 0.04f);
+        this->collider.dim.radius = 30;
+        this->collider.dim.height = 60;
+        this->collider.dim.yShift = -30;
+        this->collider.info.toucher.damage = 4; // MM FD beam damage
+        this->actor.room = -1;
+        // Light: blue glow
+        Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
+                                  this->actor.world.pos.z, 100, 180, 255, 200);
+        this->lightNode = LightContext_InsertLight(play, &play->lightCtx, &this->lightInfo);
+        // Sword beam SFX
+        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &this->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        func_80A9EFE0(this, EnMThunder_SwordBeamAction);
+        return;
+    }
+
     this->unk_1C7 = (this->actor.params & 0xFF) - 1;
     Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
                               this->actor.world.pos.z, 255, 255, 255, 0);
@@ -302,12 +330,53 @@ void func_80A9F9B4(EnMThunder* this, PlayState* play) {
     }
 }
 
+// =============================================================================
+// Fierce Deity Sword Beam (unk_1C6 == 2)
+// =============================================================================
+// Blue crescent energy disk fired when FD attacks while Z-targeting.
+// Travels forward 80 units/frame for 20 frames, deals 4 damage on contact.
+// DL loaded from mm.o2r (gSwordBeamDL in gameplay_keep).
+
+static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play) {
+    // Move forward in the direction of shape.rot.y
+    this->actor.velocity.x = Math_SinS(this->actor.shape.rot.y) * 80.0f;
+    this->actor.velocity.z = Math_CosS(this->actor.shape.rot.y) * 80.0f;
+    Actor_UpdatePos(&this->actor);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 10.0f, 30.0f, 30.0f, 3);
+
+    // Destroy on wall (0x08) or ground (0x01) collision
+    if (this->actor.bgCheckFlags & 0x09) {
+        Actor_Kill(&this->actor);
+        return;
+    }
+
+    // Lifetime counter (stored in unk_1C4 since it's u16, enough range)
+    this->unk_1C4++;
+    if (this->unk_1C4 > 20) {
+        Actor_Kill(&this->actor);
+        return;
+    }
+
+    // Collision
+    Collider_UpdateCylinder(&this->actor, &this->collider);
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
+}
+
 void EnMThunder_Update(Actor* thisx, PlayState* play) {
     EnMThunder* this = (EnMThunder*)thisx;
     f32 blueRadius;
     s32 redGreen;
 
     this->actionFunc(this, play);
+
+    // Sword beam: update blue light at beam position, skip environment light adjustment
+    if (this->unk_1C6 == 2) {
+        Lights_PointNoGlowSetInfo(&this->lightInfo, this->actor.world.pos.x, this->actor.world.pos.y,
+                                  this->actor.world.pos.z, 100, 180, 255,
+                                  (s32)(200.0f * (1.0f - ((f32)this->unk_1C4 / 20.0f))));
+        return;
+    }
+
     func_80A9F314(play, this->unk_1BC);
     blueRadius = this->unk_1AC;
     redGreen = (u32)(blueRadius * 255.0f) & 0xFF;
@@ -323,6 +392,25 @@ void EnMThunder_Draw(Actor* thisx, PlayState* play2) {
     Player* player = GET_PLAYER(play);
     f32 phi_f14;
     s32 phi_t1;
+
+    // Sword beam: draw blue crescent energy disk from mm.o2r
+    if (this->unk_1C6 == 2) {
+        Gfx* beamDL = TransformMasks_GetFDSwordBeamDL(play);
+        if (beamDL != NULL) {
+            OPEN_DISPS(play->state.gfxCtx);
+            Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+            // Segment 0x08: animated texture scroll (gSwordBeamDL contains gsSPDisplayList(0x08000000))
+            gSPSegment(POLY_XLU_DISP++, 0x08,
+                       Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 16, 64, 1, 0,
+                                        0x1FF - ((u16)(play->gameplayFrames * 10) & 0x1FF), 32, 128));
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 170, 255, 255, 200);
+            gDPSetEnvColor(POLY_XLU_DISP++, 0, 100, 255, 128);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_XLU_DISP++, beamDL);
+            CLOSE_DISPS(play->state.gfxCtx);
+        }
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);

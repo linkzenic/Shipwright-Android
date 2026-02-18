@@ -191,6 +191,9 @@ u8 TransformMasks_IsTransformedAny(void);
 // Item restriction: returns true if item is allowed for current form
 u8 TransformMasks_IsItemAllowed(s32 item);
 
+// Slot restriction: returns true if inventory slot (0-71) is allowed for current form
+u8 TransformMasks_IsSlotAllowed(u8 slot);
+
 TransformMaskId TransformMasks_GetMaskType(s32 item);
 void TransformMasks_HandleMaskUse(PlayState* play, Player* player, s32 item);
 void TransformMasks_Init(PlayState* play, Player* player);
@@ -232,6 +235,10 @@ s32 TransformMasks_WearGetCurrent(void);
 
 // Clear worn MM mask (scene transition, death, etc.).
 void TransformMasks_WearClear(void);
+
+// Get pre-loaded FD sword beam DL for rendering (per-frame safe copy from mm.o2r)
+// Returns NULL if not loaded. Caller uses with gSPDisplayList on POLY_XLU_DISP.
+Gfx* TransformMasks_GetFDSwordBeamDL(PlayState* play);
 
 #ifdef __cplusplus
 }

@@ -28,6 +28,12 @@
 #define gLinkDekuClosedFlowerDL "__OTR__objects/object_link_nuts/gLinkDekuClosedFlowerDL"
 #define gLinkDekuOpenFlowerDL "__OTR__objects/object_link_nuts/gLinkDekuOpenFlowerDL"
 
+// Underground flower petals (3 petals drawn at surface while burrowed)
+// From 2Ship z_player.c D_8085D574: object_link_nuts_DL_009C48/009AB8/009DB8
+#define gLinkDekuFlowerPetal1DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_009C48"
+#define gLinkDekuFlowerPetal2DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_009AB8"
+#define gLinkDekuFlowerPetal3DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_009DB8"
+
 // ============================================================================
 // Hand DLs
 // ============================================================================

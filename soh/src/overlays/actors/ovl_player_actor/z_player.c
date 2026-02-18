@@ -2360,7 +2360,8 @@ void func_80833A20(Player* this, s32 newMeleeWeaponState) {
     u16 voiceSfx;
 
     if (this->meleeWeaponState == 0) {
-        if ((this->heldItemAction == PLAYER_IA_SWORD_BIGGORON) && (gSaveContext.swordHealth > 0.0f)) {
+        if (TransformMasks_IsFDSkinMode() ||
+            ((this->heldItemAction == PLAYER_IA_SWORD_BIGGORON) && (gSaveContext.swordHealth > 0.0f))) {
             itemSfx = NA_SE_IT_HAMMER_SWING;
         } else {
             itemSfx = NA_SE_IT_SWORD_SWING;
@@ -3456,14 +3457,6 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
     s32 temp;
     s32 nextAnimType;
 
-    // Transformation Masks: block items not in current form's allow list
-    if (TransformMasks_IsEnabled() && TransformMasks_IsTransformedAny()) {
-        if (!TransformMasks_IsItemAllowed(item)) {
-            Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
-            return;
-        }
-    }
-
     itemAction = Player_ItemToItemAction(item);
 
     if (((this->heldItemAction == this->itemAction) &&
@@ -4545,6 +4538,18 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
 
     func_80837918(this, 0, dmgFlags);
     func_80837918(this, 1, dmgFlags);
+
+    // FD sword beam: fire blue energy disk on every FD melee attack (costs 1 magic).
+    // In MM, FD fires beams on every B-attack regardless of Z-targeting.
+    // Use focusActor check (set by Player_UpdateZTargeting BEFORE action func) instead of
+    // PLAYER_STATE1_HOSTILE_LOCK_ON which may not be set yet (updated AFTER action handlers).
+    if (TransformMasks_IsFDSkinMode() && this->focusActor != NULL) {
+        if (Magic_RequestChange(play, 1, MAGIC_CONSUME_NOW)) {
+            Actor_Spawn(&play->actorCtx, play, ACTOR_EN_M_THUNDER, this->bodyPartsPos[PLAYER_BODYPART_WAIST].x,
+                        this->bodyPartsPos[PLAYER_BODYPART_WAIST].y, this->bodyPartsPos[PLAYER_BODYPART_WAIST].z, 0,
+                        this->actor.shape.rot.y, 0, 0x80, true);
+        }
+    }
 }
 
 /**
@@ -10989,9 +10994,7 @@ void Player_Init(Actor* thisx, PlayState* play2) {
     this->heldItemId = ITEM_NONE;
 
     // TRANSFORMATION MASKS: Init BEFORE Player_UseItem so IsTransformed() returns false.
-    // Otherwise Player_UseItem checks IsTransformedAny() → true (stale state from old scene)
-    // → IsItemAllowed(ITEM_NONE) → false → Player_UseItem returns early → heldItemAction stays -1
-    // → ExtPlayer_GetItemActionUpdateFunc(-1) reads sItemActionUpdateFuncs[-1] → garbage upperActionFunc → crash
+    // Reset transformation state before Player_UseItem to avoid stale state from old scene
     TransformMasks_Init(play, this);
 
     Player_UseItem(play, this, ITEM_NONE);

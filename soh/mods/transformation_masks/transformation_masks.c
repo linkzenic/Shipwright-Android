@@ -19,6 +19,8 @@ extern u8 MmForm_IsTransformedAny(void);
 extern u8 MmForm_HasSkeleton(void);
 extern u8 MmForm_IsFDSkinMode(void);
 extern u8 MmForm_IsItemAllowed(s32 item);
+extern u8 MmForm_IsSlotAllowed(u8 slot);
+extern MmPlayerTransformation MmForm_GetCurrentForm(void);
 extern u8 MmForm_OnWaterSwimAttempt(PlayState* play, Player* player);
 extern TransformMaskId MmForm_GetMaskType(s32 item);
 extern void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item);
@@ -120,6 +122,14 @@ u8 TransformMasks_IsItemAllowed(s32 item) {
     return MmForm_IsItemAllowed(item);
 }
 
+u8 TransformMasks_IsSlotAllowed(u8 slot) {
+    return MmForm_IsSlotAllowed(slot);
+}
+
+MmPlayerTransformation MmPlayer_GetForm(void) {
+    return MmForm_GetCurrentForm();
+}
+
 u8 TransformMasks_OnWaterSwimAttempt(PlayState* play, Player* player) {
     return MmForm_OnWaterSwimAttempt(play, player);
 }
@@ -154,4 +164,10 @@ s32 TransformMasks_WearGetCurrent(void) {
 
 void TransformMasks_WearClear(void) {
     MmMaskWear_Clear();
+}
+
+// Route to MmForm_GetFDHandDL for sword beam (FD_DL_SWORD_BEAM = 4)
+extern Gfx* MmForm_GetFDSwordBeamDL(PlayState* play);
+Gfx* TransformMasks_GetFDSwordBeamDL(PlayState* play) {
+    return MmForm_GetFDSwordBeamDL(play);
 }

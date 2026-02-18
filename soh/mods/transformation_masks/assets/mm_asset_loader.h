@@ -147,6 +147,12 @@ void* MmMasks_LoadIcon(uint16_t itemId);
  */
 void* MmMasks_LoadNameTex(uint16_t itemId);
 
+/**
+ * Load FD sword icon for B-button HUD override
+ * @return Pointer to 32x32 RGBA icon texture, or NULL if not found
+ */
+void* MmAssets_LoadFDSwordIcon(void);
+
 // =============================================================================
 // Transformation Mask Asset Loaders
 // =============================================================================
