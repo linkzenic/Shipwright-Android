@@ -38,42 +38,42 @@ Items from across the Zelda franchise, fully integrated into OoT's gameplay:
 ## Item List
 
 ### Traversal Items
-| Item | Origin | Description |
-|------|--------|-------------|
-| **Roc's Feather** | Oracle Games | High jump with sparkle effects |
-| **Roc's Cape** | Four Swords Adventures | Double jump upgrade for Roc's Feather |
-| **Deku Leaf** | The Wind Waker | Glider and wind gust attack |
-| **Whip** | Spirit Tracks | Grappling hook with pendulum swinging |
-| **Spinner** | Twilight Princess | Rideable vehicle with homing dash attack |
+| Item | Origin | Description | Supported Logic |
+|------|--------|-------------|-----------------|
+| **Roc's Feather** | Oracle Games | High jump with sparkle effects | No |
+| **Roc's Cape** | Four Swords Adventures | Double jump upgrade for Roc's Feather | No |
+| **Deku Leaf** | The Wind Waker | Glider and wind gust attack | No |
+| **Whip** | Spirit Tracks | Grappling hook with pendulum swinging | No |
+| **Spinner** | Twilight Princess | Rideable vehicle with homing dash attack | No |
 
 ### Combat Items
-| Item | Origin | Description |
-|------|--------|-------------|
-| **Ball and Chain** | Twilight Princess | Chargeable heavy projectile, breaks walls |
-| **Fire Rod** | A Link Between Worlds | Magic rod with 4 fire attack types |
-| **Ice Rod** | A Link Between Worlds | Magic rod with 4 ice attack types, freezes enemies |
-| **Light Rod** | A Link Between Worlds | Magic rod with 4 light attack types, stuns enemies |
-| **Bomb Arrows** | Twilight Princess | Bow + bomb combo projectile |
-| **Demise Destruction** | A Link to the Past | AoE spell with lightning, heavy damage |
+| Item | Origin | Description | Supported Logic |
+|------|--------|-------------|-----------------|
+| **Ball and Chain** | Twilight Princess | Chargeable heavy projectile, breaks walls | No |
+| **Fire Rod** | A Link Between Worlds | Magic rod with 4 fire attack types | No |
+| **Ice Rod** | A Link Between Worlds | Magic rod with 4 ice attack types, freezes enemies | No |
+| **Light Rod** | A Link Between Worlds | Magic rod with 4 light attack types, stuns enemies | No |
+| **Bomb Arrows** | Twilight Princess | Bow + bomb combo projectile | No |
+| **Demise Destruction** | A Link to the Past | AoE spell with lightning, heavy damage | Yes |
 
 ### Utility Items
-| Item | Origin | Description |
-|------|--------|-------------|
-| **Switch Hook** | Oracle of Ages | Swap positions with objects and enemies |
-| **Gust Jar** | The Minish Cap | Suction and projectile device |
-| **Cane of Somaria** | A Link to the Past | Create hookable and swappable blocks |
-| **Dominion Rod** | Twilight Princess | Remote control enemies and statues |
-| **Beetle** | Skyward Sword | Remote-controlled scout, carries items |
-| **Shovel** | Link's Awakening | Dig for buried items and hidden grottos |
-| **Mogma Mitts** | Skyward Sword | Climb any wall using magic |
+| Item | Origin | Description | Supported Logic |
+|------|--------|-------------|-----------------|
+| **Switch Hook** | Oracle of Ages | Swap positions with objects and enemies | No |
+| **Gust Jar** | The Minish Cap | Suction and projectile device | No |
+| **Cane of Somaria** | A Link to the Past | Create hookable and swappable blocks | No |
+| **Dominion Rod** | Twilight Princess | Remote control enemies and statues | No |
+| **Beetle** | Skyward Sword | Remote-controlled scout, carries items | No |
+| **Shovel** | Link's Awakening | Dig for buried items and hidden grottos | Yes |
+| **Mogma Mitts** | Skyward Sword | Climb any wall using magic | No |
 
 ### Special Items
-| Item | Origin | Description |
-|------|--------|-------------|
-| **Time Gate** | Hyrule Warriors | Swap between Child/Adult Link (48 MP) |
-| **Desire Sensor** | Monster Hunter | Detect major items in current scene |
-| **Hylia's Grace** | Zelda II | Fairy transformation with free flight |
-| **Zonai Permafrost** | Tears of the Kingdom | Time freeze - stops all actors for 30s |
+| Item | Origin | Description | Supported Logic |
+|------|--------|-------------|-----------------|
+| **Time Gate** | Hyrule Warriors | Swap between Child/Adult Link (48 MP) | No |
+| **Desire Sensor** | Monster Hunter | Detect major items in current scene | No |
+| **Hylia's Grace** | Zelda II | Fairy transformation with free flight | No |
+| **Zonai Permafrost** | Tears of the Kingdom | Time freeze - stops all actors for 30s | No |
 
 ---
 
