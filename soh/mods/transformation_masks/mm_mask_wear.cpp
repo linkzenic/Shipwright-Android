@@ -12,6 +12,7 @@
 #include "z64item.h"
 #include "macros.h"
 #include "functions.h"
+#include <exception>
 
 #include "mods/transformation_masks/mm_mask_wear.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
@@ -147,32 +148,36 @@ extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
         return;
     }
 
-    const char* dlPath = sMmWornMaskDLPaths[idx];
-    Vec3s* rot = &sMmMaskRotOffset[idx];
+    try {
+        const char* dlPath = sMmWornMaskDLPaths[idx];
+        Vec3s* rot = &sMmMaskRotOffset[idx];
 
-    OPEN_DISPS(play->state.gfxCtx);
+        OPEN_DISPS(play->state.gfxCtx);
 
-    // Blast Mask requires segment 0x09 for its material (animated texture slot).
-    // In MM, Player_DrawBlastMask() sets this up before drawing.
-    if (idx == MM_MASK_IDX_BLAST) {
-        gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)sBlastMaskDefaultSeg9);
+        // Blast Mask requires segment 0x09 for its material (animated texture slot).
+        // In MM, Player_DrawBlastMask() sets this up before drawing.
+        if (idx == MM_MASK_IDX_BLAST) {
+            gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)sBlastMaskDefaultSeg9);
+        }
+
+        if (rot->x != 0 || rot->y != 0 || rot->z != 0) {
+            // Apply extra rotation offset if non-zero
+            Matrix_Push();
+            Matrix_RotateZYX(rot->x, rot->y, rot->z, MTXMODE_APPLY);
+
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
+
+            Matrix_Pop();
+        } else {
+            // No extra rotation - draw directly in head limb space
+            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
+        }
+
+        CLOSE_DISPS(play->state.gfxCtx);
+    } catch (...) {
+        // Prevent C++ exceptions from propagating through extern "C" boundary
     }
-
-    if (rot->x != 0 || rot->y != 0 || rot->z != 0) {
-        // Apply extra rotation offset if non-zero
-        Matrix_Push();
-        Matrix_RotateZYX(rot->x, rot->y, rot->z, MTXMODE_APPLY);
-
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
-
-        Matrix_Pop();
-    } else {
-        // No extra rotation - draw directly in head limb space
-        gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
-    }
-
-    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 // =============================================================================
@@ -184,59 +189,65 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
         return;
     }
 
-    s32 idx = MaskItemToIndex(sCurrentMmMask);
+    try {
 
-    switch (idx) {
-        case 0: // Postman's Hat
-            break;
-        case 1: // All-Night Mask
-            break;
-        case 2: // Blast Mask
-            break;
-        case 3: // Stone Mask
-            break;
-        case 4: // Great Fairy Mask
-            break;
-        case 5: // Deku Mask (transformation - shouldn't reach here)
-            break;
-        case 6: // Keaton Mask
-            break;
-        case 7: // Bremen Mask
-            break;
-        case 8: // Bunny Hood
-            break;
-        case 9: // Don Gero's Mask
-            break;
-        case 10: // Mask of Scents
-            break;
-        case 11: // Goron Mask (transformation - shouldn't reach here)
-            break;
-        case 12: // Romani Mask
-            break;
-        case 13: // Circus Leader Mask
-            break;
-        case 14: // Kafei's Mask
-            break;
-        case 15: // Couple's Mask
-            break;
-        case 16: // Mask of Truth
-            break;
-        case 17: // Zora Mask (transformation - shouldn't reach here)
-            break;
-        case 18: // Kamaro's Mask
-            break;
-        case 19: // Gibdo Mask
-            break;
-        case 20: // Garo's Mask
-            break;
-        case 21: // Captain's Hat
-            break;
-        case 22: // Giant's Mask
-            break;
-        case 23: // Fierce Deity Mask (transformation - shouldn't reach here)
-            break;
-        default:
-            break;
+        s32 idx = MaskItemToIndex(sCurrentMmMask);
+
+        switch (idx) {
+            case 0: // Postman's Hat
+                break;
+            case 1: // All-Night Mask
+                break;
+            case 2: // Blast Mask
+                break;
+            case 3: // Stone Mask
+                break;
+            case 4: // Great Fairy Mask
+                break;
+            case 5: // Deku Mask (transformation - shouldn't reach here)
+                break;
+            case 6: // Keaton Mask
+                break;
+            case 7: // Bremen Mask
+                break;
+            case 8: // Bunny Hood
+                break;
+            case 9: // Don Gero's Mask
+                break;
+            case 10: // Mask of Scents
+                break;
+            case 11: // Goron Mask (transformation - shouldn't reach here)
+                break;
+            case 12: // Romani Mask
+                break;
+            case 13: // Circus Leader Mask
+                break;
+            case 14: // Kafei's Mask
+                break;
+            case 15: // Couple's Mask
+                break;
+            case 16: // Mask of Truth
+                break;
+            case 17: // Zora Mask (transformation - shouldn't reach here)
+                break;
+            case 18: // Kamaro's Mask
+                break;
+            case 19: // Gibdo Mask
+                break;
+            case 20: // Garo's Mask
+                break;
+            case 21: // Captain's Hat
+                break;
+            case 22: // Giant's Mask
+                break;
+            case 23: // Fierce Deity Mask (transformation - shouldn't reach here)
+                break;
+            default:
+                break;
+        }
+
+    } catch (...) {
+        // Prevent C++ exceptions from propagating through extern "C" boundary
     }
 }
 

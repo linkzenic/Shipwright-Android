@@ -18,6 +18,7 @@
 #include "mm_asset_loader.h"
 #include <filesystem>
 #include <cstring>
+#include <exception>
 #include <libultraship/libultraship.h>
 #include <libultraship/log/luslog.h>
 #include "soh/OTRGlobals.h"
@@ -214,28 +215,40 @@ void MmAssets_Init(void) {
         return;
     }
 
-    // Detect base MM archive
-    sMmO2rDetected = DetectMmO2r();
+    try {
+        // Detect base MM archive
+        sMmO2rDetected = DetectMmO2r();
 
-    // Detect mod override archive
-    sModO2rDetected = DetectModO2r();
+        // Detect mod override archive
+        sModO2rDetected = DetectModO2r();
 
-    sInitialized = true;
+        sInitialized = true;
 
-    // Load base MM archive FIRST (lower priority)
-    if (sMmO2rDetected) {
-        LoadMmO2r();
-    }
+        // Load base MM archive FIRST (lower priority)
+        if (sMmO2rDetected) {
+            LoadMmO2r();
+        }
 
-    // Load mod archive LAST (higher priority - overrides mm.o2r)
-    // Ship's ResourceManager uses last-added-wins for duplicate resources
-    if (sModO2rDetected) {
-        LoadModO2r();
-    }
+        // Load mod archive LAST (higher priority - overrides mm.o2r)
+        // Ship's ResourceManager uses last-added-wins for duplicate resources
+        if (sModO2rDetected) {
+            LoadModO2r();
+        }
 
-    // Summary
-    if (sModO2rLoaded) {
-        MMASSETS_LOG("[MM Assets] Mod override active - %s overrides mm.o2r", sModO2rPath.c_str());
+        // Summary
+        if (sModO2rLoaded) {
+            MMASSETS_LOG("[MM Assets] Mod override active - %s overrides mm.o2r", sModO2rPath.c_str());
+        }
+    } catch (const std::exception& e) {
+        MMASSETS_LOG("[MM Assets] Exception during init: %s", e.what());
+        sInitialized = true;
+        sMmO2rDetected = false;
+        sMmO2rLoaded = false;
+    } catch (...) {
+        MMASSETS_LOG("[MM Assets] Unknown exception during init");
+        sInitialized = true;
+        sMmO2rDetected = false;
+        sMmO2rLoaded = false;
     }
 }
 
@@ -346,41 +359,45 @@ void* MmAssets_LoadResource(const char* path) {
         return nullptr;
     }
 
-    auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
-    if (!resourceManager) {
-        MMASSETS_LOG("[MM Assets] No resource manager");
-        return nullptr;
-    }
-
-    // Check if a mod archive in the mods/ folder overrides this MM resource.
-    // mm.o2r is loaded after the mods/ folder so it wins in mFileToArchive (last-added-wins).
-    // We explicitly check mod archives here to restore user mod priority over mm.o2r.
-    auto modArchive = MmAssets_FindModOverride(path);
-    if (modArchive) {
-        Ship::ResourceIdentifier identifier(path, 0, modArchive);
-        auto resource = resourceManager->LoadResource(identifier);
-        if (resource) {
-            void* ptr = resource->GetRawPointer();
-            MMASSETS_LOG("[MM Assets] Loaded from mod: %s -> %p", path, ptr);
-            return ptr;
+    try {
+        auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
+        if (!resourceManager) {
+            MMASSETS_LOG("[MM Assets] No resource manager");
+            return nullptr;
         }
-    }
 
-    // No mod override - load explicitly from mm.o2r via ResourceIdentifier.
-    // We do NOT use the general resourceManager->LoadResource(path) because
-    // that would search ALL archives (including oot.otr) and might return
-    // OOT data for paths that exist in both games.
-    if (sMmArchive) {
-        Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
-        auto resource = resourceManager->LoadResource(identifier);
-        if (resource) {
-            void* ptr = resource->GetRawPointer();
-            MMASSETS_LOG("[MM Assets] Loaded from mm.o2r: %s -> %p", path, ptr);
-            return ptr;
+        // Check if a mod archive in the mods/ folder overrides this MM resource.
+        // mm.o2r is loaded after the mods/ folder so it wins in mFileToArchive (last-added-wins).
+        // We explicitly check mod archives here to restore user mod priority over mm.o2r.
+        auto modArchive = MmAssets_FindModOverride(path);
+        if (modArchive) {
+            Ship::ResourceIdentifier identifier(path, 0, modArchive);
+            auto resource = resourceManager->LoadResource(identifier);
+            if (resource) {
+                void* ptr = resource->GetRawPointer();
+                MMASSETS_LOG("[MM Assets] Loaded from mod: %s -> %p", path, ptr);
+                return ptr;
+            }
         }
-    }
 
-    MMASSETS_LOG("[MM Assets] Failed to load: %s", path);
+        // No mod override - load explicitly from mm.o2r via ResourceIdentifier.
+        // We do NOT use the general resourceManager->LoadResource(path) because
+        // that would search ALL archives (including oot.otr) and might return
+        // OOT data for paths that exist in both games.
+        if (sMmArchive) {
+            Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
+            auto resource = resourceManager->LoadResource(identifier);
+            if (resource) {
+                void* ptr = resource->GetRawPointer();
+                MMASSETS_LOG("[MM Assets] Loaded from mm.o2r: %s -> %p", path, ptr);
+                return ptr;
+            }
+        }
+
+        MMASSETS_LOG("[MM Assets] Failed to load: %s", path);
+    } catch (const std::exception& e) {
+        MMASSETS_LOG("[MM Assets] Exception loading resource '%s': %s", path, e.what());
+    } catch (...) { MMASSETS_LOG("[MM Assets] Unknown exception loading resource '%s'", path); }
     return nullptr;
 }
 
@@ -402,41 +419,45 @@ void* MmAssets_LoadResourceWithSize(const char* path, size_t* outSize) {
         return nullptr;
     }
 
-    auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
-    if (!resourceManager) {
-        MMASSETS_LOG("[MM Assets] No resource manager");
-        return nullptr;
-    }
-
-    // Check mod override (if a mod archive is loaded)
-    if (sModArchive) {
-        Ship::ResourceIdentifier modId(path, 0, sModArchive);
-        auto resource = resourceManager->LoadResource(modId);
-        if (resource) {
-            void* ptr = resource->GetRawPointer();
-            size_t size = resource->GetPointerSize();
-            if (outSize)
-                *outSize = size;
-            MMASSETS_LOG("[MM Assets] Loaded from mod with size: %s -> %p (%zu bytes)", path, ptr, size);
-            return ptr;
+    try {
+        auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
+        if (!resourceManager) {
+            MMASSETS_LOG("[MM Assets] No resource manager");
+            return nullptr;
         }
-    }
 
-    // No mod override - load explicitly from mm.o2r
-    if (sMmArchive) {
-        Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
-        auto resource = resourceManager->LoadResource(identifier);
-        if (resource) {
-            void* ptr = resource->GetRawPointer();
-            size_t size = resource->GetPointerSize();
-            if (outSize)
-                *outSize = size;
-            MMASSETS_LOG("[MM Assets] Loaded from mm.o2r with size: %s -> %p (%zu bytes)", path, ptr, size);
-            return ptr;
+        // Check mod override (if a mod archive is loaded)
+        if (sModArchive) {
+            Ship::ResourceIdentifier modId(path, 0, sModArchive);
+            auto resource = resourceManager->LoadResource(modId);
+            if (resource) {
+                void* ptr = resource->GetRawPointer();
+                size_t size = resource->GetPointerSize();
+                if (outSize)
+                    *outSize = size;
+                MMASSETS_LOG("[MM Assets] Loaded from mod with size: %s -> %p (%zu bytes)", path, ptr, size);
+                return ptr;
+            }
         }
-    }
 
-    MMASSETS_LOG("[MM Assets] Failed to load: %s", path);
+        // No mod override - load explicitly from mm.o2r
+        if (sMmArchive) {
+            Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
+            auto resource = resourceManager->LoadResource(identifier);
+            if (resource) {
+                void* ptr = resource->GetRawPointer();
+                size_t size = resource->GetPointerSize();
+                if (outSize)
+                    *outSize = size;
+                MMASSETS_LOG("[MM Assets] Loaded from mm.o2r with size: %s -> %p (%zu bytes)", path, ptr, size);
+                return ptr;
+            }
+        }
+
+        MMASSETS_LOG("[MM Assets] Failed to load: %s", path);
+    } catch (const std::exception& e) {
+        MMASSETS_LOG("[MM Assets] Exception loading resource '%s': %s", path, e.what());
+    } catch (...) { MMASSETS_LOG("[MM Assets] Unknown exception loading resource '%s'", path); }
     return nullptr;
 }
 
@@ -462,27 +483,31 @@ static void* MmAssets_LoadFromMmArchive(const char* path, size_t* outSize) {
         return nullptr;
     }
 
-    auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
-    if (!resourceManager) {
-        MMASSETS_LOG("[MM Assets] LoadFromMmArchive FAIL: no resource manager");
-        return nullptr;
-    }
+    try {
+        auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
+        if (!resourceManager) {
+            MMASSETS_LOG("[MM Assets] LoadFromMmArchive FAIL: no resource manager");
+            return nullptr;
+        }
 
-    // Use ResourceIdentifier with explicit Parent archive.
-    // This creates a SEPARATE cache key from the default (OOT) version,
-    // because the cache hash includes the Parent archive path.
-    Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
-    auto resource = resourceManager->LoadResource(identifier);
-    if (resource) {
-        void* ptr = resource->GetRawPointer();
-        size_t size = resource->GetPointerSize();
-        if (outSize)
-            *outSize = size;
-        MMASSETS_LOG("[MM Assets] LoadFromMmArchive OK: %s -> %p (%zu bytes)", path, ptr, size);
-        return ptr;
-    }
+        // Use ResourceIdentifier with explicit Parent archive.
+        // This creates a SEPARATE cache key from the default (OOT) version,
+        // because the cache hash includes the Parent archive path.
+        Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
+        auto resource = resourceManager->LoadResource(identifier);
+        if (resource) {
+            void* ptr = resource->GetRawPointer();
+            size_t size = resource->GetPointerSize();
+            if (outSize)
+                *outSize = size;
+            MMASSETS_LOG("[MM Assets] LoadFromMmArchive OK: %s -> %p (%zu bytes)", path, ptr, size);
+            return ptr;
+        }
 
-    MMASSETS_LOG("[MM Assets] LoadFromMmArchive FAIL: %s not found in mm.o2r", path);
+        MMASSETS_LOG("[MM Assets] LoadFromMmArchive FAIL: %s not found in mm.o2r", path);
+    } catch (const std::exception& e) {
+        MMASSETS_LOG("[MM Assets] Exception in LoadFromMmArchive '%s': %s", path, e.what());
+    } catch (...) { MMASSETS_LOG("[MM Assets] Unknown exception in LoadFromMmArchive '%s'", path); }
     return nullptr;
 }
 
@@ -515,41 +540,47 @@ char** MmAssets_ListFiles(const char* searchMask, int* resultSize) {
         return nullptr;
     }
 
-    auto archiveManager = OTRGlobals::Instance->context->GetResourceManager()->GetArchiveManager();
-    if (!archiveManager) {
-        *resultSize = 0;
-        return nullptr;
-    }
-
-    // List files matching pattern from the archive
-    // Same pattern as 2Ship's ResourceMgr_ListFiles (BenPort.cpp lines 315-332)
-    auto fileList = archiveManager->ListFiles(searchMask);
-    if (!fileList || fileList->size() == 0) {
-        *resultSize = 0;
-        MMASSETS_LOG("[MM Assets] No files match pattern: %s", searchMask);
-        return nullptr;
-    }
-
-    // Convert to C-style array
-    size_t count = fileList->size();
-    char** result = (char**)malloc(count * sizeof(char*));
-    if (!result) {
-        *resultSize = 0;
-        return nullptr;
-    }
-
-    for (size_t i = 0; i < count; i++) {
-        const std::string& path = (*fileList)[i];
-        result[i] = (char*)malloc(path.size() + 1);
-        if (result[i]) {
-            memcpy(result[i], path.c_str(), path.size());
-            result[i][path.size()] = '\0';
+    try {
+        auto archiveManager = OTRGlobals::Instance->context->GetResourceManager()->GetArchiveManager();
+        if (!archiveManager) {
+            *resultSize = 0;
+            return nullptr;
         }
-    }
 
-    *resultSize = (int)count;
-    MMASSETS_LOG("[MM Assets] Found %d files matching: %s", (int)count, searchMask);
-    return result;
+        // List files matching pattern from the archive
+        // Same pattern as 2Ship's ResourceMgr_ListFiles (BenPort.cpp lines 315-332)
+        auto fileList = archiveManager->ListFiles(searchMask);
+        if (!fileList || fileList->size() == 0) {
+            *resultSize = 0;
+            MMASSETS_LOG("[MM Assets] No files match pattern: %s", searchMask);
+            return nullptr;
+        }
+
+        // Convert to C-style array
+        size_t count = fileList->size();
+        char** result = (char**)malloc(count * sizeof(char*));
+        if (!result) {
+            *resultSize = 0;
+            return nullptr;
+        }
+
+        for (size_t i = 0; i < count; i++) {
+            const std::string& path = (*fileList)[i];
+            result[i] = (char*)malloc(path.size() + 1);
+            if (result[i]) {
+                memcpy(result[i], path.c_str(), path.size());
+                result[i][path.size()] = '\0';
+            }
+        }
+
+        *resultSize = (int)count;
+        MMASSETS_LOG("[MM Assets] Found %d files matching: %s", (int)count, searchMask);
+        return result;
+    } catch (const std::exception& e) {
+        MMASSETS_LOG("[MM Assets] Exception in ListFiles '%s': %s", searchMask, e.what());
+    } catch (...) { MMASSETS_LOG("[MM Assets] Unknown exception in ListFiles '%s'", searchMask); }
+    *resultSize = 0;
+    return nullptr;
 }
 
 // =============================================================================
@@ -923,30 +954,35 @@ SoundFont* MmSfx_LoadFont(s32 fontId) {
     if (!MmAssets_IsAvailable())
         return nullptr;
 
-    MmSfxCacheEntry* cached = MmSfxCache_Find(fontId);
-    if (cached && cached->font)
-        return cached->font;
+    try {
+        MmSfxCacheEntry* cached = MmSfxCache_Find(fontId);
+        if (cached && cached->font)
+            return cached->font;
 
-    char path[64];
-    snprintf(path, sizeof(path), MM_SFX_FONT_PATH_FMT, fontId);
+        char path[64];
+        snprintf(path, sizeof(path), MM_SFX_FONT_PATH_FMT, fontId);
 
-    size_t size = 0;
-    void* resource = MmAssets_LoadFromMmArchive(path, &size);
-    if (!resource) {
-        MMSFX_LOG("[MmSfx] LoadFont FAIL: %s not found in mm.o2r", path);
-        return nullptr;
-    }
+        size_t size = 0;
+        void* resource = MmAssets_LoadFromMmArchive(path, &size);
+        if (!resource) {
+            MMSFX_LOG("[MmSfx] LoadFont FAIL: %s not found in mm.o2r", path);
+            return nullptr;
+        }
 
-    SoundFont* font = static_cast<SoundFont*>(resource);
-    MMSFX_LOG("[MmSfx] LoadFont(%d) OK: %u sfx, %u drums", fontId, font->numSfx, font->numDrums);
+        SoundFont* font = static_cast<SoundFont*>(resource);
+        MMSFX_LOG("[MmSfx] LoadFont(%d) OK: %u sfx, %u drums", fontId, font->numSfx, font->numDrums);
 
-    MmSfxCacheEntry* entry = MmSfxCache_GetFree();
-    if (entry) {
-        entry->fontId = fontId;
-        entry->font = font;
-        entry->sizeBytes = size;
-    }
-    return font;
+        MmSfxCacheEntry* entry = MmSfxCache_GetFree();
+        if (entry) {
+            entry->fontId = fontId;
+            entry->font = font;
+            entry->sizeBytes = size;
+        }
+        return font;
+    } catch (const std::exception& e) {
+        MMSFX_LOG("[MmSfx] Exception in LoadFont(%d): %s", fontId, e.what());
+    } catch (...) { MMSFX_LOG("[MmSfx] Unknown exception in LoadFont(%d)", fontId); }
+    return nullptr;
 }
 
 SoundFont* MmSfx_GetFontForSfx(u16 sfxId) {
@@ -1446,7 +1482,7 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
 
         for (u32 i = 0; i < numSamples; i++) {
             u32 pos = (u32)snd->pcmPosition;
-            if (pos >= snd->pcmLength - 1) {
+            if (snd->pcmLength < 2 || pos >= snd->pcmLength - 2) {
                 snd->active = 0;
                 break;
             }

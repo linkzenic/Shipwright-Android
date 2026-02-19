@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <exception>
 
 // C headers - NOT wrapped in extern "C" because they already have their own
 // __cplusplus guards internally, and wrapping them breaks Clang/GCC when
@@ -1014,7 +1015,7 @@ static Gfx* MmForm_LoadAndValidateDL(const char* otrPath, std::vector<Gfx>& safe
     {
         int otrSettimgHash = 0, otrVtxHash = 0, otrDlHash = 0, otrDlFilepath = 0;
         int otrMtx = 0, otrMovemem = 0, otrBranchZ = 0, otrMarker = 0;
-        int stdSettimg = 0, stdVtx = 0, stdDl = 0, stdMtx = 0, stdMovemem = 0;
+        int stdSettimg = 0, stdVtx = 0, stdDl = 0, stdDlIndex = 0, stdMtx = 0, stdMovemem = 0;
         int dangerSetcimg = 0, dangerLoadUcode = 0;
 
         for (size_t i = 0; i < count; i++) {
@@ -1055,24 +1056,33 @@ static Gfx* MmForm_LoadAndValidateDL(const char* otrPath, std::vector<Gfx>& safe
                 // Standard commands that use SegAddr - should NOT appear in OTR DLs!
                 case 0xFD: // G_SETTIMG - uses SegAddr(w1) for texture pointer
                     stdSettimg++;
-                    MMFORM_LOG("[MmForm] WARNING: DL[%zu] std G_SETTIMG(0xFD) w1=0x%016llX (seg=%d)", i,
+                    MMFORM_LOG("[MmForm] WARNING: %s DL[%zu] std G_SETTIMG(0xFD) w1=0x%016llX (seg=%d)", path, i,
                                (unsigned long long)w1, (int)(w1 & 1));
                     break;
                 case 0x01: // G_VTX (F3DEX2) - uses SegAddr(w1) for vertex pointer
                     stdVtx++;
-                    MMFORM_LOG("[MmForm] WARNING: DL[%zu] std G_VTX(0x01) w1=0x%016llX", i, (unsigned long long)w1);
+                    MMFORM_LOG("[MmForm] WARNING: %s DL[%zu] std G_VTX(0x01) w1=0x%016llX", path, i,
+                               (unsigned long long)w1);
                     break;
                 case 0xDE: // G_DL (F3DEX2) - uses SegAddr(w1) for sub-DL pointer
                     stdDl++;
-                    MMFORM_LOG("[MmForm] WARNING: DL[%zu] std G_DL(0xDE) w1=0x%016llX", i, (unsigned long long)w1);
+                    MMFORM_LOG("[MmForm] WARNING: %s DL[%zu] std G_DL(0xDE) w1=0x%016llX (seg=0x%02X off=0x%06X)", path,
+                               i, (unsigned long long)w1, (int)((w1 >> 24) & 0xFF), (int)(w1 & 0x00FFFFFE));
+                    break;
+                case 0x3D: // G_DL_INDEX - uses SegAddr with index-to-offset conversion
+                    stdDlIndex++;
+                    MMFORM_LOG("[MmForm] WARNING: %s DL[%zu] std G_DL_INDEX(0x3D) w1=0x%016llX (seg=0x%02X idx=0x%06X)",
+                               path, i, (unsigned long long)w1, (int)((w1 >> 24) & 0xFF), (int)(w1 & 0x00FFFFFF));
                     break;
                 case 0xDA: // G_MTX (F3DEX2) - uses SegAddr(w1) for matrix pointer
                     stdMtx++;
-                    MMFORM_LOG("[MmForm] WARNING: DL[%zu] std G_MTX(0xDA) w1=0x%016llX", i, (unsigned long long)w1);
+                    MMFORM_LOG("[MmForm] WARNING: %s DL[%zu] std G_MTX(0xDA) w1=0x%016llX", path, i,
+                               (unsigned long long)w1);
                     break;
                 case 0xDC: // G_MOVEMEM - uses SegAddr(w1) for memory pointer
                     stdMovemem++;
-                    MMFORM_LOG("[MmForm] WARNING: DL[%zu] std G_MOVEMEM(0xDC) w1=0x%016llX", i, (unsigned long long)w1);
+                    MMFORM_LOG("[MmForm] WARNING: %s DL[%zu] std G_MOVEMEM(0xDC) w1=0x%016llX", path, i,
+                               (unsigned long long)w1);
                     break;
 
                 // Dangerous opcodes that should NEVER be in model DLs
@@ -1195,10 +1205,126 @@ static void MmForm_PreResolveDLHashes(Gfx* dl, const char* dlName, int depth) {
     }
 }
 
-// NOTE: MmForm_PatchBadSubDLs was removed - it was the wrong approach for the
-// spikes crash. The real issue was unset segment 0x08 (gsSPDisplayList(0x08000000)
-// in grt_01/grt_02 sub-DLs). Now we draw the sub-DLs individually with proper
-// segment setup instead of using the composite gLinkGoronRollingSpikesAndEffectDL.
+// NOTE: MmForm_PatchBadSubDLs was removed — the composite DL approach was wrong.
+// Instead, sub-DLs are drawn individually. Energy DLs (grt_01/grt_02) that reference
+// segment 0x08 via standard G_DL(0xDE) are patched per-frame by MmForm_PatchSegmentedDL
+// to use direct pointers to TwoTexScroll, bypassing segment table resolution entirely.
+
+/**
+ * Patch standard segmented G_DL commands in a per-frame DL copy to use direct pointers.
+ *
+ * mm.o2r DLs may contain:
+ * - Standard G_DL (0xDE) with segmented addresses (e.g. 0x08000001 for TwoTexScroll)
+ * - G_DL_INDEX (0x3D) with segment + index (e.g. seg=0x0C idx=2 for gCullFrontDList)
+ *
+ * The F3D interpreter resolves these via the segment table at render time. G_DL_INDEX
+ * converts index to byte offset (index * sizeof(F3DGfx)), then adds to segment base.
+ * This depends on gCullFrontDList being at exactly gCullBackDList + 2*16 bytes, which
+ * is NOT guaranteed by the linker in Release builds.
+ *
+ * This function replaces ALL segmented G_DL/G_DL_INDEX commands targeting a specific
+ * segment with direct-pointer G_DL commands, bypassing segment table resolution entirely.
+ */
+static int MmForm_PatchSegmentedDL(Gfx* dlCopy, size_t count, u8 targetSeg, Gfx* replacement) {
+    if (dlCopy == NULL || replacement == NULL)
+        return 0;
+
+    int patched = 0;
+
+    for (size_t i = 0; i < count; i++) {
+        uint8_t op = (uint8_t)((dlCopy[i].words.w0 >> 24) & 0xFF);
+
+        // Standard G_DL (0xDE) with segmented bit set (w1 & 1)
+        if (op == 0xDE && (dlCopy[i].words.w1 & 1)) {
+            uint8_t segNum = (uint8_t)((dlCopy[i].words.w1 >> 24) & 0xFF);
+            if (segNum == targetSeg) {
+                // Replace with direct pointer (bit 0 = 0 → non-segmented)
+                dlCopy[i].words.w1 = (uintptr_t)replacement;
+                patched++;
+            }
+        }
+
+        // G_DL_INDEX (0x3D) also references segments — check same pattern
+        if (op == 0x3D) {
+            uint8_t segNum = (uint8_t)((dlCopy[i].words.w1 >> 24) & 0xFF);
+            if (segNum == targetSeg) {
+                // Convert to standard G_DL with direct pointer
+                dlCopy[i].words.w0 = (dlCopy[i].words.w0 & ~((uintptr_t)0xFF << 24)) | ((uintptr_t)0xDE << 24);
+                dlCopy[i].words.w1 = (uintptr_t)replacement;
+                patched++;
+            }
+        }
+
+        // Skip data words of 2-instruction expanded OTR commands
+        if (op == 0x20 || op == 0x31 || op == 0x32 || op == 0x33 || op == 0x36 || op == 0x35 || op == 0x42) {
+            i++; // skip hash/data instruction
+        }
+    }
+
+    return patched;
+}
+
+/**
+ * Patch G_DL_INDEX commands for segment 0x0C with direct pointers to cull DLs.
+ *
+ * mm.o2r DLs contain G_DL_INDEX(0x3D) with seg=0x0C and idx=0 (gCullBackDList)
+ * or idx=2 (gCullFrontDList). The interpreter converts idx to byte offset
+ * (idx * sizeof(F3DGfx) = idx*16), then adds to mSegmentPointers[0x0C].
+ * This ASSUMES gCullFrontDList is exactly gCullBackDList + 32 bytes in memory.
+ *
+ * In Release builds, the MSVC linker may NOT place these arrays adjacently,
+ * causing the computed address to point to garbage → interpreter executes
+ * garbage as GFX commands → crash in GfxSpVertex.
+ *
+ * This function replaces these G_DL_INDEX commands with direct G_DL pointers
+ * to the actual gCullBackDList/gCullFrontDList C arrays, bypassing the
+ * segment table + offset calculation entirely.
+ */
+static int MmForm_PatchCullDLIndex(Gfx* dlCopy, size_t count) {
+    if (dlCopy == NULL)
+        return 0;
+
+    int patched = 0;
+
+    for (size_t i = 0; i < count; i++) {
+        uint8_t op = (uint8_t)((dlCopy[i].words.w0 >> 24) & 0xFF);
+
+        if (op == 0x3D) {
+            uint8_t segNum = (uint8_t)((dlCopy[i].words.w1 >> 24) & 0xFF);
+            uint32_t idx = (uint32_t)(dlCopy[i].words.w1 & 0x00FFFFFF);
+
+            if (segNum == 0x0C) {
+                // idx=0 → gCullBackDList, idx=2 → gCullFrontDList
+                // (In MM, gCullBackDList has 2 Gfx entries, gCullFrontDList follows at index 2)
+                Gfx* target = (idx >= 2) ? gCullFrontDList : gCullBackDList;
+
+                // Convert G_DL_INDEX → standard G_DL with direct pointer
+                dlCopy[i].words.w0 = (dlCopy[i].words.w0 & ~((uintptr_t)0xFF << 24)) | ((uintptr_t)0xDE << 24);
+                dlCopy[i].words.w1 = (uintptr_t)target;
+                patched++;
+            }
+        }
+
+        // Also handle standard G_DL (0xDE) with segment 0x0C (unlikely but defensive)
+        if (op == 0xDE && (dlCopy[i].words.w1 & 1)) {
+            uint8_t segNum = (uint8_t)((dlCopy[i].words.w1 >> 24) & 0xFF);
+            if (segNum == 0x0C) {
+                uint32_t offset = dlCopy[i].words.w1 & 0x00FFFFFE;
+                // offset 0 → gCullBackDList, offset >= 0x10 (N64 bytes) → gCullFrontDList
+                Gfx* target = (offset >= 0x10) ? gCullFrontDList : gCullBackDList;
+                dlCopy[i].words.w1 = (uintptr_t)target;
+                patched++;
+            }
+        }
+
+        // Skip data words of 2-instruction expanded OTR commands
+        if (op == 0x20 || op == 0x31 || op == 0x32 || op == 0x33 || op == 0x36 || op == 0x35 || op == 0x42) {
+            i++; // skip hash/data instruction
+        }
+    }
+
+    return patched;
+}
 
 static void MmForm_PreloadGoronDLs(void) {
     sCachedCurledDL = MmForm_LoadAndValidateDL(gLinkGoronCurledDL, sCurledDLSafeCopy);
@@ -1295,6 +1421,10 @@ static Gfx* MmForm_GetFDHandDL(PlayState* play, FDHandDLIndex index) {
     memcpy(dlCopy, sFDHandDLSafeCopies[index].data(), count * sizeof(Gfx));
     // Ensure G_ENDDL terminator
     gSPEndDisplayList(&dlCopy[count]);
+    // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
+    MmForm_PatchSegmentedDL(dlCopy, count, 0x08, gEmptyDL);
+    // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
+    MmForm_PatchCullDLIndex(dlCopy, count);
     return dlCopy;
 }
 
@@ -1395,479 +1525,489 @@ static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) 
         return 0;
     }
 
-    // Load skeleton from mm.o2r
-    FlexSkeletonHeader* skelHeader = (FlexSkeletonHeader*)MmAssets_LoadResource(props->skelPath);
-    if (skelHeader == NULL) {
-        MMFORM_LOG("[MmForm] FAIL: skeleton not found in mm.o2r: %s", props->skelPath);
-        MMFORM_LOG("[MmForm] Check: mm.o2r loaded=%d, available=%d", MmAssets_IsLoaded(), MmAssets_IsAvailable());
-        return 0;
-    }
+    try {
 
-    // Load idle animation
-    gFormState.idleAnim = MmAnim_LoadByPath(props->idleAnimPath, props->idleAnimFrames, (u8)props->limbCount);
-    if (gFormState.idleAnim == NULL) {
-        MMFORM_LOG("[MmForm] FAIL: idle anim not found in mm.o2r: %s", props->idleAnimPath);
-        MMFORM_LOG("[MmForm] This is FATAL - cannot transform without idle animation");
-        return 0;
-    }
+        // Load skeleton from mm.o2r
+        FlexSkeletonHeader* skelHeader = (FlexSkeletonHeader*)MmAssets_LoadResource(props->skelPath);
+        if (skelHeader == NULL) {
+            MMFORM_LOG("[MmForm] FAIL: skeleton not found in mm.o2r: %s", props->skelPath);
+            MMFORM_LOG("[MmForm] Check: mm.o2r loaded=%d, available=%d", MmAssets_IsLoaded(), MmAssets_IsAvailable());
+            return 0;
+        }
 
-    // Load walk animation
-    gFormState.walkAnim = NULL;
-    if (props->walkAnimPath != NULL) {
-        gFormState.walkAnim = MmAnim_LoadByPath(props->walkAnimPath, props->walkAnimFrames, (u8)props->limbCount);
-        if (gFormState.walkAnim == NULL) {}
-    }
+        // Load idle animation
+        gFormState.idleAnim = MmAnim_LoadByPath(props->idleAnimPath, props->idleAnimFrames, (u8)props->limbCount);
+        if (gFormState.idleAnim == NULL) {
+            MMFORM_LOG("[MmForm] FAIL: idle anim not found in mm.o2r: %s", props->idleAnimPath);
+            MMFORM_LOG("[MmForm] This is FATAL - cannot transform without idle animation");
+            return 0;
+        }
 
-    // Load run animation (from 2Ship D_8085BE84: all forms share link_normal_run_free)
-    gFormState.runAnim = NULL;
-    if (props->runAnimPath != NULL) {
-        gFormState.runAnim = MmAnim_LoadByPath(props->runAnimPath, props->runAnimFrames, (u8)props->limbCount);
-        if (gFormState.runAnim == NULL) {}
-    }
+        // Load walk animation
+        gFormState.walkAnim = NULL;
+        if (props->walkAnimPath != NULL) {
+            gFormState.walkAnim = MmAnim_LoadByPath(props->walkAnimPath, props->walkAnimFrames, (u8)props->limbCount);
+            if (gFormState.walkAnim == NULL) {}
+        }
 
-    // =========================================================================
-    // Phase 2: Batch load form-specific combat animations
-    // =========================================================================
+        // Load run animation (from 2Ship D_8085BE84: all forms share link_normal_run_free)
+        gFormState.runAnim = NULL;
+        if (props->runAnimPath != NULL) {
+            gFormState.runAnim = MmAnim_LoadByPath(props->runAnimPath, props->runAnimFrames, (u8)props->limbCount);
+            if (gFormState.runAnim == NULL) {}
+        }
 
-    // Clear all combat anim pointers and root motion data
-    gFormState.punchA = gFormState.punchB = gFormState.punchC = NULL;
-    gFormState.punchAEnd = gFormState.punchBEnd = gFormState.punchCEnd = NULL;
-    gFormState.punchAEndR = gFormState.punchBEndR = gFormState.punchCEndR = NULL;
-    gFormState.maruChange = NULL;
-    gFormState.climbUpL = gFormState.climbUpR = NULL;
-    gFormState.maskOffStart = NULL;
-    gFormState.doorAOpen = gFormState.doorBOpen = gFormState.chestOpen = NULL;
-    gFormState.defenseAnim = gFormState.defenseWaitAnim = gFormState.defenseEndAnim = NULL;
-    MmForm_FreeRootMotion();
+        // =========================================================================
+        // Phase 2: Batch load form-specific combat animations
+        // =========================================================================
 
-    if (form == MM_PLAYER_FORM_GORON) {
-        // Punch combo (from 2Ship D_8085D064, z_player.c line 3569-3574)
-        gFormState.punchA = MmAnim_Load(MM_ANIM_PG_PUNCHA);
-        gFormState.punchB = MmAnim_Load(MM_ANIM_PG_PUNCHB);
-        gFormState.punchC = MmAnim_Load(MM_ANIM_PG_PUNCHC);
-        gFormState.punchAEnd = MmAnim_Load(MM_ANIM_PG_PUNCHAEND);
-        gFormState.punchBEnd = MmAnim_Load(MM_ANIM_PG_PUNCHBEND);
-        gFormState.punchCEnd = MmAnim_Load(MM_ANIM_PG_PUNCHCEND);
-        gFormState.punchAEndR = MmAnim_Load(MM_ANIM_PG_PUNCHAENDR);
-        gFormState.punchBEndR = MmAnim_Load(MM_ANIM_PG_PUNCHBENDR);
-        gFormState.punchCEndR = MmAnim_Load(MM_ANIM_PG_PUNCHCENDR);
+        // Clear all combat anim pointers and root motion data
+        gFormState.punchA = gFormState.punchB = gFormState.punchC = NULL;
+        gFormState.punchAEnd = gFormState.punchBEnd = gFormState.punchCEnd = NULL;
+        gFormState.punchAEndR = gFormState.punchBEndR = gFormState.punchCEndR = NULL;
+        gFormState.maruChange = NULL;
+        gFormState.climbUpL = gFormState.climbUpR = NULL;
+        gFormState.maskOffStart = NULL;
+        gFormState.doorAOpen = gFormState.doorBOpen = gFormState.chestOpen = NULL;
+        gFormState.defenseAnim = gFormState.defenseWaitAnim = gFormState.defenseEndAnim = NULL;
+        MmForm_FreeRootMotion();
 
-        // Curl -> ball (for roll system, Phase 6)
-        gFormState.maruChange = MmAnim_Load(MM_ANIM_PG_MARU_CHANGE);
+        if (form == MM_PLAYER_FORM_GORON) {
+            // Punch combo (from 2Ship D_8085D064, z_player.c line 3569-3574)
+            gFormState.punchA = MmAnim_Load(MM_ANIM_PG_PUNCHA);
+            gFormState.punchB = MmAnim_Load(MM_ANIM_PG_PUNCHB);
+            gFormState.punchC = MmAnim_Load(MM_ANIM_PG_PUNCHC);
+            gFormState.punchAEnd = MmAnim_Load(MM_ANIM_PG_PUNCHAEND);
+            gFormState.punchBEnd = MmAnim_Load(MM_ANIM_PG_PUNCHBEND);
+            gFormState.punchCEnd = MmAnim_Load(MM_ANIM_PG_PUNCHCEND);
+            gFormState.punchAEndR = MmAnim_Load(MM_ANIM_PG_PUNCHAENDR);
+            gFormState.punchBEndR = MmAnim_Load(MM_ANIM_PG_PUNCHBENDR);
+            gFormState.punchCEndR = MmAnim_Load(MM_ANIM_PG_PUNCHCENDR);
 
-        // Wall/vine climbing animations (from 2Ship ageProperties line 908-918)
-        gFormState.climbStartA = MmAnim_Load(MM_ANIM_PG_CLIMB_STARTA);
-        gFormState.climbStartB = MmAnim_Load(MM_ANIM_PG_CLIMB_STARTB);
-        gFormState.climbUpL = MmAnim_Load(MM_ANIM_PG_CLIMB_UPL);
-        gFormState.climbUpR = MmAnim_Load(MM_ANIM_PG_CLIMB_UPR);
-        gFormState.climbEndAL = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDAL);
-        gFormState.climbEndAR = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDAR);
-        gFormState.climbEndBL = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDBL);
-        gFormState.climbEndBR = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDBR);
+            // Curl -> ball (for roll system, Phase 6)
+            gFormState.maruChange = MmAnim_Load(MM_ANIM_PG_MARU_CHANGE);
 
-        // Mask removal (for detransformation)
-        gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PG_MASKOFFSTART);
+            // Wall/vine climbing animations (from 2Ship ageProperties line 908-918)
+            gFormState.climbStartA = MmAnim_Load(MM_ANIM_PG_CLIMB_STARTA);
+            gFormState.climbStartB = MmAnim_Load(MM_ANIM_PG_CLIMB_STARTB);
+            gFormState.climbUpL = MmAnim_Load(MM_ANIM_PG_CLIMB_UPL);
+            gFormState.climbUpR = MmAnim_Load(MM_ANIM_PG_CLIMB_UPR);
+            gFormState.climbEndAL = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDAL);
+            gFormState.climbEndAR = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDAR);
+            gFormState.climbEndBL = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDBL);
+            gFormState.climbEndBR = MmAnim_Load(MM_ANIM_PG_CLIMB_ENDBR);
 
-        s32 loaded = 0;
-        if (gFormState.punchA)
-            loaded++;
-        if (gFormState.punchB)
-            loaded++;
-        if (gFormState.punchC)
-            loaded++;
-        if (gFormState.punchAEnd)
-            loaded++;
-        if (gFormState.punchBEnd)
-            loaded++;
-        if (gFormState.punchCEnd)
-            loaded++;
-        if (gFormState.punchAEndR)
-            loaded++;
-        if (gFormState.punchBEndR)
-            loaded++;
-        if (gFormState.punchCEndR)
-            loaded++;
-        if (gFormState.maruChange)
-            loaded++;
-        if (gFormState.maskOffStart)
-            loaded++;
+            // Mask removal (for detransformation)
+            gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PG_MASKOFFSTART);
 
-        // Root motion for Goron punches (from 2Ship: ANIM_FLAG_ENABLE_MOVEMENT)
-        MmForm_LoadPunchRootMotion(0, MM_ANIM_PG_PUNCHA);
-        MmForm_LoadPunchRootMotion(1, MM_ANIM_PG_PUNCHB);
-        MmForm_LoadPunchRootMotion(2, MM_ANIM_PG_PUNCHC);
+            s32 loaded = 0;
+            if (gFormState.punchA)
+                loaded++;
+            if (gFormState.punchB)
+                loaded++;
+            if (gFormState.punchC)
+                loaded++;
+            if (gFormState.punchAEnd)
+                loaded++;
+            if (gFormState.punchBEnd)
+                loaded++;
+            if (gFormState.punchCEnd)
+                loaded++;
+            if (gFormState.punchAEndR)
+                loaded++;
+            if (gFormState.punchBEndR)
+                loaded++;
+            if (gFormState.punchCEndR)
+                loaded++;
+            if (gFormState.maruChange)
+                loaded++;
+            if (gFormState.maskOffStart)
+                loaded++;
 
-        // Load shielding skeleton (from 2Ship z_player.c line 11180-11182)
-        // Separate skeleton with 4 limbs: Root, Body, Head, ArmsAndLegs
-        // Uses gLinkGoronShieldingAnim ("pg_gurdmotion" = guard motion pose)
-        {
-            FlexSkeletonHeader* shieldSkel = (FlexSkeletonHeader*)MmAssets_LoadResource(gLinkGoronShieldingSkel);
-            AnimationHeader* shieldAnim = (AnimationHeader*)MmAssets_LoadResource(gLinkGoronShieldingAnim);
-            if (shieldSkel != NULL && shieldAnim != NULL) {
-                SkelAnime_InitFlex(play, &gFormState.shieldSkelAnime, shieldSkel, shieldAnim, NULL, NULL,
-                                   LINK_GORON_SHIELDING_LIMB_MAX);
-                gFormState.shieldSkelLoaded = 1;
-            } else {
-                gFormState.shieldSkelLoaded = 0;
+            // Root motion for Goron punches (from 2Ship: ANIM_FLAG_ENABLE_MOVEMENT)
+            MmForm_LoadPunchRootMotion(0, MM_ANIM_PG_PUNCHA);
+            MmForm_LoadPunchRootMotion(1, MM_ANIM_PG_PUNCHB);
+            MmForm_LoadPunchRootMotion(2, MM_ANIM_PG_PUNCHC);
+
+            // Load shielding skeleton (from 2Ship z_player.c line 11180-11182)
+            // Separate skeleton with 4 limbs: Root, Body, Head, ArmsAndLegs
+            // Uses gLinkGoronShieldingAnim ("pg_gurdmotion" = guard motion pose)
+            {
+                FlexSkeletonHeader* shieldSkel = (FlexSkeletonHeader*)MmAssets_LoadResource(gLinkGoronShieldingSkel);
+                AnimationHeader* shieldAnim = (AnimationHeader*)MmAssets_LoadResource(gLinkGoronShieldingAnim);
+                if (shieldSkel != NULL && shieldAnim != NULL) {
+                    SkelAnime_InitFlex(play, &gFormState.shieldSkelAnime, shieldSkel, shieldAnim, NULL, NULL,
+                                       LINK_GORON_SHIELDING_LIMB_MAX);
+                    gFormState.shieldSkelLoaded = 1;
+                } else {
+                    gFormState.shieldSkelLoaded = 0;
+                }
             }
-        }
 
-        // Initialize shield damage protection collider (from 2Ship D_8085C318)
-        // This collider blocks enemy attacks when Goron is curled/shielding
-        {
-            Player* initPlayer = (Player*)play->actorCtx.actorLists[ACTORCAT_PLAYER].head;
-            if (initPlayer != NULL) {
-                Collider_InitCylinder(play, &gFormState.shieldCollider);
-                Collider_SetCylinder(play, &gFormState.shieldCollider, &initPlayer->actor, &sShieldColliderInit);
-                gFormState.shieldColliderInitDone = 1;
+            // Initialize shield damage protection collider (from 2Ship D_8085C318)
+            // This collider blocks enemy attacks when Goron is curled/shielding
+            {
+                Player* initPlayer = (Player*)play->actorCtx.actorLists[ACTORCAT_PLAYER].head;
+                if (initPlayer != NULL) {
+                    Collider_InitCylinder(play, &gFormState.shieldCollider);
+                    Collider_SetCylinder(play, &gFormState.shieldCollider, &initPlayer->actor, &sShieldColliderInit);
+                    gFormState.shieldColliderInitDone = 1;
+                }
             }
-        }
 
-        // Door/chest animations (from 2Ship D_8085D118/D_8085D124/ageProperties->openChestAnim)
-        gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PG_DOORA_OPEN);
-        gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PG_DOORB_OPEN);
-        gFormState.chestOpen = MmAnim_Load(MM_ANIM_PG_TBOX_OPEN);
-    } else if (form == MM_PLAYER_FORM_ZORA) {
-        // Zora punch combo (from 2Ship sMeleeAttackAnimInfo, z_player.c line 3575-3580)
-        gFormState.punchA = MmAnim_Load(MM_ANIM_PZ_ATTACKA);
-        gFormState.punchB = MmAnim_Load(MM_ANIM_PZ_ATTACKB);
-        gFormState.punchC = MmAnim_Load(MM_ANIM_PZ_ATTACKC);
-        gFormState.punchAEnd = MmAnim_Load(MM_ANIM_PZ_ATTACKAEND);
-        gFormState.punchBEnd = MmAnim_Load(MM_ANIM_PZ_ATTACKBEND);
-        gFormState.punchCEnd = MmAnim_Load(MM_ANIM_PZ_ATTACKCEND);
-        gFormState.punchAEndR = MmAnim_Load(MM_ANIM_PZ_ATTACKAENDR);
-        gFormState.punchBEndR = MmAnim_Load(MM_ANIM_PZ_ATTACKBENDR);
-        gFormState.punchCEndR = MmAnim_Load(MM_ANIM_PZ_ATTACKCENDR);
+            // Door/chest animations (from 2Ship D_8085D118/D_8085D124/ageProperties->openChestAnim)
+            gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PG_DOORA_OPEN);
+            gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PG_DOORB_OPEN);
+            gFormState.chestOpen = MmAnim_Load(MM_ANIM_PG_TBOX_OPEN);
+        } else if (form == MM_PLAYER_FORM_ZORA) {
+            // Zora punch combo (from 2Ship sMeleeAttackAnimInfo, z_player.c line 3575-3580)
+            gFormState.punchA = MmAnim_Load(MM_ANIM_PZ_ATTACKA);
+            gFormState.punchB = MmAnim_Load(MM_ANIM_PZ_ATTACKB);
+            gFormState.punchC = MmAnim_Load(MM_ANIM_PZ_ATTACKC);
+            gFormState.punchAEnd = MmAnim_Load(MM_ANIM_PZ_ATTACKAEND);
+            gFormState.punchBEnd = MmAnim_Load(MM_ANIM_PZ_ATTACKBEND);
+            gFormState.punchCEnd = MmAnim_Load(MM_ANIM_PZ_ATTACKCEND);
+            gFormState.punchAEndR = MmAnim_Load(MM_ANIM_PZ_ATTACKAENDR);
+            gFormState.punchBEndR = MmAnim_Load(MM_ANIM_PZ_ATTACKBENDR);
+            gFormState.punchCEndR = MmAnim_Load(MM_ANIM_PZ_ATTACKCENDR);
 
-        // Zora mask removal (for detransformation)
-        gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PZ_MASKOFFSTART);
+            // Zora mask removal (for detransformation)
+            gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PZ_MASKOFFSTART);
 
-        // Zora-specific jump kick (Phase 3: aerial B attack)
-        // From 2Ship sMeleeAttackAnimInfo: PLAYER_MWA_ZORA_JUMPKICK_START
-        // Gravity override: -0.8f (lighter than default, from 2Ship func_80834734 line 6357)
-        gFormState.jumpKick = MmAnim_Load(MM_ANIM_PZ_JUMPAT);
-        gFormState.jumpKickEnd = MmAnim_Load(MM_ANIM_PZ_JUMPATEND);
+            // Zora-specific jump kick (Phase 3: aerial B attack)
+            // From 2Ship sMeleeAttackAnimInfo: PLAYER_MWA_ZORA_JUMPKICK_START
+            // Gravity override: -0.8f (lighter than default, from 2Ship func_80834734 line 6357)
+            gFormState.jumpKick = MmAnim_Load(MM_ANIM_PZ_JUMPAT);
+            gFormState.jumpKickEnd = MmAnim_Load(MM_ANIM_PZ_JUMPATEND);
 
-        s32 loaded = 0;
-        if (gFormState.punchA)
-            loaded++;
-        if (gFormState.punchB)
-            loaded++;
-        if (gFormState.punchC)
-            loaded++;
-        if (gFormState.punchAEnd)
-            loaded++;
-        if (gFormState.punchBEnd)
-            loaded++;
-        if (gFormState.punchCEnd)
-            loaded++;
-        if (gFormState.punchAEndR)
-            loaded++;
-        if (gFormState.punchBEndR)
-            loaded++;
-        if (gFormState.punchCEndR)
-            loaded++;
-        if (gFormState.maskOffStart)
-            loaded++;
-        if (gFormState.jumpKick)
-            loaded++;
-        if (gFormState.jumpKickEnd)
-            loaded++;
+            s32 loaded = 0;
+            if (gFormState.punchA)
+                loaded++;
+            if (gFormState.punchB)
+                loaded++;
+            if (gFormState.punchC)
+                loaded++;
+            if (gFormState.punchAEnd)
+                loaded++;
+            if (gFormState.punchBEnd)
+                loaded++;
+            if (gFormState.punchCEnd)
+                loaded++;
+            if (gFormState.punchAEndR)
+                loaded++;
+            if (gFormState.punchBEndR)
+                loaded++;
+            if (gFormState.punchCEndR)
+                loaded++;
+            if (gFormState.maskOffStart)
+                loaded++;
+            if (gFormState.jumpKick)
+                loaded++;
+            if (gFormState.jumpKickEnd)
+                loaded++;
 
-        // Root motion for Zora punches (from 2Ship: ANIM_FLAG_ENABLE_MOVEMENT)
-        MmForm_LoadPunchRootMotion(0, MM_ANIM_PZ_ATTACKA);
-        MmForm_LoadPunchRootMotion(1, MM_ANIM_PZ_ATTACKB);
-        MmForm_LoadPunchRootMotion(2, MM_ANIM_PZ_ATTACKC);
+            // Root motion for Zora punches (from 2Ship: ANIM_FLAG_ENABLE_MOVEMENT)
+            MmForm_LoadPunchRootMotion(0, MM_ANIM_PZ_ATTACKA);
+            MmForm_LoadPunchRootMotion(1, MM_ANIM_PZ_ATTACKB);
+            MmForm_LoadPunchRootMotion(2, MM_ANIM_PZ_ATTACKC);
 
-        // Boomerang fin animations (from 2Ship Player_InitZoraBoomerangIA, z_player.c:3470)
-        gFormState.cutterAttack = MmAnim_Load(MM_ANIM_PZ_CUTTERATTACK);
-        gFormState.cutterCatch = MmAnim_Load(MM_ANIM_PZ_CUTTERCATCH);
-        gFormState.cutterWaitA = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITA);
-        gFormState.cutterWaitB = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITB);
-        gFormState.cutterWaitC = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITC);
-        gFormState.cutterWaitAnim = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITANIM);
-        gFormState.bladeOn = MmAnim_Load(MM_ANIM_PZ_BLADEON);
+            // Boomerang fin animations (from 2Ship Player_InitZoraBoomerangIA, z_player.c:3470)
+            gFormState.cutterAttack = MmAnim_Load(MM_ANIM_PZ_CUTTERATTACK);
+            gFormState.cutterCatch = MmAnim_Load(MM_ANIM_PZ_CUTTERCATCH);
+            gFormState.cutterWaitA = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITA);
+            gFormState.cutterWaitB = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITB);
+            gFormState.cutterWaitC = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITC);
+            gFormState.cutterWaitAnim = MmAnim_Load(MM_ANIM_PZ_CUTTERWAITANIM);
+            gFormState.bladeOn = MmAnim_Load(MM_ANIM_PZ_BLADEON);
 
-        // Swimming animations (from 2Ship Player_Action_54-58, z_player.c:16820-17072)
-        gFormState.fishSwim = MmAnim_Load(MM_ANIM_PZ_FISHSWIM);
-        gFormState.waterRoll = MmAnim_Load(MM_ANIM_PZ_WATERROLL);
-        gFormState.swimToWait = MmAnim_Load(MM_ANIM_PZ_SWIMTOWAIT);
-        gFormState.swimWaitAnim = MmAnim_Load(MM_ANIM_LINK_SWIMER_SWIM_WAIT);
-        gFormState.swimAnim = MmAnim_Load(MM_ANIM_LINK_SWIMER_SWIM);
+            // Swimming animations (from 2Ship Player_Action_54-58, z_player.c:16820-17072)
+            gFormState.fishSwim = MmAnim_Load(MM_ANIM_PZ_FISHSWIM);
+            gFormState.waterRoll = MmAnim_Load(MM_ANIM_PZ_WATERROLL);
+            gFormState.swimToWait = MmAnim_Load(MM_ANIM_PZ_SWIMTOWAIT);
+            gFormState.swimWaitAnim = MmAnim_Load(MM_ANIM_LINK_SWIMER_SWIM_WAIT);
+            gFormState.swimAnim = MmAnim_Load(MM_ANIM_LINK_SWIMER_SWIM);
 
-        // Defense/guard animations (from 2Ship Player_ActionHandler_11, z_player.c:8542)
-        // Zora (!Player_IsGoronOrDeku) uses D_8085BE84[PLAYER_ANIMGROUP_defense][modelAnimType]
-        // From 2Ship D_8085BE84[PLAYER_ANIMGROUP_defense][PLAYER_ANIMTYPE_2]:
-        //   Zora uses ARMED variants because Player_SetModelsForHoldingShield
-        //   sets modelAnimType = PLAYER_ANIMTYPE_2 for non-Goron/Deku forms.
-        //   Fallback to _free variants if armed ones don't load from mm.o2r.
-        gFormState.defenseAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE);
-        if (gFormState.defenseAnim == NULL) {
-            gFormState.defenseAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_FREE);
-        }
-        gFormState.defenseWaitAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_WAIT);
-        if (gFormState.defenseWaitAnim == NULL) {
-            gFormState.defenseWaitAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_WAIT_FREE);
-        }
-        gFormState.defenseEndAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_END);
-        if (gFormState.defenseEndAnim == NULL) {
-            gFormState.defenseEndAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_END_FREE);
-        }
-        MMFORM_LOG("[MmForm] Zora defense anims: enter=%s wait=%s end=%s", gFormState.defenseAnim ? "OK" : "FAIL",
-                   gFormState.defenseWaitAnim ? "OK" : "FAIL", gFormState.defenseEndAnim ? "OK" : "FAIL");
-
-        // Climb animations (from 2Ship D_8085BE84 PLAYER_ANIMTYPE_DEFAULT)
-        gFormState.climbStartA = MmAnim_Load(MM_ANIM_PZ_CLIMB_STARTA);
-        gFormState.climbStartB = MmAnim_Load(MM_ANIM_PZ_CLIMB_STARTB);
-        gFormState.climbEndAL = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDAL);
-        gFormState.climbEndAR = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDAR);
-        gFormState.climbEndBL = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDBL);
-        gFormState.climbEndBR = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDBR);
-        gFormState.climbUpL = MmAnim_Load(MM_ANIM_PZ_CLIMB_UPL);
-        gFormState.climbUpR = MmAnim_Load(MM_ANIM_PZ_CLIMB_UPR);
-
-        // Door/chest animations (Zora-specific from 2Ship D_8085D118/D_8085D124)
-        gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PZ_DOORA_OPEN);
-        gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PZ_DOORB_OPEN);
-        gFormState.chestOpen = MmAnim_Load(MM_ANIM_PZ_TBOX_OPEN);
-
-        // Initialize shield damage protection collider for Zora guard stance
-        // Same collider as Goron (from 2Ship D_8085C318, z_player.c line 1686)
-        // Zora uses shieldCylinder for both defense (AC) and barrier (AT) in MM
-        {
-            Player* initPlayer = (Player*)play->actorCtx.actorLists[ACTORCAT_PLAYER].head;
-            if (initPlayer != NULL) {
-                Collider_InitCylinder(play, &gFormState.shieldCollider);
-                Collider_SetCylinder(play, &gFormState.shieldCollider, &initPlayer->actor, &sShieldColliderInit);
-                gFormState.shieldColliderInitDone = 1;
+            // Defense/guard animations (from 2Ship Player_ActionHandler_11, z_player.c:8542)
+            // Zora (!Player_IsGoronOrDeku) uses D_8085BE84[PLAYER_ANIMGROUP_defense][modelAnimType]
+            // From 2Ship D_8085BE84[PLAYER_ANIMGROUP_defense][PLAYER_ANIMTYPE_2]:
+            //   Zora uses ARMED variants because Player_SetModelsForHoldingShield
+            //   sets modelAnimType = PLAYER_ANIMTYPE_2 for non-Goron/Deku forms.
+            //   Fallback to _free variants if armed ones don't load from mm.o2r.
+            gFormState.defenseAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE);
+            if (gFormState.defenseAnim == NULL) {
+                gFormState.defenseAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_FREE);
             }
+            gFormState.defenseWaitAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_WAIT);
+            if (gFormState.defenseWaitAnim == NULL) {
+                gFormState.defenseWaitAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_WAIT_FREE);
+            }
+            gFormState.defenseEndAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_END);
+            if (gFormState.defenseEndAnim == NULL) {
+                gFormState.defenseEndAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_DEFENSE_END_FREE);
+            }
+            MMFORM_LOG("[MmForm] Zora defense anims: enter=%s wait=%s end=%s", gFormState.defenseAnim ? "OK" : "FAIL",
+                       gFormState.defenseWaitAnim ? "OK" : "FAIL", gFormState.defenseEndAnim ? "OK" : "FAIL");
+
+            // Climb animations (from 2Ship D_8085BE84 PLAYER_ANIMTYPE_DEFAULT)
+            gFormState.climbStartA = MmAnim_Load(MM_ANIM_PZ_CLIMB_STARTA);
+            gFormState.climbStartB = MmAnim_Load(MM_ANIM_PZ_CLIMB_STARTB);
+            gFormState.climbEndAL = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDAL);
+            gFormState.climbEndAR = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDAR);
+            gFormState.climbEndBL = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDBL);
+            gFormState.climbEndBR = MmAnim_Load(MM_ANIM_PZ_CLIMB_ENDBR);
+            gFormState.climbUpL = MmAnim_Load(MM_ANIM_PZ_CLIMB_UPL);
+            gFormState.climbUpR = MmAnim_Load(MM_ANIM_PZ_CLIMB_UPR);
+
+            // Door/chest animations (Zora-specific from 2Ship D_8085D118/D_8085D124)
+            gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PZ_DOORA_OPEN);
+            gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PZ_DOORB_OPEN);
+            gFormState.chestOpen = MmAnim_Load(MM_ANIM_PZ_TBOX_OPEN);
+
+            // Initialize shield damage protection collider for Zora guard stance
+            // Same collider as Goron (from 2Ship D_8085C318, z_player.c line 1686)
+            // Zora uses shieldCylinder for both defense (AC) and barrier (AT) in MM
+            {
+                Player* initPlayer = (Player*)play->actorCtx.actorLists[ACTORCAT_PLAYER].head;
+                if (initPlayer != NULL) {
+                    Collider_InitCylinder(play, &gFormState.shieldCollider);
+                    Collider_SetCylinder(play, &gFormState.shieldCollider, &initPlayer->actor, &sShieldColliderInit);
+                    gFormState.shieldColliderInitDone = 1;
+                }
+            }
+        } else if (form == MM_PLAYER_FORM_DEKU) {
+            // Deku mask removal (for detransformation)
+            gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PN_MASKOFFSTART);
+
+            // Deku spin attack (from 2Ship Player_Action_95, z_player.c line 19276)
+            // Triggered by A button on ground (from func_80839A84 line 8223)
+            gFormState.dekuSpinAttack = MmAnim_Load(MM_ANIM_PN_ATTACK);
+
+            // Deku bubble spit (from 2Ship func_808306F8 / Player_UpperAction_7)
+            // pn_tamahakidf = walk2ready/aim pose, pn_tamahaki = shooting motion
+            gFormState.dekuBowReady = MmAnim_Load(MM_ANIM_PN_TAMAHAKIDF);
+            gFormState.dekuBowShoot = MmAnim_Load(MM_ANIM_PN_TAMAHAKI);
+
+            // Deku guard pose (from 2Ship Player_ActionHandler_11, z_player.c line 8544)
+            // Plays from frame 0 (not endFrame like Zora/Human). Shield DL scales in during frames 0-3.
+            gFormState.dekuGuardAnim = MmAnim_Load(MM_ANIM_PN_GURD);
+
+            // Deku flower/flight animations (from 2Ship Player_Action_93/94)
+            gFormState.dekuFlightLaunch = MmAnim_Load(MM_ANIM_PN_KAKKU);     // 12 frames - launch spin
+            gFormState.dekuFlightFlutter = MmAnim_Load(MM_ANIM_PN_BATABATA); // 14 frames - flutter glide loop
+            gFormState.dekuFlightLand = MmAnim_Load(MM_ANIM_PN_KAKKUFINISH); // 15 frames - close flower land
+            gFormState.dekuFlightFall = MmAnim_Load(MM_ANIM_PN_RAKKAFINISH); // 11 frames - fall recovery
+
+            MMFORM_LOG("[MmForm] Deku anims: spin=%s, bowReady=%s, bowShoot=%s, guard=%s",
+                       gFormState.dekuSpinAttack ? "OK" : "FAIL", gFormState.dekuBowReady ? "OK" : "FAIL",
+                       gFormState.dekuBowShoot ? "OK" : "FAIL", gFormState.dekuGuardAnim ? "OK" : "FAIL");
+            MMFORM_LOG("[MmForm] Deku flight anims: launch=%s, flutter=%s, land=%s, fall=%s",
+                       gFormState.dekuFlightLaunch ? "OK" : "FAIL", gFormState.dekuFlightFlutter ? "OK" : "FAIL",
+                       gFormState.dekuFlightLand ? "OK" : "FAIL", gFormState.dekuFlightFall ? "OK" : "FAIL");
+
+            // Climb animations (from 2Ship ageProperties: Deku uses clink_normal_climb_* = child Link)
+            gFormState.climbStartA = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTA);
+            gFormState.climbStartB = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTB);
+            gFormState.climbUpL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPL);
+            gFormState.climbUpR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPR);
+            gFormState.climbEndAL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAL);
+            gFormState.climbEndAR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAR);
+            gFormState.climbEndBL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBL);
+            gFormState.climbEndBR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBR);
+
+            // Door animations (from 2Ship D_8085D118/D_8085D124: pn_doorA/B_open)
+            gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PN_DOORA_OPEN);
+            gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PN_DOORB_OPEN);
+
+            // Chest animation (from 2Ship ageProperties: pn_Tbox_open)
+            gFormState.chestOpen = MmAnim_Load(MM_ANIM_PN_TBOX_OPEN);
+
+        } else if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
+            // Fierce Deity mask removal (for detransformation)
+            // From 2Ship D_8085D160[PLAYER_FORM_FIERCE_DEITY] = gPlayerAnim_pz_maskoffstart
+            // FD shares the same mask-off animation as Zora
+            gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PZ_MASKOFFSTART);
+
+            // Climb animations (from 2Ship ageProperties: FD uses clink_normal_climb_* = child Link)
+            gFormState.climbStartA = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTA);
+            gFormState.climbStartB = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTB);
+            gFormState.climbUpL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPL);
+            gFormState.climbUpR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPR);
+            gFormState.climbEndAL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAL);
+            gFormState.climbEndAR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAR);
+            gFormState.climbEndBL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBL);
+            gFormState.climbEndBR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBR);
+
+            // Door animations (from 2Ship D_8085BE84: FD uses standard link_demo_doorA/B_link_free)
+            gFormState.doorAOpen = MmAnim_Load(MM_ANIM_LINK_DEMO_DOORA_LINK_FREE);
+            gFormState.doorBOpen = MmAnim_Load(MM_ANIM_LINK_DEMO_DOORB_LINK_FREE);
+
+            // Chest animation (from 2Ship ageProperties: clink_demo_Tbox_open)
+            gFormState.chestOpen = MmAnim_Load(MM_ANIM_CLINK_DEMO_TBOX_OPEN);
         }
-    } else if (form == MM_PLAYER_FORM_DEKU) {
-        // Deku mask removal (for detransformation)
-        gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PN_MASKOFFSTART);
 
-        // Deku spin attack (from 2Ship Player_Action_95, z_player.c line 19276)
-        // Triggered by A button on ground (from func_80839A84 line 8223)
-        gFormState.dekuSpinAttack = MmAnim_Load(MM_ANIM_PN_ATTACK);
-
-        // Deku bubble spit (from 2Ship func_808306F8 / Player_UpperAction_7)
-        // pn_tamahakidf = walk2ready/aim pose, pn_tamahaki = shooting motion
-        gFormState.dekuBowReady = MmAnim_Load(MM_ANIM_PN_TAMAHAKIDF);
-        gFormState.dekuBowShoot = MmAnim_Load(MM_ANIM_PN_TAMAHAKI);
-
-        // Deku guard pose (from 2Ship Player_ActionHandler_11, z_player.c line 8544)
-        // Plays from frame 0 (not endFrame like Zora/Human). Shield DL scales in during frames 0-3.
-        gFormState.dekuGuardAnim = MmAnim_Load(MM_ANIM_PN_GURD);
-
-        // Deku flower/flight animations (from 2Ship Player_Action_93/94)
-        gFormState.dekuFlightLaunch = MmAnim_Load(MM_ANIM_PN_KAKKU);     // 12 frames - launch spin
-        gFormState.dekuFlightFlutter = MmAnim_Load(MM_ANIM_PN_BATABATA); // 14 frames - flutter glide loop
-        gFormState.dekuFlightLand = MmAnim_Load(MM_ANIM_PN_KAKKUFINISH); // 15 frames - close flower land
-        gFormState.dekuFlightFall = MmAnim_Load(MM_ANIM_PN_RAKKAFINISH); // 11 frames - fall recovery
-
-        MMFORM_LOG("[MmForm] Deku anims: spin=%s, bowReady=%s, bowShoot=%s, guard=%s",
-                   gFormState.dekuSpinAttack ? "OK" : "FAIL", gFormState.dekuBowReady ? "OK" : "FAIL",
-                   gFormState.dekuBowShoot ? "OK" : "FAIL", gFormState.dekuGuardAnim ? "OK" : "FAIL");
-        MMFORM_LOG("[MmForm] Deku flight anims: launch=%s, flutter=%s, land=%s, fall=%s",
-                   gFormState.dekuFlightLaunch ? "OK" : "FAIL", gFormState.dekuFlightFlutter ? "OK" : "FAIL",
-                   gFormState.dekuFlightLand ? "OK" : "FAIL", gFormState.dekuFlightFall ? "OK" : "FAIL");
-
-        // Climb animations (from 2Ship ageProperties: Deku uses clink_normal_climb_* = child Link)
-        gFormState.climbStartA = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTA);
-        gFormState.climbStartB = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTB);
-        gFormState.climbUpL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPL);
-        gFormState.climbUpR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPR);
-        gFormState.climbEndAL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAL);
-        gFormState.climbEndAR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAR);
-        gFormState.climbEndBL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBL);
-        gFormState.climbEndBR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBR);
-
-        // Door animations (from 2Ship D_8085D118/D_8085D124: pn_doorA/B_open)
-        gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PN_DOORA_OPEN);
-        gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PN_DOORB_OPEN);
-
-        // Chest animation (from 2Ship ageProperties: pn_Tbox_open)
-        gFormState.chestOpen = MmAnim_Load(MM_ANIM_PN_TBOX_OPEN);
-
-    } else if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
-        // Fierce Deity mask removal (for detransformation)
-        // From 2Ship D_8085D160[PLAYER_FORM_FIERCE_DEITY] = gPlayerAnim_pz_maskoffstart
-        // FD shares the same mask-off animation as Zora
-        gFormState.maskOffStart = MmAnim_Load(MM_ANIM_PZ_MASKOFFSTART);
-
-        // Climb animations (from 2Ship ageProperties: FD uses clink_normal_climb_* = child Link)
-        gFormState.climbStartA = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTA);
-        gFormState.climbStartB = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_STARTB);
-        gFormState.climbUpL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPL);
-        gFormState.climbUpR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_UPR);
-        gFormState.climbEndAL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAL);
-        gFormState.climbEndAR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDAR);
-        gFormState.climbEndBL = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBL);
-        gFormState.climbEndBR = MmAnim_Load(MM_ANIM_CLINK_NORMAL_CLIMB_ENDBR);
-
-        // Door animations (from 2Ship D_8085BE84: FD uses standard link_demo_doorA/B_link_free)
-        gFormState.doorAOpen = MmAnim_Load(MM_ANIM_LINK_DEMO_DOORA_LINK_FREE);
-        gFormState.doorBOpen = MmAnim_Load(MM_ANIM_LINK_DEMO_DOORB_LINK_FREE);
-
-        // Chest animation (from 2Ship ageProperties: clink_demo_Tbox_open)
-        gFormState.chestOpen = MmAnim_Load(MM_ANIM_CLINK_DEMO_TBOX_OPEN);
-    }
-
-    // Shared damage/landing animations (all forms use human Link anims)
-    // From 2Ship D_8085D0D4[] table (z_player.c line 5863):
-    // 8 knockback anims: [small front, small front lockon, small back, small back lockon,
-    //                     big front, big front lockon, big back, big back lockon]
-    gFormState.dmgAnims[0] = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_SHIT);  // front, small, no lockon
-    gFormState.dmgAnims[1] = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_SHITR); // front, small, lockon
-    gFormState.dmgAnims[2] = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_SHIT);   // back, small, no lockon
-    gFormState.dmgAnims[3] = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_SHITR);  // back, small, lockon
-    gFormState.dmgAnims[4] = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_HIT);   // front, big, no lockon
-    gFormState.dmgAnims[5] = MmAnim_Load(MM_ANIM_LINK_ANCHOR_FRONT_HITR);  // front, big, lockon
-    gFormState.dmgAnims[6] = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_HIT);    // back, big, no lockon
-    gFormState.dmgAnims[7] = MmAnim_Load(MM_ANIM_LINK_ANCHOR_BACK_HITR);   // back, big, lockon
-    // Strong knockback anims (from 2Ship func_80833B18 line 5843-5847)
-    gFormState.frontDownA = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_DOWNA); // launched forward
-    gFormState.backDownA = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_DOWNA);   // launched backward
-    gFormState.landing = MmAnim_Load(MM_ANIM_LINK_NORMAL_LANDING);
-    gFormState.shortLanding = MmAnim_Load(MM_ANIM_LINK_NORMAL_SHORT_LANDING);
-    {
-        s32 dmgLoaded = 0;
-        for (s32 i = 0; i < 8; i++) {
-            if (gFormState.dmgAnims[i])
+        // Shared damage/landing animations (all forms use human Link anims)
+        // From 2Ship D_8085D0D4[] table (z_player.c line 5863):
+        // 8 knockback anims: [small front, small front lockon, small back, small back lockon,
+        //                     big front, big front lockon, big back, big back lockon]
+        gFormState.dmgAnims[0] = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_SHIT);  // front, small, no lockon
+        gFormState.dmgAnims[1] = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_SHITR); // front, small, lockon
+        gFormState.dmgAnims[2] = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_SHIT);   // back, small, no lockon
+        gFormState.dmgAnims[3] = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_SHITR);  // back, small, lockon
+        gFormState.dmgAnims[4] = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_HIT);   // front, big, no lockon
+        gFormState.dmgAnims[5] = MmAnim_Load(MM_ANIM_LINK_ANCHOR_FRONT_HITR);  // front, big, lockon
+        gFormState.dmgAnims[6] = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_HIT);    // back, big, no lockon
+        gFormState.dmgAnims[7] = MmAnim_Load(MM_ANIM_LINK_ANCHOR_BACK_HITR);   // back, big, lockon
+        // Strong knockback anims (from 2Ship func_80833B18 line 5843-5847)
+        gFormState.frontDownA = MmAnim_Load(MM_ANIM_LINK_NORMAL_FRONT_DOWNA); // launched forward
+        gFormState.backDownA = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_DOWNA);   // launched backward
+        gFormState.landing = MmAnim_Load(MM_ANIM_LINK_NORMAL_LANDING);
+        gFormState.shortLanding = MmAnim_Load(MM_ANIM_LINK_NORMAL_SHORT_LANDING);
+        {
+            s32 dmgLoaded = 0;
+            for (s32 i = 0; i < 8; i++) {
+                if (gFormState.dmgAnims[i])
+                    dmgLoaded++;
+            }
+            if (gFormState.landing)
+                dmgLoaded++;
+            if (gFormState.shortLanding)
                 dmgLoaded++;
         }
-        if (gFormState.landing)
-            dmgLoaded++;
-        if (gFormState.shortLanding)
-            dmgLoaded++;
+
+        // =========================================================================
+        // Shared ground action animations (all forms use human Link anims)
+        // From 2Ship D_8085BE84: Zora uses column 0 (PLAYER_ANIMTYPE_DEFAULT) for all shared anims
+        // =========================================================================
+        gFormState.jumpAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP);
+        gFormState.fallAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_FALL);
+        gFormState.rollAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_LANDING_ROLL_FREE);
+
+        // Z-target (from 2Ship D_8085BE84[PLAYER_ANIMTYPE_DEFAULT])
+        gFormState.ztargetIdleR = MmAnim_Load(MM_ANIM_LINK_NORMAL_WAITR_FREE);
+        gFormState.ztargetIdleL = MmAnim_Load(MM_ANIM_LINK_NORMAL_WAITL_FREE);
+        gFormState.ztargetSideWalkL = MmAnim_Load(MM_ANIM_LINK_NORMAL_SIDE_WALKL_FREE);
+        gFormState.ztargetSideWalkR = MmAnim_Load(MM_ANIM_LINK_NORMAL_SIDE_WALKR_FREE);
+        gFormState.ztargetBackWalk = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_WALK);
+
+        // Evasive maneuvers (from 2Ship Player_Action_29 / Player_Action_10)
+        gFormState.sidehopL = MmAnim_Load(MM_ANIM_LINK_FIGHTER_LSIDE_JUMP);
+        gFormState.sidehopLEnd = MmAnim_Load(MM_ANIM_LINK_FIGHTER_LSIDE_JUMP_END);
+        gFormState.sidehopR = MmAnim_Load(MM_ANIM_LINK_FIGHTER_RSIDE_JUMP);
+        gFormState.sidehopREnd = MmAnim_Load(MM_ANIM_LINK_FIGHTER_RSIDE_JUMP_END);
+        gFormState.backflip = MmAnim_Load(MM_ANIM_LINK_FIGHTER_BACKTURN_JUMP);
+        gFormState.backflipEnd = MmAnim_Load(MM_ANIM_LINK_FIGHTER_BACKTURN_JUMP_END);
+
+        // Ledge grab/climb
+        gFormState.ledgeHang = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP_CLIMB_HOLD_FREE);
+        gFormState.ledgeClimb = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP_CLIMB_UP_FREE);
+        gFormState.ledgeHangWait = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP_CLIMB_WAIT_FREE);
+
+        // Jump kick: form-specific (loaded per-form above) or NULL
+        // Default NULL; Zora overrides above set pz_jumpAT/pz_jumpATend
+        if (gFormState.jumpKick == NULL) {
+            // Non-Zora forms: no aerial B attack (Goron has ground pound instead)
+        }
+
+        {
+            s32 groundLoaded = 0;
+            if (gFormState.jumpAnim)
+                groundLoaded++;
+            if (gFormState.fallAnim)
+                groundLoaded++;
+            if (gFormState.rollAnim)
+                groundLoaded++;
+            if (gFormState.ztargetIdleR)
+                groundLoaded++;
+            if (gFormState.ztargetIdleL)
+                groundLoaded++;
+            if (gFormState.ztargetSideWalkL)
+                groundLoaded++;
+            if (gFormState.ztargetSideWalkR)
+                groundLoaded++;
+            if (gFormState.ztargetBackWalk)
+                groundLoaded++;
+            if (gFormState.sidehopL)
+                groundLoaded++;
+            if (gFormState.sidehopR)
+                groundLoaded++;
+            if (gFormState.backflip)
+                groundLoaded++;
+            if (gFormState.ledgeHang)
+                groundLoaded++;
+            if (gFormState.ledgeClimb)
+                groundLoaded++;
+        }
+
+        // Initialize SkelAnime with MM skeleton
+        // Pass NULL for jointTable/morphTable to let SkelAnime_InitLink allocate them.
+        // This avoids the limbBufCount == limbCount assertion (flags=9 adds +1 for root).
+        gFormState.formLimbCount = props->limbCount;
+
+        SkelAnime_InitLink(play, &gFormState.formSkelAnime, skelHeader, gFormState.idleAnim, 9, NULL, NULL,
+                           props->limbCount);
+
+        gFormState.formDListCount = gFormState.formSkelAnime.dListCount;
+        gFormState.skeletonLoaded = 1;
+        gFormState.goronAction = GORON_ACT_IDLE;
+        gFormState.actionTimer = 0;
+        gFormState.wasOnGround = 1;
+        gFormState.jumpKickActive = 0;
+        gFormState.sidehopDir = 0;
+        gFormState.rollSpeed = 0.0f;
+        gFormState.dekuHopsRemaining = 5; // From 2Ship z_player.c line 7573: resets to 5
+
+        // Reset Deku flower/flight state
+        gFormState.dekuFlowerDepth = 0.0f;
+        gFormState.dekuFlowerVelocity = 0.0f;
+        gFormState.dekuFlowerPhase = 0;
+        gFormState.dekuFlowerCharge = 0;
+        gFormState.dekuBudCounter = 0;
+        gFormState.dekuLaunchPos = { 0.0f, 0.0f, 0.0f };
+        gFormState.dekuFlightFlags = 0;
+        gFormState.dekuPetalSpeed = 0;
+        gFormState.dekuPetalAngle = 0;
+        gFormState.dekuPitchAngle = 0;
+        gFormState.dekuRollAngle = 0;
+        gFormState.dekuFlightTimer = 0;
+        gFormState.dekuFlightLaunchType = 0;
+        gFormState.dekuSparkleAcc = 0;
+        gFormState.dekuSavedShadowScale = 0.0f;
+
+        // Deep-pin ALL form object resources from mm.o2r so they stay in cache.
+        // The Fast3D interpreter patches DL instructions IN-PLACE with resolved raw pointers.
+        // If the underlying VTX/TEX resources get evicted from cache, these pointers dangle → crash.
+        // Pinning keeps all object_link_* resources alive for the duration of the form.
+        MmForm_PinFormResources(form);
+        gFormState.formDLsPinned = (sPinnedFormResources != nullptr) ? 1 : 0;
+
+        // Form-specific: preload and validate special DLs
+        if (form == MM_PLAYER_FORM_GORON) {
+            MmForm_PreloadGoronDLs();
+        } else if (form == MM_PLAYER_FORM_ZORA) {
+            MmForm_ClearCachedDLs();
+            MmForm_PreloadZoraDLs();
+        } else if (form == MM_PLAYER_FORM_DEKU) {
+            MmForm_ClearCachedDLs();
+            MmForm_PreloadDekuDLs();
+        } else if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
+            MmForm_ClearCachedDLs();
+            MmForm_PreloadFDHandDLs();
+        } else {
+            MmForm_ClearCachedDLs();
+        }
+
+        // Initialize blink with random first interval (20-100 frames)
+        gFormState.blinkTimer = 20 + (s16)(Rand_ZeroFloat(80.0f));
+        gFormState.eyeIndex = 0;
+        return 1;
+
+    } catch (const std::exception& e) {
+        MMFORM_LOG("[MmForm] Exception in LoadFormSkeleton(form=%d): %s", (int)form, e.what());
+        return 0;
+    } catch (...) {
+        MMFORM_LOG("[MmForm] Unknown exception in LoadFormSkeleton(form=%d)", (int)form);
+        return 0;
     }
-
-    // =========================================================================
-    // Shared ground action animations (all forms use human Link anims)
-    // From 2Ship D_8085BE84: Zora uses column 0 (PLAYER_ANIMTYPE_DEFAULT) for all shared anims
-    // =========================================================================
-    gFormState.jumpAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP);
-    gFormState.fallAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_FALL);
-    gFormState.rollAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_LANDING_ROLL_FREE);
-
-    // Z-target (from 2Ship D_8085BE84[PLAYER_ANIMTYPE_DEFAULT])
-    gFormState.ztargetIdleR = MmAnim_Load(MM_ANIM_LINK_NORMAL_WAITR_FREE);
-    gFormState.ztargetIdleL = MmAnim_Load(MM_ANIM_LINK_NORMAL_WAITL_FREE);
-    gFormState.ztargetSideWalkL = MmAnim_Load(MM_ANIM_LINK_NORMAL_SIDE_WALKL_FREE);
-    gFormState.ztargetSideWalkR = MmAnim_Load(MM_ANIM_LINK_NORMAL_SIDE_WALKR_FREE);
-    gFormState.ztargetBackWalk = MmAnim_Load(MM_ANIM_LINK_NORMAL_BACK_WALK);
-
-    // Evasive maneuvers (from 2Ship Player_Action_29 / Player_Action_10)
-    gFormState.sidehopL = MmAnim_Load(MM_ANIM_LINK_FIGHTER_LSIDE_JUMP);
-    gFormState.sidehopLEnd = MmAnim_Load(MM_ANIM_LINK_FIGHTER_LSIDE_JUMP_END);
-    gFormState.sidehopR = MmAnim_Load(MM_ANIM_LINK_FIGHTER_RSIDE_JUMP);
-    gFormState.sidehopREnd = MmAnim_Load(MM_ANIM_LINK_FIGHTER_RSIDE_JUMP_END);
-    gFormState.backflip = MmAnim_Load(MM_ANIM_LINK_FIGHTER_BACKTURN_JUMP);
-    gFormState.backflipEnd = MmAnim_Load(MM_ANIM_LINK_FIGHTER_BACKTURN_JUMP_END);
-
-    // Ledge grab/climb
-    gFormState.ledgeHang = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP_CLIMB_HOLD_FREE);
-    gFormState.ledgeClimb = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP_CLIMB_UP_FREE);
-    gFormState.ledgeHangWait = MmAnim_Load(MM_ANIM_LINK_NORMAL_JUMP_CLIMB_WAIT_FREE);
-
-    // Jump kick: form-specific (loaded per-form above) or NULL
-    // Default NULL; Zora overrides above set pz_jumpAT/pz_jumpATend
-    if (gFormState.jumpKick == NULL) {
-        // Non-Zora forms: no aerial B attack (Goron has ground pound instead)
-    }
-
-    {
-        s32 groundLoaded = 0;
-        if (gFormState.jumpAnim)
-            groundLoaded++;
-        if (gFormState.fallAnim)
-            groundLoaded++;
-        if (gFormState.rollAnim)
-            groundLoaded++;
-        if (gFormState.ztargetIdleR)
-            groundLoaded++;
-        if (gFormState.ztargetIdleL)
-            groundLoaded++;
-        if (gFormState.ztargetSideWalkL)
-            groundLoaded++;
-        if (gFormState.ztargetSideWalkR)
-            groundLoaded++;
-        if (gFormState.ztargetBackWalk)
-            groundLoaded++;
-        if (gFormState.sidehopL)
-            groundLoaded++;
-        if (gFormState.sidehopR)
-            groundLoaded++;
-        if (gFormState.backflip)
-            groundLoaded++;
-        if (gFormState.ledgeHang)
-            groundLoaded++;
-        if (gFormState.ledgeClimb)
-            groundLoaded++;
-    }
-
-    // Initialize SkelAnime with MM skeleton
-    // Pass NULL for jointTable/morphTable to let SkelAnime_InitLink allocate them.
-    // This avoids the limbBufCount == limbCount assertion (flags=9 adds +1 for root).
-    gFormState.formLimbCount = props->limbCount;
-
-    SkelAnime_InitLink(play, &gFormState.formSkelAnime, skelHeader, gFormState.idleAnim, 9, NULL, NULL,
-                       props->limbCount);
-
-    gFormState.formDListCount = gFormState.formSkelAnime.dListCount;
-    gFormState.skeletonLoaded = 1;
-    gFormState.goronAction = GORON_ACT_IDLE;
-    gFormState.actionTimer = 0;
-    gFormState.wasOnGround = 1;
-    gFormState.jumpKickActive = 0;
-    gFormState.sidehopDir = 0;
-    gFormState.rollSpeed = 0.0f;
-    gFormState.dekuHopsRemaining = 5; // From 2Ship z_player.c line 7573: resets to 5
-
-    // Reset Deku flower/flight state
-    gFormState.dekuFlowerDepth = 0.0f;
-    gFormState.dekuFlowerVelocity = 0.0f;
-    gFormState.dekuFlowerPhase = 0;
-    gFormState.dekuFlowerCharge = 0;
-    gFormState.dekuBudCounter = 0;
-    gFormState.dekuLaunchPos = { 0.0f, 0.0f, 0.0f };
-    gFormState.dekuFlightFlags = 0;
-    gFormState.dekuPetalSpeed = 0;
-    gFormState.dekuPetalAngle = 0;
-    gFormState.dekuPitchAngle = 0;
-    gFormState.dekuRollAngle = 0;
-    gFormState.dekuFlightTimer = 0;
-    gFormState.dekuFlightLaunchType = 0;
-    gFormState.dekuSparkleAcc = 0;
-    gFormState.dekuSavedShadowScale = 0.0f;
-
-    // Deep-pin ALL form object resources from mm.o2r so they stay in cache.
-    // The Fast3D interpreter patches DL instructions IN-PLACE with resolved raw pointers.
-    // If the underlying VTX/TEX resources get evicted from cache, these pointers dangle → crash.
-    // Pinning keeps all object_link_* resources alive for the duration of the form.
-    MmForm_PinFormResources(form);
-    gFormState.formDLsPinned = (sPinnedFormResources != nullptr) ? 1 : 0;
-
-    // Form-specific: preload and validate special DLs
-    if (form == MM_PLAYER_FORM_GORON) {
-        MmForm_PreloadGoronDLs();
-    } else if (form == MM_PLAYER_FORM_ZORA) {
-        MmForm_ClearCachedDLs();
-        MmForm_PreloadZoraDLs();
-    } else if (form == MM_PLAYER_FORM_DEKU) {
-        MmForm_ClearCachedDLs();
-        MmForm_PreloadDekuDLs();
-    } else if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
-        MmForm_ClearCachedDLs();
-        MmForm_PreloadFDHandDLs();
-    } else {
-        MmForm_ClearCachedDLs();
-    }
-
-    // Initialize blink with random first interval (20-100 frames)
-    gFormState.blinkTimer = 20 + (s16)(Rand_ZeroFloat(80.0f));
-    gFormState.eyeIndex = 0;
-    return 1;
 }
 
 static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation form) {
@@ -5842,6 +5982,10 @@ static void MmForm_DrawBubbleProjectile(Player* player, PlayState* play) {
             dlCopy[sDekuBubbleMoveDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
             dlCopy[sDekuBubbleMoveDLCount + p].words.w1 = 0;
         }
+        // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
+        MmForm_PatchSegmentedDL(dlCopy, sDekuBubbleMoveDLCount, 0x08, gEmptyDL);
+        // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
+        MmForm_PatchCullDLIndex(dlCopy, sDekuBubbleMoveDLCount);
         gSPDisplayList(POLY_XLU_DISP++, dlCopy);
         usedMmDL = 1;
 
@@ -5874,6 +6018,10 @@ static void MmForm_DrawBubbleProjectile(Player* player, PlayState* play) {
             dlCopyS[sDekuBubbleStillDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
             dlCopyS[sDekuBubbleStillDLCount + p].words.w1 = 0;
         }
+        // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
+        MmForm_PatchSegmentedDL(dlCopyS, sDekuBubbleStillDLCount, 0x08, gEmptyDL);
+        // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
+        MmForm_PatchCullDLIndex(dlCopyS, sDekuBubbleStillDLCount);
         gSPDisplayList(POLY_XLU_DISP++, dlCopyS);
         usedMmDL = 1;
     }
@@ -7846,6 +7994,10 @@ static void MmForm_DrawZoraBarrier(Player* player, PlayState* play) {
             dlCopy[sBarrierDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
             dlCopy[sBarrierDLCount + p].words.w1 = 0;
         }
+        // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
+        MmForm_PatchSegmentedDL(dlCopy, sBarrierDLCount, 0x08, gEmptyDL);
+        // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
+        MmForm_PatchCullDLIndex(dlCopy, sBarrierDLCount);
         gSPDisplayList(POLY_XLU_DISP++, dlCopy);
     }
 
@@ -8095,7 +8247,6 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
 // so the MM skeleton displays OOT's animation (death, ledge hang, cutscene, etc.).
 #define MMFORM_OOT_YIELD_FLAGS                                                                          \
     (PLAYER_STATE1_SWINGING_BOTTLE |   /* (1 << 1)  - Bottle swing/catch */                             \
-     PLAYER_STATE1_INPUT_DISABLED |    /* (1 << 5)  - Input disabled (events, transitions) */           \
      PLAYER_STATE1_TALKING |           /* (1 << 6)  - NPC dialogue */                                   \
      PLAYER_STATE1_DEAD |              /* (1 << 7)  - Game over / death sequence */                     \
      PLAYER_STATE1_FIRST_PERSON |      /* (1 << 9)  - First-person aim (hookshot, bow, etc.) */         \
@@ -8106,6 +8257,10 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
      PLAYER_STATE1_IN_ITEM_CS |        /* (1 << 28) - Item use cutscene (ocarina, etc.) */              \
      PLAYER_STATE1_IN_CUTSCENE         /* (1 << 29) - General cutscene */                               \
     )
+        // NOTE: PLAYER_STATE1_INPUT_DISABLED is NOT in yield flags because the MM form
+        // uses it internally (Goron roll, Deku fall, transformation cutscenes).
+        // OOT's INPUT_DISABLED states (scene transitions, events) always co-occur
+        // with other flags (IN_CUTSCENE, TALKING, etc.) that already trigger yield.
 
         u32 yieldFlags = player->stateFlags1 & MMFORM_OOT_YIELD_FLAGS;
 
@@ -8133,7 +8288,10 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             // Without this check, the MM form returns to idle and accepts movement
             // while the climbing animation is still playing (player slides mid-climb).
             // Once OOT transitions to a loop animation (idle/walk), we know it's done.
-            if (player->skelAnime.mode == ANIMMODE_ONCE || player->skelAnime.mode == ANIMMODE_ONCE_INTERP) {
+            // Timeout after 120 frames (2 seconds) to prevent softlocks if OOT gets stuck.
+            gFormState.actionTimer++;
+            if (gFormState.actionTimer < 120 &&
+                (player->skelAnime.mode == ANIMMODE_ONCE || player->skelAnime.mode == ANIMMODE_ONCE_INTERP)) {
                 if (player->skelAnime.curFrame < Animation_GetLastFrame(player->skelAnime.animation) - 1.0f) {
                     player->linearVelocity = 0.0f;
                     return; // Stay yielded until OOT's animation finishes
@@ -9289,6 +9447,10 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
                         punchCopy[sPunchDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
                         punchCopy[sPunchDLCount + p].words.w1 = 0;
                     }
+                    // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
+                    MmForm_PatchSegmentedDL(punchCopy, sPunchDLCount, 0x08, gEmptyDL);
+                    // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
+                    MmForm_PatchCullDLIndex(punchCopy, sPunchDLCount);
                     gSPDisplayList(POLY_XLU_DISP++, punchCopy);
                 }
                 CLOSE_DISPS(play->state.gfxCtx);
@@ -9407,6 +9569,10 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
                     dlCopy[finDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
                     dlCopy[finDLCount + p].words.w1 = 0;
                 }
+                // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
+                MmForm_PatchSegmentedDL(dlCopy, finDLCount, 0x08, gEmptyDL);
+                // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
+                MmForm_PatchCullDLIndex(dlCopy, finDLCount);
                 gSPDisplayList(POLY_OPA_DISP++, dlCopy);
             }
 
@@ -9897,6 +10063,13 @@ void MmForm_Draw(PlayState* play, Player* player) {
         // Without this, segment 0x0C is unset and SegAddr resolves to garbage → crash.
         gSPSegment(POLY_OPA_DISP++, 0x0C, (uintptr_t)gCullBackDList);
 
+        // Safety: initialize segment 0x08 to gEmptyDL on BOTH pipes BEFORE any mm.o2r DL draws.
+        // PostLimbDraw may draw punch/fin effects on XLU before rolling code sets seg 0x08.
+        // Without this, a stale segment 0x08 from a previous actor could cause garbage resolution.
+        // Rolling code overwrites segment 0x08 later with the proper TwoTexScroll DL.
+        gSPSegment(POLY_XLU_DISP++, 0x08, (uintptr_t)gEmptyDL);
+        gSPSegment(POLY_XLU_DISP++, 0x0C, (uintptr_t)gCullBackDList);
+
         // Actor_Draw already set the correct matrix before calling Player_Draw:
         //   Matrix_SetTranslateRotateYXZ(pos.x, pos.y + yOffset*scale.y, pos.z, &shape.rot)
         //   Matrix_Scale(scale.x, scale.y, scale.z, MTXMODE_APPLY)
@@ -9970,15 +10143,17 @@ void MmForm_Draw(PlayState* play, Player* player) {
             gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
                       G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
-            // Set segment 0x08 on OPA pipe for Goron curled ball + spike DLs.
-            // These DLs contain G_DL_INDEX referencing segment 0x08 for animated material
-            // (Matanimheader_013138). Eye texture setup is skipped during rolling, so
-            // segment 0x08 is uninitialized. Use TwoTexScroll as safe DL-compatible fallback.
+            // Set segment 0x08 on OPA pipe for rolling DLs.
+            // The spike DL contains G_DL(0xDE) referencing segment 0x08 for animated
+            // materials (TwoTexScroll). Curled ball DL does NOT use seg 0x08 (confirmed
+            // by runtime: 0 patches). We ALSO patch each DL copy to use direct pointers,
+            // bypassing the segment table entirely.
+            Gfx* twoTexScrollOpa;
             {
                 u32 frames = play->gameplayFrames;
-                gSPSegment(POLY_OPA_DISP++, 0x08,
-                           (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x40, 0x40, 1, frames * 2,
-                                                       frames * 2, 0x40, 0x40));
+                twoTexScrollOpa =
+                    Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x40, 0x40, 1, frames * 2, frames * 2, 0x40, 0x40);
+                gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)twoTexScrollOpa);
             }
 
             // Draw curled ball DL from mm.o2r (per-frame copy with G_ENDDL padding)
@@ -9990,6 +10165,16 @@ void MmForm_Draw(PlayState* play, Player* player) {
                 for (size_t p = 0; p < DL_PADDING; p++) {
                     dlCopy[sCurledDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
                     dlCopy[sCurledDLCount + p].words.w1 = 0;
+                }
+                {
+                    int pc08 = MmForm_PatchSegmentedDL(dlCopy, sCurledDLCount, 0x08, twoTexScrollOpa);
+                    int pc0C = MmForm_PatchCullDLIndex(dlCopy, sCurledDLCount);
+                    static u8 sLoggedCurled = 0;
+                    if (!sLoggedCurled) {
+                        MMFORM_LOG("[MmForm] CurledDL: patched %d seg0x08, %d seg0x0C refs (count=%zu)", pc08, pc0C,
+                                   sCurledDLCount);
+                        sLoggedCurled = 1;
+                    }
                 }
                 gSPDisplayList(POLY_OPA_DISP++, dlCopy);
             }
@@ -10012,6 +10197,16 @@ void MmForm_Draw(PlayState* play, Player* player) {
                     for (size_t p = 0; p < DL_PADDING; p++) {
                         dlCopy[sSpikeGeomDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
                         dlCopy[sSpikeGeomDLCount + p].words.w1 = 0;
+                    }
+                    {
+                        int pc08 = MmForm_PatchSegmentedDL(dlCopy, sSpikeGeomDLCount, 0x08, twoTexScrollOpa);
+                        int pc0C = MmForm_PatchCullDLIndex(dlCopy, sSpikeGeomDLCount);
+                        static u8 sLoggedSpike = 0;
+                        if (!sLoggedSpike) {
+                            MMFORM_LOG("[MmForm] SpikeDL: patched %d seg0x08, %d seg0x0C refs (count=%zu)", pc08, pc0C,
+                                       sSpikeGeomDLCount);
+                            sLoggedSpike = 1;
+                        }
                     }
                     gSPDisplayList(POLY_OPA_DISP++, dlCopy);
                 }
@@ -10046,14 +10241,18 @@ void MmForm_Draw(PlayState* play, Player* player) {
                 gSPMatrix(POLY_XLU_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
                           G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
-                // Set segment 0x08 for TwoTexScroll on XLU pipe
-                // (replaces AnimatedMat_DrawXlu with Matanimheader_013138)
+                // TwoTexScroll sub-DL for animated texture on energy effects.
+                // Replaces AnimatedMat_DrawXlu with Matanimheader_013138.
+                // Allocated once and shared by both energy DL copies.
+                Gfx* twoTexScrollDL;
                 {
                     u32 frames = play->gameplayFrames;
-                    gSPSegment(POLY_XLU_DISP++, 0x08,
-                               (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x40, 0x40, 1, frames * 2,
-                                                           frames * 2, 0x40, 0x40));
+                    twoTexScrollDL = Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x40, 0x40, 1, frames * 2,
+                                                      frames * 2, 0x40, 0x40);
                 }
+
+                // Set segment 0x08 on XLU pipe as well (belt-and-suspenders with the patch below)
+                gSPSegment(POLY_XLU_DISP++, 0x08, (uintptr_t)twoTexScrollDL);
 
                 // Draw energy effect 1 (grt_01_model / DL_0127B0)
                 // env color (155,0,0,alpha) from 2Ship z_player.c line 13151
@@ -10067,6 +10266,19 @@ void MmForm_Draw(PlayState* play, Player* player) {
                     for (size_t p = 0; p < DL_PADDING; p++) {
                         dlCopy[sEnergyEffect1DLCount + p].words.w0 = (uintptr_t)0xDF << 24;
                         dlCopy[sEnergyEffect1DLCount + p].words.w1 = 0;
+                    }
+                    // Patch standard G_DL(0x08000001) → direct pointer to TwoTexScroll.
+                    // Bypasses segment table resolution which can be corrupted by OTR
+                    // texture path strings in Release builds.
+                    {
+                        int pc08 = MmForm_PatchSegmentedDL(dlCopy, sEnergyEffect1DLCount, 0x08, twoTexScrollDL);
+                        int pc0C = MmForm_PatchCullDLIndex(dlCopy, sEnergyEffect1DLCount);
+                        static u8 sLoggedE1 = 0;
+                        if (!sLoggedE1) {
+                            MMFORM_LOG("[MmForm] EnergyEffect1DL: patched %d seg0x08, %d seg0x0C refs (count=%zu)",
+                                       pc08, pc0C, sEnergyEffect1DLCount);
+                            sLoggedE1 = 1;
+                        }
                     }
                     gSPDisplayList(POLY_XLU_DISP++, dlCopy);
                 }
@@ -10089,6 +10301,17 @@ void MmForm_Draw(PlayState* play, Player* player) {
                     for (size_t p = 0; p < DL_PADDING; p++) {
                         dlCopy[sEnergyEffect2DLCount + p].words.w0 = (uintptr_t)0xDF << 24;
                         dlCopy[sEnergyEffect2DLCount + p].words.w1 = 0;
+                    }
+                    // Patch standard G_DL(0x08000001) → direct pointer to TwoTexScroll.
+                    {
+                        int pc08 = MmForm_PatchSegmentedDL(dlCopy, sEnergyEffect2DLCount, 0x08, twoTexScrollDL);
+                        int pc0C = MmForm_PatchCullDLIndex(dlCopy, sEnergyEffect2DLCount);
+                        static u8 sLoggedE2 = 0;
+                        if (!sLoggedE2) {
+                            MMFORM_LOG("[MmForm] EnergyEffect2DL: patched %d seg0x08, %d seg0x0C refs (count=%zu)",
+                                       pc08, pc0C, sEnergyEffect2DLCount);
+                            sLoggedE2 = 1;
+                        }
                     }
                     gSPDisplayList(POLY_XLU_DISP++, dlCopy);
                 }
