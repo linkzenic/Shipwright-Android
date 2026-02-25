@@ -430,9 +430,9 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "= Objets majeurs&restent dans cette zone.&%rRire de Ganondorf%w = Plus rien." },
 
     // Placeholder items (pending implementation)
-    { RG_PENDING_1, static_cast<ItemID>(ITEM_PENDING_1),
-      "You got %pPending Item 1%w!&This item is not yet implemented.",
-      "Du hast %pPending Item 1%w!&Dieses Item ist noch nicht implementiert.",
+    { RG_PENDING_1, static_cast<ItemID>(ITEM_MINISH_CAP),
+      "You got %pThe Minish Cap%w!&Fast travel between pod soils.",
+      "Du hast %pThe Minish Cap%w!&Schnellreise zwischen Pod Soils.",
       "Vous obtenez %pPending Item 1%w!&Cet objet n'est pas encore implémenté." },
 
     { RG_PENDING_2, static_cast<ItemID>(ITEM_PENDING_2),
@@ -4452,7 +4452,7 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             ExtInv_SetItemById(ITEM_PENDING_2);
             break;
         case RG_PENDING_1:
-            ExtInv_SetItemById(ITEM_PENDING_1);
+            ExtInv_SetItemById(ITEM_MINISH_CAP);
             break;
         case RG_PENDING_3:
             ExtInv_SetItemById(ITEM_PENDING_3);

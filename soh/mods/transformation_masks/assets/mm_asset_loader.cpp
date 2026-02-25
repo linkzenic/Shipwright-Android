@@ -616,6 +616,14 @@ char** MmAssets_ListFiles(const char* searchMask, int* resultSize) {
 #define MM_FIERCE_MASK_FACE_DL_PATH "__OTR__objects/object_gi_mask03/gGiFierceDeityMaskFaceDL"
 #define MM_FIERCE_MASK_HAIR_DL_PATH "__OTR__objects/object_gi_mask03/gGiFierceDeityMaskHairAndHatDL"
 
+// Goron Mask - object_gi_golonmask
+#define MM_GORON_MASK_EMPTY_DL_PATH "__OTR__objects/object_gi_golonmask/gGiGoronMaskEmptyDL"
+#define MM_GORON_MASK_DL_PATH "__OTR__objects/object_gi_golonmask/gGiGoronMaskDL"
+
+// Zora Mask - object_gi_zoramask
+#define MM_ZORA_MASK_EMPTY_DL_PATH "__OTR__objects/object_gi_zoramask/gGiZoraMaskEmptyDL"
+#define MM_ZORA_MASK_DL_PATH "__OTR__objects/object_gi_zoramask/gGiZoraMaskDL"
+
 // =============================================================================
 // Worn Mask DLs (when Link wears mask on face - DIFFERENT from Get Item DLs!)
 // =============================================================================
@@ -827,6 +835,42 @@ void* MmAssets_LoadStoneMaskEmptyDL(void) {
         return nullptr;
     }
     return (void*)MM_STONE_MASK_EMPTY_DL_PATH;
+}
+
+// =============================================================================
+// Goron Mask DL Loaders (TWO DLs: Empty + Mask, drawn as Opa0Xlu1)
+// =============================================================================
+
+void* MmAssets_LoadGoronMaskEmptyDL(void) {
+    if (!MmAssets_IsAvailable()) {
+        return nullptr;
+    }
+    return (void*)MM_GORON_MASK_EMPTY_DL_PATH;
+}
+
+void* MmAssets_LoadGoronMaskDL(void) {
+    if (!MmAssets_IsAvailable()) {
+        return nullptr;
+    }
+    return (void*)MM_GORON_MASK_DL_PATH;
+}
+
+// =============================================================================
+// Zora Mask DL Loaders (TWO DLs: Empty + Mask, drawn as Opa01)
+// =============================================================================
+
+void* MmAssets_LoadZoraMaskEmptyDL(void) {
+    if (!MmAssets_IsAvailable()) {
+        return nullptr;
+    }
+    return (void*)MM_ZORA_MASK_EMPTY_DL_PATH;
+}
+
+void* MmAssets_LoadZoraMaskDL(void) {
+    if (!MmAssets_IsAvailable()) {
+        return nullptr;
+    }
+    return (void*)MM_ZORA_MASK_DL_PATH;
 }
 
 // =============================================================================
@@ -1155,7 +1199,9 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0814, 9, 66 },  // CLIMB_CLIFF: INST_9, PITCH_FS4
     { 0x08D0, 12, 60 }, // SLIP_LEVEL: INST_12, PITCH_C4
     // === Player Bank: Deku SFX ===
-    { 0x08E0, 74, 49 }, // DEKUNUTS_FIRE: INST_74, PITCH_E3 (bubble spit)
+    { 0x08E0, 74, 49 },  // DEKUNUTS_FIRE: INST_74, PITCH_E3 (bubble spit)
+    { 0x08E2, 32, 58 },  // DEKUNUTS_IN_GRD: INST_32, PITCH_BF3 (primary of 3 layers)
+    { 0x08E3, 106, 64 }, // DEKUNUTS_OUT_GRD: INST_106, PITCH_E4 (primary of 3 layers)
     // === Player Bank: Goron SFX ===
     { 0x08E1, 102, 55 }, // GORON_BALLJUMP: INST_102, PITCH_G3
     { 0x08E4, 68, 78 },  // TRANSFORM: INST_68, PITCH_GF5 (primary of 3 layers)
@@ -1180,6 +1226,7 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0980, 35, 67 }, // GORON_CHG_ROLL: INST_35, PITCH_G4
     { 0x0990, 77, 58 }, // GORON_ROLL: INST_77, PITCH_BF3 (primary of 3 layers)
     // === Player Bank: Deku SFX (0x9A0 range) ===
+    { 0x09A0, 52, 51 },  // DEKUNUTS_BUD: INST_52, PITCH_EF3 (primary, multi-note)
     { 0x09A1, 74, 54 },  // DEKUNUTS_BUBLE_BREATH: INST_74, PITCH_A3 (looping)
     { 0x09A2, 35, 36 },  // GORON_BALL_CHARGE_FAILED: INST_35, PITCH_C2
     { 0x09A3, 75, 71 },  // GORON_BALL_CHARGE_DASH: INST_75, PITCH_B4
@@ -1190,6 +1237,8 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x09B9, 106, 47 }, // GORON_DRINK_BOMB: INST_106, PITCH_B2
     // === Item Bank: Form-specific ===
     { 0x184F, 32, 60 },  // IT_GORON_BALLFANG: INST_32, PITCH_C4
+    { 0x1850, 27, 43 },  // IT_DEKUNUTS_FLOWER_OPEN: INST_27, PITCH_G2 (primary of 2 layers)
+    { 0x1852, 78, 65 },  // IT_DEKUNUTS_FLOWER_CLOSE: INST_78, PITCH_F4
     { 0x1857, 27, 24 },  // IT_GORON_PUNCH_SWING: INST_27, PITCH_C1
     { 0x1859, 39, 42 },  // IT_ZORA_KICK_SWING: INST_39, PITCH_GF2
     { 0x185E, 102, 45 }, // IT_GORON_ROLLING_REFLECTION: INST_102, PITCH_A2
@@ -1241,26 +1290,53 @@ static const s32 sMmVoiceMapSize = sizeof(sMmVoiceMap) / sizeof(sMmVoiceMap[0]);
 //   LI_FREEZE   → effect 6    LI_FALL_S   → effect 7
 //   LI_FALL_L   → effect 8    LI_BREATH_REST→ effect 9
 //
-// Goron voices at 0x68C0-0x68C9 map to human Link voices 0-9:
-static const s32 sGoronVoiceToEffect[] = {
-    0, // 0x68C0 GORON_SWORD_N  → LI_SWORD_N  → SF0_EFFECT_0
-    1, // 0x68C1 GORON_SWORD_L  → LI_SWORD_L  → SF0_EFFECT_1
-    0, // 0x68C2 GORON_LASH     → LI_SWORD_N  → SF0_EFFECT_0 (same as DUMMY_192)
-    3, // 0x68C3 GORON_HANG     → LI_HANG     → SF0_EFFECT_3
-    4, // 0x68C4 GORON_CLIMB_END→ LI_CLIMB_END→ SF0_EFFECT_4
-    5, // 0x68C5 GORON_DAMAGE_S → LI_DAMAGE_S → SF0_EFFECT_5
-    6, // 0x68C6 GORON_FREEZE   → LI_FREEZE   → SF0_EFFECT_6
-    7, // 0x68C7 GORON_FALL_S   → LI_FALL_S   → SF0_EFFECT_7
-    8, // 0x68C8 GORON_FALL_L   → LI_FALL_L   → SF0_EFFECT_8
-    9, // 0x68C9 GORON_BREATH_REST→LI_BREATH_REST→SF0_EFFECT_9
+// All form voices redirect to the same 10 human Link voice channels.
+// The mapping is: voice[i] → SF0_EFFECT index for human Link voice i.
+// Goron, Deku, Zora all use the SAME effect indices, but different transposes:
+//   Goron: transpose +4 (CHAN_BD84)
+//   Deku:  transpose +3 (CHAN_BC5E, vibdepth 88, vibfreq 128)
+//   Zora:  transpose +3 (CHAN_BCF3, vibdepth 32, vibfreq 240)
+//
+// Human Link voice channels and their SF0_EFFECT indices:
+//   [0] LI_SWORD_N   → effect 0    [1] LI_SWORD_L    → effect 1
+//   [2] LI_LASH      → effect 0*   [3] LI_HANG        → effect 3
+//   [4] LI_CLIMB_END → effect 4    [5] LI_DAMAGE_S    → effect 5
+//   [6] LI_FREEZE    → effect 6    [7] LI_FALL_S      → effect 7
+//   [8] LI_FALL_L    → effect 8    [9] LI_BREATH_REST → effect 9
+//   *LASH redirects to SWORD_N channel
+static const s32 sFormVoiceToEffect[] = {
+    0, // [0] SWORD_N  → SF0_EFFECT_0
+    1, // [1] SWORD_L  → SF0_EFFECT_1
+    0, // [2] LASH     → SF0_EFFECT_0 (same channel as SWORD_N)
+    3, // [3] HANG     → SF0_EFFECT_3
+    4, // [4] CLIMB_END→ SF0_EFFECT_4
+    5, // [5] DAMAGE_S → SF0_EFFECT_5
+    6, // [6] FREEZE   → SF0_EFFECT_6
+    7, // [7] FALL_S   → SF0_EFFECT_7
+    8, // [8] FALL_L   → SF0_EFFECT_8
+    9, // [9] BREATH_REST→SF0_EFFECT_9
 };
-static const s32 sGoronVoiceToEffectSize = sizeof(sGoronVoiceToEffect) / sizeof(sGoronVoiceToEffect[0]);
+static const s32 sFormVoiceToEffectSize = sizeof(sFormVoiceToEffect) / sizeof(sFormVoiceToEffect[0]);
+
+// Form voice base addresses and transposes
+#define MM_VOICE_DEKU_BASE   0x6880
+#define MM_VOICE_ZORA_BASE   0x68A0
+#define MM_VOICE_GORON_BASE  0x68C0
+#define MM_VOICE_DEKU_TRANSPOSE  3
+#define MM_VOICE_ZORA_TRANSPOSE  3
+#define MM_VOICE_GORON_TRANSPOSE 4
+
+// Legacy alias (used in existing redirect code below)
+static const s32* sGoronVoiceToEffect = sFormVoiceToEffect;
+static const s32 sGoronVoiceToEffectSize = sFormVoiceToEffectSize;
 
 // Pitch factor for semitone transpose: 2^(semitones/12)
 static f32 MmDirectAudio_TransposeFactor(s32 semitones) {
     // Fast lookup for common values
     if (semitones == 0)
         return 1.0f;
+    if (semitones == 3)
+        return 1.189207f; // 2^(3/12) - Deku/Zora voice pitch
     if (semitones == 4)
         return 1.259921f; // 2^(4/12) - Goron voice pitch
     if (semitones == 1)
@@ -1330,10 +1406,13 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
 
     // =========================================================================
     // Voice bank (6): uses soundEffects[] in FONTANY_INSTR_SFX mode
-    // Goron voices = human Link voices with transpose +4 semitones
+    // All form voices redirect to human Link voices with form-specific transpose:
+    //   Deku  (0x6880-0x689F): transpose +3 (CHAN_BC5E)
+    //   Zora  (0x68A0-0x68BF): transpose +3 (CHAN_BCF3)
+    //   Goron (0x68C0-0x68DF): transpose +4 (CHAN_BD84)
     // =========================================================================
     if (bank == 6) {
-        // First check the explicit voice map (directly-defined effect indices)
+        // First check the explicit voice map (special voices with unique effect indices)
         for (s32 i = 0; i < sMmVoiceMapSize; i++) {
             if (sMmVoiceMap[i].sfxId == mmSfxId) {
                 u16 effectIdx = sMmVoiceMap[i].effectIdx;
@@ -1347,37 +1426,55 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             }
         }
 
-        // Goron voice redirect: 0x68C0-0x68C9 → human Link voices with transpose +4
-        if (mmSfxId >= 0x68C0 && mmSfxId < 0x68C0 + (u16)sGoronVoiceToEffectSize) {
-            s32 goronIdx = mmSfxId - 0x68C0;
-            s32 effectIdx = sGoronVoiceToEffect[goronIdx];
-            if (effectIdx >= 0 && (u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
-                font0->soundEffects[effectIdx].sample->sampleAddr) {
-                sMmLastPitchScale = MmDirectAudio_TransposeFactor(4); // Goron transpose +4
-                MMSFX_LOG("[MmDirectAudio] Goron voice 0x%04X: soundEffects[%d], transpose +4", mmSfxId, effectIdx);
-                return &font0->soundEffects[effectIdx];
+        // Form voice redirect: all forms use the same human Link voice channels
+        // with form-specific transpose. Check each form range.
+        u16 formBase = 0;
+        s32 transpose = 0;
+        const char* formName = nullptr;
+
+        if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
+            formBase = MM_VOICE_DEKU_BASE;
+            transpose = MM_VOICE_DEKU_TRANSPOSE;
+            formName = "Deku";
+        } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
+            formBase = MM_VOICE_ZORA_BASE;
+            transpose = MM_VOICE_ZORA_TRANSPOSE;
+            formName = "Zora";
+        } else if (mmSfxId >= MM_VOICE_GORON_BASE && mmSfxId < MM_VOICE_GORON_BASE + 0x20) {
+            formBase = MM_VOICE_GORON_BASE;
+            transpose = MM_VOICE_GORON_TRANSPOSE;
+            formName = "Goron";
+        }
+
+        if (formBase != 0) {
+            s32 voiceIdx = mmSfxId - formBase;
+
+            // First 10 voices (0-9) map through sFormVoiceToEffect table
+            if (voiceIdx < sFormVoiceToEffectSize) {
+                s32 effectIdx = sFormVoiceToEffect[voiceIdx];
+                if (effectIdx >= 0 && (u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
+                    font0->soundEffects[effectIdx].sample->sampleAddr) {
+                    sMmLastPitchScale = MmDirectAudio_TransposeFactor(transpose);
+                    MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d], transpose +%d",
+                              formName, mmSfxId, effectIdx, transpose);
+                    return &font0->soundEffects[effectIdx];
+                }
+            }
+
+            // Voices beyond index 9: use voice index as best-effort effect index
+            if ((u32)voiceIdx < font0->numSfx && font0->soundEffects[voiceIdx].sample &&
+                font0->soundEffects[voiceIdx].sample->sampleAddr) {
+                sMmLastPitchScale = MmDirectAudio_TransposeFactor(transpose);
+                MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d] (offset), transpose +%d",
+                          formName, mmSfxId, voiceIdx, transpose);
+                return &font0->soundEffects[voiceIdx];
             }
         }
 
-        // Remaining Goron voices (0x68CA-0x68DF) not in explicit map:
-        // Try mapping by offset from 0x68C0 to soundEffects index
-        if (mmSfxId >= 0x68C0 && mmSfxId <= 0x68DF) {
-            s32 offset = mmSfxId - 0x68C0;
-            // These voices redirect to various human Link voices
-            // Use the offset as a best-effort effect index
-            if ((u32)offset < font0->numSfx && font0->soundEffects[offset].sample &&
-                font0->soundEffects[offset].sample->sampleAddr) {
-                sMmLastPitchScale = MmDirectAudio_TransposeFactor(4);
-                MMSFX_LOG("[MmDirectAudio] Goron voice 0x%04X: soundEffects[%d] (offset fallback), transpose +4",
-                          mmSfxId, offset);
-                return &font0->soundEffects[offset];
-            }
-        }
-
-        // Non-Goron voices: use sfxIndex as effect index (human Link, Zora, etc.)
+        // Human Link voices (0x6800-0x687F): use sfxIndex directly, no transpose
         if ((u32)sfxIndex < font0->numSfx && font0->soundEffects[sfxIndex].sample &&
             font0->soundEffects[sfxIndex].sample->sampleAddr) {
-            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (direct index)", mmSfxId, sfxIndex);
+            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (human Link)", mmSfxId, sfxIndex);
             return &font0->soundEffects[sfxIndex];
         }
 
@@ -1540,8 +1637,128 @@ s32 MmSfx_PlayAtPos(u16 sfxId, Vec3f* pos) {
 }
 
 s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd) {
-    if (!MmAssets_IsAvailable())
+    static s32 sDiagDone = 0;
+
+    if (!MmAssets_IsAvailable()) {
+        if (!sDiagDone) {
+            MMSFX_LOG("[MmSfx] DIAG: MmAssets_IsAvailable() = FALSE. MM audio disabled.");
+            sDiagDone = 1;
+        }
         return 0;
+    }
+
+    // One-time diagnostic: enumerate mm.o2r audio resources and verify Soundfont_0
+    if (!sDiagDone) {
+        sDiagDone = 1;
+
+        // STEP 1: List what audio font resources actually exist in mm.o2r
+        MMSFX_LOG("[MmSfx] DIAG: ===== MM AUDIO RESOURCE ENUMERATION =====");
+        if (sMmArchive) {
+            try {
+                auto fontFiles = sMmArchive->ListFiles("audio/fonts*");
+                if (fontFiles && fontFiles->size() > 0) {
+                    MMSFX_LOG("[MmSfx] DIAG: Found %zu audio font resources in mm.o2r:", fontFiles->size());
+                    int shown = 0;
+                    for (auto& entry : *fontFiles) {
+                        if (shown < 10) {
+                            MMSFX_LOG("[MmSfx] DIAG:   [%d] '%s'", shown, entry.second.c_str());
+                        }
+                        shown++;
+                    }
+                    if (shown > 10) {
+                        MMSFX_LOG("[MmSfx] DIAG:   ... and %d more", shown - 10);
+                    }
+                } else {
+                    MMSFX_LOG("[MmSfx] DIAG: NO 'audio/fonts*' found in mm.o2r! Trying broader search...");
+                    auto audioFiles = sMmArchive->ListFiles("audio*");
+                    if (audioFiles && audioFiles->size() > 0) {
+                        MMSFX_LOG("[MmSfx] DIAG: Found %zu 'audio*' resources in mm.o2r:", audioFiles->size());
+                        int shown = 0;
+                        for (auto& entry : *audioFiles) {
+                            if (shown < 15) {
+                                MMSFX_LOG("[MmSfx] DIAG:   [%d] '%s'", shown, entry.second.c_str());
+                            }
+                            shown++;
+                        }
+                        if (shown > 15) {
+                            MMSFX_LOG("[MmSfx] DIAG:   ... and %d more", shown - 15);
+                        }
+                    } else {
+                        MMSFX_LOG("[MmSfx] DIAG: NO 'audio*' resources found in mm.o2r at all!");
+                        // Last resort: list ALL resources to see what's in the archive
+                        auto allFiles = sMmArchive->ListFiles();
+                        if (allFiles && allFiles->size() > 0) {
+                            MMSFX_LOG("[MmSfx] DIAG: mm.o2r has %zu total resources. First 15:", allFiles->size());
+                            int shown = 0;
+                            for (auto& entry : *allFiles) {
+                                if (shown < 15) {
+                                    MMSFX_LOG("[MmSfx] DIAG:   [%d] '%s'", shown, entry.second.c_str());
+                                }
+                                shown++;
+                            }
+                        } else {
+                            MMSFX_LOG("[MmSfx] DIAG: mm.o2r appears EMPTY or ListFiles() failed!");
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                MMSFX_LOG("[MmSfx] DIAG: Exception listing mm.o2r: %s", e.what());
+            } catch (...) {
+                MMSFX_LOG("[MmSfx] DIAG: Unknown exception listing mm.o2r");
+            }
+        } else {
+            MMSFX_LOG("[MmSfx] DIAG: sMmArchive is NULL! Cannot enumerate mm.o2r resources.");
+        }
+
+        // STEP 2: Try to load Soundfont_0 and verify its contents
+        MMSFX_LOG("[MmSfx] DIAG: ===== SOUNDFONT_0 LOAD TEST =====");
+        MMSFX_LOG("[MmSfx] DIAG: Attempting path: '%s'", "audio/fonts/Soundfont_0");
+        SoundFont* font = MmSfx_LoadFont(0);
+        if (!font) {
+            MMSFX_LOG("[MmSfx] DIAG: Soundfont_0 FAILED to load from mm.o2r!");
+            MMSFX_LOG("[MmSfx] DIAG: This means the audio font path format is WRONG or the resource doesn't exist.");
+        } else {
+            MMSFX_LOG("[MmSfx] DIAG: Soundfont_0 loaded OK: %u instruments, %u sfx, %u drums",
+                      font->numInstruments, font->numSfx, font->numDrums);
+            // Check instruments pointer validity
+            MMSFX_LOG("[MmSfx] DIAG: instruments=%p, soundEffects=%p, drums=%p",
+                      (void*)font->instruments, (void*)font->soundEffects, (void*)font->drums);
+
+            // Check if instrument 47 (Goron curl) has valid data
+            if (font->instruments && 47 < font->numInstruments && font->instruments[47]) {
+                Instrument* inst = font->instruments[47];
+                MMSFX_LOG("[MmSfx] DIAG: instruments[47] OK: loaded=%d, rangeLo=%d, rangeHi=%d",
+                          inst->loaded, inst->normalRangeLo, inst->normalRangeHi);
+                if (inst->normalNotesSound.sample && inst->normalNotesSound.sample->sampleAddr) {
+                    MMSFX_LOG("[MmSfx] DIAG: instruments[47].normalNotesSound: sample=%p, addr=%p, tuning=%.3f",
+                              (void*)inst->normalNotesSound.sample,
+                              (void*)inst->normalNotesSound.sample->sampleAddr,
+                              inst->normalNotesSound.tuning);
+                } else {
+                    MMSFX_LOG("[MmSfx] DIAG: instruments[47].normalNotesSound.sample is NULL or has no addr!");
+                }
+            } else {
+                MMSFX_LOG("[MmSfx] DIAG: instruments[47] NOT accessible (instruments=%p, numInst=%u)",
+                          (void*)font->instruments, font->numInstruments);
+            }
+            // Check soundEffects[0] (human Link voice)
+            if (font->soundEffects && font->numSfx > 0) {
+                if (font->soundEffects[0].sample && font->soundEffects[0].sample->sampleAddr) {
+                    MMSFX_LOG("[MmSfx] DIAG: soundEffects[0] OK: sample=%p, addr=%p, tuning=%.3f",
+                              (void*)font->soundEffects[0].sample,
+                              (void*)font->soundEffects[0].sample->sampleAddr,
+                              font->soundEffects[0].tuning);
+                } else {
+                    MMSFX_LOG("[MmSfx] DIAG: soundEffects[0] has no valid sample!");
+                }
+            } else {
+                MMSFX_LOG("[MmSfx] DIAG: soundEffects NOT accessible (ptr=%p, numSfx=%u)",
+                          (void*)font->soundEffects, font->numSfx);
+            }
+        }
+        MMSFX_LOG("[MmSfx] DIAG: ===== END DIAGNOSTIC =====");
+    }
+
     f32 freq = freqScale ? *freqScale : 1.0f;
     return MmDirectAudio_Play(sfxId, freq);
 }
@@ -1731,6 +1948,16 @@ void* MmAssets_LoadFDSwordIcon(void) {
         MMASSETS_LOG("[MM Assets] Loaded FD sword icon");
     }
     return sCachedFDSwordIcon;
+}
+
+// =============================================================================
+// Chateau Romani Icon
+// =============================================================================
+
+const char* MmAssets_GetChateauIconPath(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    return "__OTR__icon_item_static_yar/gItemIconChateauRomaniTex";
 }
 
 } // extern "C"

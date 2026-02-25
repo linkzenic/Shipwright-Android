@@ -1607,6 +1607,7 @@ typedef struct FileChooseContext {
     uint8_t randomizerIndex;
     int16_t randomizerUIAlpha;
     uint16_t randomizerArrowOffset;
+    int16_t hungerGamesUIAlpha;
 } FileChooseContext; // size = 0x1CAE0
 
 // Macros for `EntranceInfo.field`

@@ -2380,13 +2380,16 @@ u8 Item_Give(PlayState* play, u8 item) {
                 return Return_Item(item, MOD_NONE, ITEM_NONE);
             }
         }
-    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK)) {
+    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK) || (item == ITEM_CHATEAU_ROMANI)) {
         temp = SLOT(item);
 
         if ((item != ITEM_MILK_BOTTLE) && (item != ITEM_LETTER_RUTO)) {
             if (item == ITEM_MILK) {
                 item = ITEM_MILK_BOTTLE;
                 temp = SLOT(item);
+            }
+            if (item == ITEM_CHATEAU_ROMANI) {
+                temp = SLOT(ITEM_POTION_RED); // Bottle slots start here
             }
 
             for (i = 0; i < 4; i++) {
@@ -2585,13 +2588,16 @@ u8 Item_CheckObtainability(u8 item) {
         return ITEM_NONE;
     } else if (item == ITEM_BOTTLE) {
         return ITEM_NONE;
-    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK)) {
+    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK) || (item == ITEM_CHATEAU_ROMANI)) {
         temp = SLOT(item);
 
         if ((item != ITEM_MILK_BOTTLE) && (item != ITEM_LETTER_RUTO)) {
             if (item == ITEM_MILK) {
                 item = ITEM_MILK_BOTTLE;
                 temp = SLOT(item);
+            }
+            if (item == ITEM_CHATEAU_ROMANI) {
+                temp = SLOT(ITEM_POTION_RED); // Bottle slots start here
             }
 
             for (i = 0; i < 4; i++) {
@@ -2701,6 +2707,13 @@ void Inventory_UpdateBottleItem(PlayState* play, u8 item, u8 button) {
     if ((gSaveContext.inventory.items[gSaveContext.equips.cButtonSlots[button - 1]] == ITEM_MILK_BOTTLE) &&
         (item == ITEM_BOTTLE)) {
         item = ITEM_MILK_HALF;
+    }
+
+    // Chateau Romani: activate infinite magic when consumed
+    if ((gSaveContext.inventory.items[gSaveContext.equips.cButtonSlots[button - 1]] == ITEM_CHATEAU_ROMANI) &&
+        (item == ITEM_BOTTLE)) {
+        extern void MmMaskWear_ActivateChateauRomani(void);
+        MmMaskWear_ActivateChateauRomani();
     }
 
     if (GameInteractor_Should(VB_UPDATE_BOTTLE_ITEM, true, button, item)) {
@@ -6663,12 +6676,17 @@ void Interface_Update(PlayState* play) {
     sEnvHazard = Player_GetEnvironmentalHazard(play);
 
     if (sEnvHazard == PLAYER_ENV_HAZARD_HOTROOM) {
+        // Check both equipped tunic (save data) AND currentTunic (set by transformation masks)
+        Player* player = GET_PLAYER(play);
         if (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_GORON ||
+            player->currentTunic == PLAYER_TUNIC_GORON ||
             CVarGetInteger(CVAR_CHEAT("SuperTunic"), 0) != 0) {
             sEnvHazard = PLAYER_ENV_HAZARD_NONE;
         }
     } else if ((Player_GetEnvironmentalHazard(play) >= 2) && (Player_GetEnvironmentalHazard(play) < 5)) {
+        Player* player = GET_PLAYER(play);
         if (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_ZORA ||
+            player->currentTunic == PLAYER_TUNIC_ZORA ||
             CVarGetInteger(CVAR_CHEAT("SuperTunic"), 0) != 0) {
             sEnvHazard = PLAYER_ENV_HAZARD_NONE;
         }

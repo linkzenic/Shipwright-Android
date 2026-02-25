@@ -4765,6 +4765,7 @@ typedef enum {
     RG_MM_MASK_CAPTAIN,
     RG_MM_MASK_GIANT,
     RG_MM_MASK_FIERCE_DEITY,
+    RG_CHATEAU_ROMANI,
 
     // Logic Only
     RG_STICKS,

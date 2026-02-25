@@ -356,9 +356,9 @@ typedef enum {
     /* 0xB0 */ ITEM_ROD_LIGHT,
     /* 0xB1 */ ITEM_BEETLE,
     /* 0xB2 */ ITEM_SHOVEL,
-    /* 0xB3 */ ITEM_PENDING_1,
+    /* 0xB3 */ ITEM_MINISH_CAP,
     /* 0xB4 */ ITEM_PENDING_2,
-    /* 0xB5 */ ITEM_UNUSED_B5,
+    /* 0xB5 */ ITEM_CHATEAU_ROMANI,
     /* 0xB6 */ ITEM_PENDING_3,
     // MM Mask items (for 3rd inventory page)
     /* 0xB7 */ ITEM_MM_MASK_POSTMAN = 0xB7,

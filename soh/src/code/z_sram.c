@@ -42,6 +42,13 @@ void Sram_InitBossRushSave(void) {
     BossRush_InitSave();
 }
 
+void HungerGames_InitSave(void);
+
+void Sram_InitHungerGamesSave(void) {
+    Save_InitFile(false);
+    HungerGames_InitSave();
+}
+
 static s16 sDungeonEntrances[] = {
     ENTR_DEKU_TREE_ENTRANCE,               // SCENE_DEKU_TREE
     ENTR_DODONGOS_CAVERN_ENTRANCE,         // SCENE_DODONGOS_CAVERN

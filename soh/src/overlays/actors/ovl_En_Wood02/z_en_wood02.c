@@ -7,6 +7,7 @@
 #include "z_en_wood02.h"
 #include "objects/object_wood02/object_wood02.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/mm_mask_wear.h"
 
 #define FLAGS 0
 
@@ -183,7 +184,7 @@ void EnWood02_Init(Actor* thisx, PlayState* play2) {
     // as the night scene, For the always spawn GS enhancement we apply the needed
     // params to have the GS drop when bonking
     if ((this->actor.params & 0xFF) == WOOD_TREE_CONICAL_MEDIUM && IS_DAY && play->sceneNum == SCENE_KAKARIKO_VILLAGE &&
-        CVarGetInteger(CVAR_ENHANCEMENT("NightGSAlwaysSpawn"), 0)) {
+        (CVarGetInteger(CVAR_ENHANCEMENT("NightGSAlwaysSpawn"), 0) || MmMaskWear_IsAllNightMaskActive())) {
         this->actor.params = 0x2001;
         this->actor.home.rot.z = 0x71;
     }

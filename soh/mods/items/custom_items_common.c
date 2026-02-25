@@ -399,6 +399,9 @@ void CustomItems_Update(Player* p, PlayState* play) {
             case ITEM_SWITCH_HOOK:
                 Handle_SwitchHook(p, play);
                 break;
+            case ITEM_MINISH_CAP:
+                Handle_MinishCap(p, play);
+                break;
             default:
                 break;
         }

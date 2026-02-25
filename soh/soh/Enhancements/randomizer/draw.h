@@ -62,6 +62,12 @@ void Randomizer_DrawStasis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawDesireSensor(PlayState* play, GetItemEntry* getItemEntry);
 
+// MM Mask Get-Item 3D Models (all 24, from mm.o2r)
+void Randomizer_DrawMmMask(PlayState* play, GetItemEntry* getItemEntry);
+
+// Chateau Romani bottle (from mm.o2r)
+void Randomizer_DrawChateauRomani(PlayState* play, GetItemEntry* getItemEntry);
+
 #define GET_ITEM_MYSTERY                                                                                 \
     {                                                                                                    \
         ITEM_NONE_FE, 0, 0, 0, 0, MOD_RANDOMIZER, MOD_RANDOMIZER, ITEM_NONE_FE, 0, false, ITEM_FROM_NPC, \

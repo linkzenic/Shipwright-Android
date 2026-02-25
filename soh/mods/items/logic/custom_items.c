@@ -37,7 +37,6 @@
 #include "item_rod_fire.c"
 #include "item_rod_ice.c"
 #include "item_rod_light.c"
-#include "item_pending_1.c"
 #include "item_pending_2.c"
 #include "item_pending_3.c"
 #include "item_hylias_grace.c"
@@ -55,6 +54,8 @@
 #include "item_dominionrod.c"
 #include "item_cane_of_somaria.c"
 #include "item_time_gate.c"
+#include "item_minish_cap.c"
+#include "../helpers/minish_kaleido.c"
 
 // Transformation Masks: REMOVED - now included directly in z_player.c
 // (transformation_masks.c includes mask_goron.c internally)

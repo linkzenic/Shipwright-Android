@@ -36,7 +36,7 @@ extern void Player_InitMogmaMittsIA(PlayState* play, Player* this);
 extern void Player_InitWhipIA(PlayState* play, Player* this);
 extern void Player_InitDominionRodIA(PlayState* play, Player* this);
 extern void Player_InitTimeGateIA(PlayState* play, Player* this);
-extern void Player_InitPending1IA(PlayState* play, Player* this);
+extern void Player_InitMinishCapIA(PlayState* play, Player* this);
 extern void Player_InitPending2IA(PlayState* play, Player* this);
 extern void Player_InitPending3IA(PlayState* play, Player* this);
 
@@ -117,12 +117,16 @@ int8_t ExtPlayer_GetItemAction(int32_t item) {
             return PLAYER_IA_BEETLE;
         case ITEM_SHOVEL:
             return PLAYER_IA_SHOVEL;
-        case ITEM_PENDING_1:
-            return PLAYER_IA_PENDING_1;
+        case ITEM_MINISH_CAP:
+            return PLAYER_IA_MINISH_CAP;
         case ITEM_PENDING_2:
             return PLAYER_IA_PENDING_2;
         case ITEM_PENDING_3:
             return PLAYER_IA_PENDING_3;
+
+        // Chateau Romani (bottle item - drink to activate infinite magic)
+        case ITEM_CHATEAU_ROMANI:
+            return PLAYER_IA_BOTTLE_POTION_BLUE;
 
         // MM Mask items (0xB7-0xCE)
         case ITEM_MM_MASK_POSTMAN:
@@ -238,7 +242,7 @@ uint8_t ExtPlayer_GetActionModelGroup(int32_t itemAction) {
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_SHOVEL:
             return PLAYER_MODELGROUP_DEFAULT;
-        case PLAYER_IA_PENDING_1:
+        case PLAYER_IA_MINISH_CAP:
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_PENDING_2:
             return PLAYER_MODELGROUP_DEFAULT;
@@ -336,7 +340,7 @@ ItemActionUpdateFunc ExtPlayer_GetItemActionUpdateFunc(int32_t itemAction) {
             return Player_UpperAction_Beetle;
         case PLAYER_IA_SHOVEL:
             return Player_UpperAction_Shovel;
-        case PLAYER_IA_PENDING_1:
+        case PLAYER_IA_MINISH_CAP:
             return func_8083485C;
         case PLAYER_IA_PENDING_2:
             return func_8083485C;
@@ -433,8 +437,8 @@ ItemActionInitFunc ExtPlayer_GetItemActionInitFunc(int32_t itemAction) {
             return Player_InitBeetleIA;
         case PLAYER_IA_SHOVEL:
             return Player_InitDefaultIA;
-        case PLAYER_IA_PENDING_1:
-            return Player_InitPending1IA;
+        case PLAYER_IA_MINISH_CAP:
+            return Player_InitMinishCapIA;
         case PLAYER_IA_PENDING_2:
             return Player_InitPending2IA;
         case PLAYER_IA_UNUSED_5B:

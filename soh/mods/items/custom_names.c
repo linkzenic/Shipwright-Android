@@ -27,6 +27,6 @@
 #include "names/light_rod_name.c"
 #include "names/whip_name.c"
 #include "names/zonai_permafrost_name.c"
-#include "names/pending_1_name.c"
+#include "names/minish_cap_name.c"
 #include "names/pending_2_name.c"
 #include "names/pending_3_name.c"

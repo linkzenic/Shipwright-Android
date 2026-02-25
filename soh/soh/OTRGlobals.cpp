@@ -73,6 +73,7 @@
 #include "soh/Network/CrowdControl/CrowdControl.h"
 #include "soh/Network/Sail/Sail.h"
 #include "soh/Network/Anchor/Anchor.h"
+#include "soh/Network/PvPAnchor/PvPAnchor.h"
 #include "Enhancements/mods.h"
 #include "Enhancements/game-interactor/GameInteractor.h"
 #include "Enhancements/randomizer/draw.h"
@@ -135,6 +136,7 @@ SpeechSynthesizer* SpeechSynthesizer::Instance;
 CrowdControl* CrowdControl::Instance;
 Sail* Sail::Instance;
 Anchor* Anchor::Instance;
+PvPAnchor* PvPAnchor::Instance;
 
 extern "C" char** cameraStrings;
 
@@ -1412,7 +1414,7 @@ std::unordered_map<ItemID, RandomizerGet> ItemIDtoRandomizerGetMap{
     { ITEM_ROD_LIGHT, RG_LIGHT_ROD },
     { ITEM_BEETLE, RG_BEETLE },
     { ITEM_SHOVEL, RG_SHOVEL },
-    { ITEM_PENDING_1, RG_PENDING_1 },
+    { ITEM_MINISH_CAP, RG_PENDING_1 },
     { ITEM_PENDING_2, RG_PENDING_2 },
     { ITEM_PENDING_3, RG_PENDING_3 },
     // MM Masks
@@ -1543,6 +1545,7 @@ extern "C" void InitOTR(int argc, char* argv[]) {
     CrowdControl::Instance = new CrowdControl();
     Sail::Instance = new Sail();
     Anchor::Instance = new Anchor();
+    PvPAnchor::Instance = new PvPAnchor();
 
     OTRMessage_Init();
     OTRAudio_Init();

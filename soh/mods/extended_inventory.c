@@ -37,7 +37,7 @@ extern const unsigned char gItemIconIceRodTex[];
 extern const unsigned char gItemIconLightRodTex[];
 extern const unsigned char gItemIconBeetleTex[];
 extern const unsigned char gItemIconShovelTex[];
-extern const unsigned char gItemIconPending1Tex[];
+extern const unsigned char gItemIconMinishCapTex[];
 extern const unsigned char gItemIconPending2Tex[];
 extern const unsigned char gItemIconPending3Tex[];
 static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTimer = 0 };
@@ -51,7 +51,7 @@ const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,      ITEM
                                   ITEM_SWITCH_HOOK,         ITEM_ROD_ICE,   ITEM_ZONAI_PERMAFROST,
                                   ITEM_MOGMA_MITTS,         ITEM_GUST_JAR,  ITEM_BALL_AND_CHAIN,
                                   ITEM_DESIRE_SENSOR,       ITEM_ROD_LIGHT, ITEM_HYLIAS_GRACE,
-                                  ITEM_PENDING_2,           ITEM_PENDING_1, ITEM_PENDING_3,
+                                  ITEM_PENDING_2,           ITEM_MINISH_CAP, ITEM_PENDING_3,
                                   ITEM_CANE_OF_SOMARIA,     ITEM_SHOVEL,    ITEM_DOMINION_ROD };
 
 // Age requirements for page 2 items
@@ -224,6 +224,12 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return (void*)path;
         return NULL;
     }
+    // Chateau Romani: name texture from mm.o2r
+    if (itemId == ITEM_CHATEAU_ROMANI) {
+        if (MmAssets_GetChateauIconPath()) // checks availability
+            return (void*)"__OTR__item_name_static/gItemNameChateauRomaniENGTex";
+        return NULL;
+    }
     extern const unsigned char gRocsFeatherNameTex[];
     extern const unsigned char gRocsCapeNameTex[];
     extern const unsigned char gDesireSensorNameTex[];
@@ -246,7 +252,7 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     extern const unsigned char gHyliaGraceNameTex[];
     extern const unsigned char gZonaiPermafrostNameTex[];
     extern const unsigned char gDemiseDestructionNameTex[];
-    extern const unsigned char gPending1NameTex[];
+    extern const unsigned char gMinishCapNameTex[];
     extern const unsigned char gPending2NameTex[];
     extern const unsigned char gPending3NameTex[];
     switch (itemId) {
@@ -294,8 +300,8 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return (void*)gBeetleNameTex;
         case ITEM_SHOVEL: // 0xB2
             return (void*)gShovelNameTex;
-        case ITEM_PENDING_1: // 0xB3
-            return (void*)gPending1NameTex;
+        case ITEM_MINISH_CAP: // 0xB3
+            return (void*)gMinishCapNameTex;
         case ITEM_PENDING_2: // 0xB4
             return (void*)gPending2NameTex;
         case ITEM_PENDING_3: // 0xB6
@@ -307,6 +313,7 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
 extern void* MmMasks_LoadIcon(uint16_t itemId);
 extern const char* MmMasks_GetIconPath(uint16_t itemId);
 extern void* MmAssets_LoadFDSwordIcon(void);
+extern const char* MmAssets_GetChateauIconPath(void);
 
 void* ExtInv_GetItemIcon(uint16_t itemId) {
     // FD skin mode: show FD sword icon for any equipped sword
@@ -377,12 +384,18 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return (void*)gItemIconBeetleTex;
         case ITEM_SHOVEL: // 0xB2
             return (void*)gItemIconShovelTex;
-        case ITEM_PENDING_1: // 0xB3
-            return (void*)gItemIconPending1Tex;
+        case ITEM_MINISH_CAP: // 0xB3
+            return (void*)gItemIconMinishCapTex;
         case ITEM_PENDING_2: // 0xB4
             return (void*)gItemIconPending2Tex;
         case ITEM_PENDING_3: // 0xB6
             return (void*)gItemIconPending3Tex;
+        case ITEM_CHATEAU_ROMANI: { // 0xB5
+            const char* path = MmAssets_GetChateauIconPath();
+            if (path)
+                return (void*)path;
+            return gItemIcons[ITEM_MILK_BOTTLE]; // Fallback to milk icon
+        }
         default:
             return gItemIcons[0];
     }

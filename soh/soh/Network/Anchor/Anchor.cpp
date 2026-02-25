@@ -4,6 +4,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/ObjectExtension/ObjectExtension.h"
+#include "soh/Network/PvPAnchor/PvPAnchor.h"
 
 extern "C" {
 #include "variables.h"
@@ -14,6 +15,10 @@ extern PlayState* gPlayState;
 // MARK: - Overrides
 
 void Anchor::Enable() {
+    // Auto-switch: disconnect PvP Anchor if active
+    if (PvPAnchor::Instance && PvPAnchor::Instance->isConnected) {
+        PvPAnchor::Instance->Disable();
+    }
     Network::Enable(CVarGetString(CVAR_REMOTE_ANCHOR("Host"), "anchor.hm64.org"),
                     CVarGetInteger(CVAR_REMOTE_ANCHOR("Port"), 43383));
     ownClientId = CVarGetInteger(CVAR_REMOTE_ANCHOR("LastClientId"), 0);

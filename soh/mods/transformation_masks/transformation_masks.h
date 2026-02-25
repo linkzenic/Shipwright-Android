@@ -203,6 +203,9 @@ void TransformMasks_Draw(PlayState* play, Player* player);
 // Reset transformation state (call on scene transition, death, etc.)
 void TransformMasks_Reset(void);
 
+// Called on player death — deactivates Chateau Romani infinite magic.
+void TransformMasks_OnDeath(void);
+
 // Water entry: called when player enters deep water (swim depth).
 // Returns 1 if swimming was blocked (Goron/Deku can't swim), 0 if allowed (Zora/FD).
 u8 TransformMasks_OnWaterSwimAttempt(PlayState* play, Player* player);
@@ -216,6 +219,10 @@ u8 TransformMasks_BlocksLedgeGrab(void);
 // OOT processed control stick magnitude (0-60, normalized to circle).
 // Defined in transformation_masks.c which is compiled inside z_player.c and sees the static.
 f32 TransformMasks_GetStickMagnitude(void);
+
+// OOT floor type (sFloorType from z_player.c).
+// 2=hot room floor, 3=lava floor, 4=sand, 5=slippery, 7=water lilies, 9=void, 12=deep sand.
+s32 TransformMasks_GetFloorType(void);
 
 // =============================================================================
 // MM Mask Wearing (non-transformation masks drawn on Link's head)

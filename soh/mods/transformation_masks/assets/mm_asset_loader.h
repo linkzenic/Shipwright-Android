@@ -165,6 +165,12 @@ const char* MmMasks_GetNamePath(uint16_t itemId);
  */
 void* MmAssets_LoadFDSwordIcon(void);
 
+/**
+ * Get OTR path string for Chateau Romani icon texture.
+ * @return __OTR__ path string, or NULL if not available
+ */
+const char* MmAssets_GetChateauIconPath(void);
+
 // =============================================================================
 // Transformation Mask Asset Loaders
 // =============================================================================
@@ -195,6 +201,20 @@ void* MmAssets_LoadFierceMaskIcon(void);
 void* MmAssets_LoadFierceMaskNameText(void);
 void* MmAssets_LoadFierceMaskFaceDL(void); // First DL - face (Opa)
 void* MmAssets_LoadFierceMaskHairDL(void); // Second DL - hair/hat (Opa)
+
+/**
+ * Goron Mask assets
+ * Get Item: TWO DLs drawn with GetItem_DrawOpa0Xlu1 (Empty=Opa, Mask=Xlu)
+ */
+void* MmAssets_LoadGoronMaskEmptyDL(void);
+void* MmAssets_LoadGoronMaskDL(void);
+
+/**
+ * Zora Mask assets
+ * Get Item: TWO DLs drawn with GetItem_DrawOpa01 (both Opa)
+ */
+void* MmAssets_LoadZoraMaskEmptyDL(void);
+void* MmAssets_LoadZoraMaskDL(void);
 
 /**
  * Worn Mask DLs (attached to Link's face when wearing)

@@ -36,6 +36,7 @@ extern void MmMaskWear_Draw(PlayState* play, Player* player);
 extern void MmMaskWear_Update(PlayState* play, Player* player);
 extern s32 MmMaskWear_GetCurrent(void);
 extern void MmMaskWear_Clear(void);
+extern void MmMaskWear_DeactivateChateauRomani(void);
 
 // =============================================================================
 // No-op Action Function (replaces OOT actionFunc while transformed)
@@ -66,6 +67,18 @@ static f32 sControlStickMagnitude;
 
 f32 TransformMasks_GetStickMagnitude(void) {
     return sControlStickMagnitude;
+}
+
+// =============================================================================
+// OOT Floor Type Accessor
+// sFloorType is static to z_player.c; same forward-declaration pattern as above.
+// Real definition at z_player.c line 574, compiled later in the same TU.
+// =============================================================================
+
+static s32 sFloorType;
+
+s32 TransformMasks_GetFloorType(void) {
+    return sFloorType;
 }
 
 // =============================================================================
@@ -108,6 +121,10 @@ void TransformMasks_Draw(PlayState* play, Player* player) {
 void TransformMasks_Reset(void) {
     MmForm_Reset();
     MmMaskWear_Clear();
+}
+
+void TransformMasks_OnDeath(void) {
+    MmMaskWear_DeactivateChateauRomani();
 }
 
 u8 TransformMasks_IsFDSkinMode(void) {

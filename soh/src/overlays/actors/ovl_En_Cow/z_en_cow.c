@@ -9,6 +9,39 @@
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/item-tables/ItemTableTypes.h"
+#include "soh/Enhancements/randomizer/draw.h"
+#include "mods/transformation_masks/mm_mask_wear.h"
+
+extern s32 GiveItemEntryFromActor(Actor* actor, PlayState* play, GetItemEntry getItemEntry, f32 xzRange, f32 yRange);
+
+// Check if Romani mask + Link's cow = should give Chateau Romani
+static s32 EnCow_ShouldGiveChateau(PlayState* play) {
+    return (MmMaskWear_GetCurrent() == ITEM_MM_MASK_ROMANI &&
+            play->sceneNum == SCENE_LINKS_HOUSE);
+}
+
+// Build a custom GetItemEntry for Chateau Romani
+// Uses MOD_NONE so Item_Give(ITEM_CHATEAU_ROMANI) is called, and GI_MILK for range check
+static GetItemEntry EnCow_GetChateauEntry(void) {
+    GetItemEntry entry;
+    entry.itemId = ITEM_CHATEAU_ROMANI;
+    entry.field = 0;
+    entry.gi = (int16_t)(GID_MILK + 1); // positive = long chest anim
+    entry.textId = 0x9214;
+    entry.objectId = OBJECT_GI_MILK;
+    entry.modIndex = MOD_NONE;
+    entry.tableId = MOD_NONE;
+    entry.getItemId = GI_MILK;
+    entry.gid = GID_MILK;
+    entry.collectable = true;
+    entry.getItemFrom = ITEM_FROM_NPC;
+    entry.getItemCategory = ITEM_CATEGORY_LESSER;
+    entry.drawItemId = ITEM_CHATEAU_ROMANI;
+    entry.drawModIndex = MOD_NONE;
+    entry.drawFunc = Randomizer_DrawChateauRomani;
+    return entry;
+}
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY)
 
@@ -217,7 +250,12 @@ void func_809DF778(EnCow* this, PlayState* play) {
         this->actor.parent = NULL;
         this->actionFunc = func_809DF730;
     } else {
-        Actor_OfferGetItem(&this->actor, play, GI_MILK, 10000.0f, 100.0f);
+        if (EnCow_ShouldGiveChateau(play)) {
+            GetItemEntry entry = EnCow_GetChateauEntry();
+            GiveItemEntryFromActor(&this->actor, play, entry, 10000.0f, 100.0f);
+        } else {
+            Actor_OfferGetItem(&this->actor, play, GI_MILK, 10000.0f, 100.0f);
+        }
     }
 }
 
@@ -226,7 +264,12 @@ void func_809DF7D8(EnCow* this, PlayState* play) {
         this->actor.flags &= ~ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         Message_CloseTextbox(play);
         this->actionFunc = func_809DF778;
-        Actor_OfferGetItem(&this->actor, play, GI_MILK, 10000.0f, 100.0f);
+        if (EnCow_ShouldGiveChateau(play)) {
+            GetItemEntry entry = EnCow_GetChateauEntry();
+            GiveItemEntryFromActor(&this->actor, play, entry, 10000.0f, 100.0f);
+        } else {
+            Actor_OfferGetItem(&this->actor, play, GI_MILK, 10000.0f, 100.0f);
+        }
     }
 }
 
@@ -254,6 +297,16 @@ void func_809DF8FC(EnCow* this, PlayState* play) {
 }
 
 void func_809DF96C(EnCow* this, PlayState* play) {
+    // Romani mask: cow responds to direct talk without Epona's Song
+    if (MmMaskWear_GetCurrent() == ITEM_MM_MASK_ROMANI) {
+        if (Actor_ProcessTalkRequest(&this->actor, play)) {
+            this->actionFunc = func_809DF870;
+            return;
+        }
+        func_8002F2CC(&this->actor, play, 170.0f);
+        this->actor.textId = 0x2006;
+    }
+
     if ((play->msgCtx.ocarinaMode == OCARINA_MODE_00) || (play->msgCtx.ocarinaMode == OCARINA_MODE_04)) {
         if (DREG(53) != 0) {
             if (this->unk_276 & 4) {

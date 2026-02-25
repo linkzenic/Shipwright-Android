@@ -6,6 +6,7 @@
 #include <soh/Network/Sail/Sail.h>
 #include <soh/Network/CrowdControl/CrowdControl.h>
 #include <soh/Network/Anchor/Anchor.h>
+#include <soh/Network/PvPAnchor/PvPAnchor.h>
 
 namespace SohGui {
 
@@ -187,6 +188,10 @@ void SohMenu::AddMenuNetwork() {
                                            "rooms\", so they don't need to be killed to complete these rooms."));
     path.sidebarName = "Anchor";
     AddSidebarEntry("Network", path.sidebarName, 2);
+
+    // PvP Arena
+    path = { "Network", "PvP Arena", SECTION_COLUMN_1 };
+    AddSidebarEntry("Network", path.sidebarName, 4);
 }
 
 } // namespace SohGui

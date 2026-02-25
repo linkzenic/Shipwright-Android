@@ -38,6 +38,20 @@ s32 MmMaskWear_GetCurrent(void);
 // Clear the currently worn MM mask (e.g. on scene transition, death, transformation).
 void MmMaskWear_Clear(void);
 
+// Returns true if Stone Mask is currently worn (used by z_actor.c for invisibility).
+s32 MmMaskWear_IsStoneMaskActive(void);
+
+// Returns true if Blast Mask is on cooldown (used for draw blackout).
+s32 MmMaskWear_IsBlastCooldown(void);
+
+// Returns true if All-Night Mask is currently worn (used by En_Sw and En_Wood02).
+s32 MmMaskWear_IsAllNightMaskActive(void);
+
+// Chateau Romani: infinite magic system (persists across scenes, cleared on death).
+s32 MmMaskWear_IsChateauRomaniActive(void);
+void MmMaskWear_ActivateChateauRomani(void);
+void MmMaskWear_DeactivateChateauRomani(void);
+
 #ifdef __cplusplus
 }
 #endif

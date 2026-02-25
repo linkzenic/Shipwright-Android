@@ -16,6 +16,7 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "soh_assets.h"
 #include "soh/Enhancements/boss-rush/BossRush.h"
+#include "soh/Enhancements/hunger-games/HungerGames.h"
 #include "soh/Enhancements/FileSelectEnhancements.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <assert.h>
@@ -26,10 +27,11 @@
 #include "soh/ShipUtils.h"
 
 #define MIN_QUEST (ResourceMgr_GameHasOriginal() ? QUEST_NORMAL : QUEST_MASTER)
-#define MAX_QUEST QUEST_BOSSRUSH
+#define MAX_QUEST QUEST_HUNGER_GAMES
 
 void Sram_InitDebugSave(void);
 void Sram_InitBossRushSave();
+void Sram_InitHungerGamesSave();
 
 void FileChoose_DrawTextureI8(GraphicsContext* gfxCtx, const void* texture, s16 texWidth, s16 texHeight, s16 rectLeft,
                               s16 rectTop, s16 rectWidth, s16 rectHeight, s16 dsdx, s16 dtdy) {
@@ -677,6 +679,12 @@ void FileChoose_UpdateQuestMenu(GameState* thisx) {
             this->prevConfigMode = this->configMode;
             this->configMode = CM_ROTATE_TO_BOSS_RUSH_MENU;
             return;
+        } else if (this->questType[this->buttonIndex] == QUEST_HUNGER_GAMES) {
+            Audio_PlaySoundGeneral(NA_SE_SY_FSEL_DECIDE_L, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            this->prevConfigMode = this->configMode;
+            this->configMode = CM_ROTATE_TO_HUNGER_GAMES_MENU;
+            return;
         } else if (this->questType[this->buttonIndex] == QUEST_RANDOMIZER) {
             Audio_PlaySoundGeneral(NA_SE_SY_FSEL_DECIDE_L, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -993,6 +1001,10 @@ static void (*gConfigModeUpdateFuncs[])(GameState*) = {
     FileChoose_RotateToRandomizer,  FileChoose_UpdateRandomizerMenu,
     FileChoose_StartRandomizerMenu, FileChoose_RotateToQuest,
     FileChoose_RotateToRandomizer,
+    FileChoose_RotateToHungerGames,     // CM_ROTATE_TO_HUNGER_GAMES_MENU
+    FileChoose_UpdateHungerGamesMenu,   // CM_HUNGER_GAMES_MENU
+    FileChoose_StartHungerGamesMenu,    // CM_START_HUNGER_GAMES_MENU
+    FileChoose_RotateToQuest,           // CM_HUNGER_GAMES_TO_QUEST
 };
 
 static void (*gConfigModeUpdateFuncsNES[])(GameState*) = {
@@ -1024,6 +1036,10 @@ static void (*gConfigModeUpdateFuncsNES[])(GameState*) = {
     FileChoose_RotateToRandomizer,  FileChoose_UpdateRandomizerMenu,
     FileChoose_StartRandomizerMenu, FileChoose_RotateToQuest,
     FileChoose_RotateToRandomizer,
+    FileChoose_RotateToHungerGames,     // CM_ROTATE_TO_HUNGER_GAMES_MENU
+    FileChoose_UpdateHungerGamesMenu,   // CM_HUNGER_GAMES_MENU
+    FileChoose_StartHungerGamesMenu,    // CM_START_HUNGER_GAMES_MENU
+    FileChoose_RotateToQuest,           // CM_HUNGER_GAMES_TO_QUEST
 };
 
 /**
@@ -1684,6 +1700,7 @@ void FileChoose_DrawWindowContents(GameState* thisx) {
         case CM_NAME_ENTRY_TO_QUEST_MENU:
         case CM_ROTATE_TO_BOSS_RUSH_MENU:
         case CM_ROTATE_TO_RANDOMIZER_SETTINGS_MENU:
+        case CM_ROTATE_TO_HUNGER_GAMES_MENU:
             tex = FileChoose_GetQuestChooseTitleTexName(gSaveContext.language);
             break;
         case CM_BOSS_RUSH_MENU:
@@ -1693,6 +1710,9 @@ void FileChoose_DrawWindowContents(GameState* thisx) {
         case CM_START_RANDOMIZER_SETTINGS_MENU:
         case CM_RANDOMIZER_SETTINGS_MENU_TO_QUEST:
         case CM_NAME_ENTRY_TO_RANDOMIZER_SETTINGS_MENU:
+        case CM_HUNGER_GAMES_MENU:
+        case CM_START_HUNGER_GAMES_MENU:
+        case CM_HUNGER_GAMES_TO_QUEST:
             tex = FileChoose_GetSohOptionsTitleTexName(gSaveContext.language);
             break;
         default:
@@ -1809,9 +1829,24 @@ void FileChoose_DrawWindowContents(GameState* thisx) {
                     ResourceMgr_GameHasOriginal() ? gTitleZeldaShieldLogoTex : gTitleZeldaShieldLogoMQTex, 160, 160);
                 FileChoose_DrawImageRGBA32(this->state.gfxCtx, 182, 180, gTitleBossRushSubtitleTex, 128, 32);
                 break;
+
+            case QUEST_HUNGER_GAMES:
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, this->logoAlpha);
+                FileChoose_DrawTextureI8(this->state.gfxCtx, gTitleTheLegendOfTextTex, 72, 8, 156, 108, 72, 8, 1024,
+                                         1024);
+                FileChoose_DrawTextureI8(this->state.gfxCtx, gTitleOcarinaOfTimeTMTextTex, 96, 8, 154, 163, 96, 8, 1024,
+                                         1024);
+                FileChoose_DrawImageRGBA32(
+                    this->state.gfxCtx, 160, 135,
+                    ResourceMgr_GameHasOriginal() ? gTitleZeldaShieldLogoTex : gTitleZeldaShieldLogoMQTex, 160, 160);
+                // TODO: Replace with custom "Hunger Games" subtitle texture
+                FileChoose_DrawImageRGBA32(this->state.gfxCtx, 182, 180, gTitleBossRushSubtitleTex, 128, 32);
+                break;
         }
     } else if (this->configMode == CM_BOSS_RUSH_MENU) {
         FileChoose_DrawBossRushMenuWindowContents(this);
+    } else if (this->configMode == CM_HUNGER_GAMES_MENU) {
+        FileChoose_DrawHungerGamesMenuContents(this);
     } else if (this->configMode == CM_RANDOMIZER_SETTINGS_MENU) {
         uint8_t language = (gSaveContext.language == LANGUAGE_JPN) ? LANGUAGE_ENG : gSaveContext.language;
         uint8_t textAlpha = this->randomizerUIAlpha;
@@ -1867,7 +1902,10 @@ void FileChoose_DrawWindowContents(GameState* thisx) {
                this->configMode != CM_START_RANDOMIZER_SETTINGS_MENU &&
                this->configMode != CM_ROTATE_TO_RANDOMIZER_SETTINGS_MENU &&
                this->configMode != CM_RANDOMIZER_SETTINGS_MENU_TO_QUEST &&
-               this->configMode != CM_NAME_ENTRY_TO_RANDOMIZER_SETTINGS_MENU) {
+               this->configMode != CM_NAME_ENTRY_TO_RANDOMIZER_SETTINGS_MENU &&
+               this->configMode != CM_START_HUNGER_GAMES_MENU &&
+               this->configMode != CM_ROTATE_TO_HUNGER_GAMES_MENU &&
+               this->configMode != CM_HUNGER_GAMES_TO_QUEST) {
         gDPPipeSync(POLY_OPA_DISP++);
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, this->titleAlpha[1]);
         gDPLoadTextureBlock(POLY_OPA_DISP++, sTitleLabels[gSaveContext.language][this->nextTitleLabel], G_IM_FMT_IA,
@@ -2218,7 +2256,8 @@ void FileChoose_ConfigModeDraw(GameState* thisx) {
         this->configMode == CM_ROTATE_TO_NAME_ENTRY || this->configMode == CM_QUEST_TO_MAIN ||
         this->configMode == CM_NAME_ENTRY_TO_QUEST_MENU || this->configMode == CM_ROTATE_TO_BOSS_RUSH_MENU ||
         this->configMode == CM_ROTATE_TO_RANDOMIZER_SETTINGS_MENU ||
-        this->configMode == CM_NAME_ENTRY_TO_RANDOMIZER_SETTINGS_MENU) {
+        this->configMode == CM_NAME_ENTRY_TO_RANDOMIZER_SETTINGS_MENU ||
+        this->configMode == CM_ROTATE_TO_HUNGER_GAMES_MENU) {
         // window
         gDPPipeSync(POLY_OPA_DISP++);
         gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
@@ -2246,12 +2285,14 @@ void FileChoose_ConfigModeDraw(GameState* thisx) {
         FileChoose_DrawWindowContents(&this->state);
     }
 
-    // Draw Boss Rush / Randomizer Options Menu
+    // Draw Boss Rush / Randomizer / Hunger Games Options Menu
     if (this->configMode == CM_BOSS_RUSH_MENU || this->configMode == CM_ROTATE_TO_BOSS_RUSH_MENU ||
         this->configMode == CM_START_BOSS_RUSH_MENU || this->configMode == CM_BOSS_RUSH_TO_QUEST ||
         this->configMode == CM_RANDOMIZER_SETTINGS_MENU || this->configMode == CM_ROTATE_TO_RANDOMIZER_SETTINGS_MENU ||
         this->configMode == CM_START_RANDOMIZER_SETTINGS_MENU ||
-        this->configMode == CM_RANDOMIZER_SETTINGS_MENU_TO_QUEST) {
+        this->configMode == CM_RANDOMIZER_SETTINGS_MENU_TO_QUEST ||
+        this->configMode == CM_HUNGER_GAMES_MENU || this->configMode == CM_ROTATE_TO_HUNGER_GAMES_MENU ||
+        this->configMode == CM_START_HUNGER_GAMES_MENU || this->configMode == CM_HUNGER_GAMES_TO_QUEST) {
         // window
         gDPPipeSync(POLY_OPA_DISP++);
         gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
@@ -2520,6 +2561,8 @@ void FileChoose_LoadGame(GameState* thisx) {
     } else {
         if (this->buttonIndex == 0xFE) {
             Sram_InitBossRushSave();
+        } else if (this->buttonIndex == HG_BUTTON_INDEX) {
+            Sram_InitHungerGamesSave();
         } else {
             Sram_OpenSave();
         }

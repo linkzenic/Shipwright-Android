@@ -385,18 +385,68 @@ void func_808911BC(BgIceShelter* this) {
     this->alpha = 255;
 }
 
-// Public function for Ball and Chain to instantly break red ice
+// Public function for Ball and Chain to instantly shatter red ice
 void BgIceShelter_BreakInstantly(Actor* thisx, PlayState* play) {
     BgIceShelter* this = (BgIceShelter*)thisx;
+    s16 type = (this->dyna.actor.params >> 8) & 7;
+    f32 height = (f32)this->cylinder1.dim.height;
+    static Vec3f accel = { 0.0f, -1.0f, 0.0f };
+    static Color_RGBA8 primColor = { 170, 255, 255, 255 };
+    static Color_RGBA8 envColor = { 0, 50, 100, 255 };
+    Vec3f vel;
+    Vec3f pos;
+    s32 i;
+    s32 j;
 
-    // Play breaking sound instead of melting sound
-    Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_WALL_BROKEN);
+    // Spawn ice fragment effect (adapted from BgIceTurara_Break)
+    SoundSource_PlaySfxAtFixedWorldPos(play, &this->dyna.actor.world.pos, 30, NA_SE_EV_ICE_BROKEN);
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < 10; j++) {
+            pos.x = this->dyna.actor.world.pos.x + Rand_CenteredFloat(8.0f);
+            pos.y = this->dyna.actor.world.pos.y + (Rand_ZeroOne() * height) + (i * height);
+            pos.z = this->dyna.actor.world.pos.z + Rand_CenteredFloat(8.0f);
+            vel.x = Rand_CenteredFloat(7.0f);
+            vel.z = Rand_CenteredFloat(7.0f);
+            vel.y = (Rand_ZeroOne() * 4.0f) + 8.0f;
+            EffectSsEnIce_Spawn(play, &pos, (Rand_ZeroOne() * 0.2f) + 0.1f, &vel, &accel, &primColor, &envColor, 30);
+        }
+    }
 
-    // Set alpha to very low to destroy almost instantly (5 frames instead of 51)
+    // Set switch flag (same as vanilla melt completion)
+    if (!((this->dyna.actor.params >> 6) & 1)) {
+        Flags_SetSwitch(play, this->dyna.actor.params & 0x3F);
+    }
+
+    // For King Zora's ice (type 4): unfreeze KZ so he becomes talkable.
+    // BG actors update before PLAYER, so freezeTimer=10000 was already set this frame.
+    // Setting to 50 lets it count down naturally so EnKz_Update sets INFTABLE_138.
+    if (type == 4) {
+        if (this->dyna.actor.parent != NULL) {
+            this->dyna.actor.parent->freezeTimer = 50;
+        }
+        Sfx_PlaySfxCentered(NA_SE_SY_CORRECT_CHIME);
+    }
+
+    Actor_Kill(&this->dyna.actor);
+}
+
+// Public function for Ice Rod to melt red ice (like Blue Fire)
+void BgIceShelter_MeltInstantly(Actor* thisx, PlayState* play) {
+    BgIceShelter* this = (BgIceShelter*)thisx;
+    s16 type = (this->dyna.actor.params >> 8) & 7;
+
+    // For King Zora's ice (type 4): unfreeze KZ
+    if (type == 4 && this->dyna.actor.parent != NULL) {
+        this->dyna.actor.parent->freezeTimer = 50;
+    }
+
+    // Start melt animation (sets actionFunc to func_808911D4 and alpha=255)
+    func_808911BC(this);
+
+    // Override alpha for near-instant melt
     this->alpha = 25;
 
-    // Call the melt function to start the destruction process
-    func_808911BC(this);
+    Audio_PlayActorSound2(&this->dyna.actor, NA_SE_EV_ICE_MELT);
 }
 
 static f32 D_808917BC[] = { -0.0015f, -0.0009f, -0.0016f, -0.0016f, -0.00375f };

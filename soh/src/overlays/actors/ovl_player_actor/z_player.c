@@ -3634,6 +3634,7 @@ void func_80836448(PlayState* play, Player* this, LinkAnimationHeader* anim) {
             Audio_PlayFanfare(NA_BGM_GAME_OVER);
             gSaveContext.seqId = (u8)NA_BGM_DISABLED;
             gSaveContext.natureAmbienceId = NATURE_ID_DISABLED;
+            TransformMasks_OnDeath();
         }
 
         OnePointCutscene_Init(play, 9806, cond ? 120 : 60, &this->actor, MAIN_CAM);
@@ -4871,24 +4872,6 @@ s32 func_808382DC(Player* this, PlayState* play) {
             Player_PlayVoiceSfx(this, NA_SE_VO_LI_TAKEN_AWAY);
             play->unk_11DE9 = 1;
             Sfx_PlaySfxCentered(NA_SE_OC_ABYSS);
-        } else if (TransformMasks_IsTransformed()) {
-            // Transformation masks: MM form system handles its own damage/knockback.
-            // Save AC_HIT info before Collider_ResetCylinderAC clears it later.
-            // MmForm_CheckDamage reads gMmFormPendingDamage instead of AC_HIT.
-            if (this->cylinder.base.acFlags & AC_HIT) {
-                gMmFormPendingDamage.hasPending = 1;
-                gMmFormPendingDamage.damage = this->actor.colChkInfo.damage;
-                gMmFormPendingDamage.acHitEffect = this->actor.colChkInfo.acHitEffect;
-                gMmFormPendingDamage.attacker = this->cylinder.base.ac;
-                return 1;
-            }
-            // Still in MM form damage state (e.g. strong knockback airborne) →
-            // return 1 to prevent OOT's func_8083AA10 from clearing PLAYER_STATE1_DAMAGED
-            // via Player_SetupAction and hijacking linearVelocity with the falling action.
-            if (this->stateFlags1 & PLAYER_STATE1_DAMAGED) {
-                return 1;
-            }
-            return 0;
         } else if ((this->knockbackType != PLAYER_KNOCKBACK_NONE) &&
                    ((this->knockbackType >= PLAYER_KNOCKBACK_LARGE) || (this->invincibilityTimer == 0))) {
             u8 knockbackResponse[] = {
@@ -7088,6 +7071,10 @@ void func_8083D53C(PlayState* play, Player* this) {
         // Transformation masks: skip ALL OOT water action transitions.
         // MM form system handles water for each form (swim, void-out, etc.)
         if (TransformMasks_IsTransformed()) {
+            // Zora form: can breathe underwater (like Zora tunic) — prevent drowning timer
+            if (this->currentTunic == PLAYER_TUNIC_ZORA) {
+                this->underwaterTimer = 0;
+            }
             // Just track IN_WATER flag for other OOT systems (damage, camera, etc.)
             if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
                 this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
@@ -12584,12 +12571,29 @@ void Player_Update(Actor* thisx, PlayState* play) {
         }
 
         if (this->stateFlags1 & (PLAYER_STATE1_INPUT_DISABLED | PLAYER_STATE1_IN_CUTSCENE)) {
-            memset(&sp44, 0, sizeof(sp44));
+            // Transformed forms: allow input during IN_CUTSCENE (scene transition fade-in)
+            // so Zora can swim after loading an underwater zone. The form's yield system
+            // already handles real cutscenes (NPC dialogue, story) by deferring to OOT.
+            // Only block input when INPUT_DISABLED is set (transformation cutscene, events).
+            if (TransformMasks_IsTransformed() &&
+                !(this->stateFlags1 & PLAYER_STATE1_INPUT_DISABLED)) {
+                sp44 = play->state.input[0];
+            } else {
+                memset(&sp44, 0, sizeof(sp44));
+            }
         } else {
             sp44 = play->state.input[0];
             if (this->textboxBtnCooldownTimer != 0) {
                 sp44.cur.button &= ~(BTN_A | BTN_B | BTN_CUP);
                 sp44.press.button &= ~(BTN_A | BTN_B | BTN_CUP);
+            }
+
+            // Blast Mask: B button = explode, not sword.
+            // Block BTN_B from reaching Player_UpdateCommon so sword doesn't activate.
+            // The bomb spawn is handled in MmMaskWear_Update reading raw input.
+            if (TransformMasks_WearGetCurrent() == ITEM_MM_MASK_BLAST) {
+                sp44.cur.button &= ~BTN_B;
+                sp44.press.button &= ~BTN_B;
             }
         }
 

@@ -467,7 +467,7 @@ void Rando::StaticData::InitItemTable() {
     itemTable[RG_LIGHT_ROD] =                           Item(RG_LIGHT_ROD,                        Text{ "Light Rod", "Bâton de Lumière", "Lichtstab" },                                                                                ITEMTYPE_ITEM,              0xDB,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_ROD_LIGHT,                       OBJECT_GI_HAMMER,       0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
     itemTable[RG_HYLIAS_GRACE] =                        Item(RG_HYLIAS_GRACE,                     Text{ "Hylia's Grace", "Grâce d'Hylia", "Hylias Gnade" },                                                                            ITEMTYPE_ITEM,              0xDC,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_HYLIAS_GRACE,                    OBJECT_GI_HOOKSHOT,     0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
     itemTable[RG_PENDING_2] =                           Item(RG_PENDING_2,                        Text{ "Stasis", "Stase", "Stasis" },                                                                                                 ITEMTYPE_ITEM,              0xDD,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_PENDING_2,                       OBJECT_GI_HOOKSHOT,     0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
-    itemTable[RG_PENDING_1] =                           Item(RG_PENDING_1,                        Text{ "Magnesis", "Polaris", "Magnesis" },                                                                                           ITEMTYPE_ITEM,              0xDE,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_PENDING_1,                       OBJECT_GI_GLASSES,      0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_PENDING_1] =                           Item(RG_PENDING_1,                        Text{ "The Minish Cap", "Le Minish Cap", "Minish Cap" },                                                                             ITEMTYPE_ITEM,              0xDE,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_MINISH_CAP,                      OBJECT_GI_GLASSES,      0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
     itemTable[RG_PENDING_3] =                           Item(RG_PENDING_3,                        Text{ "Cryonis", "Cryonis", "Cryonis" },                                                                                             ITEMTYPE_ITEM,              0xDF,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_PENDING_3,                       OBJECT_GI_LONGSWORD,    0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
     itemTable[RG_CANE_OF_SOMARIA] =                     Item(RG_CANE_OF_SOMARIA,                  Text{ "Cane of Somaria", "Canne de Somaria", "Stab von Somaria" },                                                                   ITEMTYPE_ITEM,              0xE0,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_CANE_OF_SOMARIA,                 OBJECT_GI_BOOMERANG,    0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
     itemTable[RG_SHOVEL] =                              Item(RG_SHOVEL,                           Text{ "Shovel", "Pelle", "Schaufel" },                                                                                               ITEMTYPE_ITEM,              0xE1,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_SHOVEL,                          OBJECT_GI_BOW,          0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
@@ -526,6 +526,36 @@ void Rando::StaticData::InitItemTable() {
     itemTable[RG_PENDING_3].SetCustomDrawFunc(Randomizer_DrawCryonis);
     itemTable[RG_DESIRE_SENSOR].SetCustomDrawFunc(Randomizer_DrawDesireSensor);
     itemTable[RG_ROCS_CAPE].SetCustomDrawFunc(Randomizer_DrawRocsCape);
+
+    // MM Mask get-item 3D models (all 24, from mm.o2r)
+    itemTable[RG_MM_MASK_POSTMAN].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_ALL_NIGHT].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_BLAST].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_STONE].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_GREAT_FAIRY].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_DEKU].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_KEATON].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_BREMEN].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_BUNNY].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_DON_GERO].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_SCENTS].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_GORON].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_ROMANI].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_CIRCUS_LEADER].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_KAFEI].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_COUPLE].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_TRUTH].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_ZORA].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_KAMARO].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_GIBDO].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_GARO].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_CAPTAIN].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_GIANT].SetCustomDrawFunc(Randomizer_DrawMmMask);
+    itemTable[RG_MM_MASK_FIERCE_DEITY].SetCustomDrawFunc(Randomizer_DrawMmMask);
+
+    // Chateau Romani bottle (from mm.o2r)
+    itemTable[RG_CHATEAU_ROMANI] =                      Item(RG_CHATEAU_ROMANI,                   Text{ "Chateau Romani", "Chateau Romani", "Chateau Romani" },                                                                        ITEMTYPE_ITEM,              0xFC,                 false, LOGIC_NONE,                         RHT_NONE,                              ITEM_CHATEAU_ROMANI,                  OBJECT_GI_MILK,        GID_MILK,             0x9214, 0x50, CHEST_ANIM_LONG,  ITEM_CATEGORY_LESSER,  MOD_RANDOMIZER);
+    itemTable[RG_CHATEAU_ROMANI].SetCustomDrawFunc(Randomizer_DrawChateauRomani);
 
     // clang-format on
 

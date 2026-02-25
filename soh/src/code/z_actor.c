@@ -19,6 +19,7 @@
 #include "soh/ActorDB.h"
 #include "soh/OTRGlobals.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/transformation_masks/mm_mask_wear.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -2680,9 +2681,18 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                 }
             } else {
                 Math_Vec3f_Copy(&actor->prevPos, &actor->world.pos);
-                actor->xzDistToPlayer = Actor_WorldDistXZToActor(actor, &player->actor);
-                actor->yDistToPlayer = Actor_HeightDiff(actor, &player->actor);
-                actor->xyzDistToPlayerSq = SQ(actor->xzDistToPlayer) + SQ(actor->yDistToPlayer);
+
+                // Stone Mask: enemies and NPCs can't detect Link
+                if (MmMaskWear_IsStoneMaskActive() &&
+                    (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC)) {
+                    actor->xzDistToPlayer = 32000.0f;
+                    actor->yDistToPlayer = 32000.0f;
+                    actor->xyzDistToPlayerSq = SQ(32000.0f) + SQ(32000.0f);
+                } else {
+                    actor->xzDistToPlayer = Actor_WorldDistXZToActor(actor, &player->actor);
+                    actor->yDistToPlayer = Actor_HeightDiff(actor, &player->actor);
+                    actor->xyzDistToPlayerSq = SQ(actor->xzDistToPlayer) + SQ(actor->yDistToPlayer);
+                }
 
                 actor->yawTowardsPlayer = Actor_WorldYawTowardActor(actor, &player->actor);
                 actor->flags &= ~ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;

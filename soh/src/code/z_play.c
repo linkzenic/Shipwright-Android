@@ -16,6 +16,8 @@
 #include "soh/SaveManager.h"
 #include "soh/framebuffer_effects.h"
 #include "mods/items/custom_items.h"
+#include "mods/items/helpers/minish_kaleido.h"
+#include "soh/Enhancements/hunger-games/HungerGames.h"
 #include <libultraship/libultraship.h>
 
 #include <time.h>
@@ -691,6 +693,12 @@ void Play_Init(GameState* thisx) {
                     GET_PLAYER(play)->actor.world.pos.z, 0, 0, 0, 1, true);
     }
 
+    // #region SOH [Hunger Games] Auto-connect PvP on game load
+    if (IS_HUNGER_GAMES) {
+        HungerGames_OnPlayInit(play);
+    }
+    // #endregion
+
     // nextEntranceIndex was not initialized, so the previous value was carried over during soft resets.
     gPlayState->nextEntranceIndex = gSaveContext.entranceIndex;
 }
@@ -1274,7 +1282,11 @@ void Play_Update(PlayState* play) {
 
             if ((play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0)) {
                 PLAY_LOG(3721);
-                KaleidoScopeCall_Update(play);
+                if (gCustomItemState.minishCapWarpMode) {
+                    MinishKaleido_Update(play);
+                } else {
+                    KaleidoScopeCall_Update(play);
+                }
             } else if (play->gameOverCtx.state != GAMEOVER_INACTIVE) {
                 PLAY_LOG(3727);
                 GameOver_Update(play);
@@ -1337,7 +1349,9 @@ skip:
 
 void Play_DrawOverlayElements(PlayState* play) {
     if ((play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0)) {
-        KaleidoScopeCall_Draw(play);
+        if (!gCustomItemState.minishCapWarpMode) {
+            KaleidoScopeCall_Draw(play);
+        }
     }
 
     if (gSaveContext.gameMode == GAMEMODE_NORMAL) {
@@ -1348,6 +1362,11 @@ void Play_DrawOverlayElements(PlayState* play) {
 
     if (play->gameOverCtx.state != GAMEOVER_INACTIVE) {
         GameOver_FadeInLights(play);
+    }
+
+    // Minish Cap warp overlay — drawn last on OVERLAY_DISP so it covers HUD
+    if (gCustomItemState.minishCapWarpMode) {
+        MinishKaleido_Draw(play);
     }
 }
 

@@ -29,7 +29,7 @@ extern const unsigned char gItemIconIceRodTex[];
 extern const unsigned char gItemIconLightRodTex[];
 extern const unsigned char gItemIconBeetleTex[];
 extern const unsigned char gItemIconShovelTex[];
-extern const unsigned char gItemIconPending1Tex[];
+extern const unsigned char gItemIconMinishCapTex[];
 extern const unsigned char gItemIconPending2Tex[];
 extern const unsigned char gItemIconPending3Tex[];
 }
@@ -198,7 +198,7 @@ std::map<uint32_t, ItemMapEntry> customItemMapping = {
     { ITEM_ROD_LIGHT, { ITEM_ROD_LIGHT, "ITEM_ROD_LIGHT", "ITEM_ROD_LIGHT_Faded", (char*)gItemIconLightRodTex } },
     { ITEM_BEETLE, { ITEM_BEETLE, "ITEM_BEETLE", "ITEM_BEETLE_Faded", (char*)gItemIconBeetleTex } },
     { ITEM_SHOVEL, { ITEM_SHOVEL, "ITEM_SHOVEL", "ITEM_SHOVEL_Faded", (char*)gItemIconShovelTex } },
-    { ITEM_PENDING_1, { ITEM_PENDING_1, "ITEM_PENDING_1", "ITEM_PENDING_1_Faded", (char*)gItemIconPending1Tex } },
+    { ITEM_MINISH_CAP, { ITEM_MINISH_CAP, "ITEM_MINISH_CAP", "ITEM_MINISH_CAP_Faded", (char*)gItemIconMinishCapTex } },
     { ITEM_PENDING_2, { ITEM_PENDING_2, "ITEM_PENDING_2", "ITEM_PENDING_2_Faded", (char*)gItemIconPending2Tex } },
     { ITEM_PENDING_3, { ITEM_PENDING_3, "ITEM_PENDING_3", "ITEM_PENDING_3_Faded", (char*)gItemIconPending3Tex } },
 };

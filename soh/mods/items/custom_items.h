@@ -44,7 +44,7 @@ extern "C" {
 #define ITEM_ROD_LIGHT 0xB0
 #define ITEM_BEETLE 0xB1
 #define ITEM_SHOVEL 0xB2
-#define ITEM_PENDING_1 0xB3
+#define ITEM_MINISH_CAP 0xB3
 #define ITEM_PENDING_2 0xB4
 #define ITEM_PENDING_3 0xB6
 
@@ -366,6 +366,14 @@ typedef struct {
     u16 switchHookButtonMask;
     s16 switchHookVortexTimer;
 
+    // Minish Cap (Fast Travel)
+    u8 minishCapWarpMode;     // Warp map is active (pause menu override)
+    s8 minishCapCursorIdx;    // Selected pod soil index in table
+    s8 minishCapConfirmed;    // 1 = warp pending after unpause
+    s8 minishCapDestIdx;      // Destination pod soil index
+    u8 minishCapShrinking;    // 1 = shrinking player during departure fade
+    u8 minishCapGrowing;      // 1 = snap to start scale, 2 = growing to normal
+
     // Shared
     Vec3f sharedProjectilePos;
 } CustomItemState;
@@ -425,6 +433,7 @@ void Handle_TimeGate(Player* player, PlayState* play);
 void Handle_Whip(Player* player, PlayState* play);
 void Handle_DesireSensor(Player* player, PlayState* play);
 void Handle_SwitchHook(Player* player, PlayState* play);
+void Handle_MinishCap(Player* player, PlayState* play);
 
 // Draw functions
 void CustomItems_DrawDekuLeaf(Player* player, PlayState* play);
@@ -484,6 +493,7 @@ void Player_InitTimeGateIA(PlayState* play, Player* player);
 void Player_InitWhipIA(PlayState* play, Player* player);
 void Player_InitDesireSensorIA(PlayState* play, Player* player);
 void Player_InitSwitchHookIA(PlayState* play, Player* player);
+void Player_InitMinishCapIA(PlayState* play, Player* player);
 
 #ifdef __cplusplus
 }
