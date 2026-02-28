@@ -80,8 +80,8 @@ void Handle_RocsCape(Player* p, PlayState* play) {
 
         // Schedule MM animation after 2 frame delay (let OOT finish its animation change)
         if (RocsCape_MmAnimEnabled()) {
-            rcMmAnimTimer = -2;   // Negative = pending, will count up to 0
-            sPendingAnimType = 1; // Backflip
+            rcMmAnimTimer = -2; // Negative = pending, will count up to 0
+            sPendingAnimType = CVarGetInteger("gMods.RocsItems.InvertAnims", 0) ? 2 : 1;
         }
 
     } else if (rcJumpCount == 0) {
@@ -101,7 +101,7 @@ void Handle_RocsCape(Player* p, PlayState* play) {
         // Schedule MM animation after 2 frame delay
         if (RocsCape_MmAnimEnabled()) {
             rcMmAnimTimer = -2;
-            sPendingAnimType = 2; // Roll jump
+            sPendingAnimType = CVarGetInteger("gMods.RocsItems.InvertAnims", 0) ? 1 : 2;
         }
     }
 }

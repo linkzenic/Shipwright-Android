@@ -19,6 +19,7 @@
 #include "../helpers/combat_helper.h"
 #include "../helpers/fx_helper.h"
 #include "../helpers/camera_helper.h"
+#include "overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
 
 static ItemEquipState sIceEquipState = { 0 };
 static s8 sIcePrevInvinc = 0;
@@ -222,6 +223,52 @@ static void IceRod_SpawnIceSparks(PlayState* play, Vec3f* pos, f32 scale) {
     }
 }
 
+// Check if any ice rod projectile hits red ice (BG_ICE_SHELTER) and melt it
+static u8 IceRod_CheckRedIceMelt(PlayState* play) {
+    Actor* actor;
+    Actor* next;
+    u8 melted = 0;
+    f32 projRadius = (f32)ICE_ROD_PROJ_RADIUS + 5.0f;
+
+    for (actor = play->actorCtx.actorLists[ACTORCAT_BG].head; actor != NULL; actor = next) {
+        next = actor->next;
+        if (actor->id != ACTOR_BG_ICE_SHELTER)
+            continue;
+
+        BgIceShelter* ice = (BgIceShelter*)actor;
+        f32 iceRadius = (f32)ice->cylinder1.dim.radius + projRadius;
+        f32 iceHeight = (f32)ice->cylinder1.dim.height;
+        u8 hit = 0;
+
+        // Check each active projectile position
+        for (s32 p = 0; p < iceRodProjCount; p++) {
+            Vec3f* projPos;
+            if (p == 0)
+                projPos = &iceRodProjPos;
+            else if (p == 1)
+                projPos = &iceRodProjPos2;
+            else
+                projPos = &iceRodProjPos3;
+
+            f32 dx = projPos->x - actor->world.pos.x;
+            f32 dy = projPos->y - actor->world.pos.y;
+            f32 dz = projPos->z - actor->world.pos.z;
+            f32 xzDist = sqrtf(SQ(dx) + SQ(dz));
+
+            if (xzDist < iceRadius && dy > -projRadius && dy < iceHeight + projRadius) {
+                hit = 1;
+                break;
+            }
+        }
+
+        if (hit) {
+            BgIceShelter_MeltInstantly(actor, play);
+            melted = 1;
+        }
+    }
+    return melted;
+}
+
 static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
     if (!iceRodProjActive)
         return;
@@ -280,6 +327,11 @@ static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
             IceRod_UpdateCollider(&iceRodCollider2, &iceRodProjPos2, iceRodProjScale, play);
         if (iceRodProjCount >= 3)
             IceRod_UpdateCollider(&iceRodCollider3, &iceRodProjPos3, iceRodProjScale, play);
+    }
+
+    // Red ice melt check (BG_ICE_SHELTER)
+    if (iceRodProjScale >= 0.6f) {
+        IceRod_CheckRedIceMelt(play);
     }
 
     // Hit detection
@@ -548,6 +600,7 @@ static void IceRod_StopSpinIce(void) {
     iceRodSpinActive = 0;
     iceRodSpinRadius = 0.0f;
     sIceSpinExpandProgress = 0.0f;
+    Audio_StopSfxById(ICE_ROD_SFX_ICE_CAST);
 }
 
 static void IceRod_ProcessSwing(Player* p, PlayState* play) {
@@ -751,8 +804,8 @@ static void IceRod_UpdateFirstPerson(Player* p, PlayState* play, ItemInputState*
         return;
     }
 
-    // Exit on B, other C-buttons, or damage/cutscene
-    u16 exitButtons = BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+    // Exit on A, B, other C-buttons, or damage/cutscene
+    u16 exitButtons = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
     if (in->equippedButton)
         exitButtons &= ~in->equippedButton;
 

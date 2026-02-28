@@ -1319,11 +1319,11 @@ static const s32 sFormVoiceToEffect[] = {
 static const s32 sFormVoiceToEffectSize = sizeof(sFormVoiceToEffect) / sizeof(sFormVoiceToEffect[0]);
 
 // Form voice base addresses and transposes
-#define MM_VOICE_DEKU_BASE   0x6880
-#define MM_VOICE_ZORA_BASE   0x68A0
-#define MM_VOICE_GORON_BASE  0x68C0
-#define MM_VOICE_DEKU_TRANSPOSE  3
-#define MM_VOICE_ZORA_TRANSPOSE  3
+#define MM_VOICE_DEKU_BASE 0x6880
+#define MM_VOICE_ZORA_BASE 0x68A0
+#define MM_VOICE_GORON_BASE 0x68C0
+#define MM_VOICE_DEKU_TRANSPOSE 3
+#define MM_VOICE_ZORA_TRANSPOSE 3
 #define MM_VOICE_GORON_TRANSPOSE 4
 
 // Legacy alias (used in existing redirect code below)
@@ -1455,8 +1455,8 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                 if (effectIdx >= 0 && (u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
                     font0->soundEffects[effectIdx].sample->sampleAddr) {
                     sMmLastPitchScale = MmDirectAudio_TransposeFactor(transpose);
-                    MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d], transpose +%d",
-                              formName, mmSfxId, effectIdx, transpose);
+                    MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d], transpose +%d", formName, mmSfxId,
+                              effectIdx, transpose);
                     return &font0->soundEffects[effectIdx];
                 }
             }
@@ -1465,8 +1465,8 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             if ((u32)voiceIdx < font0->numSfx && font0->soundEffects[voiceIdx].sample &&
                 font0->soundEffects[voiceIdx].sample->sampleAddr) {
                 sMmLastPitchScale = MmDirectAudio_TransposeFactor(transpose);
-                MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d] (offset), transpose +%d",
-                          formName, mmSfxId, voiceIdx, transpose);
+                MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d] (offset), transpose +%d", formName,
+                          mmSfxId, voiceIdx, transpose);
                 return &font0->soundEffects[voiceIdx];
             }
         }
@@ -1703,9 +1703,7 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
                 }
             } catch (const std::exception& e) {
                 MMSFX_LOG("[MmSfx] DIAG: Exception listing mm.o2r: %s", e.what());
-            } catch (...) {
-                MMSFX_LOG("[MmSfx] DIAG: Unknown exception listing mm.o2r");
-            }
+            } catch (...) { MMSFX_LOG("[MmSfx] DIAG: Unknown exception listing mm.o2r"); }
         } else {
             MMSFX_LOG("[MmSfx] DIAG: sMmArchive is NULL! Cannot enumerate mm.o2r resources.");
         }
@@ -1718,21 +1716,20 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
             MMSFX_LOG("[MmSfx] DIAG: Soundfont_0 FAILED to load from mm.o2r!");
             MMSFX_LOG("[MmSfx] DIAG: This means the audio font path format is WRONG or the resource doesn't exist.");
         } else {
-            MMSFX_LOG("[MmSfx] DIAG: Soundfont_0 loaded OK: %u instruments, %u sfx, %u drums",
-                      font->numInstruments, font->numSfx, font->numDrums);
+            MMSFX_LOG("[MmSfx] DIAG: Soundfont_0 loaded OK: %u instruments, %u sfx, %u drums", font->numInstruments,
+                      font->numSfx, font->numDrums);
             // Check instruments pointer validity
-            MMSFX_LOG("[MmSfx] DIAG: instruments=%p, soundEffects=%p, drums=%p",
-                      (void*)font->instruments, (void*)font->soundEffects, (void*)font->drums);
+            MMSFX_LOG("[MmSfx] DIAG: instruments=%p, soundEffects=%p, drums=%p", (void*)font->instruments,
+                      (void*)font->soundEffects, (void*)font->drums);
 
             // Check if instrument 47 (Goron curl) has valid data
             if (font->instruments && 47 < font->numInstruments && font->instruments[47]) {
                 Instrument* inst = font->instruments[47];
-                MMSFX_LOG("[MmSfx] DIAG: instruments[47] OK: loaded=%d, rangeLo=%d, rangeHi=%d",
-                          inst->loaded, inst->normalRangeLo, inst->normalRangeHi);
+                MMSFX_LOG("[MmSfx] DIAG: instruments[47] OK: loaded=%d, rangeLo=%d, rangeHi=%d", inst->loaded,
+                          inst->normalRangeLo, inst->normalRangeHi);
                 if (inst->normalNotesSound.sample && inst->normalNotesSound.sample->sampleAddr) {
                     MMSFX_LOG("[MmSfx] DIAG: instruments[47].normalNotesSound: sample=%p, addr=%p, tuning=%.3f",
-                              (void*)inst->normalNotesSound.sample,
-                              (void*)inst->normalNotesSound.sample->sampleAddr,
+                              (void*)inst->normalNotesSound.sample, (void*)inst->normalNotesSound.sample->sampleAddr,
                               inst->normalNotesSound.tuning);
                 } else {
                     MMSFX_LOG("[MmSfx] DIAG: instruments[47].normalNotesSound.sample is NULL or has no addr!");
@@ -1745,15 +1742,14 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
             if (font->soundEffects && font->numSfx > 0) {
                 if (font->soundEffects[0].sample && font->soundEffects[0].sample->sampleAddr) {
                     MMSFX_LOG("[MmSfx] DIAG: soundEffects[0] OK: sample=%p, addr=%p, tuning=%.3f",
-                              (void*)font->soundEffects[0].sample,
-                              (void*)font->soundEffects[0].sample->sampleAddr,
+                              (void*)font->soundEffects[0].sample, (void*)font->soundEffects[0].sample->sampleAddr,
                               font->soundEffects[0].tuning);
                 } else {
                     MMSFX_LOG("[MmSfx] DIAG: soundEffects[0] has no valid sample!");
                 }
             } else {
-                MMSFX_LOG("[MmSfx] DIAG: soundEffects NOT accessible (ptr=%p, numSfx=%u)",
-                          (void*)font->soundEffects, font->numSfx);
+                MMSFX_LOG("[MmSfx] DIAG: soundEffects NOT accessible (ptr=%p, numSfx=%u)", (void*)font->soundEffects,
+                          font->numSfx);
             }
         }
         MMSFX_LOG("[MmSfx] DIAG: ===== END DIAGNOSTIC =====");

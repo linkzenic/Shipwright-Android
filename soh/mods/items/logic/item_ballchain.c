@@ -276,8 +276,18 @@ static void BallChain_CheckDestructibles(PlayState* play, Vec3f* ballPos) {
         next = actor->next;
 
         if (actor->id == ACTOR_BG_ICE_SHELTER) {
-            dist = Math_Vec3f_DistXYZ(ballPos, &actor->world.pos);
-            if (dist < checkRadius) {
+            // Use the red ice's actual cylinder dimensions for detection instead of a
+            // fixed small radius. The old sphere check required aiming at the origin
+            // point even for large ice types (like King Zora's ice with radius=100, height=200).
+            BgIceShelter* ice = (BgIceShelter*)actor;
+            f32 iceRadius = (f32)ice->cylinder1.dim.radius + BALLCHAIN_COL_RADIUS;
+            f32 iceHeight = (f32)ice->cylinder1.dim.height;
+            f32 dx = ballPos->x - actor->world.pos.x;
+            f32 dy = ballPos->y - actor->world.pos.y;
+            f32 dz = ballPos->z - actor->world.pos.z;
+            f32 xzDist = sqrtf(SQ(dx) + SQ(dz));
+
+            if (xzDist < iceRadius && dy > -BALLCHAIN_COL_RADIUS && dy < iceHeight + BALLCHAIN_COL_RADIUS) {
                 BgIceShelter_BreakInstantly(actor, play);
             }
         }

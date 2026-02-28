@@ -367,18 +367,137 @@ typedef struct {
     s16 switchHookVortexTimer;
 
     // Minish Cap (Fast Travel)
-    u8 minishCapWarpMode;     // Warp map is active (pause menu override)
-    s8 minishCapCursorIdx;    // Selected pod soil index in table
-    s8 minishCapConfirmed;    // 1 = warp pending after unpause
-    s8 minishCapDestIdx;      // Destination pod soil index
-    u8 minishCapShrinking;    // 1 = shrinking player during departure fade
-    u8 minishCapGrowing;      // 1 = snap to start scale, 2 = growing to normal
+    u8 minishCapWarpMode;  // Warp map is active (pause menu override)
+    s8 minishCapCursorIdx; // Selected pod soil index in table
+    s8 minishCapConfirmed; // 1 = warp pending after unpause
+    s8 minishCapDestIdx;   // Destination pod soil index
+    u8 minishCapShrinking; // 1 = shrinking player during departure fade
+    u8 minishCapGrowing;   // 1 = snap to start scale, 2 = growing to normal
 
     // Shared
     Vec3f sharedProjectilePos;
 } CustomItemState;
 
 extern CustomItemState gCustomItemState;
+
+// Bitfield flags for CustomItemVisualSync.activeFlags
+#define CI_FLAG_SPINNER (1 << 0)
+#define CI_FLAG_GUSTJAR (1 << 1)
+#define CI_FLAG_BALLCHAIN (1 << 2)
+#define CI_FLAG_SHOVEL (1 << 3)
+#define CI_FLAG_BEETLE (1 << 4)
+#define CI_FLAG_DOMINION_ROD (1 << 5)
+#define CI_FLAG_SOMARIA (1 << 6)
+#define CI_FLAG_MOGMA_MITTS (1 << 7)
+#define CI_FLAG_WHIP (1 << 8)
+#define CI_FLAG_TIME_GATE (1 << 9)
+#define CI_FLAG_SWITCH_HOOK (1 << 10)
+#define CI_FLAG_DEKU_LEAF (1 << 11)
+#define CI_FLAG_FIRE_ROD (1 << 12)
+#define CI_FLAG_ICE_ROD (1 << 13)
+#define CI_FLAG_LIGHT_ROD (1 << 14)
+
+/**
+ * Compact visual state for network sync.
+ * Only contains fields read by draw functions (not logic/colliders/actors).
+ */
+typedef struct {
+    u32 activeFlags;
+
+    // Deku Leaf
+    u8 dekuLeafGliding;
+    u8 dekuLeafBlowing;
+    s16 dekuLeafAnimTimer;
+
+    // Spinner (only needs active flag + player pos)
+
+    // Gust Jar
+    u8 gustJarMode;
+    u8 gustJarAmmoType;
+    u8 gustJarProjectileActive;
+    Vec3f gustJarProjPos;
+    s16 gustJarProjYaw;
+
+    // Ball and Chain
+    u8 ballAndChainThrown;
+    s16 timer2;
+    Vec3f sharedProjectilePos;
+
+    // Shovel
+    u8 shovelAnimating;
+
+    // Beetle
+    u8 beetleState;
+    Vec3f beetlePos;
+    Vec3s beetleRot;
+    f32 beetleWingScale;
+
+    // Fire Rod
+    u8 fireRodProjActive;
+    u8 fireRodProjCount;
+    u8 fireRodProjType;
+    Vec3f fireRodProjPos;
+    Vec3f fireRodProjPos2;
+    Vec3f fireRodProjPos3;
+    Vec3f fireRodProjTrail[6];
+    f32 fireRodProjScale;
+    MtxF fireRodMatrix;
+    u8 fireRodMatrixValid;
+
+    // Ice Rod
+    u8 iceRodProjActive;
+    u8 iceRodProjCount;
+    Vec3f iceRodProjPos;
+    Vec3f iceRodProjPos2;
+    Vec3f iceRodProjPos3;
+    Vec3f iceRodProjTrail[6];
+    f32 iceRodProjScale;
+    MtxF iceRodMatrix;
+    u8 iceRodMatrixValid;
+
+    // Light Rod
+    u8 lightRodProjActive;
+    u8 lightRodProjCount;
+    Vec3f lightRodProjPos;
+    Vec3f lightRodProjPos2;
+    Vec3f lightRodProjPos3;
+    MtxF lightRodMatrix;
+    u8 lightRodMatrixValid;
+
+    // Dominion Rod
+    u8 dominionRodState;
+    Vec3f dominionRodOrbPos;
+
+    // Cane of Somaria (only needs active flag)
+
+    // Mogma Mitts (only needs active flag)
+
+    // Whip
+    u8 whipState;
+    Vec3f whipTipPos;
+    Vec3f whipAttachPos;
+    Vec3f whipAttachNormal;
+
+    // Time Gate
+    u8 timeGateItemVisible;
+    u8 timeGatePortalActive;
+    f32 timeGatePortalAlpha;
+    f32 timeGatePortalScale;
+
+    // Switch Hook
+    u8 switchHookState;
+    Vec3f switchHookProjPos;
+} CustomItemVisualSync;
+
+/**
+ * Build visual sync struct from current gCustomItemState (sender side).
+ */
+void CustomItems_BuildVisualSync(CustomItemVisualSync* out);
+
+/**
+ * Apply visual sync struct to gCustomItemState (receiver side, temporary override).
+ */
+void CustomItems_ApplyVisualSync(const CustomItemVisualSync* sync);
 
 /**
  * Initialize custom items system.

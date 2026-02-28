@@ -850,7 +850,7 @@ static void LightRod_UpdateFirstPerson(Player* p, PlayState* play, ItemInputStat
         return;
     }
 
-    u16 exitButtons = BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+    u16 exitButtons = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
     if (in->equippedButton)
         exitButtons &= ~in->equippedButton;
 

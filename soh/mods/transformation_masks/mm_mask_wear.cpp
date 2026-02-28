@@ -13,9 +13,14 @@
 #include "macros.h"
 #include "functions.h"
 #include <exception>
+#include <libultraship/bridge.h>
+#include "soh/cvar_prefixes.h"
 
 #include "mods/transformation_masks/mm_mask_wear.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
+
+// Tunic color table from z_player_lib.c (non-static, extern accessible)
+extern "C" Color_RGB8 sTunicColors[];
 
 // EnBom struct for bomb spawning (Blast Mask)
 #include "overlays/actors/ovl_En_Bom/z_en_bom.h"
@@ -88,13 +93,27 @@ static Vec3s sMmMaskRotOffset[24] = {
 };
 
 // =============================================================================
-// Blast Mask segment 0x09 default (matches MM's D_801C0BC0 in Player_DrawBlastMask)
-// The Blast Mask DL references segment 0x09 for its material. Without this setup,
-// segment 0x09 contains garbage → RSP crash.
+// Blast Mask rendering (matches MM's Player_DrawBlastMask in z_player_lib.c:3262)
+//
+// During cooldown: draws DL_000440 (scrolling texture, XLU) + DL_0005C0 (crossfade)
+// Not in cooldown: draws DL_0005C0 (normal opaque worn mask)
 // =============================================================================
 
+// Cooldown DL: the special XLU DL with scrolling texture used during blast recovery
+static const char* sBlastMaskCooldownDL = "__OTR__objects/object_mask_bakuretu/object_mask_bakuretu_DL_000440";
+
+// D_801C0BC0: default env color for segment 0x09 (normal worn mask)
 static Gfx sBlastMaskDefaultSeg9[] = {
     gsDPSetEnvColor(0, 0, 0, 255),
+    gsSPEndDisplayList(),
+};
+
+// D_801C0BD0: XLU render mode for segment 0x09 (during cooldown crossfade)
+static Gfx sBlastMaskXluSeg9[] = {
+    gsDPSetRenderMode(AA_EN | Z_CMP | Z_UPD | IM_RD | CLR_ON_CVG | CVG_DST_WRAP | ZMODE_XLU | FORCE_BL |
+                          G_RM_FOG_SHADE_A,
+                      AA_EN | Z_CMP | Z_UPD | IM_RD | CLR_ON_CVG | CVG_DST_WRAP | ZMODE_XLU | FORCE_BL |
+                          GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA)),
     gsSPEndDisplayList(),
 };
 
@@ -115,7 +134,7 @@ static s32 sCurrentMmMask = ITEM_NONE;
 static s32 sBlastMaskCooldown = 0;
 
 // Don Gero state
-static s32 sDonGeroState = 0;    // 0=idle, 1=giving reward
+static s32 sDonGeroState = 0; // 0=idle, 1=giving reward
 static s32 sDonGeroReward = GI_NONE;
 
 // All-Night Mask state
@@ -174,11 +193,9 @@ static const NightGsEntry sNightOnlyGs[] = {
 static void AllNightMask_SpawnNightGs(PlayState* play) {
     for (s32 i = 0; i < ARRAY_COUNT(sNightOnlyGs); i++) {
         const NightGsEntry* gs = &sNightOnlyGs[i];
-        if (IS_DAY && gs->forChild == (bool)LINK_IS_CHILD &&
-            gs->scene == play->sceneNum && gs->room == play->roomCtx.curRoom.num) {
-            Actor_Spawn(&play->actorCtx, play, gs->id,
-                        gs->pos.x, gs->pos.y, gs->pos.z,
-                        gs->rot.x, gs->rot.y, gs->rot.z,
+        if (IS_DAY && gs->forChild == (bool)LINK_IS_CHILD && gs->scene == play->sceneNum &&
+            gs->room == play->roomCtx.curRoom.num) {
+            Actor_Spawn(&play->actorCtx, play, gs->id, gs->pos.x, gs->pos.y, gs->pos.z, gs->rot.x, gs->rot.y, gs->rot.z,
                         gs->params, false);
         }
     }
@@ -191,12 +208,9 @@ static void AllNightMask_SpawnNightGs(PlayState* play) {
 // Flags for gSaveContext.eventChkInf[13], matching z_en_fr.c sSongIndex[]
 static const u16 sFrogFlags[] = { 0x0002, 0x0004, 0x0010, 0x0008, 0x0020, 0x0040, 0x0001 };
 static const u16 sFrogShifts[] = {
-    EVENTCHKINF_SONGS_FOR_FROGS_ZL_SHIFT,
-    EVENTCHKINF_SONGS_FOR_FROGS_EPONA_SHIFT,
-    EVENTCHKINF_SONGS_FOR_FROGS_SARIA_SHIFT,
-    EVENTCHKINF_SONGS_FOR_FROGS_SUNS_SHIFT,
-    EVENTCHKINF_SONGS_FOR_FROGS_SOT_SHIFT,
-    EVENTCHKINF_SONGS_FOR_FROGS_STORMS_SHIFT,
+    EVENTCHKINF_SONGS_FOR_FROGS_ZL_SHIFT,    EVENTCHKINF_SONGS_FOR_FROGS_EPONA_SHIFT,
+    EVENTCHKINF_SONGS_FOR_FROGS_SARIA_SHIFT, EVENTCHKINF_SONGS_FOR_FROGS_SUNS_SHIFT,
+    EVENTCHKINF_SONGS_FOR_FROGS_SOT_SHIFT,   EVENTCHKINF_SONGS_FOR_FROGS_STORMS_SHIFT,
     EVENTCHKINF_SONGS_FOR_FROGS_CHOIR_SHIFT,
 };
 
@@ -232,6 +246,24 @@ extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
 // Draw (called from Player_PostLimbDrawGameplay for HEAD limb)
 // =============================================================================
 
+// Restore tunic env color after mask DL to prevent color bleeding into subsequent limbs.
+// Mask DLs from mm.o2r set their own env/prim colors which would otherwise tint the tunic.
+static void RestoreTunicEnvColor(Player* player, Gfx** polyOpa) {
+    s32 tunic = player->currentTunic;
+    Color_RGB8 c = sTunicColors[tunic];
+
+    if (tunic == PLAYER_TUNIC_KOKIRI && CVarGetInteger(CVAR_COSMETIC("Link.KokiriTunic.Changed"), 0)) {
+        c = CVarGetColor24(CVAR_COSMETIC("Link.KokiriTunic.Value"), sTunicColors[PLAYER_TUNIC_KOKIRI]);
+    } else if (tunic == PLAYER_TUNIC_GORON && CVarGetInteger(CVAR_COSMETIC("Link.GoronTunic.Changed"), 0)) {
+        c = CVarGetColor24(CVAR_COSMETIC("Link.GoronTunic.Value"), sTunicColors[PLAYER_TUNIC_GORON]);
+    } else if (tunic == PLAYER_TUNIC_ZORA && CVarGetInteger(CVAR_COSMETIC("Link.ZoraTunic.Changed"), 0)) {
+        c = CVarGetColor24(CVAR_COSMETIC("Link.ZoraTunic.Value"), sTunicColors[PLAYER_TUNIC_ZORA]);
+    }
+
+    gDPPipeSync((*polyOpa)++);
+    gDPSetEnvColor((*polyOpa)++, c.r, c.g, c.b, 0);
+}
+
 extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
     if (sCurrentMmMask == ITEM_NONE) {
         return;
@@ -252,39 +284,67 @@ extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
 
         OPEN_DISPS(play->state.gfxCtx);
 
-        // Blast Mask: set segment 0x09 (required by its material DL)
         if (idx == MM_MASK_IDX_BLAST) {
+            // =================================================================
+            // Blast Mask: MM-style two-DL crossfade (Player_DrawBlastMask)
+            //
+            // During cooldown:
+            //   1. DL_000440 (scrolling texture) drawn with env alpha
+            //   2. DL_0005C0 (normal mask) drawn with inverted alpha via seg 0x09
+            // Not in cooldown:
+            //   1. DL_0005C0 drawn normally with seg 0x09 = default env
+            // =================================================================
             if (sBlastMaskCooldown > 0) {
-                // During cooldown: dark tint that gradually restores to normal
-                // Lerp intensity from 0 (just exploded, black) to 255 (ready, normal)
-                s32 intensity = 255 - (sBlastMaskCooldown * 255 / BLAST_MASK_COOLDOWN);
-                if (intensity < 0) intensity = 0;
-                if (intensity > 255) intensity = 255;
+                // Set up texture scroll on segment 0x08 (for DL_000440)
+                // Matches MM's AnimatedMat TexScrollParams: {1,1,32,32}, {3,-2,32,32}
+                gSPSegment(POLY_OPA_DISP++, 0x08,
+                           (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, play->gameplayFrames * 1,
+                                                       play->gameplayFrames * 1, 32, 32, 1, play->gameplayFrames * 3,
+                                                       (u32)(-(s32)(play->gameplayFrames * 2)), 32, 32));
 
-                // Build dynamic segment 0x09 with darkened env color
-                Gfx* seg9 = (Gfx*)Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 2);
-                Gfx* seg9Head = seg9;
-                gDPSetEnvColor(seg9++, intensity, intensity, intensity, 255);
-                gSPEndDisplayList(seg9++);
-                gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)seg9Head);
+                // Alpha: 255 during most of cooldown, fade out in last 10 frames
+                s32 alpha;
+                if (sBlastMaskCooldown <= 10) {
+                    alpha = (s32)((sBlastMaskCooldown / 10.0f) * 255.0f);
+                } else {
+                    alpha = 255;
+                }
+
+                // Draw cooldown DL (000440) with env alpha
+                gDPPipeSync(POLY_OPA_DISP++);
+                gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, (u8)alpha);
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sBlastMaskCooldownDL);
+
+                // Set segment 0x09 = XLU render mode for the normal worn DL crossfade
+                gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)sBlastMaskXluSeg9);
+                gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, (u8)(255 - alpha));
+
+                // Draw normal worn DL (0005C0) with inverted alpha (crossfade)
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
             } else {
+                // Not in cooldown: set segment 0x09 default, draw normally
                 gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)sBlastMaskDefaultSeg9);
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
+            }
+        } else {
+            // =================================================================
+            // All other masks: single DL draw
+            // =================================================================
+            if (rot->x != 0 || rot->y != 0 || rot->z != 0) {
+                Matrix_Push();
+                Matrix_RotateZYX(rot->x, rot->y, rot->z, MTXMODE_APPLY);
+                gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
+                Matrix_Pop();
+            } else {
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
             }
         }
 
-        if (rot->x != 0 || rot->y != 0 || rot->z != 0) {
-            // Apply extra rotation offset if non-zero
-            Matrix_Push();
-            Matrix_RotateZYX(rot->x, rot->y, rot->z, MTXMODE_APPLY);
-
-            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
-
-            Matrix_Pop();
-        } else {
-            // No extra rotation - draw directly in head limb space
-            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
-        }
+        // Restore tunic env color after mask DL — mask DLs from mm.o2r set their own
+        // env/prim colors which would otherwise bleed into subsequent limb draws (tunic, arms).
+        RestoreTunicEnvColor(player, &POLY_OPA_DISP);
 
         CLOSE_DISPS(play->state.gfxCtx);
     } catch (...) {
@@ -324,14 +384,11 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 }
 
                 // B button press + no cooldown = spawn bomb (like BombArrows_SpawnInstantBomb)
-                if (sBlastMaskCooldown == 0 &&
-                    CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+                if (sBlastMaskCooldown == 0 && CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
                     Vec3f bombPos = player->actor.world.pos;
 
-                    EnBom* bomb = (EnBom*)Actor_Spawn(
-                        &play->actorCtx, play, ACTOR_EN_BOM,
-                        bombPos.x, bombPos.y, bombPos.z,
-                        0, 0, 0, BOMB_BODY, true);
+                    EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, bombPos.x, bombPos.y,
+                                                      bombPos.z, 0, 0, 0, BOMB_BODY, true);
 
                     if (bomb != NULL) {
                         // Timer=1: decrements to 0 on first update → triggers explosion
@@ -348,7 +405,7 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                         bomb->explosionCollider.elements[0].dim.worldSphere.center.z = (s16)bombPos.z;
 
                         // Start cooldown (MM: this->blastMaskTimer = 310)
-                        sBlastMaskCooldown = BLAST_MASK_COOLDOWN;
+                        sBlastMaskCooldown = CVarGetInteger("gMods.BlastMask.Instant", 0) ? 1 : BLAST_MASK_COOLDOWN;
                     }
                 }
                 break;
@@ -386,14 +443,16 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 // Check position near frog log
                 f32 dx = player->actor.world.pos.x - FROG_LOG_X;
                 f32 dz = player->actor.world.pos.z - FROG_LOG_Z;
-                if ((dx * dx + dz * dz) > FROG_LOG_RADIUS_SQ) break;
+                if ((dx * dx + dz * dz) > FROG_LOG_RADIUS_SQ)
+                    break;
 
                 // Check A button press
-                if (!CHECK_BTN_ALL(play->state.input[0].press.button, BTN_A)) break;
+                if (!CHECK_BTN_ALL(play->state.input[0].press.button, BTN_A))
+                    break;
 
                 // Check player is not dead/busy
-                if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_WATER |
-                                            PLAYER_STATE1_IN_CUTSCENE)) break;
+                if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_WATER | PLAYER_STATE1_IN_CUTSCENE))
+                    break;
 
                 // Collect all unclaimed frog rewards
                 s32 bestReward = GI_NONE;
@@ -403,7 +462,7 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     if (!(gSaveContext.eventChkInf[EVENTCHKINF_SONGS_FOR_FROGS_INDEX] & sFrogFlags[i])) {
                         gSaveContext.eventChkInf[EVENTCHKINF_SONGS_FOR_FROGS_INDEX] |= sFrogFlags[i];
                         GameInteractor_ExecuteOnFlagSet(FLAG_EVENT_CHECK_INF,
-                            (EVENTCHKINF_SONGS_FOR_FROGS_INDEX << 4) + sFrogShifts[i]);
+                                                        (EVENTCHKINF_SONGS_FOR_FROGS_INDEX << 4) + sFrogShifts[i]);
                         anyUnclaimed = 1;
 
                         // Songs 0-4: purple rupee, 5 (storms) and 6 (choir): heart piece
@@ -495,6 +554,10 @@ extern "C" s32 MmMaskWear_GetCurrent(void) {
     return sCurrentMmMask;
 }
 
+extern "C" void MmMaskWear_SetCurrent(s32 maskItem) {
+    sCurrentMmMask = maskItem;
+}
+
 extern "C" void MmMaskWear_Clear(void) {
     sCurrentMmMask = ITEM_NONE;
     sBlastMaskCooldown = 0;
@@ -522,7 +585,8 @@ extern "C" s32 MmMaskWear_IsChateauRomaniActive(void) {
 }
 
 extern "C" void MmMaskWear_ActivateChateauRomani(void) {
-    if (sChateauRomaniActive) return;
+    if (sChateauRomaniActive)
+        return;
 
     sChateauRomaniActive = 1;
     // If rando didn't already set infinite magic, we set it
@@ -535,7 +599,8 @@ extern "C" void MmMaskWear_ActivateChateauRomani(void) {
 }
 
 extern "C" void MmMaskWear_DeactivateChateauRomani(void) {
-    if (!sChateauRomaniActive) return;
+    if (!sChateauRomaniActive)
+        return;
 
     sChateauRomaniActive = 0;
     // Only unset the flag if WE set it (not rando)

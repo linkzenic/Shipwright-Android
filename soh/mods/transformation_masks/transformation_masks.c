@@ -9,6 +9,12 @@
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
 
 // =============================================================================
+// Global MmPlayer instance (declared extern in transformation_masks.h)
+// =============================================================================
+
+MmPlayerCore gMmPlayer;
+
+// =============================================================================
 // Forward declarations to mm_player_form.cpp (compiled separately as .cpp)
 // =============================================================================
 
@@ -82,6 +88,14 @@ s32 TransformMasks_GetFloorType(void) {
 }
 
 // =============================================================================
+// OOT sControlInput accessor (for mask button scanning while transformed).
+// Same forward-declaration pattern as sFloorType above.
+// Real definition at z_player.c line 439, set at line 12137.
+// =============================================================================
+
+static Input* sControlInput;
+
+// =============================================================================
 // Routing to mm_player_form.cpp
 // =============================================================================
 
@@ -111,6 +125,35 @@ void TransformMasks_Init(PlayState* play, Player* player) {
 }
 
 void TransformMasks_Update(PlayState* play, Player* player) {
+    // When transformed, actionFunc = MmForm_OotNoopAction, so OOT's item pipeline
+    // (Player_UpdateUpperBody → Player_ProcessItemButtons → Player_UseItem) is bypassed.
+    // Scan C-button/D-pad for transformation mask presses so the player can switch/remove masks.
+    // Guard: ONLY when actionFunc is the noop (prevents double-processing with OOT pipeline).
+    if (player->actionFunc == MmForm_OotNoopAction && sControlInput != NULL) {
+        static const u16 sBtns[] = { BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT };
+        for (s32 i = 0; i < 3; i++) {
+            if (CHECK_BTN_ALL(sControlInput->press.button, sBtns[i])) {
+                s32 item = C_BTN_ITEM(i);
+                if (item != ITEM_NONE && MmForm_GetMaskType(item) != TRANSFORM_MASK_NONE) {
+                    TransformMasks_HandleMaskUse(play, player, item);
+                    break;
+                }
+            }
+        }
+        if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
+            static const u16 sDpad[] = { BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT };
+            for (s32 i = 0; i < 4; i++) {
+                if (CHECK_BTN_ALL(sControlInput->press.button, sDpad[i])) {
+                    s32 item = DPAD_ITEM(i);
+                    if (item != ITEM_NONE && MmForm_GetMaskType(item) != TRANSFORM_MASK_NONE) {
+                        TransformMasks_HandleMaskUse(play, player, item);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     MmForm_Update(play, player);
 }
 
@@ -168,6 +211,11 @@ void TransformMasks_WearToggle(PlayState* play, Player* player, s32 itemId) {
 }
 
 void TransformMasks_WearDraw(PlayState* play, Player* player) {
+    // Only draw worn MM mask for the real local player.
+    // Remote/dummy Player actors share the same PostLimbDraw path but must not
+    // render the local player's worn mask on their head.
+    if (player != GET_PLAYER(play))
+        return;
     MmMaskWear_Draw(play, player);
 }
 
@@ -181,6 +229,64 @@ s32 TransformMasks_WearGetCurrent(void) {
 
 void TransformMasks_WearClear(void) {
     MmMaskWear_Clear();
+}
+
+// =============================================================================
+// Raw MmPlayer Accessors (gMmPlayer lives in this TU via z_player.c includes)
+// mm_player_form.cpp is a separate TU and cannot access gMmPlayer directly.
+// =============================================================================
+
+u32 MmPlayerRaw_GetStateFlags3(void) {
+    return gMmPlayer.stateFlags3;
+}
+f32 MmPlayerRaw_GetSpeedXZ(void) {
+    return gMmPlayer.speedXZ;
+}
+
+// =============================================================================
+// Network Visual State Routing (to mm_player_form.cpp)
+// =============================================================================
+
+extern u8 MmForm_GetModelType(void);
+extern u32 MmForm_GetStateFlags3(void);
+extern f32 MmForm_GetSpeedXZ(void);
+extern Vec3s* MmForm_GetJointTable(void);
+extern s32 MmForm_GetJointCount(void);
+extern s32 MmForm_GetGoronAction(void);
+extern u8 MmForm_GetEyeIndex(void);
+extern f32 MmForm_GetRollSquash(void);
+extern s16 MmForm_GetRollSpikeActive(void);
+extern s16 MmForm_GetRollChargeLevel(void);
+
+u8 TransformMasks_GetModelType(void) {
+    return MmForm_GetModelType();
+}
+u32 TransformMasks_GetMmStateFlags3(void) {
+    return MmForm_GetStateFlags3();
+}
+f32 TransformMasks_GetMmSpeedXZ(void) {
+    return MmForm_GetSpeedXZ();
+}
+Vec3s* TransformMasks_GetFormJointTable(void) {
+    return MmForm_GetJointTable();
+}
+s32 TransformMasks_GetFormJointCount(void) {
+    return MmForm_GetJointCount();
+}
+s32 TransformMasks_GetGoronAction(void) {
+    return MmForm_GetGoronAction();
+}
+u8 TransformMasks_GetEyeIndex(void) {
+    return MmForm_GetEyeIndex();
+}
+f32 TransformMasks_GetRollSquash(void) {
+    return MmForm_GetRollSquash();
+}
+s16 TransformMasks_GetRollSpikeActive(void) {
+    return MmForm_GetRollSpikeActive();
+}
+s16 TransformMasks_GetRollChargeLevel(void) {
+    return MmForm_GetRollChargeLevel();
 }
 
 // Route to MmForm_GetFDHandDL for sword beam (FD_DL_SWORD_BEAM = 4)

@@ -1743,7 +1743,7 @@ void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry) {
 
 typedef enum {
     MM_MASK_DRAW_OPA0_XLU1 = 0, // DL1=Opa, DL2=Xlu (like GetItem_DrawOpa0Xlu1)
-    MM_MASK_DRAW_OPA01 = 1,      // Both Opa (like GetItem_DrawOpa01)
+    MM_MASK_DRAW_OPA01 = 1,     // Both Opa (like GetItem_DrawOpa01)
 } MmMaskDrawMode;
 
 typedef struct {
@@ -1755,37 +1755,39 @@ typedef struct {
 // Table indexed by (itemId - ITEM_MM_MASK_POSTMAN)
 // Order MUST match ITEM_MM_MASK_POSTMAN(0xB7) through ITEM_MM_MASK_FIERCE_DEITY(0xCE)
 static MmMaskDrawEntry sMmMaskDrawTable[] = {
-    /* POSTMAN       */ { gGiPostmanHatCapDL,              gGiPostmanHatBunnyLogoDL,          MM_MASK_DRAW_OPA0_XLU1 },
-    /* ALL_NIGHT     */ { gGiAllNightMaskEyesDL,           gGiAllNightMaskFaceDL,             MM_MASK_DRAW_OPA0_XLU1 },
-    /* BLAST         */ { gGiBlastMaskEmptyDL,             gGiBlastMaskDL,                    MM_MASK_DRAW_OPA0_XLU1 },
-    /* STONE         */ { gGiStoneMaskEmptyDL,             gGiStoneMaskDL,                    MM_MASK_DRAW_OPA0_XLU1 },
-    /* GREAT_FAIRY   */ { gGiGreatFairyMaskFaceDL,         gGiGreatFairyMaskLeavesDL,         MM_MASK_DRAW_OPA0_XLU1 },
-    /* DEKU          */ { gGiDekuMaskEmptyDL,              gGiDekuMaskDL,                     MM_MASK_DRAW_OPA0_XLU1 },
-    /* KEATON        */ { gGiKeatonMaskDL,                 gGiKeatonMaskEyesDL,               MM_MASK_DRAW_OPA0_XLU1 },
-    /* BREMEN        */ { gGiBremenMaskEmptyDL,            gGiBremenMaskDL,                   MM_MASK_DRAW_OPA01 },
-    /* BUNNY         */ { gGiBunnyHoodDL,                  gGiBunnyHoodEyesDL,                MM_MASK_DRAW_OPA0_XLU1 },
-    /* DON_GERO      */ { gGiDonGeroMaskFaceDL,            gGiDonGeroMaskBodyDL,              MM_MASK_DRAW_OPA0_XLU1 },
-    /* SCENTS        */ { gGiMaskOfScentsFaceDL,           gGiMaskOfScentsTeethDL,            MM_MASK_DRAW_OPA01 },
-    /* GORON         */ { gGiGoronMaskEmptyDL,             gGiGoronMaskDL,                    MM_MASK_DRAW_OPA0_XLU1 },
-    /* ROMANI        */ { gGiRomaniMaskCapDL,              gGiRomaniMaskNoseEyeDL,            MM_MASK_DRAW_OPA0_XLU1 },
-    /* CIRCUS_LEADER */ { gGiCircusLeaderMaskEyebrowsDL,   gGiCircusLeaderMaskFaceDL,         MM_MASK_DRAW_OPA0_XLU1 },
-    /* KAFEI         */ { gGiKafeiMaskEmptyDL,             gGiKafeiMaskDL,                    MM_MASK_DRAW_OPA01 },
-    /* COUPLE        */ { gGiCouplesMaskFullDL,            gGiCouplesMaskHalfDL,              MM_MASK_DRAW_OPA0_XLU1 },
-    /* TRUTH         */ { gGiMaskOfTruthDL,                gGiMaskOfTruthAccentsDL,           MM_MASK_DRAW_OPA0_XLU1 },
-    /* ZORA          */ { gGiZoraMaskEmptyDL,              gGiZoraMaskDL,                     MM_MASK_DRAW_OPA01 },
-    /* KAMARO        */ { gGiKamaroMaskDL,                 gGiKamaroMaskEmptyDL,              MM_MASK_DRAW_OPA01 },
-    /* GIBDO         */ { gGiGibdoMaskEmptyDL,             gGiGibdoMaskDL,                    MM_MASK_DRAW_OPA0_XLU1 },
-    /* GARO          */ { gGiGarosMaskCloakDL,             gGiGarosMaskFaceDL,                MM_MASK_DRAW_OPA0_XLU1 },
-    /* CAPTAIN       */ { gGiCaptainsHatBodyDL,            gGiCaptainsHatFaceDL,              MM_MASK_DRAW_OPA01 },
-    /* GIANT         */ { gGiGiantMaskEmptyDL,             gGiGiantMaskDL,                    MM_MASK_DRAW_OPA01 },
-    /* FIERCE_DEITY  */ { gGiFierceDeityMaskFaceDL,        gGiFierceDeityMaskHairAndHatDL,    MM_MASK_DRAW_OPA01 },
+    /* POSTMAN       */ { gGiPostmanHatCapDL, gGiPostmanHatBunnyLogoDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* ALL_NIGHT     */ { gGiAllNightMaskEyesDL, gGiAllNightMaskFaceDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* BLAST         */ { gGiBlastMaskEmptyDL, gGiBlastMaskDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* STONE         */ { gGiStoneMaskEmptyDL, gGiStoneMaskDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* GREAT_FAIRY   */ { gGiGreatFairyMaskFaceDL, gGiGreatFairyMaskLeavesDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* DEKU          */ { gGiDekuMaskEmptyDL, gGiDekuMaskDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* KEATON        */ { gGiKeatonMaskDL, gGiKeatonMaskEyesDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* BREMEN        */ { gGiBremenMaskEmptyDL, gGiBremenMaskDL, MM_MASK_DRAW_OPA01 },
+    /* BUNNY         */ { gGiBunnyHoodDL, gGiBunnyHoodEyesDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* DON_GERO      */ { gGiDonGeroMaskFaceDL, gGiDonGeroMaskBodyDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* SCENTS        */ { gGiMaskOfScentsFaceDL, gGiMaskOfScentsTeethDL, MM_MASK_DRAW_OPA01 },
+    /* GORON         */ { gGiGoronMaskEmptyDL, gGiGoronMaskDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* ROMANI        */ { gGiRomaniMaskCapDL, gGiRomaniMaskNoseEyeDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* CIRCUS_LEADER */ { gGiCircusLeaderMaskEyebrowsDL, gGiCircusLeaderMaskFaceDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* KAFEI         */ { gGiKafeiMaskEmptyDL, gGiKafeiMaskDL, MM_MASK_DRAW_OPA01 },
+    /* COUPLE        */ { gGiCouplesMaskFullDL, gGiCouplesMaskHalfDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* TRUTH         */ { gGiMaskOfTruthDL, gGiMaskOfTruthAccentsDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* ZORA          */ { gGiZoraMaskEmptyDL, gGiZoraMaskDL, MM_MASK_DRAW_OPA01 },
+    /* KAMARO        */ { gGiKamaroMaskDL, gGiKamaroMaskEmptyDL, MM_MASK_DRAW_OPA01 },
+    /* GIBDO         */ { gGiGibdoMaskEmptyDL, gGiGibdoMaskDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* GARO          */ { gGiGarosMaskCloakDL, gGiGarosMaskFaceDL, MM_MASK_DRAW_OPA0_XLU1 },
+    /* CAPTAIN       */ { gGiCaptainsHatBodyDL, gGiCaptainsHatFaceDL, MM_MASK_DRAW_OPA01 },
+    /* GIANT         */ { gGiGiantMaskEmptyDL, gGiGiantMaskDL, MM_MASK_DRAW_OPA01 },
+    /* FIERCE_DEITY  */ { gGiFierceDeityMaskFaceDL, gGiFierceDeityMaskHairAndHatDL, MM_MASK_DRAW_OPA01 },
 };
 
 void Randomizer_DrawMmMask(PlayState* play, GetItemEntry* getItemEntry) {
-    if (!MmAssets_IsAvailable()) return;
+    if (!MmAssets_IsAvailable())
+        return;
 
     u16 index = getItemEntry->itemId - ITEM_MM_MASK_POSTMAN;
-    if (index >= ARRAY_COUNT(sMmMaskDrawTable)) return;
+    if (index >= ARRAY_COUNT(sMmMaskDrawTable))
+        return;
 
     MmMaskDrawEntry* entry = &sMmMaskDrawTable[index];
 
@@ -1820,7 +1822,8 @@ void Randomizer_DrawMmMask(PlayState* play, GetItemEntry* getItemEntry) {
 // =============================================================================
 
 void Randomizer_DrawChateauRomani(PlayState* play, GetItemEntry* getItemEntry) {
-    if (!MmAssets_IsAvailable()) return;
+    if (!MmAssets_IsAvailable())
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
 

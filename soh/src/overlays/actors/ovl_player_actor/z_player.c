@@ -51,10 +51,25 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 // Note: custom_items_common.c is already included by logic/custom_items.c
 
 // ============================================================================
+// EXTENDED EQUIPMENT (cheat) - Extra swords/shields/tunics/boots
+// ============================================================================
+#include "mods/extended_equipment.h"
+#include "mods/extended_equipment.c"
+
+// ============================================================================
 // TRANSFORMATION MASKS IMPLEMENTATION - Uses VANILLA MM code with hooks
 // ============================================================================
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/transformation_masks/mm_router.c" // All MM code in one router
+
+// ============================================================================
+// PROP HUNT - Draw prop DL instead of Link for hiders
+// ============================================================================
+#include "soh/Network/HarpoonToggle.h"
+#ifdef ENABLE_HARPOON
+#define PROP_HUNT_ENABLE_DRAW
+#include "soh/Network/Harpoon/HarpoonPropHunt.h"
+#endif
 
 // Some player animations are played at this reduced speed, for reasons yet unclear.
 // This is called "adjusted" for now.
@@ -3466,7 +3481,9 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
 
         if ((itemAction == PLAYER_IA_NONE) || !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) ||
             ((this->actor.bgCheckFlags & 1) &&
-             ((itemAction == PLAYER_IA_HOOKSHOT) || (itemAction == PLAYER_IA_LONGSHOT)))) {
+             ((itemAction == PLAYER_IA_HOOKSHOT) || (itemAction == PLAYER_IA_LONGSHOT))) ||
+            (!(this->stateFlags2 & PLAYER_STATE2_UNDERWATER) && TransformMasks_IsEnabled() &&
+             TransformMasks_GetMaskType(item) == TRANSFORM_MASK_ZORA)) {
 
             if ((play->bombchuBowlingStatus == 0) &&
                 (((itemAction == PLAYER_IA_DEKU_STICK) && (AMMO(ITEM_STICK) == 0)) ||
@@ -10994,6 +11011,9 @@ void Player_Init(Actor* thisx, PlayState* play2) {
     this->itemAction = this->heldItemAction = -1;
     this->heldItemId = ITEM_NONE;
 
+    // EXTENDED EQUIPMENT: Init from CVars
+    ExtEquip_Init();
+
     // TRANSFORMATION MASKS: Init BEFORE Player_UseItem so IsTransformed() returns false.
     // Reset transformation state before Player_UseItem to avoid stale state from old scene
     TransformMasks_Init(play, this);
@@ -12575,8 +12595,7 @@ void Player_Update(Actor* thisx, PlayState* play) {
             // so Zora can swim after loading an underwater zone. The form's yield system
             // already handles real cutscenes (NPC dialogue, story) by deferring to OOT.
             // Only block input when INPUT_DISABLED is set (transformation cutscene, events).
-            if (TransformMasks_IsTransformed() &&
-                !(this->stateFlags1 & PLAYER_STATE1_INPUT_DISABLED)) {
+            if (TransformMasks_IsTransformed() && !(this->stateFlags1 & PLAYER_STATE1_INPUT_DISABLED)) {
                 sp44 = play->state.input[0];
             } else {
                 memset(&sp44, 0, sizeof(sp44));
@@ -12616,6 +12635,10 @@ void Player_Update(Actor* thisx, PlayState* play) {
 
         // CUSTOM ITEMS: Update standalone system (completely separate from vanilla)
         CustomItems_Update(this, play);
+
+        // EXTENDED EQUIPMENT: Update cooldown timer + behavior dispatch
+        ExtEquip_Update();
+        ExtEquip_UpdateBehavior(this, play);
 
         // TRANSFORMATION MASKS: Update system
         TransformMasks_Update(play, this);
@@ -12813,7 +12836,9 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     // MmForm_Draw handles both skeleton draw (when loaded) and flash overlay (always).
     // When skeleton isn't loaded yet (pre-flash phase), MmForm_Draw only draws the flash
     // overlay and falls through to let OOT draw Link normally underneath.
-    if (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode()) {
+    // Guard: only apply to the REAL player actor — dummy/remote Player actors must draw
+    // their own OOT skeleton normally, not the local player's MM form.
+    if (thisx == &GET_PLAYER(play2)->actor && (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode())) {
         if (TransformMasks_HasSkeleton()) {
             // Skeleton loaded: draw MM form + flash overlay, skip OOT Link skeleton
             TransformMasks_Draw(play, this);
@@ -12834,6 +12859,17 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         // Skeleton not loaded: draw flash overlay only, then fall through to OOT Link draw
         TransformMasks_Draw(play, this);
     }
+
+    // Prop Hunt: If local player is a hider with a prop, draw prop DL instead of Link
+#ifdef ENABLE_HARPOON
+    if (thisx == &GET_PLAYER(play2)->actor && PropHunt_IsLocalHiderWithProp()) {
+        s32 propIdx = PropHunt_GetLocalPropIndex();
+        if (propIdx >= 0) {
+            HarpoonPropHunt_DrawProp(thisx, play, propIdx);
+            return;
+        }
+    }
+#endif
 
     if (LINK_AGE_IN_YEARS == YEARS_CHILD) {
         pos.x = 2.0f;

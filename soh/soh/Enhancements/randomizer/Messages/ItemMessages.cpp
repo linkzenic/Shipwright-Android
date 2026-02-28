@@ -550,9 +550,15 @@ void RegisterTimeGateMessage() {
 
 // Chateau Romani get-item message (always available, not rando-dependent)
 void BuildChateauRomaniMessage(uint16_t* textId, bool* loadFromMessageTable) {
-    CustomMessage msg = CustomMessage("You got %r\x08""Chateau Romani%w!\x04""Your magic power won't run out!%w",
-                                      "Du hast %r\x08""Chateau Romani%w erhalten!\x04""Deine Magie wird nicht leer!%w",
-                                      "Vous obtenez le %r\x08""Chateau Romani%w!\x04""Votre magie ne s'\xE9puisera pas!%w");
+    CustomMessage msg = CustomMessage("You got %r\x08"
+                                      "Chateau Romani%w!\x04"
+                                      "Your magic power won't run out!%w",
+                                      "Du hast %r\x08"
+                                      "Chateau Romani%w erhalten!\x04"
+                                      "Deine Magie wird nicht leer!%w",
+                                      "Vous obtenez le %r\x08"
+                                      "Chateau Romani%w!\x04"
+                                      "Votre magie ne s'\xE9puisera pas!%w");
     msg.Format();
     msg.LoadIntoFont();
     *loadFromMessageTable = false;

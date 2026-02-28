@@ -30,7 +30,7 @@
 #include "mods/anim_translator/mm_anim_loader.h"
 
 // Pending animation type (stored when waiting for delay)
-static s32 sRfPendingAnimType = 0; // 0=none, 1=backflip
+static s32 sRfPendingAnimType = 0; // 0=none, 1=backflip, 2=roll jump
 
 static s32 RocsFeather_MmAnimEnabled(void) {
     return CVarGetInteger(ROCS_MM_ANIM_CVAR, 0) && MmAnim_IsAvailable();
@@ -59,11 +59,14 @@ void Handle_RocsFeather(Player* p, PlayState* play) {
         rfMmAnimTimer++; // Count towards 0
         if (rfMmAnimTimer == 0) {
             // Delay finished, play the animation now
+            LinkAnimationHeader* mmAnim = NULL;
             if (sRfPendingAnimType == 1) {
-                LinkAnimationHeader* mmAnim = MmAnim_Load(MM_ANIM_LINK_FIGHTER_BACKTURN_JUMP);
-                if (mmAnim != NULL) {
-                    LinkAnimation_PlayOnce(play, &p->skelAnime, mmAnim);
-                }
+                mmAnim = MmAnim_Load(MM_ANIM_LINK_FIGHTER_BACKTURN_JUMP);
+            } else if (sRfPendingAnimType == 2) {
+                mmAnim = MmAnim_Load(MM_ANIM_LINK_NORMAL_NEWROLL_JUMP_20F);
+            }
+            if (mmAnim != NULL) {
+                LinkAnimation_PlayOnce(play, &p->skelAnime, mmAnim);
             }
             sRfPendingAnimType = 0;
             rfMmAnimTimer = 999; // Now in "air by Roc's" state
@@ -82,8 +85,8 @@ void Handle_RocsFeather(Player* p, PlayState* play) {
 
         // Schedule MM animation after 2 frame delay (let OOT finish its animation change)
         if (RocsFeather_MmAnimEnabled()) {
-            rfMmAnimTimer = -2;     // Negative = pending, will count up to 0
-            sRfPendingAnimType = 1; // Backflip
+            rfMmAnimTimer = -2; // Negative = pending, will count up to 0
+            sRfPendingAnimType = CVarGetInteger("gMods.RocsItems.InvertAnims", 0) ? 2 : 1;
         }
     }
 }

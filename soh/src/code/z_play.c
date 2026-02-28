@@ -17,7 +17,6 @@
 #include "soh/framebuffer_effects.h"
 #include "mods/items/custom_items.h"
 #include "mods/items/helpers/minish_kaleido.h"
-#include "soh/Enhancements/hunger-games/HungerGames.h"
 #include <libultraship/libultraship.h>
 
 #include <time.h>
@@ -692,12 +691,6 @@ void Play_Init(GameState* thisx) {
                     GET_PLAYER(play)->actor.world.pos.y + Player_GetHeight(GET_PLAYER(play)) + 5.0f,
                     GET_PLAYER(play)->actor.world.pos.z, 0, 0, 0, 1, true);
     }
-
-    // #region SOH [Hunger Games] Auto-connect PvP on game load
-    if (IS_HUNGER_GAMES) {
-        HungerGames_OnPlayInit(play);
-    }
-    // #endregion
 
     // nextEntranceIndex was not initialized, so the previous value was carried over during soft resets.
     gPlayState->nextEntranceIndex = gSaveContext.entranceIndex;

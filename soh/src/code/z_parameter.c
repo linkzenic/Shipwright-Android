@@ -2380,7 +2380,8 @@ u8 Item_Give(PlayState* play, u8 item) {
                 return Return_Item(item, MOD_NONE, ITEM_NONE);
             }
         }
-    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK) || (item == ITEM_CHATEAU_ROMANI)) {
+    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK) ||
+               (item == ITEM_CHATEAU_ROMANI)) {
         temp = SLOT(item);
 
         if ((item != ITEM_MILK_BOTTLE) && (item != ITEM_LETTER_RUTO)) {
@@ -2588,7 +2589,8 @@ u8 Item_CheckObtainability(u8 item) {
         return ITEM_NONE;
     } else if (item == ITEM_BOTTLE) {
         return ITEM_NONE;
-    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK) || (item == ITEM_CHATEAU_ROMANI)) {
+    } else if (((item >= ITEM_POTION_RED) && (item <= ITEM_POE)) || (item == ITEM_MILK) ||
+               (item == ITEM_CHATEAU_ROMANI)) {
         temp = SLOT(item);
 
         if ((item != ITEM_MILK_BOTTLE) && (item != ITEM_LETTER_RUTO)) {
@@ -3240,7 +3242,7 @@ void Interface_UpdateMagicBar(PlayState* play) {
             break;
 
         case MAGIC_STATE_FILL:
-            gSaveContext.magic += 4;
+            gSaveContext.magic += 16;
 
             if (gSaveContext.gameMode == GAMEMODE_NORMAL && gSaveContext.sceneSetupIndex < 4) {
                 Audio_PlaySoundGeneral(NA_SE_SY_GAUGE_UP - SFX_FLAG, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
@@ -3402,7 +3404,7 @@ void Interface_UpdateMagicBar(PlayState* play) {
             break;
 
         case MAGIC_STATE_ADD:
-            gSaveContext.magic += 4;
+            gSaveContext.magic += 16;
             Audio_PlaySoundGeneral(NA_SE_SY_GAUGE_UP - SFX_FLAG, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             if (gSaveContext.magic >= gSaveContext.magicTarget) {
@@ -6679,14 +6681,12 @@ void Interface_Update(PlayState* play) {
         // Check both equipped tunic (save data) AND currentTunic (set by transformation masks)
         Player* player = GET_PLAYER(play);
         if (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_GORON ||
-            player->currentTunic == PLAYER_TUNIC_GORON ||
-            CVarGetInteger(CVAR_CHEAT("SuperTunic"), 0) != 0) {
+            player->currentTunic == PLAYER_TUNIC_GORON || CVarGetInteger(CVAR_CHEAT("SuperTunic"), 0) != 0) {
             sEnvHazard = PLAYER_ENV_HAZARD_NONE;
         }
     } else if ((Player_GetEnvironmentalHazard(play) >= 2) && (Player_GetEnvironmentalHazard(play) < 5)) {
         Player* player = GET_PLAYER(play);
-        if (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_ZORA ||
-            player->currentTunic == PLAYER_TUNIC_ZORA ||
+        if (CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC) == EQUIP_VALUE_TUNIC_ZORA || player->currentTunic == PLAYER_TUNIC_ZORA ||
             CVarGetInteger(CVAR_CHEAT("SuperTunic"), 0) != 0) {
             sEnvHazard = PLAYER_ENV_HAZARD_NONE;
         }

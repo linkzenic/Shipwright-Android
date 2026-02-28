@@ -44,41 +44,50 @@ typedef struct {
 
 static const MinishKaleidoSoilData sSoilAreaData[POD_SOIL_COUNT] = {
     // #0 Kokiri Forest
-    { 73, -12,
-      { gKokiriForestPositionNameENGTex, gKokiriForestPositionNameGERTex,
-        gKokiriForestPositionNameFRATex, gKokiriForestPositionNameJPNTex } },
+    { 73,
+      -12,
+      { gKokiriForestPositionNameENGTex, gKokiriForestPositionNameGERTex, gKokiriForestPositionNameFRATex,
+        gKokiriForestPositionNameJPNTex } },
     // #1 Lost Woods
-    { 58, -6,
-      { gLostWoodsPositionNameENGTex, gLostWoodsPositionNameGERTex,
-        gLostWoodsPositionNameFRATex, gLostWoodsPositionNameJPNTex } },
+    { 58,
+      -6,
+      { gLostWoodsPositionNameENGTex, gLostWoodsPositionNameGERTex, gLostWoodsPositionNameFRATex,
+        gLostWoodsPositionNameJPNTex } },
     // #2 Sacred Forest Meadow
-    { 67, 3,
+    { 67,
+      3,
       { gSacredForestMeadowPositionNameENGTex, gSacredForestMeadowPositionNameGERTex,
         gSacredForestMeadowPositionNameFRATex, gSacredForestMeadowPositionNameJPNTex } },
     // #3 Lake Hylia
-    { -25, -50,
-      { gLakeHyliaPositionNameENGTex, gLakeHyliaPositionNameGERTex,
-        gLakeHyliaPositionNameFRATex, gLakeHyliaPositionNameJPNTex } },
+    { -25,
+      -50,
+      { gLakeHyliaPositionNameENGTex, gLakeHyliaPositionNameGERTex, gLakeHyliaPositionNameFRATex,
+        gLakeHyliaPositionNameJPNTex } },
     // #4 Graveyard
-    { 60, 29,
-      { gGraveyardPositionNameENGTex, gGraveyardPositionNameGERTex,
-        gGraveyardPositionNameFRATex, gGraveyardPositionNameJPNTex } },
+    { 60,
+      29,
+      { gGraveyardPositionNameENGTex, gGraveyardPositionNameGERTex, gGraveyardPositionNameFRATex,
+        gGraveyardPositionNameJPNTex } },
     // #5 Death Mountain Trail
-    { 35, 44,
+    { 35,
+      44,
       { gDeathMountainTrailPositionNameENGTex, gDeathMountainTrailPositionNameGERTex,
         gDeathMountainTrailPositionNameFRATex, gDeathMountainTrailPositionNameJPNTex } },
     // #6 Death Mountain Crater
-    { 40, 52,
+    { 40,
+      52,
       { gDeathMountainCraterPositionNameENGTex, gDeathMountainCraterPositionNameGERTex,
         gDeathMountainCraterPositionNameFRATex, gDeathMountainCraterPositionNameJPNTex } },
     // #7 Desert Colossus
-    { -93, 29,
-      { gDesertColossusPositionNameENGTex, gDesertColossusPositionNameGERTex,
-        gDesertColossusPositionNameFRATex, gDesertColossusPositionNameJPNTex } },
+    { -93,
+      29,
+      { gDesertColossusPositionNameENGTex, gDesertColossusPositionNameGERTex, gDesertColossusPositionNameFRATex,
+        gDesertColossusPositionNameJPNTex } },
     // #8 Gerudo Valley
-    { -51, 10,
-      { gGerudoValleyPositionNameENGTex, gGerudoValleyPositionNameGERTex,
-        gGerudoValleyPositionNameFRATex, gGerudoValleyPositionNameJPNTex } },
+    { -51,
+      10,
+      { gGerudoValleyPositionNameENGTex, gGerudoValleyPositionNameGERTex, gGerudoValleyPositionNameFRATex,
+        gGerudoValleyPositionNameJPNTex } },
 };
 
 // ============================================================
@@ -202,9 +211,12 @@ static s8 MinishKaleido_FindNearest(s8 currentIdx, s16 stickX, s16 stickY) {
         f32 candidateAngle = atan2f(dx, dy);
         f32 angleDiff = candidateAngle - stickAngle;
 
-        while (angleDiff > M_PI) angleDiff -= 2.0f * M_PI;
-        while (angleDiff < -M_PI) angleDiff += 2.0f * M_PI;
-        if (angleDiff < 0) angleDiff = -angleDiff;
+        while (angleDiff > M_PI)
+            angleDiff -= 2.0f * M_PI;
+        while (angleDiff < -M_PI)
+            angleDiff += 2.0f * M_PI;
+        if (angleDiff < 0)
+            angleDiff = -angleDiff;
 
         if (angleDiff > M_PI / 2.0f)
             continue;
@@ -259,9 +271,8 @@ void MinishKaleido_Update(PlayState* play) {
             s8 nextIdx = MinishKaleido_FindNearest(curIdx, stickX, stickY);
             if (nextIdx >= 0) {
                 gCustomItemState.minishCapCursorIdx = nextIdx;
-                Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4,
-                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                       &gSfxDefaultReverb);
+                Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             }
             sStickHeld = 1;
         }
@@ -279,13 +290,11 @@ void MinishKaleido_Update(PlayState* play) {
             gCustomItemState.minishCapWarpMode = 0;
             sMinishInitialized = 0;
 
-            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         } else {
-            Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         }
         return;
     }
@@ -297,9 +306,8 @@ void MinishKaleido_Update(PlayState* play) {
         pauseCtx->state = 0;
         sMinishInitialized = 0;
 
-        Audio_PlaySoundGeneral(NA_SE_SY_CANCEL, &gSfxDefaultPos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_CANCEL, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -312,8 +320,8 @@ void MinishKaleido_Update(PlayState* play) {
 
 // Convert kaleido coords to screen 10.2 fixed-point (scale 6/5, centered, shifted up 24px)
 #define MK_YSHIFT 96
-#define MKX(kx) (640 + (s32)(kx) * 24 / 5)
-#define MKY(ky) (480 - MK_YSHIFT - (s32)(ky) * 24 / 5)
+#define MKX(kx) (640 + (s32)(kx)*24 / 5)
+#define MKY(ky) (480 - MK_YSHIFT - (s32)(ky)*24 / 5)
 
 // Cloud positions in kaleido coords (from D_8082AEC0/D_8082AF78 for pageIndex=4)
 static s16 sCloudPosX[] = {
@@ -329,7 +337,8 @@ void MinishKaleido_Draw(PlayState* play) {
     GraphicsContext* gfxCtx = play->state.gfxCtx;
     s8 curIdx = gCustomItemState.minishCapCursorIdx;
     s16 lang = gSaveContext.language;
-    if (lang < 0 || lang > 3) lang = 0;
+    if (lang < 0 || lang > 3)
+        lang = 0;
 
     OPEN_DISPS(gfxCtx);
 
@@ -338,13 +347,11 @@ void MinishKaleido_Draw(PlayState* play) {
     gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
     gDPSetCombineMode(OVERLAY_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
     gDPSetOtherMode(OVERLAY_DISP++,
-                    G_AD_DISABLE | G_CD_DISABLE | G_CK_NONE | G_TC_FILT |
-                    G_TF_BILERP | G_TT_NONE | G_TL_TILE | G_TD_CLAMP |
-                    G_TP_NONE | G_CYC_1CYCLE | G_PM_NPRIMITIVE,
+                    G_AD_DISABLE | G_CD_DISABLE | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE |
+                        G_TD_CLAMP | G_TP_NONE | G_CYC_1CYCLE | G_PM_NPRIMITIVE,
                     G_AC_NONE | G_ZS_PRIM | G_RM_CLD_SURF | G_RM_CLD_SURF2);
     gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 64);
-    gSPWideTextureRectangle(OVERLAY_DISP++, 0, 0, SCREEN_WIDTH << 2, SCREEN_HEIGHT << 2,
-                            G_TX_RENDERTILE, 0, 0, 0, 0);
+    gSPWideTextureRectangle(OVERLAY_DISP++, 0, 0, SCREEN_WIDTH << 2, SCREEN_HEIGHT << 2, G_TX_RENDERTILE, 0, 0, 0, 0);
     gDPPipeSync(OVERLAY_DISP++);
 
     // ---- 2. Frame (IA8, 80x32 tiles, 3 columns x 5 rows = 240x160 kaleido units) ----
@@ -373,12 +380,10 @@ void MinishKaleido_Draw(PlayState* play) {
                 s32 yh = MKY(sRowY[row + 1]);
                 s32 dtdy = 32 * 4096 / (yh - yl);
 
-                gDPLoadTextureBlock(OVERLAY_DISP++, sMapTexs[lang][col * 5 + row],
-                                    G_IM_FMT_IA, G_IM_SIZ_8b, 80, 32, 0,
-                                    G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP,
-                                    G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-                gSPWideTextureRectangle(OVERLAY_DISP++, xl, yl, xh, yh,
-                                        G_TX_RENDERTILE, 0, 0, dsdx, dtdy);
+                gDPLoadTextureBlock(OVERLAY_DISP++, sMapTexs[lang][col * 5 + row], G_IM_FMT_IA, G_IM_SIZ_8b, 80, 32, 0,
+                                    G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, xl, yl, xh, yh, G_TX_RENDERTILE, 0, 0, dsdx, dtdy);
             }
         }
     }
@@ -405,15 +410,12 @@ void MinishKaleido_Draw(PlayState* play) {
             s32 syh = MKY(ky1);
             s32 mapDtdy = stripH * 4096 / (syh - syl);
 
-            gDPLoadMultiTile(OVERLAY_DISP++, gWorldMapImageTex, 0, G_TX_RENDERTILE,
-                             G_IM_FMT_CI, G_IM_SIZ_8b, 216, 128,
-                             0, i * 9, 215, i * 9 + stripH - 1, 0,
-                             G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
+            gDPLoadMultiTile(OVERLAY_DISP++, gWorldMapImageTex, 0, G_TX_RENDERTILE, G_IM_FMT_CI, G_IM_SIZ_8b, 216, 128,
+                             0, i * 9, 215, i * 9 + stripH - 1, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
                              G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-            gDPSetTileSize(OVERLAY_DISP++, G_TX_RENDERTILE, 0, 0,
-                           (216 - 1) << G_TEXTURE_IMAGE_FRAC, (stripH - 1) << G_TEXTURE_IMAGE_FRAC);
-            gSPWideTextureRectangle(OVERLAY_DISP++, mapXL, syl, mapXH, syh,
-                                    G_TX_RENDERTILE, 0, 0, mapDsdx, mapDtdy);
+            gDPSetTileSize(OVERLAY_DISP++, G_TX_RENDERTILE, 0, 0, (216 - 1) << G_TEXTURE_IMAGE_FRAC,
+                           (stripH - 1) << G_TEXTURE_IMAGE_FRAC);
+            gSPWideTextureRectangle(OVERLAY_DISP++, mapXL, syl, mapXH, syh, G_TX_RENDERTILE, 0, 0, mapDsdx, mapDtdy);
         }
     }
 
@@ -423,8 +425,8 @@ void MinishKaleido_Draw(PlayState* play) {
         gDPSetTextureFilter(OVERLAY_DISP++, G_TF_BILERP);
         gDPSetTextureLUT(OVERLAY_DISP++, G_TT_NONE);
         Gfx_SetupDL_39Overlay(gfxCtx);
-        gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
-                          1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0);
+        gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0, TEXEL0, 0,
+                          PRIMITIVE, 0);
         gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 235, 235, 235, 255);
 
         for (s16 i = 0; i < 16; i++) {
@@ -436,12 +438,10 @@ void MinishKaleido_Draw(PlayState* play) {
                 s32 cDsdx = sCloudWidths[i] * 4096 / (cxh - cxl);
                 s32 cDtdy = sCloudHeights[i] * 4096 / (cyh - cyl);
 
-                gDPLoadTextureBlock_4b(OVERLAY_DISP++, sCloudTexs[i], G_IM_FMT_I,
-                                       sCloudWidths[i], sCloudHeights[i], 0,
-                                       G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
-                                       G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-                gSPWideTextureRectangle(OVERLAY_DISP++, cxl, cyl, cxh, cyh,
-                                        G_TX_RENDERTILE, 0, 0, cDsdx, cDtdy);
+                gDPLoadTextureBlock_4b(OVERLAY_DISP++, sCloudTexs[i], G_IM_FMT_I, sCloudWidths[i], sCloudHeights[i], 0,
+                                       G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                       G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, cxl, cyl, cxh, cyh, G_TX_RENDERTILE, 0, 0, cDsdx, cDtdy);
             }
         }
     }
@@ -460,13 +460,16 @@ void MinishKaleido_Draw(PlayState* play) {
                 g = (u8)sMinishPulsePrim[1];
                 b = (u8)sMinishPulsePrim[2];
             } else if (unlocked) {
-                r = 100; g = 255; b = 255;
+                r = 100;
+                g = 255;
+                b = 255;
             } else {
-                r = 100; g = 100; b = 100;
+                r = 100;
+                g = 100;
+                b = 100;
             }
 
-            u32 packed = (GPACK_RGBA5551(r >> 3, g >> 3, b >> 3, 1) << 16) |
-                          GPACK_RGBA5551(r >> 3, g >> 3, b >> 3, 1);
+            u32 packed = (GPACK_RGBA5551(r >> 3, g >> 3, b >> 3, 1) << 16) | GPACK_RGBA5551(r >> 3, g >> 3, b >> 3, 1);
             gDPSetFillColor(OVERLAY_DISP++, packed);
 
             // Box pixel coords from center (convert 10.2 to pixels via >> 2)
@@ -507,12 +510,10 @@ void MinishKaleido_Draw(PlayState* play) {
             s32 pDsdx = 32 * 4096 / (pXH - pXL);
             s32 pDtdy = 32 * 4096 / (pYH - pYL);
 
-            gDPLoadTextureBlock(OVERLAY_DISP++, gItemIconPecoriTex,
-                                G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
-                                G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
-                                G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-            gSPWideTextureRectangle(OVERLAY_DISP++, pXL, pYL, pXH, pYH,
-                                    G_TX_RENDERTILE, 0, 0, pDsdx, pDtdy);
+            gDPLoadTextureBlock(OVERLAY_DISP++, gItemIconPecoriTex, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                                G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(OVERLAY_DISP++, pXL, pYL, pXH, pYH, G_TX_RENDERTILE, 0, 0, pDsdx, pDtdy);
             gDPPipeSync(OVERLAY_DISP++);
         }
     }
@@ -529,8 +530,8 @@ void MinishKaleido_Draw(PlayState* play) {
         Gfx_SetupDL_39Overlay(gfxCtx);
 
         // "CURRENT POSITION" title (I4, 64x8) on parchment
-        gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0,
-                          1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0);
+        gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0, TEXEL0, 0,
+                          PRIMITIVE, 0);
         gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 255);
 
         {
@@ -541,11 +542,10 @@ void MinishKaleido_Draw(PlayState* play) {
             s32 cpDsdx = 64 * 4096 / (cpXH - cpXL);
             s32 cpDtdy = 8 * 4096 / (cpYH - cpYL);
 
-            gDPLoadTextureBlock_4b(OVERLAY_DISP++, sCurrentPosTitleTexs[lang], G_IM_FMT_I,
-                                   64, 8, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
-                                   G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-            gSPWideTextureRectangle(OVERLAY_DISP++, cpXL, cpYL, cpXH, cpYH,
-                                    G_TX_RENDERTILE, 0, 0, cpDsdx, cpDtdy);
+            gDPLoadTextureBlock_4b(OVERLAY_DISP++, sCurrentPosTitleTexs[lang], G_IM_FMT_I, 64, 8, 0,
+                                   G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                   G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(OVERLAY_DISP++, cpXL, cpYL, cpXH, cpYH, G_TX_RENDERTILE, 0, 0, cpDsdx, cpDtdy);
         }
 
         gDPPipeSync(OVERLAY_DISP++);
@@ -562,22 +562,17 @@ void MinishKaleido_Draw(PlayState* play) {
             s32 gsDsdx = 24 * 4096 / (gsXH - gsXL);
             s32 gsDtdy = 24 * 4096 / (gsYH - gsYL);
 
-            gDPLoadTextureBlock(OVERLAY_DISP++, gQuestIconGoldSkulltulaTex,
-                                G_IM_FMT_RGBA, G_IM_SIZ_32b, 24, 24, 0,
-                                G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
-                                G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-            gSPWideTextureRectangle(OVERLAY_DISP++, gsXL, gsYL, gsXH, gsYH,
-                                    G_TX_RENDERTILE, 0, 0, gsDsdx, gsDtdy);
+            gDPLoadTextureBlock(OVERLAY_DISP++, gQuestIconGoldSkulltulaTex, G_IM_FMT_RGBA, G_IM_SIZ_32b, 24, 24, 0,
+                                G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(OVERLAY_DISP++, gsXL, gsYL, gsXH, gsYH, G_TX_RENDERTILE, 0, 0, gsDsdx, gsDtdy);
             gDPPipeSync(OVERLAY_DISP++);
         }
 
         // Area name (IA8, 80x32) below title on parchment
         // Unlocked: cyan text (150,255,255). Locked: desaturated grey (120,120,120)
-        gDPSetCombineLERP(OVERLAY_DISP++,
-                          PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT,
-                          TEXEL0, 0, PRIMITIVE, 0,
-                          PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT,
-                          TEXEL0, 0, PRIMITIVE, 0);
+        gDPSetCombineLERP(OVERLAY_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0,
+                          PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
 
         if (unlocked) {
             gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 150, 255, 255, 255);
@@ -594,12 +589,10 @@ void MinishKaleido_Draw(PlayState* play) {
             s32 nDsdx = 80 * 4096 / (nXH - nXL);
             s32 nDtdy = 32 * 4096 / (nYH - nYL);
 
-            gDPLoadTextureBlock(OVERLAY_DISP++, sSoilAreaData[curIdx].nameTex[lang],
-                                G_IM_FMT_IA, G_IM_SIZ_8b, 80, 32, 0,
-                                G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR,
-                                G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
-            gSPWideTextureRectangle(OVERLAY_DISP++, nXL, nYL, nXH, nYH,
-                                    G_TX_RENDERTILE, 0, 0, nDsdx, nDtdy);
+            gDPLoadTextureBlock(OVERLAY_DISP++, sSoilAreaData[curIdx].nameTex[lang], G_IM_FMT_IA, G_IM_SIZ_8b, 80, 32,
+                                0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                G_TX_NOLOD, G_TX_NOLOD);
+            gSPWideTextureRectangle(OVERLAY_DISP++, nXL, nYL, nXH, nYH, G_TX_RENDERTILE, 0, 0, nDsdx, nDtdy);
         }
     }
 

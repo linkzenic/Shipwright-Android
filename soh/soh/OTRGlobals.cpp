@@ -73,7 +73,10 @@
 #include "soh/Network/CrowdControl/CrowdControl.h"
 #include "soh/Network/Sail/Sail.h"
 #include "soh/Network/Anchor/Anchor.h"
-#include "soh/Network/PvPAnchor/PvPAnchor.h"
+#include "soh/Network/HarpoonToggle.h"
+#ifdef ENABLE_HARPOON
+#include "soh/Network/Harpoon/Harpoon.h"
+#endif
 #include "Enhancements/mods.h"
 #include "Enhancements/game-interactor/GameInteractor.h"
 #include "Enhancements/randomizer/draw.h"
@@ -136,7 +139,9 @@ SpeechSynthesizer* SpeechSynthesizer::Instance;
 CrowdControl* CrowdControl::Instance;
 Sail* Sail::Instance;
 Anchor* Anchor::Instance;
-PvPAnchor* PvPAnchor::Instance;
+#ifdef ENABLE_HARPOON
+Harpoon* Harpoon::Instance;
+#endif
 
 extern "C" char** cameraStrings;
 
@@ -1545,7 +1550,9 @@ extern "C" void InitOTR(int argc, char* argv[]) {
     CrowdControl::Instance = new CrowdControl();
     Sail::Instance = new Sail();
     Anchor::Instance = new Anchor();
-    PvPAnchor::Instance = new PvPAnchor();
+#ifdef ENABLE_HARPOON
+    Harpoon::Instance = new Harpoon();
+#endif
 
     OTRMessage_Init();
     OTRAudio_Init();

@@ -500,3 +500,224 @@ s32 CustomItems_OverrideDraw(Player* p, PlayState* play) {
 
     return 0;
 }
+
+void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {
+    CustomItemState* s = &gCustomItemState;
+    memset(out, 0, sizeof(CustomItemVisualSync));
+
+    // Build active flags bitfield
+    u32 flags = 0;
+    if (s->spinnerActive)
+        flags |= CI_FLAG_SPINNER;
+    if (s->gustJarMode > 0)
+        flags |= CI_FLAG_GUSTJAR;
+    if (s->ballAndChainThrown)
+        flags |= CI_FLAG_BALLCHAIN;
+    if (s->shovelAnimating)
+        flags |= CI_FLAG_SHOVEL;
+    if (s->beetleActive)
+        flags |= CI_FLAG_BEETLE;
+    if (s->dominionRodActive)
+        flags |= CI_FLAG_DOMINION_ROD;
+    if (s->somariaActive)
+        flags |= CI_FLAG_SOMARIA;
+    if (s->mogmaMittsActive)
+        flags |= CI_FLAG_MOGMA_MITTS;
+    if (s->whipActive)
+        flags |= CI_FLAG_WHIP;
+    if (s->timeGateActive)
+        flags |= CI_FLAG_TIME_GATE;
+    if (s->switchHookActive)
+        flags |= CI_FLAG_SWITCH_HOOK;
+    if (s->dekuLeafGliding || s->dekuLeafBlowing)
+        flags |= CI_FLAG_DEKU_LEAF;
+    if (s->fireRodActive)
+        flags |= CI_FLAG_FIRE_ROD;
+    if (s->iceRodActive)
+        flags |= CI_FLAG_ICE_ROD;
+    if (s->lightRodActive)
+        flags |= CI_FLAG_LIGHT_ROD;
+    out->activeFlags = flags;
+
+    // Deku Leaf
+    out->dekuLeafGliding = s->dekuLeafGliding;
+    out->dekuLeafBlowing = s->dekuLeafBlowing;
+    out->dekuLeafAnimTimer = s->dekuLeafAnimTimer;
+
+    // Gust Jar
+    out->gustJarMode = s->gustJarMode;
+    out->gustJarAmmoType = s->gustJarAmmoType;
+    out->gustJarProjectileActive = s->gustJarProjectileActive;
+    out->gustJarProjPos = s->gustJarProjPos;
+    out->gustJarProjYaw = s->gustJarProjYaw;
+
+    // Ball and Chain
+    out->ballAndChainThrown = s->ballAndChainThrown;
+    out->timer2 = s->timer2;
+    out->sharedProjectilePos = s->sharedProjectilePos;
+
+    // Shovel
+    out->shovelAnimating = s->shovelAnimating;
+
+    // Beetle
+    out->beetleState = s->beetleState;
+    out->beetlePos = s->beetlePos;
+    out->beetleRot = s->beetleRot;
+    out->beetleWingScale = s->beetleWingScale;
+
+    // Fire Rod
+    out->fireRodProjActive = s->fireRodProjActive;
+    out->fireRodProjCount = s->fireRodProjCount;
+    out->fireRodProjType = s->fireRodProjType;
+    out->fireRodProjPos = s->fireRodProjPos;
+    out->fireRodProjPos2 = s->fireRodProjPos2;
+    out->fireRodProjPos3 = s->fireRodProjPos3;
+    memcpy(out->fireRodProjTrail, s->fireRodProjTrail, sizeof(s->fireRodProjTrail));
+    out->fireRodProjScale = s->fireRodProjScale;
+    out->fireRodMatrix = s->fireRodMatrix;
+    out->fireRodMatrixValid = s->fireRodMatrixValid;
+
+    // Ice Rod
+    out->iceRodProjActive = s->iceRodProjActive;
+    out->iceRodProjCount = s->iceRodProjCount;
+    out->iceRodProjPos = s->iceRodProjPos;
+    out->iceRodProjPos2 = s->iceRodProjPos2;
+    out->iceRodProjPos3 = s->iceRodProjPos3;
+    memcpy(out->iceRodProjTrail, s->iceRodProjTrail, sizeof(s->iceRodProjTrail));
+    out->iceRodProjScale = s->iceRodProjScale;
+    out->iceRodMatrix = s->iceRodMatrix;
+    out->iceRodMatrixValid = s->iceRodMatrixValid;
+
+    // Light Rod
+    out->lightRodProjActive = s->lightRodProjActive;
+    out->lightRodProjCount = s->lightRodProjCount;
+    out->lightRodProjPos = s->lightRodProjPos;
+    out->lightRodProjPos2 = s->lightRodProjPos2;
+    out->lightRodProjPos3 = s->lightRodProjPos3;
+    out->lightRodMatrix = s->lightRodMatrix;
+    out->lightRodMatrixValid = s->lightRodMatrixValid;
+
+    // Dominion Rod
+    out->dominionRodState = s->dominionRodState;
+    out->dominionRodOrbPos = s->dominionRodOrbPos;
+
+    // Whip
+    out->whipState = s->whipState;
+    out->whipTipPos = s->whipTipPos;
+    out->whipAttachPos = s->whipAttachPos;
+    out->whipAttachNormal = s->whipAttachNormal;
+
+    // Time Gate
+    out->timeGateItemVisible = s->timeGateItemVisible;
+    out->timeGatePortalActive = s->timeGatePortalActive;
+    out->timeGatePortalAlpha = s->timeGatePortalAlpha;
+    out->timeGatePortalScale = s->timeGatePortalScale;
+
+    // Switch Hook
+    out->switchHookState = s->switchHookState;
+    out->switchHookProjPos = s->switchHookProjPos;
+}
+
+void CustomItems_ApplyVisualSync(const CustomItemVisualSync* sync) {
+    CustomItemState* s = &gCustomItemState;
+
+    // Set active flags from bitfield
+    s->spinnerActive = (sync->activeFlags & CI_FLAG_SPINNER) ? 1 : 0;
+    s->gustJarMode = (sync->activeFlags & CI_FLAG_GUSTJAR) ? sync->gustJarMode : 0;
+    s->ballAndChainThrown = (sync->activeFlags & CI_FLAG_BALLCHAIN) ? 1 : 0;
+    s->shovelAnimating = (sync->activeFlags & CI_FLAG_SHOVEL) ? sync->shovelAnimating : 0;
+    s->beetleActive = (sync->activeFlags & CI_FLAG_BEETLE) ? 1 : 0;
+    s->dominionRodActive = (sync->activeFlags & CI_FLAG_DOMINION_ROD) ? 1 : 0;
+    s->somariaActive = (sync->activeFlags & CI_FLAG_SOMARIA) ? 1 : 0;
+    s->mogmaMittsActive = (sync->activeFlags & CI_FLAG_MOGMA_MITTS) ? 1 : 0;
+    s->whipActive = (sync->activeFlags & CI_FLAG_WHIP) ? 1 : 0;
+    s->timeGateActive = (sync->activeFlags & CI_FLAG_TIME_GATE) ? 1 : 0;
+    s->switchHookActive = (sync->activeFlags & CI_FLAG_SWITCH_HOOK) ? 1 : 0;
+    s->fireRodActive = (sync->activeFlags & CI_FLAG_FIRE_ROD) ? 1 : 0;
+    s->iceRodActive = (sync->activeFlags & CI_FLAG_ICE_ROD) ? 1 : 0;
+    s->lightRodActive = (sync->activeFlags & CI_FLAG_LIGHT_ROD) ? 1 : 0;
+
+    // Deku Leaf
+    s->dekuLeafGliding = sync->dekuLeafGliding;
+    s->dekuLeafBlowing = sync->dekuLeafBlowing;
+    s->dekuLeafAnimTimer = sync->dekuLeafAnimTimer;
+
+    // Gust Jar
+    s->gustJarAmmoType = sync->gustJarAmmoType;
+    s->gustJarProjectileActive = sync->gustJarProjectileActive;
+    s->gustJarProjPos = sync->gustJarProjPos;
+    s->gustJarProjYaw = sync->gustJarProjYaw;
+
+    // Ball and Chain
+    s->timer2 = sync->timer2;
+    s->sharedProjectilePos = sync->sharedProjectilePos;
+
+    // Shovel
+    s->shovelActive = (sync->activeFlags & CI_FLAG_SHOVEL) ? 1 : 0;
+
+    // Beetle
+    s->beetleState = sync->beetleState;
+    s->beetlePos = sync->beetlePos;
+    s->beetleRot = sync->beetleRot;
+    s->beetleWingScale = sync->beetleWingScale;
+
+    // Fire Rod
+    s->fireRodProjActive = sync->fireRodProjActive;
+    s->fireRodProjCount = sync->fireRodProjCount;
+    s->fireRodProjType = sync->fireRodProjType;
+    s->fireRodProjPos = sync->fireRodProjPos;
+    s->fireRodProjPos2 = sync->fireRodProjPos2;
+    s->fireRodProjPos3 = sync->fireRodProjPos3;
+    memcpy(s->fireRodProjTrail, sync->fireRodProjTrail, sizeof(s->fireRodProjTrail));
+    s->fireRodProjScale = sync->fireRodProjScale;
+    s->fireRodMatrix = sync->fireRodMatrix;
+    s->fireRodMatrixValid = sync->fireRodMatrixValid;
+
+    // Ice Rod
+    s->iceRodProjActive = sync->iceRodProjActive;
+    s->iceRodProjCount = sync->iceRodProjCount;
+    s->iceRodProjPos = sync->iceRodProjPos;
+    s->iceRodProjPos2 = sync->iceRodProjPos2;
+    s->iceRodProjPos3 = sync->iceRodProjPos3;
+    memcpy(s->iceRodProjTrail, sync->iceRodProjTrail, sizeof(s->iceRodProjTrail));
+    s->iceRodProjScale = sync->iceRodProjScale;
+    s->iceRodMatrix = sync->iceRodMatrix;
+    s->iceRodMatrixValid = sync->iceRodMatrixValid;
+
+    // Light Rod
+    s->lightRodProjActive = sync->lightRodProjActive;
+    s->lightRodProjCount = sync->lightRodProjCount;
+    s->lightRodProjPos = sync->lightRodProjPos;
+    s->lightRodProjPos2 = sync->lightRodProjPos2;
+    s->lightRodProjPos3 = sync->lightRodProjPos3;
+    s->lightRodMatrix = sync->lightRodMatrix;
+    s->lightRodMatrixValid = sync->lightRodMatrixValid;
+
+    // Dominion Rod
+    s->dominionRodState = sync->dominionRodState;
+    s->dominionRodOrbPos = sync->dominionRodOrbPos;
+
+    // Whip
+    s->whipState = sync->whipState;
+    s->whipTipPos = sync->whipTipPos;
+    s->whipAttachPos = sync->whipAttachPos;
+    s->whipAttachNormal = sync->whipAttachNormal;
+
+    // Time Gate
+    s->timeGateItemVisible = sync->timeGateItemVisible;
+    s->timeGatePortalActive = sync->timeGatePortalActive;
+    s->timeGatePortalAlpha = sync->timeGatePortalAlpha;
+    s->timeGatePortalScale = sync->timeGatePortalScale;
+
+    // Switch Hook
+    s->switchHookState = sync->switchHookState;
+    s->switchHookProjPos = sync->switchHookProjPos;
+
+    // Disable first-person reticles (never draw for remote players)
+    s->bombArrowFirstPersonActive = 0;
+    s->fireRodFirstPerson = 0;
+    s->iceRodFirstPerson = 0;
+    s->lightRodFirstPerson = 0;
+    s->dominionRodFirstPersonActive = 0;
+    s->switchHookFirstPerson = 0;
+}

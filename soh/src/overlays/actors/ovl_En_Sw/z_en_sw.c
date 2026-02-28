@@ -558,8 +558,10 @@ void func_80B0D590(EnSw* this, PlayState* play) {
 
         Math_ApproachF(&this->actor.scale.x,
                        !IS_DAY || CVarGetInteger(CVAR_ENHANCEMENT("NightGSAlwaysSpawn"), 0) ||
-                       MmMaskWear_IsAllNightMaskActive() ? 0.02f : 0.0f, 0.2f,
-                       0.01f);
+                               MmMaskWear_IsAllNightMaskActive()
+                           ? 0.02f
+                           : 0.0f,
+                       0.2f, 0.01f);
         Actor_SetScale(&this->actor, this->actor.scale.x);
     }
 

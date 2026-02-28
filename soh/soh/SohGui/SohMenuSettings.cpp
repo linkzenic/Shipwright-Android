@@ -516,22 +516,82 @@ void SohMenu::AddMenuSettings() {
         .HideInSearch(true)
         .Options(WindowButtonOptions().Tooltip("Enables the separate Mod Menu Window."));
 
-    // Skijer's NEI - Custom Items and Transformation Masks
+    // =========================================================================
+    // Skijer's NEI - 3 columns: Custom Items | MM Masks | Randomizer
+    // =========================================================================
     path.sidebarName = "Skijer's NEI";
     path.column = SECTION_COLUMN_1;
     AddSidebarEntry("Settings", path.sidebarName, 3);
 
-    AddWidget(path, "Transformation Masks", WIDGET_SEPARATOR_TEXT);
+    // ===================== COLUMN 1: Custom Items =====================
+    AddWidget(path, "Custom Items", WIDGET_SEPARATOR_TEXT);
 
-    // Option 1: Extra Mask Effects - custom effects per mask (no dependencies)
+    AddWidget(path, "Enable Extra Equipment", WIDGET_CVAR_CHECKBOX)
+        .CVar("gCheats.ExtEquip.Enabled")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Adds 12 new equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots).\n"
+            "Press L on the equipment page to toggle between vanilla and extended equipment.\n"
+            "This is a cheat — all items are unlocked when enabled."));
+
+    // Roc's Items MM Animations - requires mm.o2r
+    AddWidget(path, "Roc's Items Use MM Animations", WIDGET_CVAR_CHECKBOX)
+        .CVar("gEnhancements.RocsItemsUseMmAnims")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!MmAssets_IsAvailable()) {
+                CVarSetInteger("gEnhancements.RocsItemsUseMmAnims", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Use MM animations for Roc's Feather and Roc's Cape jumps.\n"
+                                           "Roc's Feather: Backflip on ground jump.\n"
+                                           "Roc's Cape: Backflip on ground jump, roll jump on double jump.\n\n"
+                                           "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
+
+    AddWidget(path, "Invert Roc's Items Animations", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.RocsItems.InvertAnims")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!CVarGetInteger("gEnhancements.RocsItemsUseMmAnims", 0)) {
+                CVarSetInteger("gMods.RocsItems.InvertAnims", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Enable 'Roc's Items Use MM Animations' first.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip("Swaps the animation order for Roc's items.\n"
+                                           "OFF: Ground = Backflip, Double = Roll Jump\n"
+                                           "ON:  Ground = Roll Jump, Double = Backflip\n\n"
+                                           "REQUIRES: Roc's Items Use MM Animations"));
+
+    AddWidget(path, "Page Navigation", WIDGET_SEPARATOR_TEXT);
+
+    static std::map<int32_t, const char*> pageSwitchMap = {
+        { 0, "L Button" },
+        { 1, "A Button" },
+        { 2, "Both (L + A)" },
+    };
+    AddWidget(path, "Page Switch Button", WIDGET_CVAR_COMBOBOX)
+        .CVar("gMods.PageSwitch.Button")
+        .RaceDisable(false)
+        .Options(ComboboxOptions()
+                     .ComboMap(pageSwitchMap)
+                     .DefaultIndex(2)
+                     .Tooltip("Choose which button switches inventory pages in the pause menu.\n"
+                              "Applies to all inventory pages (vanilla, custom items, MM masks)."));
+
+    // ===================== COLUMN 2: MM Masks =====================
+    path.column = SECTION_COLUMN_2;
+
+    AddWidget(path, "MM Masks", WIDGET_SEPARATOR_TEXT);
+
     AddWidget(path, "Extra Mask Effects", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.TransformMasks.ExtraEffects")
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Enables custom visual effects according to the mask being worn.\n"
                                            "Each mask has unique visual enhancements."));
 
-    // Option 2: Enable Transformation Masks - requires mm.o2r
-    // When enabled, auto-activates all mask replacement CVars (Deku, Stone, Fierce Deity)
     AddWidget(path, "Enable Transformation Masks", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.TransformMasks.Enabled")
         .RaceDisable(false)
@@ -547,7 +607,6 @@ void SohMenu::AddMenuSettings() {
                                            "Equip transformation masks from the MM Masks inventory page.\n\n"
                                            "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 
-    // Option 3: Instant Transform - requires Extra Mask Effects AND mm.o2r
     AddWidget(path, "Instant Transform", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.TransformMasks.InstantTransform")
         .RaceDisable(false)
@@ -566,9 +625,6 @@ void SohMenu::AddMenuSettings() {
                                            "Transform instantly when equipping a transformation mask.\n\n"
                                            "REQUIRES: Extra Mask Effects + mm.o2r"));
 
-    AddWidget(path, "MM Masks Inventory", WIDGET_SEPARATOR_TEXT);
-
-    // Include MM Masks Inventory - parent toggle for 3rd inventory page
     AddWidget(path, "Include MM Masks Inventory", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.MmMasks.InventoryEnabled")
         .RaceDisable(false)
@@ -580,7 +636,6 @@ void SohMenu::AddMenuSettings() {
             }
         })
         .PostFunc([](WidgetInfo& info) {
-            // Auto-enable transformation masks when MM masks inventory is on
             if (CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
                 CVarSetInteger("gMods.TransformMasks.Enabled", 1);
                 Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
@@ -592,7 +647,24 @@ void SohMenu::AddMenuSettings() {
             "Removes OOT Goron/Zora masks from randomizer pool.\n\n"
             "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 
-    // Add All MM Masks to Rando Pool
+    AddWidget(path, "Instant Blast Mask", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.BlastMask.Instant")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip("Removes the cooldown on Blast Mask.\n"
+                                           "Normally there is a 310-frame (~5 second) cooldown between uses."));
+
+    // ===================== COLUMN 3: Randomizer =====================
+    path.column = SECTION_COLUMN_3;
+
+    AddWidget(path, "Randomizer", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(path, "Enable Custom Items", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.CustomItems.Enabled")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip("Enables the 24 custom items on the second inventory page.\n"
+                                           "When enabled, these items are also added to the randomizer pool.\n"
+                                           "When disabled, page 2 is inaccessible and items are not in rando."));
+
     AddWidget(path, "Add All MM Masks to Rando", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.MmMasks.RandoAllMasks")
         .RaceDisable(false)
@@ -618,7 +690,6 @@ void SohMenu::AddMenuSettings() {
                                            "Removes OOT Goron/Zora masks from pool.\n\n"
                                            "REQUIRES: 'Include MM Masks Inventory' enabled"));
 
-    // Add Just Transformation Masks to Rando Pool
     AddWidget(path, "Add Transformation Masks to Rando", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.MmMasks.RandoTransformOnly")
         .RaceDisable(false)
@@ -641,40 +712,6 @@ void SohMenu::AddMenuSettings() {
                                            "to the randomizer item pool.\n"
                                            "Removes OOT Goron/Zora masks from pool.\n\n"
                                            "REQUIRES: 'Include MM Masks Inventory' enabled"));
-
-    AddWidget(path, "Page Navigation", WIDGET_SEPARATOR_TEXT);
-
-    static std::map<int32_t, const char*> pageSwitchMap = {
-        { 0, "L Button" },
-        { 1, "A Button" },
-        { 2, "Both (L + A)" },
-    };
-    AddWidget(path, "Page Switch Button", WIDGET_CVAR_COMBOBOX)
-        .CVar("gMods.PageSwitch.Button")
-        .RaceDisable(false)
-        .Options(ComboboxOptions()
-                     .ComboMap(pageSwitchMap)
-                     .DefaultIndex(2)
-                     .Tooltip("Choose which button switches inventory pages in the pause menu.\n"
-                              "Applies to all inventory pages (vanilla, custom items, MM masks)."));
-
-    AddWidget(path, "Developer Tests", WIDGET_SEPARATOR_TEXT);
-
-    // Roc's Items MM Animations - requires mm.o2r
-    AddWidget(path, "Roc's Items Use MM Animations", WIDGET_CVAR_CHECKBOX)
-        .CVar("gEnhancements.RocsItemsUseMmAnims")
-        .RaceDisable(false)
-        .PreFunc([](WidgetInfo& info) {
-            if (!MmAssets_IsAvailable()) {
-                CVarSetInteger("gEnhancements.RocsItemsUseMmAnims", 0);
-                info.options->disabled = true;
-                info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
-            }
-        })
-        .Options(CheckboxOptions().Tooltip("Use MM animations for Roc's Feather and Roc's Cape jumps.\n"
-                                           "Roc's Feather: Backflip on ground jump.\n"
-                                           "Roc's Cape: Backflip on ground jump, roll jump on double jump.\n\n"
-                                           "REQUIRES: mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0"));
 }
 
 } // namespace SohGui

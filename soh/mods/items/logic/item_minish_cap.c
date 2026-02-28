@@ -32,10 +32,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_KOKIRI_FOREST_0,
         { 1190.0f, 0.0f, -480.0f },
         0x0000,
-        12,      // gsGroup (EN_SW decrements by 1: 0x0C)
-        0x01,    // gsMask
-        0,       // roomIndex (spot04_room_0)
-        4,       // areaIdx (Kokiri Forest)
+        12,   // gsGroup (EN_SW decrements by 1: 0x0C)
+        0x01, // gsMask
+        0,    // roomIndex (spot04_room_0)
+        4,    // areaIdx (Kokiri Forest)
         "Kokiri Forest",
     },
     // #1 Lost Woods - Bridge area (spot10 room_5) - params 0x4E01
@@ -44,10 +44,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_LOST_WOODS_SOUTH_EXIT,
         { -1220.0f, 0.0f, 935.0f },
         0x0000,
-        13,      // gsGroup (EN_SW decrements by 1: 0x0D)
-        0x01,    // gsMask
-        5,       // roomIndex (spot10_room_5)
-        10,      // areaIdx (Lost Woods)
+        13,   // gsGroup (EN_SW decrements by 1: 0x0D)
+        0x01, // gsMask
+        5,    // roomIndex (spot10_room_5)
+        10,   // areaIdx (Lost Woods)
         "Lost Woods",
     },
     // #2 Lost Woods - Forest Stage area (spot10 room_6) - params 0x4E02
@@ -56,10 +56,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_LOST_WOODS_SOUTH_EXIT,
         { 610.0f, 0.0f, -1770.0f },
         0x0000,
-        13,      // gsGroup (EN_SW decrements by 1: 0x0D)
-        0x02,    // gsMask
-        6,       // roomIndex (spot10_room_6)
-        5,       // areaIdx (Sacred Forest Meadow)
+        13,   // gsGroup (EN_SW decrements by 1: 0x0D)
+        0x02, // gsMask
+        6,    // roomIndex (spot10_room_6)
+        5,    // areaIdx (Sacred Forest Meadow)
         "Sacred Forest Meadow",
     },
     // #3 Lake Hylia (spot06 room_0) - params 0x5301
@@ -68,10 +68,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_LAKE_HYLIA_NORTH_EXIT,
         { -2602.0f, -1033.0f, 3617.0f },
         0x0000,
-        18,      // gsGroup (EN_SW decrements by 1: 0x12)
-        0x01,    // gsMask
-        0,       // roomIndex (spot06_room_0)
-        6,       // areaIdx (Lake Hylia)
+        18,   // gsGroup (EN_SW decrements by 1: 0x12)
+        0x01, // gsMask
+        0,    // roomIndex (spot06_room_0)
+        6,    // areaIdx (Lake Hylia)
         "Lake Hylia",
     },
     // #4 Graveyard (spot02 room_1) - params 0x5101
@@ -80,10 +80,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_GRAVEYARD_ENTRANCE,
         { -715.0f, 120.0f, -340.0f },
         0x0000,
-        16,      // gsGroup (EN_SW decrements by 1: 0x10)
-        0x01,    // gsMask
-        1,       // roomIndex (spot02_room_1)
-        2,       // areaIdx (Graveyard)
+        16,   // gsGroup (EN_SW decrements by 1: 0x10)
+        0x01, // gsMask
+        1,    // roomIndex (spot02_room_1)
+        2,    // areaIdx (Graveyard)
         "Graveyard",
     },
     // #5 Death Mountain Trail (spot16 room_0) - params 0x5002
@@ -92,10 +92,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_DEATH_MOUNTAIN_TRAIL_BOTTOM_EXIT,
         { -1610.0f, 677.0f, -735.0f },
         0x0000,
-        15,      // gsGroup (EN_SW decrements by 1: 0x0F)
-        0x02,    // gsMask
-        0,       // roomIndex (spot16_room_0)
-        16,      // areaIdx (Death Mountain Trail)
+        15,   // gsGroup (EN_SW decrements by 1: 0x0F)
+        0x02, // gsMask
+        0,    // roomIndex (spot16_room_0)
+        16,   // areaIdx (Death Mountain Trail)
         "Death Mtn Trail",
     },
     // #6 Death Mountain Crater (spot17 room_1) - params 0x5001
@@ -104,10 +104,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_DEATH_MOUNTAIN_CRATER_UPPER_EXIT,
         { -127.0f, 421.0f, -168.0f },
         0x0000,
-        15,      // gsGroup (EN_SW decrements by 1: 0x0F)
-        0x01,    // gsMask
-        1,       // roomIndex (spot17_room_1)
-        17,      // areaIdx (Death Mountain Crater)
+        15,   // gsGroup (EN_SW decrements by 1: 0x0F)
+        0x01, // gsMask
+        1,    // roomIndex (spot17_room_1)
+        17,   // areaIdx (Death Mountain Crater)
         "Death Mtn Crater",
     },
     // #7 Desert Colossus (spot11 room_0) - params 0x5601
@@ -116,10 +116,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_DESERT_COLOSSUS_EAST_EXIT,
         { -1330.0f, 8.0f, 290.0f },
         0x0000,
-        21,      // gsGroup (EN_SW decrements by 1: 0x15)
-        0x01,    // gsMask
-        0,       // roomIndex (spot11_room_0)
-        11,      // areaIdx (Desert Colossus)
+        21,   // gsGroup (EN_SW decrements by 1: 0x15)
+        0x01, // gsMask
+        0,    // roomIndex (spot11_room_0)
+        11,   // areaIdx (Desert Colossus)
         "Desert Colossus",
     },
     // #8 Gerudo Valley (spot09 room_0) - params 0x5401
@@ -128,10 +128,10 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         ENTR_GERUDO_VALLEY_EAST_EXIT,
         { -515.0f, -2051.0f, 110.0f },
         0x0000,
-        19,      // gsGroup (EN_SW decrements by 1: 0x13)
-        0x01,    // gsMask
-        0,       // roomIndex (spot09_room_0)
-        9,       // areaIdx (Gerudo Valley)
+        19,   // gsGroup (EN_SW decrements by 1: 0x13)
+        0x01, // gsMask
+        0,    // roomIndex (spot09_room_0)
+        9,    // areaIdx (Gerudo Valley)
         "Gerudo Valley",
     },
 };
@@ -151,14 +151,31 @@ s32 MinishCap_GetUnlockedCount(void) {
     return count;
 }
 
+// Check if player is within range of any unlocked pod soil in the current scene
+static s32 MinishCap_IsNearPodSoil(Player* p, PlayState* play) {
+    for (s32 i = 0; i < POD_SOIL_COUNT; i++) {
+        if (sPodSoilTable[i].sceneId != play->sceneNum)
+            continue;
+        if (!MinishCap_IsPodSoilUnlocked(i))
+            continue;
+        f32 dx = p->actor.world.pos.x - sPodSoilTable[i].pos.x;
+        f32 dy = p->actor.world.pos.y - sPodSoilTable[i].pos.y;
+        f32 dz = p->actor.world.pos.z - sPodSoilTable[i].pos.z;
+        f32 distSq = (dx * dx) + (dy * dy) + (dz * dz);
+        if (distSq <= (50.0f * 50.0f))
+            return 1;
+    }
+    return 0;
+}
+
 void Player_InitMinishCapIA(PlayState* play, Player* this) {
     // No special init needed
 }
 
 // Scale constants for shrink/grow animation
-#define MINISH_SCALE_NORMAL 0.01f      // Player's normal scale
-#define MINISH_SCALE_TINY   0.0005f    // 5% of normal (starting size on arrival)
-#define MINISH_SCALE_RATE   0.0005f    // Step per frame (~19 frames for full transition)
+#define MINISH_SCALE_NORMAL 0.01f // Player's normal scale
+#define MINISH_SCALE_TINY 0.0005f // 5% of normal (starting size on arrival)
+#define MINISH_SCALE_RATE 0.0005f // Step per frame (~19 frames for full transition)
 
 static void MinishCap_TriggerWarp(PlayState* play, s8 destIdx) {
     const PodSoilWarpPoint* dest = &sPodSoilTable[destIdx];
@@ -243,11 +260,10 @@ void Handle_MinishCap(Player* p, PlayState* play) {
         return;
 
     if (input.isPressed) {
-        // Check if any pod soils are unlocked
-        if (MinishCap_GetUnlockedCount() == 0) {
-            Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+        // Must be near an unlocked pod soil to use
+        if (!MinishCap_IsNearPodSoil(p, play)) {
+            Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             return;
         }
 
@@ -268,8 +284,7 @@ void Handle_MinishCap(Player* p, PlayState* play) {
         // Freeze gameplay by setting pauseCtx->state != 0
         pauseCtx->state = 1;
 
-        Audio_PlaySoundGeneral(NA_SE_SY_WIN_OPEN, &gSfxDefaultPos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_SY_WIN_OPEN, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }

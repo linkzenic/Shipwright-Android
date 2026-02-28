@@ -17,8 +17,7 @@ extern s32 GiveItemEntryFromActor(Actor* actor, PlayState* play, GetItemEntry ge
 
 // Check if Romani mask + Link's cow = should give Chateau Romani
 static s32 EnCow_ShouldGiveChateau(PlayState* play) {
-    return (MmMaskWear_GetCurrent() == ITEM_MM_MASK_ROMANI &&
-            play->sceneNum == SCENE_LINKS_HOUSE);
+    return (MmMaskWear_GetCurrent() == ITEM_MM_MASK_ROMANI && play->sceneNum == SCENE_LINKS_HOUSE);
 }
 
 // Build a custom GetItemEntry for Chateau Romani

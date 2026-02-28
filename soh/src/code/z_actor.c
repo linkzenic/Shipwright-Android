@@ -2683,8 +2683,7 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                 Math_Vec3f_Copy(&actor->prevPos, &actor->world.pos);
 
                 // Stone Mask: enemies and NPCs can't detect Link
-                if (MmMaskWear_IsStoneMaskActive() &&
-                    (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC)) {
+                if (MmMaskWear_IsStoneMaskActive() && (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC)) {
                     actor->xzDistToPlayer = 32000.0f;
                     actor->yDistToPlayer = 32000.0f;
                     actor->xyzDistToPlayerSq = SQ(32000.0f) + SQ(32000.0f);

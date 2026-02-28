@@ -25,6 +25,7 @@
 #include <soh_assets.h>
 
 #include "mods/extended_inventory.h"
+#include "mods/extended_equipment.h"
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/items/custom_names.c"
 
@@ -2150,6 +2151,9 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                         textureName = iconNameTextures[0];
                     }
                     // isCustomItem stays false: OTR path string handled like vanilla via strlen copy
+                } else if (originalItemId >= 0xD0 && originalItemId <= 0xDB) {
+                    // Extended equipment items: no name texture yet, use fallback
+                    textureName = iconNameTextures[0];
                 } else {
                     // Vanilla items: modulo 123 and add language offset
                     sp2A %= 123;

@@ -45,14 +45,14 @@ static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTime
 // Page 2 item layout (slots 24-47)
 // Note: ITEM_ROCS_FEATHER_SKIJER at slot 24 is progressive - becomes ITEM_ROCS_CAPE when upgraded (shares slot)
 // Slot 15 (actual slot 39) now has ITEM_DESIRE_SENSOR instead of ITEM_ROCS_CAPE
-const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,      ITEM_SPINNER,
-                                  ITEM_BOMB_ARROWS,         ITEM_ROD_FIRE,  ITEM_DEMISE_DESTRUCTION,
-                                  ITEM_DEKU_LEAF,           ITEM_TIME_GATE, ITEM_BEETLE,
-                                  ITEM_SWITCH_HOOK,         ITEM_ROD_ICE,   ITEM_ZONAI_PERMAFROST,
-                                  ITEM_MOGMA_MITTS,         ITEM_GUST_JAR,  ITEM_BALL_AND_CHAIN,
-                                  ITEM_DESIRE_SENSOR,       ITEM_ROD_LIGHT, ITEM_HYLIAS_GRACE,
+const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,       ITEM_SPINNER,
+                                  ITEM_BOMB_ARROWS,         ITEM_ROD_FIRE,   ITEM_DEMISE_DESTRUCTION,
+                                  ITEM_DEKU_LEAF,           ITEM_TIME_GATE,  ITEM_BEETLE,
+                                  ITEM_SWITCH_HOOK,         ITEM_ROD_ICE,    ITEM_ZONAI_PERMAFROST,
+                                  ITEM_MOGMA_MITTS,         ITEM_GUST_JAR,   ITEM_BALL_AND_CHAIN,
+                                  ITEM_DESIRE_SENSOR,       ITEM_ROD_LIGHT,  ITEM_HYLIAS_GRACE,
                                   ITEM_PENDING_2,           ITEM_MINISH_CAP, ITEM_PENDING_3,
-                                  ITEM_CANE_OF_SOMARIA,     ITEM_SHOVEL,    ITEM_DOMINION_ROD };
+                                  ITEM_CANE_OF_SOMARIA,     ITEM_SHOVEL,     ITEM_DOMINION_ROD };
 
 // Age requirements for page 2 items
 // Roc's items (slot 0/24) = AGE_REQ_NONE (both adult and child can use Feather AND Cape)
@@ -92,10 +92,12 @@ void ExtInv_Reset(void) {
     sExtInvState.currentPage = 0;
     sExtInvState.pageSwitchTimer = 0;
 }
-// Clamp page if MM masks CVar was toggled off while on page 2
+// Clamp page if custom items or MM masks CVar was toggled off
 void ExtInv_ClampPage(void) {
-    int maxPages = ExtInv_GetMaxPages();
-    if (sExtInvState.currentPage >= maxPages) {
+    if (sExtInvState.currentPage == 1 && !ExtInv_IsCustomItemsEnabled()) {
+        sExtInvState.currentPage = 0;
+    }
+    if (sExtInvState.currentPage == 2 && !ExtInv_IsMmMasksEnabled()) {
         sExtInvState.currentPage = 0;
     }
 }
@@ -108,17 +110,41 @@ bool ExtInv_CanSwitchPage(void) {
     return sExtInvState.pageSwitchTimer == 0;
 }
 void ExtInv_SwitchPage(void) {
-    int maxPages = ExtInv_GetMaxPages();
-    sExtInvState.currentPage = (sExtInvState.currentPage + 1) % maxPages;
+    int available[3];
+    int count = 0;
+    available[count++] = 0; // Page 0 always available
+    if (ExtInv_IsCustomItemsEnabled())
+        available[count++] = 1;
+    if (ExtInv_IsMmMasksEnabled())
+        available[count++] = 2;
+
+    if (count <= 1)
+        return; // Only page 0, can't switch
+
+    // Find current page in available list, advance to next
+    int curIdx = 0;
+    for (int i = 0; i < count; i++) {
+        if (available[i] == sExtInvState.currentPage) {
+            curIdx = i;
+            break;
+        }
+    }
+    sExtInvState.currentPage = available[(curIdx + 1) % count];
     sExtInvState.pageSwitchTimer = 15;
 }
 int ExtInv_GetCurrentPage(void) {
     return sExtInvState.currentPage;
 }
 int ExtInv_GetMaxPages(void) {
-    if (CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0))
-        return 3;
-    return 2;
+    int count = 1; // Page 0 always available
+    if (ExtInv_IsCustomItemsEnabled())
+        count++;
+    if (ExtInv_IsMmMasksEnabled())
+        count++;
+    return count;
+}
+bool ExtInv_IsCustomItemsEnabled(void) {
+    return CVarGetInteger("gMods.CustomItems.Enabled", 0) != 0;
 }
 bool ExtInv_IsMmMasksEnabled(void) {
     return CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0) != 0;

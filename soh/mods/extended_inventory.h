@@ -63,6 +63,11 @@ int ExtInv_GetCurrentPage(void);
 int ExtInv_GetMaxPages(void);
 
 /**
+ * @return true if custom items (page 2) CVar is enabled
+ */
+bool ExtInv_IsCustomItemsEnabled(void);
+
+/**
  * @return true if MM masks inventory CVar is enabled
  */
 bool ExtInv_IsMmMasksEnabled(void);

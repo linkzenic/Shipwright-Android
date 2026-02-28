@@ -251,6 +251,40 @@ Gfx* TransformMasks_GetFDSwordBeamDL(PlayState* play);
 // Defined in z_player_lib.c since it accesses static variables (D_80126080, etc.)
 void Player_FDMeleeWeaponPostLimb(PlayState* play, Player* player);
 
+// =============================================================================
+// Network Visual State Accessors (for Harpoon multiplayer sync)
+// =============================================================================
+
+// Model type for network: 0=Link, 1=Goron, 2=Zora, 3=Deku, 4=FD
+u8 TransformMasks_GetModelType(void);
+
+// MM stateFlags3 (spike mode, roll active, etc.)
+u32 TransformMasks_GetMmStateFlags3(void);
+
+// MM horizontal speed
+f32 TransformMasks_GetMmSpeedXZ(void);
+
+// MM form skeleton joint table (NULL if not transformed or skeleton not loaded)
+Vec3s* TransformMasks_GetFormJointTable(void);
+
+// Number of valid joints in the form joint table (0 if not transformed)
+s32 TransformMasks_GetFormJointCount(void);
+
+// Current action ID (GoronActionId enum in mm_player_form.cpp)
+s32 TransformMasks_GetGoronAction(void);
+
+// Eye blink index (0=open, 1=half, 2=closed)
+u8 TransformMasks_GetEyeIndex(void);
+
+// Goron ball squash/stretch deformation factor
+f32 TransformMasks_GetRollSquash(void);
+
+// Goron spike mode counter (0=off, >0=active)
+s16 TransformMasks_GetRollSpikeActive(void);
+
+// Goron charge level counter
+s16 TransformMasks_GetRollChargeLevel(void);
+
 // Returns the item/model scale multiplier for the current form.
 // FD = 1.5f (actor.scale 0.015f vs standard 0.01f), all others = 1.0f.
 // Custom item draw functions should multiply their model scale by this value

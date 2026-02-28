@@ -17,15 +17,15 @@ extern "C" {
 
 // Pod Soil warp point definition
 typedef struct {
-    s16 sceneId;         // SCENE_* enum
-    s16 entranceIndex;   // ENTR_* for scene transition
-    Vec3f pos;           // Position near the pod soil
-    s16 rotY;            // Player facing direction after warp
-    s16 gsGroup;         // GS flag group index (bits 8-12 of ObjMakekinsuta params)
-    u8 gsMask;           // GS flag bitmask (bits 0-7 of ObjMakekinsuta params)
-    u8 roomIndex;        // Room number within the scene (from scene actor list)
-    u8 areaIdx;          // World map area index (0-21) for area box position/texture
-    const char* name;    // Display name
+    s16 sceneId;       // SCENE_* enum
+    s16 entranceIndex; // ENTR_* for scene transition
+    Vec3f pos;         // Position near the pod soil
+    s16 rotY;          // Player facing direction after warp
+    s16 gsGroup;       // GS flag group index (bits 8-12 of ObjMakekinsuta params)
+    u8 gsMask;         // GS flag bitmask (bits 0-7 of ObjMakekinsuta params)
+    u8 roomIndex;      // Room number within the scene (from scene actor list)
+    u8 areaIdx;        // World map area index (0-21) for area box position/texture
+    const char* name;  // Display name
 } PodSoilWarpPoint;
 
 // 9 confirmed bean spots in OOT (all overworld)

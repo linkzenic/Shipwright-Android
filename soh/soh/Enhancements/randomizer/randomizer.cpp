@@ -430,8 +430,7 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "= Objets majeurs&restent dans cette zone.&%rRire de Ganondorf%w = Plus rien." },
 
     // Placeholder items (pending implementation)
-    { RG_PENDING_1, static_cast<ItemID>(ITEM_MINISH_CAP),
-      "You got %pThe Minish Cap%w!&Fast travel between pod soils.",
+    { RG_PENDING_1, static_cast<ItemID>(ITEM_MINISH_CAP), "You got %pThe Minish Cap%w!&Fast travel between pod soils.",
       "Du hast %pThe Minish Cap%w!&Schnellreise zwischen Pod Soils.",
       "Vous obtenez %pPending Item 1%w!&Cet objet n'est pas encore implémenté." },
 
@@ -4493,6 +4492,11 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_MM_MASK_BUNNY:
             ExtInv_SetItemById(ITEM_MM_MASK_BUNNY);
+            // Also give OOT Bunny Hood so vanilla equip effect works
+            Flags_SetRandomizerInf(RAND_INF_CHILD_TRADES_HAS_MASK_BUNNY);
+            if (INV_CONTENT(ITEM_TRADE_CHILD) == ITEM_NONE) {
+                INV_CONTENT(ITEM_TRADE_CHILD) = ITEM_MASK_BUNNY;
+            }
             break;
         case RG_MM_MASK_DON_GERO:
             ExtInv_SetItemById(ITEM_MM_MASK_DON_GERO);
@@ -4517,6 +4521,11 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_MM_MASK_TRUTH:
             ExtInv_SetItemById(ITEM_MM_MASK_TRUTH);
+            // Also give OOT Mask of Truth so vanilla equip effect works (Gossip Stones, etc.)
+            Flags_SetRandomizerInf(RAND_INF_CHILD_TRADES_HAS_MASK_TRUTH);
+            if (INV_CONTENT(ITEM_TRADE_CHILD) == ITEM_NONE) {
+                INV_CONTENT(ITEM_TRADE_CHILD) = ITEM_MASK_TRUTH;
+            }
             break;
         case RG_MM_MASK_ZORA:
             ExtInv_SetItemById(ITEM_MM_MASK_ZORA);

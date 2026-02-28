@@ -500,6 +500,7 @@ static void FireRod_StopSpinFire(void) {
     fireRodSpinActive = 0;
     fireRodSpinRadius = 0.0f;
     sSpinExpandProgress = 0.0f;
+    Audio_StopSfxById(FIRE_ROD_SFX_FIRE_CAST);
 }
 
 static void FireRod_ProcessSwing(Player* p, PlayState* play) {
@@ -703,8 +704,8 @@ static void FireRod_UpdateFirstPerson(Player* p, PlayState* play, ItemInputState
         return;
     }
 
-    // Exit on B, other C-buttons, or damage/cutscene
-    u16 exitButtons = BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
+    // Exit on A, B, other C-buttons, or damage/cutscene
+    u16 exitButtons = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
     if (in->equippedButton)
         exitButtons &= ~in->equippedButton;
 
