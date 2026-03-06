@@ -73,6 +73,18 @@
 #define gLinkGoronGoronPunchEffectDL "__OTR__objects/object_link_goron/gLinkGoronGoronPunchEffectDL"
 
 // ============================================================================
+// Goron Drums DLs (from z_player_lib.c PostLimbDraw at PLAYER_LIMB_TORSO)
+// Container (main drum body) + 5 individual drum pieces
+// ============================================================================
+
+#define gLinkGoronDrumContainerDL "__OTR__objects/object_link_goron/object_link_goron_DL_00FC18"
+#define gLinkGoronDrumPiece1DL "__OTR__objects/object_link_goron/object_link_goron_DL_010590"
+#define gLinkGoronDrumPiece2DL "__OTR__objects/object_link_goron/object_link_goron_DL_010368"
+#define gLinkGoronDrumPiece3DL "__OTR__objects/object_link_goron/object_link_goron_DL_010140"
+#define gLinkGoronDrumPiece4DL "__OTR__objects/object_link_goron/object_link_goron_DL_00FF18"
+#define gLinkGoronDrumPiece5DL "__OTR__objects/object_link_goron/object_link_goron_DL_00FCF0"
+
+// ============================================================================
 // Eye Textures
 // ============================================================================
 

@@ -103,6 +103,13 @@ typedef enum {
 #define gLinkZoraRightForearmShieldDL "__OTR__objects/object_link_zora/object_link_zora_DL_00CDA0"
 
 // ============================================================================
+// Guitar DLs (from z_player_lib.c L_HAND override during gakki animations)
+// ============================================================================
+
+#define gLinkZoraGuitarDL "__OTR__objects/object_link_zora/object_link_zora_DL_00E2A0"
+#define gLinkZoraGuitarHandDL "__OTR__objects/object_link_zora/object_link_zora_DL_00E088"
+
+// ============================================================================
 // Electric Barrier Assets (from 2Ship object_link_zora offsets 0x11210-0x12A80)
 // Used by Player_DrawZoraShield / func_8082F1AC
 // ============================================================================

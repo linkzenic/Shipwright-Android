@@ -20,49 +20,43 @@ extern "C" {
 // ---------------------------------------------------------------------------
 // CVar keys
 // ---------------------------------------------------------------------------
-#define CVAR_EXT_EQUIP_ENABLED  "gCheats.ExtEquip.Enabled"
-#define CVAR_EXT_EQUIP_SWORD   "gCheats.ExtEquip.Sword"
-#define CVAR_EXT_EQUIP_SHIELD  "gCheats.ExtEquip.Shield"
-#define CVAR_EXT_EQUIP_TUNIC   "gCheats.ExtEquip.Tunic"
-#define CVAR_EXT_EQUIP_BOOTS   "gCheats.ExtEquip.Boots"
+#define CVAR_EXT_EQUIP_ENABLED "gCheats.ExtEquip.Enabled"
+#define CVAR_EXT_EQUIP_SWORD "gCheats.ExtEquip.Sword"
+#define CVAR_EXT_EQUIP_SHIELD "gCheats.ExtEquip.Shield"
+#define CVAR_EXT_EQUIP_TUNIC "gCheats.ExtEquip.Tunic"
+#define CVAR_EXT_EQUIP_BOOTS "gCheats.ExtEquip.Boots"
 
 // ---------------------------------------------------------------------------
 // Extended equipment item IDs (for icon/name lookup, NOT stored in inventory)
 // ---------------------------------------------------------------------------
-#define ITEM_EXT_SWORD_1   0xD0
-#define ITEM_EXT_SWORD_2   0xD1
-#define ITEM_EXT_SWORD_3   0xD2
-#define ITEM_EXT_SHIELD_1  0xD3
-#define ITEM_EXT_SHIELD_2  0xD4
-#define ITEM_EXT_SHIELD_3  0xD5
-#define ITEM_EXT_TUNIC_1   0xD6
-#define ITEM_EXT_TUNIC_2   0xD7
-#define ITEM_EXT_TUNIC_3   0xD8
-#define ITEM_EXT_BOOTS_1   0xD9
-#define ITEM_EXT_BOOTS_2   0xDA
-#define ITEM_EXT_BOOTS_3   0xDB
+#define ITEM_EXT_SWORD_1 0xD0
+#define ITEM_EXT_SWORD_2 0xD1
+#define ITEM_EXT_SWORD_3 0xD2
+#define ITEM_EXT_SHIELD_1 0xD3
+#define ITEM_EXT_SHIELD_2 0xD4
+#define ITEM_EXT_SHIELD_3 0xD5
+#define ITEM_EXT_TUNIC_1 0xD6
+#define ITEM_EXT_TUNIC_2 0xD7
+#define ITEM_EXT_TUNIC_3 0xD8
+#define ITEM_EXT_BOOTS_1 0xD9
+#define ITEM_EXT_BOOTS_2 0xDA
+#define ITEM_EXT_BOOTS_3 0xDB
 
 // ---------------------------------------------------------------------------
 // Extended equipment indices (1-based, 0 = none)
 // ---------------------------------------------------------------------------
-typedef enum {
-    EXT_EQUIP_NONE = 0,
-    EXT_EQUIP_1 = 1,
-    EXT_EQUIP_2 = 2,
-    EXT_EQUIP_3 = 3,
-    EXT_EQUIP_MAX = 4
-} ExtEquipIndex;
+typedef enum { EXT_EQUIP_NONE = 0, EXT_EQUIP_1 = 1, EXT_EQUIP_2 = 2, EXT_EQUIP_3 = 3, EXT_EQUIP_MAX = 4 } ExtEquipIndex;
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 typedef struct {
-    int equipPage;          // 0 = vanilla, 1 = extended
-    s16 pageSwitchTimer;    // Cooldown (15 frames)
-    u8 currentExtSword;     // 0=none, 1-3=ext sword
-    u8 currentExtShield;    // 0=none, 1-3=ext shield
-    u8 currentExtTunic;     // 0=none, 1-3=ext tunic
-    u8 currentExtBoots;     // 0=none, 1-3=ext boots
+    int equipPage;       // 0 = vanilla, 1 = extended
+    s16 pageSwitchTimer; // Cooldown (15 frames)
+    u8 currentExtSword;  // 0=none, 1-3=ext sword
+    u8 currentExtShield; // 0=none, 1-3=ext shield
+    u8 currentExtTunic;  // 0=none, 1-3=ext tunic
+    u8 currentExtBoots;  // 0=none, 1-3=ext boots
 } ExtendedEquipmentState;
 
 extern ExtendedEquipmentState gExtEquipState;

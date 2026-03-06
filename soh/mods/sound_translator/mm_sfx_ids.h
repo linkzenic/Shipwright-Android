@@ -49,7 +49,10 @@ extern "C" {
 #define MM_NA_SE_PL_CLIMB_CLIFF 0x0814   // Climbing
 #define MM_NA_SE_PL_SIT_ON_HORSE 0x0815  // Mount horse
 #define MM_NA_SE_PL_GET_OFF_HORSE 0x0816 // Dismount
+#define MM_NA_SE_PL_SWIM 0x0839          // Swimming/water movement
 #define MM_NA_SE_PL_SLIP_LEVEL 0x08D0    // Sliding on floor
+#define MM_NA_SE_PL_FREEZE_S 0x0874      // Freeze/static effect (transform cutscene frame 11)
+#define MM_NA_SE_PL_PUT_OUT_ITEM 0x0877  // Put out item/mask (transform cutscene frame 2)
 
 // =============================================================================
 // Transformation SFX (playerbank_table.h) - shared by all mask transforms
@@ -57,7 +60,8 @@ extern "C" {
 
 #define MM_NA_SE_PL_TRANSFORM 0x08E4       // Transformation sound (3 layers)
 #define MM_NA_SE_PL_TRANSFORM_DEMO 0x08E5  // Transformation cutscene demo sound
-#define MM_NA_SE_PL_TRANSFORM_VOICE 0x09AA // Transformation scream/voice
+#define MM_NA_SE_PL_FACE_CHANGE 0x09A4     // Face reformation (de-transform cutscene frame 15)
+#define MM_NA_SE_PL_TRANSFORM_VOICE 0x09AA // Transformation scream/voice (cutscene frame 30)
 
 // Giant/Normal mask transforms
 #define MM_NA_SE_PL_TRANSFORM_GIANT 0x09C5  // Giant's Mask transform
@@ -153,10 +157,20 @@ extern "C" {
 #define MM_NA_SE_IT_DEKUNUTS_DROP_BOMB 0x1855        // /* 0x1855 */ Drop bomb
 #define MM_NA_SE_IT_DEKUNUTS_BUBLE_SHOT_LEVEL 0x185A // /* 0x185A */ Bubble shot level
 
+// Transformation cutscene items
+#define MM_NA_SE_IT_SET_TRANSFORM_MASK 0x1856    // /* 0x1856 */ Mask click (putting on, frame 4)
+#define MM_NA_SE_IT_TRANSFORM_MASK_BROKEN 0x1858 // /* 0x1858 */ Mask energy break (frame 20)
+
 // Zora items
 #define MM_NA_SE_IT_ZORA_KICK_SWING 0x1859    // /* 0x1859 */ Kick swing whoosh
 #define MM_NA_SE_IT_SHIELD_SWING_ZORA 0x1868  // /* 0x1868 */ Zora shield swing
 #define MM_NA_SE_IT_SHIELD_REMOVE_ZORA 0x1869 // /* 0x1869 */ Zora shield remove
+
+// =============================================================================
+// Environment Bank SFX (environmentbank_table.h)
+// =============================================================================
+
+#define MM_NA_SE_EV_LIGHTNING_HARD 0x2912 // /* 0x2912 */ Lightning/thunder (transform flash)
 
 // =============================================================================
 // System Bank SFX (systembank_table.h)

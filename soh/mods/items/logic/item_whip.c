@@ -337,6 +337,18 @@ static void WhipStateExtending(Player* p, PlayState* play) {
     // Save previous tip for line test
     prevTip = whipTipPos;
 
+    // Z-target homing: recalculate direction toward target each frame
+    if (Player_IsZTargeting(p) && p->focusActor != NULL && p->focusActor->update != NULL) {
+        f32 targetY = p->focusActor->world.pos.y + (p->focusActor->shape.yOffset * p->focusActor->scale.y);
+        f32 hdx = p->focusActor->world.pos.x - whipTipPos.x;
+        f32 hdy = targetY - whipTipPos.y;
+        f32 hdz = p->focusActor->world.pos.z - whipTipPos.z;
+        s16 targetYaw = Math_Atan2S(hdx, hdz);
+        s16 targetPitch = Math_Atan2S(hdy, sqrtf(hdx * hdx + hdz * hdz));
+        Math_ScaledStepToS(&whipExtendYaw, targetYaw, 0x2000);
+        Math_ScaledStepToS(&whipExtendPitch, targetPitch, 0x1000);
+    }
+
     // Advance tip along aim direction
     cosP = Math_CosS(whipExtendPitch);
     sinP = Math_SinS(whipExtendPitch);
@@ -542,13 +554,26 @@ static void WhipStateSwinging(Player* p, PlayState* play, ItemInputState* in) {
     // Pendulum: angular acceleration from gravity
     angAccel = -WHIP_GRAVITY * sinf(whipSwingAngle);
 
-    // Stick Y input: lean forward/backward for swing momentum
-    stickInputY = (f32)play->state.input[0].cur.stick_y / 127.0f;
-    angAccel += stickInputY * WHIP_INPUT_FORCE;
-
-    // Stick X input: slightly turn the swing plane (yaw), keeping momentum
+    // Camera-relative stick input: decompose into swing-forward and swing-lateral
     stickInputX = (f32)play->state.input[0].cur.stick_x / 127.0f;
-    whipSwingYaw += (s16)(stickInputX * WHIP_YAW_TURN_RATE);
+    stickInputY = (f32)play->state.input[0].cur.stick_y / 127.0f;
+    {
+        f32 stickMag = sqrtf(stickInputX * stickInputX + stickInputY * stickInputY);
+        if (stickMag > 0.1f) {
+            if (stickMag > 1.0f)
+                stickMag = 1.0f;
+            s16 camYaw = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play));
+            s16 stickAngle = Math_Atan2S(stickInputX, stickInputY);
+            s16 worldAngle = camYaw + stickAngle;
+
+            // Decompose world stick direction relative to swing plane
+            f32 relForward = Math_CosS(worldAngle - whipSwingYaw) * stickMag;
+            f32 relLateral = Math_SinS(worldAngle - whipSwingYaw) * stickMag;
+
+            angAccel += relForward * WHIP_INPUT_FORCE;
+            whipSwingYaw += (s16)(relLateral * WHIP_YAW_TURN_RATE);
+        }
+    }
 
     // Integrate
     whipSwingVel = (whipSwingVel + angAccel) * WHIP_DAMPING;

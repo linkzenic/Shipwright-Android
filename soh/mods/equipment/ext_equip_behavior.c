@@ -14,17 +14,20 @@
 // Sword behaviors (stubs)
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Sword1(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
     // TODO: Implement Ext Sword 1 behavior
 }
 
 static void ExtEquip_Behavior_Sword2(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
     // TODO: Implement Ext Sword 2 behavior
 }
 
 static void ExtEquip_Behavior_Sword3(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
     // TODO: Implement Ext Sword 3 behavior
 }
 
@@ -32,45 +35,54 @@ static void ExtEquip_Behavior_Sword3(Player* player, PlayState* play) {
 // Shield behaviors (stubs)
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Shield1(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 static void ExtEquip_Behavior_Shield2(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 static void ExtEquip_Behavior_Shield3(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 // ---------------------------------------------------------------------------
 // Tunic behaviors (stubs)
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Tunic1(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 static void ExtEquip_Behavior_Tunic2(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 static void ExtEquip_Behavior_Tunic3(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 // ---------------------------------------------------------------------------
 // Boots behaviors (stubs)
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Boots1(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 static void ExtEquip_Behavior_Boots2(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 static void ExtEquip_Behavior_Boots3(Player* player, PlayState* play) {
-    (void)player; (void)play;
+    (void)player;
+    (void)play;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,10 +5,10 @@
  *   C Button: Activate sensor (costs 3 hearts)
  *
  * Features:
- *   - Reveals if current scene has uncollected major items (randomizer only)
- *   - Golden sparkles + chime if major item found
+ *   - Senses uncollected major items in current scene (randomizer only)
+ *   - Golden sparkles + chime + vague hint textbox if major item found
  *   - Ganondorf laugh + dark flash if not
- *   - ~4.5 second cutscene (sensing + result)
+ *   - ~2.5 second sensing phase, then result + hint display
  */
 
 #include "z64.h"
@@ -22,8 +22,9 @@
 
 static s8 sDSPrevInvinc = 0;
 
-// Forward declare the C++ bridge function
+// Forward declare C++ bridge functions
 u8 Randomizer_SceneHasMajorItem(s16 sceneNum);
+u8 Randomizer_GetSceneHint(s16 sceneNum);
 
 // =============================================================================
 // Visual Effects
@@ -111,6 +112,11 @@ static void DS_Stop(Player* p, PlayState* play) {
     if (!dsActive)
         return;
 
+    // Close any open textbox
+    if (Message_GetState(&play->msgCtx) != TEXT_STATE_NONE) {
+        Message_CloseTextbox(play);
+    }
+
     p->stateFlags1 &= ~(PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_INPUT_DISABLED);
     func_8005B1A4(Play_GetCamera(play, 0));
 
@@ -145,8 +151,8 @@ static void DS_Start(Player* p, PlayState* play) {
     // Pay health cost
     gSaveContext.health -= DSENSOR_HEALTH_COST;
 
-    // Query the randomizer (result cached for the duration of the cutscene)
-    dsResult = Randomizer_SceneHasMajorItem((s16)play->sceneNum);
+    // Query the randomizer for vague hints (caches hint text in C++ side)
+    dsResult = Randomizer_GetSceneHint((s16)play->sceneNum);
 
     dsActive = 1;
     dsState = DSENSOR_STATE_SENSING;
@@ -193,7 +199,7 @@ static void DS_StateSensing(Player* p, PlayState* play) {
 }
 
 // =============================================================================
-// State: RESULT (reveal result, ~2 seconds hold)
+// State: RESULT (reveal result VFX + sound)
 // =============================================================================
 
 static void DS_StateResult(Player* p, PlayState* play) {
@@ -226,9 +232,40 @@ static void DS_StateResult(Player* p, PlayState* play) {
         DS_SpawnGoldenBurst(p, play);
     }
 
-    // End of result phase -> return to idle
-    if (dsTimer >= DSENSOR_RESULT_DURATION) {
+    // After VFX settle, show hint textbox if major item found
+    if (dsResult && dsTimer == 15) {
+        Message_StartTextbox(play, DSENSOR_HINT_TEXT_ID, NULL);
+        dsState = DSENSOR_STATE_TEXTBOX;
+        dsTimer = 0;
+        return;
+    }
+
+    // No major item: end after standard duration
+    if (!dsResult && dsTimer >= DSENSOR_RESULT_DURATION) {
         DS_Stop(p, play);
+    }
+}
+
+// =============================================================================
+// State: TEXTBOX (hint displayed, wait for player to dismiss)
+// =============================================================================
+
+static void DS_StateTextbox(Player* p, PlayState* play) {
+    dsTimer++;
+
+    // Keep player locked
+    p->stateFlags1 |= PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_INPUT_DISABLED;
+    p->linearVelocity = 0.0f;
+    p->actor.speedXZ = 0.0f;
+
+    u8 msgState = Message_GetState(&play->msgCtx);
+
+    // Wait for player to dismiss the textbox
+    if (msgState == TEXT_STATE_CLOSING || msgState == TEXT_STATE_NONE) {
+        // Textbox dismissed or closed
+        if (dsTimer > 5) { // Ensure at least a brief delay
+            DS_Stop(p, play);
+        }
     }
 }
 
@@ -254,8 +291,8 @@ void Handle_DesireSensor(Player* p, PlayState* play) {
         return;
     }
 
-    // Damage or other button while active -> abort
-    if (dsActive) {
+    // Damage or other button while active -> abort (except during textbox)
+    if (dsActive && dsState != DSENSOR_STATE_TEXTBOX) {
         if (ItemInput_CheckDamage(p, &sDSPrevInvinc)) {
             DS_Stop(p, play);
             return;
@@ -282,6 +319,9 @@ void Handle_DesireSensor(Player* p, PlayState* play) {
             break;
         case DSENSOR_STATE_RESULT:
             DS_StateResult(p, play);
+            break;
+        case DSENSOR_STATE_TEXTBOX:
+            DS_StateTextbox(p, play);
             break;
         default:
             DS_Stop(p, play);

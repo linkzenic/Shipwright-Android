@@ -294,7 +294,7 @@ s32 func_80078E34(PlayState* play) {
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
 
     interfaceCtx->unk_228 = 0x140;
-    interfaceCtx->unk_226 += 0x100;
+    interfaceCtx->unk_226 += 0x10;
 
     if (interfaceCtx->unk_226 >= gSaveContext.health) {
         interfaceCtx->unk_226 = gSaveContext.health;

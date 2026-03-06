@@ -26,11 +26,12 @@ static u8 sLastSwingType = 0;
 static u8 sJumpEffectSpawned = 0;
 static u8 sChargeButtonHeld = 0;
 static s16 sChargeHoldCounter = 0;
-static f32 sFireRodTargetScale = 2.0f;
 static f32 sSpinExpandProgress = 0.0f;
 static u8 sSpinColliderInited = 0;
 static u8 sFlameCollidersInited = 0;
-static u8 sMultiCollidersInited = 0;
+
+// Multi-set projectile system (5 concurrent sets)
+static RodProjSet sFireProjSets[ROD_MAX_PROJ_SETS];
 
 static RodColor sFireRodColor = { FIRE_ROD_PRIM_R, FIRE_ROD_PRIM_G, FIRE_ROD_PRIM_B, FIRE_ROD_PRIM_A,
                                   FIRE_ROD_ENV_R,  FIRE_ROD_ENV_G,  FIRE_ROD_ENV_B,  FIRE_ROD_ENV_A };
@@ -38,17 +39,33 @@ static RodColor sFireRodColor = { FIRE_ROD_PRIM_R, FIRE_ROD_PRIM_G, FIRE_ROD_PRI
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 
-// Aliases for multi-projectile system
-#define fireRodProjPos2 gCustomItemState.fireRodProjPos2
-#define fireRodProjPos3 gCustomItemState.fireRodProjPos3
-#define fireRodProjVel gCustomItemState.fireRodProjVel
-#define fireRodProjCount gCustomItemState.fireRodProjCount
-#define fireRodCollider2 gCustomItemState.fireRodCollider2
-#define fireRodCollider3 gCustomItemState.fireRodCollider3
+// Aliases for flame/wave system (unchanged)
 #define fireRodFlameActive gCustomItemState.fireRodFlameActive
 #define fireRodFlameTimer gCustomItemState.fireRodFlameTimer
 #define fireRodFlamePos gCustomItemState.fireRodFlamePos
 #define fireRodFlameColliders gCustomItemState.fireRodFlameColliders
+
+// Multi-set accessors
+RodProjSet* FireRod_GetProjSets(void) {
+    return sFireProjSets;
+}
+u8 FireRod_HasAnyActiveSet(void) {
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        if (sFireProjSets[s].active)
+            return 1;
+    return 0;
+}
+static RodProjSet* FireRod_FindFreeSet(void) {
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        if (!sFireProjSets[s].active)
+            return &sFireProjSets[s];
+    // All full — recycle oldest (lowest timer)
+    RodProjSet* oldest = &sFireProjSets[0];
+    for (s32 s = 1; s < ROD_MAX_PROJ_SETS; s++)
+        if (sFireProjSets[s].timer < oldest->timer)
+            oldest = &sFireProjSets[s];
+    return oldest;
+}
 
 // =============================================================================
 // BACKFIRE - Sets Link on fire when using fire rod without magic
@@ -83,20 +100,17 @@ static u8 FireRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 ba
 }
 
 // =============================================================================
-// MULTI-PROJECTILE SYSTEM - Supports 1-3 simultaneous fireballs
+// MULTI-SET PROJECTILE SYSTEM - Up to 5 concurrent sets of 1-3 fireballs
 // =============================================================================
 
-static void FireRod_InitColliders(Player* p, PlayState* play) {
-    if (sMultiCollidersInited)
+static void FireRod_InitSetColliders(RodProjSet* set, Player* p, PlayState* play) {
+    if (set->collidersInited)
         return;
-
-    Collider_InitCylinder(play, &fireRodCollider);
-    Collider_SetCylinder(play, &fireRodCollider, &p->actor, &sFireRodProjColInit);
-    Collider_InitCylinder(play, &fireRodCollider2);
-    Collider_SetCylinder(play, &fireRodCollider2, &p->actor, &sFireRodProjColInit);
-    Collider_InitCylinder(play, &fireRodCollider3);
-    Collider_SetCylinder(play, &fireRodCollider3, &p->actor, &sFireRodProjColInit);
-    sMultiCollidersInited = 1;
+    for (s32 i = 0; i < 3; i++) {
+        Collider_InitCylinder(play, &set->colliders[i]);
+        Collider_SetCylinder(play, &set->colliders[i], &p->actor, &sFireRodProjColInit);
+    }
+    set->collidersInited = 1;
 }
 
 static void FireRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
@@ -108,65 +122,64 @@ static void FireRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
     Matrix_Pop();
 }
 
-// Spawns single projectile (stab, first-person)
+// Spawns single projectile into a free set slot (stab, first-person)
 static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
                                          f32 maxRange) {
-    FireRod_InitColliders(p, play);
+    RodProjSet* set = FireRod_FindFreeSet();
+    FireRod_InitSetColliders(set, p, play);
 
-    sFireRodTargetScale = 2.0f;
-    fireRodProjActive = 1;
-    fireRodProjCount = 1;
-    fireRodProjPos = *startPos;
-    fireRodProjTimer = (s16)(maxRange / FIRE_ROD_PROJ_SPEED);
-    if (fireRodProjTimer < 10)
-        fireRodProjTimer = 10;
-    if (fireRodProjTimer > 30)
-        fireRodProjTimer = 30;
+    set->targetScale = 2.0f;
+    set->active = 1;
+    set->count = 1;
+    set->pos[0] = *startPos;
+    set->timer = (s16)(maxRange / FIRE_ROD_PROJ_SPEED);
+    if (set->timer < 10)
+        set->timer = 10;
+    if (set->timer > 30)
+        set->timer = 30;
 
-    fireRodProjScale = 0.0f;
-    fireRodProjRotZ = 0;
-    fireRodProjTrailIdx = 0;
+    set->scale = 0.0f;
+    set->rotZ = 0;
     for (s32 i = 0; i < 6; i++)
-        fireRodProjTrail[i] = *startPos;
+        set->trail[i] = *startPos;
 
-    fireRodProjYaw = yaw;
-    fireRodProjPitch = pitch;
-    FireRod_CalcVelocity(&fireRodProjVel[0], yaw, pitch);
+    set->yaw = yaw;
+    set->pitch = pitch;
+    FireRod_CalcVelocity(&set->vel[0], yaw, pitch);
 }
 
-// Spawns 3 fireballs spread at configurable angles (slash attack)
+// Spawns 3 fireballs spread into a free set slot (slash attack)
 static void FireRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 baseYaw, s16 pitch) {
-    FireRod_InitColliders(p, play);
+    RodProjSet* set = FireRod_FindFreeSet();
+    FireRod_InitSetColliders(set, p, play);
 
-    sFireRodTargetScale = 2.0f;
-    fireRodProjActive = 1;
-    fireRodProjCount = 3;
+    set->targetScale = 2.0f;
+    set->active = 1;
+    set->count = 3;
 
     s16 spreadAngle = (s16)(FIRE_ROD_SLASH_SPREAD * (0x10000 / 360));
-    s16 timer = (s16)(FIRE_ROD_SLASH_RANGE / FIRE_ROD_PROJ_SPEED);
-    if (timer < 10)
-        timer = 10;
-    fireRodProjTimer = timer;
+    set->timer = (s16)(FIRE_ROD_SLASH_RANGE / FIRE_ROD_PROJ_SPEED);
+    if (set->timer < 10)
+        set->timer = 10;
 
-    fireRodProjScale = 0.0f;
-    fireRodProjRotZ = 0;
-    fireRodProjTrailIdx = 0;
+    set->scale = 0.0f;
+    set->rotZ = 0;
 
     // Center fireball
-    fireRodProjPos = *startPos;
-    fireRodProjYaw = baseYaw;
-    fireRodProjPitch = pitch;
-    FireRod_CalcVelocity(&fireRodProjVel[0], baseYaw, pitch);
+    set->pos[0] = *startPos;
+    set->yaw = baseYaw;
+    set->pitch = pitch;
+    FireRod_CalcVelocity(&set->vel[0], baseYaw, pitch);
     for (s32 i = 0; i < 6; i++)
-        fireRodProjTrail[i] = *startPos;
+        set->trail[i] = *startPos;
 
     // Left fireball (-spread angle)
-    fireRodProjPos2 = *startPos;
-    FireRod_CalcVelocity(&fireRodProjVel[1], baseYaw - spreadAngle, pitch);
+    set->pos[1] = *startPos;
+    FireRod_CalcVelocity(&set->vel[1], baseYaw - spreadAngle, pitch);
 
     // Right fireball (+spread angle)
-    fireRodProjPos3 = *startPos;
-    FireRod_CalcVelocity(&fireRodProjVel[2], baseYaw + spreadAngle, pitch);
+    set->pos[2] = *startPos;
+    FireRod_CalcVelocity(&set->vel[2], baseYaw + spreadAngle, pitch);
 }
 
 static void FireRod_UpdateCollider(ColliderCylinder* col, Vec3f* pos, f32 scale, PlayState* play) {
@@ -207,80 +220,89 @@ static void FireRod_SpawnFireSparks(PlayState* play, Vec3f* pos, f32 scale) {
     }
 }
 
-static void FireRod_UpdateProjectile(Player* p, PlayState* play) {
-    if (!fireRodProjActive)
-        return;
+// Update a single projectile set
+static void FireRod_UpdateOneSet(RodProjSet* set, Player* p, PlayState* play) {
+    set->rotZ += 5000;
 
-    fireRodProjRotZ += 5000;
+    if (set->timer > 0)
+        set->timer--;
+    if (set->timer == 0)
+        set->targetScale = 0.0f;
 
-    if (fireRodProjTimer > 0)
-        fireRodProjTimer--;
-    if (fireRodProjTimer == 0)
-        sFireRodTargetScale = 0.0f;
+    Math_ApproachF(&set->scale, set->targetScale, 0.2f, 0.4f);
 
-    Math_ApproachF(&fireRodProjScale, sFireRodTargetScale, 0.2f, 0.4f);
-
-    if (fireRodProjTimer == 0 && fireRodProjScale < 0.1f) {
-        fireRodProjActive = 0;
-        sFireRodTargetScale = 2.0f;
-        Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
+    if (set->timer == 0 && set->scale < 0.1f) {
+        set->active = 0;
         return;
     }
 
-    // Update all active projectiles
-    fireRodProjPos.x += fireRodProjVel[0].x;
-    fireRodProjPos.y += fireRodProjVel[0].y;
-    fireRodProjPos.z += fireRodProjVel[0].z;
-
-    if (fireRodProjCount >= 2) {
-        fireRodProjPos2.x += fireRodProjVel[1].x;
-        fireRodProjPos2.y += fireRodProjVel[1].y;
-        fireRodProjPos2.z += fireRodProjVel[1].z;
-    }
-    if (fireRodProjCount >= 3) {
-        fireRodProjPos3.x += fireRodProjVel[2].x;
-        fireRodProjPos3.y += fireRodProjVel[2].y;
-        fireRodProjPos3.z += fireRodProjVel[2].z;
+    // Update all projectile positions in this set
+    for (s32 i = 0; i < set->count; i++) {
+        set->pos[i].x += set->vel[i].x;
+        set->pos[i].y += set->vel[i].y;
+        set->pos[i].z += set->vel[i].z;
     }
 
     // Trail for center projectile
-    fireRodProjTrail[0] = fireRodProjPos;
     for (s32 i = 4; i >= 0; i--)
-        fireRodProjTrail[i + 1] = fireRodProjTrail[i];
+        set->trail[i + 1] = set->trail[i];
+    set->trail[0] = set->pos[0];
 
     // Sparks and sound
-    if (fireRodProjScale >= 0.4f) {
-        FireRod_SpawnFireSparks(play, &fireRodProjPos, fireRodProjScale);
-        if (fireRodProjCount >= 2)
-            FireRod_SpawnFireSparks(play, &fireRodProjPos2, fireRodProjScale);
-        if (fireRodProjCount >= 3)
-            FireRod_SpawnFireSparks(play, &fireRodProjPos3, fireRodProjScale);
+    if (set->scale >= 0.4f) {
+        for (s32 i = 0; i < set->count; i++)
+            FireRod_SpawnFireSparks(play, &set->pos[i], set->scale);
         Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_LOOP - SFX_FLAG);
     }
 
     // Colliders
-    if (fireRodProjScale >= 0.6f) {
-        FireRod_UpdateCollider(&fireRodCollider, &fireRodProjPos, fireRodProjScale, play);
-        if (fireRodProjCount >= 2)
-            FireRod_UpdateCollider(&fireRodCollider2, &fireRodProjPos2, fireRodProjScale, play);
-        if (fireRodProjCount >= 3)
-            FireRod_UpdateCollider(&fireRodCollider3, &fireRodProjPos3, fireRodProjScale, play);
+    if (set->scale >= 0.6f) {
+        for (s32 i = 0; i < set->count; i++)
+            FireRod_UpdateCollider(&set->colliders[i], &set->pos[i], set->scale, play);
     }
 
     // Hit detection
-    u8 anyHit = FireRod_CheckHit(&fireRodCollider, &fireRodProjPos, play, p);
-    if (fireRodProjCount >= 2)
-        anyHit |= FireRod_CheckHit(&fireRodCollider2, &fireRodProjPos2, play, p);
-    if (fireRodProjCount >= 3)
-        anyHit |= FireRod_CheckHit(&fireRodCollider3, &fireRodProjPos3, play, p);
+    u8 anyHit = 0;
+    for (s32 i = 0; i < set->count; i++)
+        anyHit |= FireRod_CheckHit(&set->colliders[i], &set->pos[i], play, p);
 
     if (anyHit) {
-        fireRodProjVel[0].x = fireRodProjVel[0].y = fireRodProjVel[0].z = 0.0f;
-        fireRodProjVel[1].x = fireRodProjVel[1].y = fireRodProjVel[1].z = 0.0f;
-        fireRodProjVel[2].x = fireRodProjVel[2].y = fireRodProjVel[2].z = 0.0f;
-        fireRodProjTimer = 0;
-        sFireRodTargetScale = 0.0f;
+        for (s32 i = 0; i < 3; i++)
+            set->vel[i].x = set->vel[i].y = set->vel[i].z = 0.0f;
+        set->timer = 0;
+        set->targetScale = 0.0f;
     }
+}
+
+// Update ALL active projectile sets and sync gCustomItemState for network
+static void FireRod_UpdateProjectile(Player* p, PlayState* play) {
+    u8 anyActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        if (!sFireProjSets[s].active)
+            continue;
+        FireRod_UpdateOneSet(&sFireProjSets[s], p, play);
+        if (sFireProjSets[s].active)
+            anyActive = 1;
+    }
+
+    // Sync first active set to gCustomItemState for Harpoon network visual
+    fireRodProjActive = anyActive;
+    if (anyActive) {
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+            if (sFireProjSets[s].active) {
+                fireRodProjPos = sFireProjSets[s].pos[0];
+                gCustomItemState.fireRodProjPos2 = sFireProjSets[s].pos[1];
+                gCustomItemState.fireRodProjPos3 = sFireProjSets[s].pos[2];
+                gCustomItemState.fireRodProjCount = sFireProjSets[s].count;
+                fireRodProjScale = sFireProjSets[s].scale;
+                memcpy(fireRodProjTrail, sFireProjSets[s].trail, sizeof(sFireProjSets[s].trail));
+                break;
+            }
+        }
+    }
+
+    if (!anyActive)
+        Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
 }
 
 // =============================================================================
@@ -725,9 +747,11 @@ static void FireRod_OnEquip(PlayState* play, Player* p) {
     sLastSwingType = 0;
     sJumpEffectSpawned = 0;
     fireRodProjActive = 0;
-    fireRodProjCount = 0;
+    gCustomItemState.fireRodProjCount = 0;
     fireRodFirstPerson = 0;
     fireRodFlameActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        sFireProjSets[s].active = 0;
 
     fireRodCharging = 0;
     fireRodChargeLevel = 0.0f;
@@ -748,8 +772,10 @@ static void FireRod_OnUnequip(PlayState* play, Player* p) {
     fireRodState = FIRE_ROD_STATE_INACTIVE;
     sLastSwingType = 0;
     fireRodProjActive = 0;
-    fireRodProjCount = 0;
+    gCustomItemState.fireRodProjCount = 0;
     fireRodFlameActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        sFireProjSets[s].active = 0;
     Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
 
     fireRodCharging = 0;
@@ -874,7 +900,7 @@ void Player_InitFireRodIA(PlayState* play, Player* p) {
     sLastSwingType = 0;
     sJumpEffectSpawned = 0;
     fireRodProjActive = 0;
-    fireRodProjCount = 0;
+    gCustomItemState.fireRodProjCount = 0;
     fireRodBlureIdx = -1;
     fireRodFirstPerson = 0;
     fireRodButtonMask = 0;
@@ -887,7 +913,11 @@ void Player_InitFireRodIA(PlayState* play, Player* p) {
     sChargeButtonHeld = 0;
     sChargeHoldCounter = 0;
 
-    FireRod_InitColliders(p, play);
+    // Init all projectile sets
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        sFireProjSets[s].active = 0;
+        sFireProjSets[s].collidersInited = 0;
+    }
     FireRod_InitFlameColliders(p, play);
 
     if (!sSpinColliderInited) {

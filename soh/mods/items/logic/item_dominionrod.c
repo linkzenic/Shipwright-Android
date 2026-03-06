@@ -25,6 +25,7 @@
 #include "objects/object_fhg/object_fhg.h"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "overlays/actors/ovl_En_Bom/z_en_bom.h"
+#include "../../actors/somaria_cubes.h"
 
 // ============================================================================
 // STATIC STATE
@@ -469,7 +470,75 @@ static void DomRod_StateAiming(Player* p, PlayState* play, ItemInputState* in) {
     }
 }
 
+// ============================================================================
+// ELEGY STATUE SWAP (Dominion Rod orb hits statue → swap positions)
+// ============================================================================
+
+static Actor* DomRod_FindNearbyStatue(PlayState* play) {
+    f32 checkRadius = DOMROD_ORB_COLLIDER_RADIUS + 30.0f;
+
+    for (s32 category = 0; category < ACTORCAT_MAX; category++) {
+        Actor* actor = play->actorCtx.actorLists[category].head;
+        while (actor != NULL) {
+            if (actor->update != NULL && SomariaCube_IsSomariaCube(actor)) {
+                f32 dist = Math_Vec3f_DistXYZ(&domRodOrbPos, &actor->world.pos);
+                if (dist < checkRadius) {
+                    return actor;
+                }
+            }
+            actor = actor->next;
+        }
+    }
+    return NULL;
+}
+
+static void DomRod_SwapWithStatue(Player* p, PlayState* play, Actor* statue) {
+    // Save positions
+    Vec3f playerPos = p->actor.world.pos;
+    Vec3f statuePos = statue->world.pos;
+
+    // Swap positions
+    p->actor.world.pos = statuePos;
+    p->actor.prevPos = statuePos;
+    statue->world.pos = playerPos;
+
+    // Snap player to floor at new position
+    CollisionPoly* floorPoly = NULL;
+    s32 bgId;
+    f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &bgId, &p->actor, &p->actor.world.pos);
+    if (floor > BGCHECK_Y_MIN && (p->actor.world.pos.y - floor) < 100.0f) {
+        p->actor.world.pos.y = floor;
+        p->actor.bgCheckFlags |= BGCHECKFLAG_GROUND;
+    }
+
+    // VFX: flash at both positions
+    {
+        Vec3f zeroVec = { 0.0f, 0.0f, 0.0f };
+        Vec3f flashPos;
+
+        flashPos = p->actor.world.pos;
+        flashPos.y += 30.0f;
+        EffectSsBlast_SpawnWhiteShockwave(play, &flashPos, &zeroVec, &zeroVec);
+
+        flashPos = statue->world.pos;
+        flashPos.y += 30.0f;
+        EffectSsBlast_SpawnWhiteShockwave(play, &flashPos, &zeroVec, &zeroVec);
+    }
+
+    DomRod_PlaySound(&p->actor.world.pos, NA_SE_PL_MAGIC_WIND_WARP);
+
+    // Return orb to player
+    DomRod_StartReturn(p, play);
+}
+
 static void DomRod_StateOrbFlying(Player* p, PlayState* play) {
+    // Check for elegy statue hit first (swap mechanic)
+    Actor* statue = DomRod_FindNearbyStatue(play);
+    if (statue != NULL) {
+        DomRod_SwapWithStatue(p, play, statue);
+        return;
+    }
+
     Actor* hitActor = DomRod_CheckActorHit(p, play);
     if (hitActor != NULL) {
         DomRod_StartControl(p, play, hitActor);

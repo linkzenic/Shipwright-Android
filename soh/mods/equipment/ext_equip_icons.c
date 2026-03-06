@@ -14,10 +14,10 @@ static u8 sExtEquipIconsGenerated = 0;
 
 // Base colors per equipment type (R, G, B)
 static const u8 sExtEquipIconColors[4][3] = {
-    { 220,  50,  50 },  // EQUIP_TYPE_SWORD  - red
-    {  50,  80, 220 },  // EQUIP_TYPE_SHIELD - blue
-    {  50, 200,  80 },  // EQUIP_TYPE_TUNIC  - green
-    { 220, 200,  50 },  // EQUIP_TYPE_BOOTS  - yellow
+    { 220, 50, 50 },  // EQUIP_TYPE_SWORD  - red
+    { 50, 80, 220 },  // EQUIP_TYPE_SHIELD - blue
+    { 50, 200, 80 },  // EQUIP_TYPE_TUNIC  - green
+    { 220, 200, 50 }, // EQUIP_TYPE_BOOTS  - yellow
 };
 
 // Simple 5x7 digit patterns (columns of bits, top-to-bottom)
@@ -25,38 +25,21 @@ static const u8 sExtEquipIconColors[4][3] = {
 static const u8 sDigitPatterns[3][5 * 7] = {
     // "1"
     {
-        0,0,1,0,0,
-        0,1,1,0,0,
-        0,0,1,0,0,
-        0,0,1,0,0,
-        0,0,1,0,0,
-        0,0,1,0,0,
-        0,1,1,1,0,
+        0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 0,
     },
     // "2"
     {
-        0,1,1,1,0,
-        1,0,0,0,1,
-        0,0,0,0,1,
-        0,0,0,1,0,
-        0,0,1,0,0,
-        0,1,0,0,0,
-        1,1,1,1,1,
+        0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1, 1,
     },
     // "3"
     {
-        0,1,1,1,0,
-        1,0,0,0,1,
-        0,0,0,0,1,
-        0,0,1,1,0,
-        0,0,0,0,1,
-        1,0,0,0,1,
-        0,1,1,1,0,
+        0, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0,
     },
 };
 
 static void ExtEquip_GenerateIcons(void) {
-    if (sExtEquipIconsGenerated) return;
+    if (sExtEquipIconsGenerated)
+        return;
 
     for (int type = 0; type < 4; type++) {
         for (int idx = 0; idx < 3; idx++) {

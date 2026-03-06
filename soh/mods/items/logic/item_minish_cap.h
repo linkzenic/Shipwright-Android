@@ -28,8 +28,8 @@ typedef struct {
     const char* name;  // Display name
 } PodSoilWarpPoint;
 
-// 9 confirmed bean spots in OOT (all overworld)
-#define POD_SOIL_COUNT 9
+// 10 bean spots in OOT (all overworld, 9 confirmed + Zora's River always-unlocked)
+#define POD_SOIL_COUNT 10
 
 extern const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT];
 

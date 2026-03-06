@@ -73,10 +73,7 @@
 #include "soh/Network/CrowdControl/CrowdControl.h"
 #include "soh/Network/Sail/Sail.h"
 #include "soh/Network/Anchor/Anchor.h"
-#include "soh/Network/HarpoonToggle.h"
-#ifdef ENABLE_HARPOON
 #include "soh/Network/Harpoon/Harpoon.h"
-#endif
 #include "Enhancements/mods.h"
 #include "Enhancements/game-interactor/GameInteractor.h"
 #include "Enhancements/randomizer/draw.h"
@@ -139,9 +136,7 @@ SpeechSynthesizer* SpeechSynthesizer::Instance;
 CrowdControl* CrowdControl::Instance;
 Sail* Sail::Instance;
 Anchor* Anchor::Instance;
-#ifdef ENABLE_HARPOON
 Harpoon* Harpoon::Instance;
-#endif
 
 extern "C" char** cameraStrings;
 
@@ -1550,9 +1545,7 @@ extern "C" void InitOTR(int argc, char* argv[]) {
     CrowdControl::Instance = new CrowdControl();
     Sail::Instance = new Sail();
     Anchor::Instance = new Anchor();
-#ifdef ENABLE_HARPOON
     Harpoon::Instance = new Harpoon();
-#endif
 
     OTRMessage_Init();
     OTRAudio_Init();
@@ -2526,6 +2519,258 @@ extern "C" u8 Randomizer_SceneHasMajorItem(s16 sceneNum) {
     }
     return 0;
 }
+
+// =============================================================================
+// Desire Sensor: vague hint system
+// =============================================================================
+
+#define TEXT_DESIRE_SENSOR_HINT 0x9300
+
+static std::string sCachedHintText;
+
+static const char* GetVagueItemDesc(RandomizerGet rg) {
+    switch (rg) {
+        case RG_KOKIRI_SWORD:
+        case RG_MASTER_SWORD:
+        case RG_GIANTS_KNIFE:
+        case RG_BIGGORON_SWORD:
+        case RG_PROGRESSIVE_GORONSWORD:
+            return "a sharp blade";
+        case RG_FAIRY_BOW:
+        case RG_PROGRESSIVE_BOW:
+            return "a hunter's tool";
+        case RG_FAIRY_SLINGSHOT:
+        case RG_PROGRESSIVE_SLINGSHOT:
+            return "a child's weapon";
+        case RG_HOOKSHOT:
+        case RG_LONGSHOT:
+        case RG_PROGRESSIVE_HOOKSHOT:
+            return "a grappling device";
+        case RG_MEGATON_HAMMER:
+            return "a crushing weight";
+        case RG_BOOMERANG:
+            return "a returning wind";
+        case RG_PROGRESSIVE_BOMB_BAG:
+            return "explosive power";
+        case RG_PROGRESSIVE_BOMBCHU_BAG:
+            return "scurrying explosives";
+        case RG_IRON_BOOTS:
+            return "heavy footwear";
+        case RG_HOVER_BOOTS:
+            return "enchanted footwear";
+        case RG_GORON_TUNIC:
+            return "flame-resistant garb";
+        case RG_ZORA_TUNIC:
+            return "aquatic garb";
+        case RG_MIRROR_SHIELD:
+            return "a reflecting surface";
+        case RG_DINS_FIRE:
+            return "a fiery spell";
+        case RG_FARORES_WIND:
+            return "a wind spell";
+        case RG_NAYRUS_LOVE:
+            return "a protective spell";
+        case RG_FIRE_ARROWS:
+            return "arrows of flame";
+        case RG_ICE_ARROWS:
+            return "arrows of ice";
+        case RG_LIGHT_ARROWS:
+            return "arrows of light";
+        case RG_LENS_OF_TRUTH:
+            return "an eye of truth";
+        case RG_STONE_OF_AGONY:
+            return "a rumbling stone";
+        case RG_GERUDO_MEMBERSHIP_CARD:
+            return "a desert pass";
+        case RG_DOUBLE_DEFENSE:
+            return "inner fortitude";
+        case RG_PROGRESSIVE_STRENGTH:
+            return "great strength";
+        case RG_PROGRESSIVE_SCALE:
+            return "diving prowess";
+        case RG_PROGRESSIVE_WALLET:
+            return "capacity for riches";
+        case RG_PROGRESSIVE_MAGIC_METER:
+            return "magical energy";
+        case RG_PROGRESSIVE_OCARINA:
+            return "a sacred instrument";
+        case RG_PROGRESSIVE_NUT_UPGRADE:
+        case RG_PROGRESSIVE_STICK_UPGRADE:
+            return "improved supplies";
+        case RG_EMPTY_BOTTLE:
+        case RG_BOTTLE_WITH_MILK:
+        case RG_BOTTLE_WITH_RED_POTION:
+        case RG_BOTTLE_WITH_GREEN_POTION:
+        case RG_BOTTLE_WITH_BLUE_POTION:
+        case RG_BOTTLE_WITH_FAIRY:
+        case RG_BOTTLE_WITH_FISH:
+        case RG_BOTTLE_WITH_BLUE_FIRE:
+        case RG_BOTTLE_WITH_BUGS:
+        case RG_BOTTLE_WITH_POE:
+        case RG_RUTOS_LETTER:
+        case RG_BOTTLE_WITH_BIG_POE:
+            return "a glass vessel";
+        case RG_ZELDAS_LULLABY:
+        case RG_EPONAS_SONG:
+        case RG_SARIAS_SONG:
+        case RG_SUNS_SONG:
+        case RG_SONG_OF_TIME:
+        case RG_SONG_OF_STORMS:
+        case RG_MINUET_OF_FOREST:
+        case RG_BOLERO_OF_FIRE:
+        case RG_SERENADE_OF_WATER:
+        case RG_REQUIEM_OF_SPIRIT:
+        case RG_NOCTURNE_OF_SHADOW:
+        case RG_PRELUDE_OF_LIGHT:
+            return "a sacred melody";
+        case RG_KOKIRI_EMERALD:
+        case RG_GORON_RUBY:
+        case RG_ZORA_SAPPHIRE:
+            return "a spiritual gem";
+        case RG_FOREST_MEDALLION:
+        case RG_FIRE_MEDALLION:
+        case RG_WATER_MEDALLION:
+        case RG_SPIRIT_MEDALLION:
+        case RG_SHADOW_MEDALLION:
+        case RG_LIGHT_MEDALLION:
+            return "a sage's proof";
+        case RG_FOREST_TEMPLE_SMALL_KEY:
+        case RG_FIRE_TEMPLE_SMALL_KEY:
+        case RG_WATER_TEMPLE_SMALL_KEY:
+        case RG_SPIRIT_TEMPLE_SMALL_KEY:
+        case RG_SHADOW_TEMPLE_SMALL_KEY:
+        case RG_BOTTOM_OF_THE_WELL_SMALL_KEY:
+        case RG_GERUDO_TRAINING_GROUND_SMALL_KEY:
+        case RG_GERUDO_FORTRESS_SMALL_KEY:
+        case RG_GANONS_CASTLE_SMALL_KEY:
+            return "a small key";
+        case RG_FOREST_TEMPLE_BOSS_KEY:
+        case RG_FIRE_TEMPLE_BOSS_KEY:
+        case RG_WATER_TEMPLE_BOSS_KEY:
+        case RG_SPIRIT_TEMPLE_BOSS_KEY:
+        case RG_SHADOW_TEMPLE_BOSS_KEY:
+        case RG_GANONS_CASTLE_BOSS_KEY:
+            return "a boss key";
+        case RG_GOLD_SKULLTULA_TOKEN:
+            return "a golden token";
+        default:
+            return "something of importance";
+    }
+}
+
+static const char* GetVagueLocationDesc(RandomizerCheckType rcType) {
+    switch (rcType) {
+        case RCTYPE_STANDARD:
+            return "hidden nearby";
+        case RCTYPE_SKULL_TOKEN:
+            return "guarded by a golden creature";
+        case RCTYPE_COW:
+            return "offered by a bovine friend";
+        case RCTYPE_SHOP:
+        case RCTYPE_MERCHANT:
+        case RCTYPE_SCRUB:
+            return "available for trade";
+        case RCTYPE_BOSS_HEART_OR_OTHER_REWARD:
+            return "held by a powerful foe";
+        case RCTYPE_DUNGEON_REWARD:
+            return "deep within this place";
+        case RCTYPE_FREESTANDING:
+            return "lying in plain sight";
+        case RCTYPE_POT:
+            return "inside a vessel";
+        case RCTYPE_CRATE:
+        case RCTYPE_NLCRATE:
+        case RCTYPE_SMALL_CRATE:
+            return "inside a container";
+        case RCTYPE_CHEST_GAME:
+            return "behind a game of chance";
+        case RCTYPE_SONG_LOCATION:
+            return "waiting to be learned";
+        case RCTYPE_BEEHIVE:
+            return "guarded by buzzing insects";
+        case RCTYPE_GRASS:
+        case RCTYPE_BUSH:
+            return "hidden in the brush";
+        case RCTYPE_TREE:
+        case RCTYPE_NLTREE:
+            return "above in the branches";
+        default:
+            return "somewhere in this area";
+    }
+}
+
+extern "C" u8 Randomizer_GetSceneHint(s16 sceneNum) {
+    sCachedHintText.clear();
+
+    auto ctx = Rando::Context::GetInstance();
+    if (!ctx) {
+        return 0;
+    }
+
+    auto& locationTable = Rando::StaticData::GetLocationTable();
+
+    struct HintEntry {
+        const char* itemDesc;
+        const char* locDesc;
+    };
+    std::vector<HintEntry> hints;
+
+    for (size_t i = 0; i < RC_MAX; i++) {
+        RandomizerCheck rc = static_cast<RandomizerCheck>(i);
+        Rando::Location& loc = locationTable[rc];
+        if (loc.GetRandomizerCheck() == RC_UNKNOWN_CHECK)
+            continue;
+        if (loc.GetScene() != static_cast<SceneID>(sceneNum))
+            continue;
+
+        Rando::ItemLocation* itemLoc = ctx->GetItemLocation(rc);
+        if (!itemLoc)
+            continue;
+
+        RandomizerCheckStatus status = itemLoc->GetCheckStatus();
+        if (status == RCSHOW_COLLECTED || status == RCSHOW_SAVED)
+            continue;
+
+        if (itemLoc->GetPlacedItem().IsMajorItem()) {
+            hints.push_back(
+                { GetVagueItemDesc(itemLoc->GetPlacedRandomizerGet()), GetVagueLocationDesc(loc.GetRCType()) });
+            if (hints.size() >= 3)
+                break;
+        }
+    }
+
+    if (hints.empty())
+        return 0;
+
+    // Build hint text: %g = green (item name), %w = white (reset), & = newline
+    sCachedHintText = "I sense ";
+    if (hints.size() == 1) {
+        sCachedHintText += "%g" + std::string(hints[0].itemDesc) + "%w " + hints[0].locDesc + "...";
+    } else {
+        sCachedHintText += "%g" + std::string(hints[0].itemDesc) + "%w " + hints[0].locDesc + "...";
+        sCachedHintText += "&and %g" + std::string(hints[1].itemDesc) + "%w " + hints[1].locDesc + "...";
+        if (hints.size() > 2) {
+            sCachedHintText += "&...and perhaps more.";
+        }
+    }
+
+    return (u8)hints.size();
+}
+
+static void BuildDesireSensorHintMessage(uint16_t* textId, bool* loadFromMessageTable) {
+    if (sCachedHintText.empty())
+        return;
+    CustomMessage msg(sCachedHintText, TEXTBOX_TYPE_BLUE, TEXTBOX_POS_BOTTOM);
+    msg.AutoFormat();
+    msg.LoadIntoFont();
+    *loadFromMessageTable = false;
+}
+
+void RegisterDesireSensorHints() {
+    COND_ID_HOOK(OnOpenText, TEXT_DESIRE_SENSOR_HINT, IS_RANDO, BuildDesireSensorHintMessage);
+}
+
+static RegisterShipInitFunc dsHintInitFunc(RegisterDesireSensorHints, { "IS_RANDO" });
 
 extern "C" void EntranceTracker_SetCurrentGrottoID(s16 entranceIndex) {
     EntranceTracker::SetCurrentGrottoIDForTracker(entranceIndex);

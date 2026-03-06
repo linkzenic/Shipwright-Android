@@ -7,6 +7,7 @@
 
 #include "z64.h"
 #include "../custom_items.h"
+#include "../logic/item_rod_ice.h"
 #include "macros.h"
 #include "functions.h"
 #include <math.h>
@@ -29,7 +30,7 @@ Gfx* gIceRodGiveDL = g_ice_rod_dl;
 // ============================================================================
 
 void CustomItems_DrawIceRod(Player* player, PlayState* play) {
-    if (!gCustomItemState.iceRodActive)
+    if (!iceRodActive)
         return;
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -73,72 +74,53 @@ void CustomItems_DrawIceRod(Player* player, PlayState* play) {
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, g_ice_rod_xlu_dl);
 
-    // Draw all active ice balls (1-3 depending on attack type)
-    // Ice projectiles are drawn as glowing translucent spheres
-    if (gCustomItemState.iceRodProjActive) {
-        f32 baseScale = gCustomItemState.iceRodProjScale;
-        u8 projCount = gCustomItemState.iceRodProjCount;
-
-        // Update texture scroll for animation
+    // Draw all active ice ball sets (up to 5 concurrent sets)
+    if (IceRod_HasAnyActiveSet()) {
         sIceRodBallScroll -= 10;
         sIceRodBallScroll &= 0x1FF;
 
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-
-        // CRITICAL: Set up texture segment before using gEffFire1DL (same as Fire Rod)
         gSPSegment(POLY_XLU_DISP++, 0x08,
                    Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, sIceRodBallScroll, 0x20, 0x80));
-
-        // Ice colors: cyan to white
         gDPSetPrimColor(POLY_XLU_DISP++, 0x80, 0x80, 200, 255, 255, 200);
         gDPSetEnvColor(POLY_XLU_DISP++, 0, 100, 255, 128);
 
         s16 camYaw = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000;
-        f32 iceScale = baseScale * 0.002f;
-        if (iceScale < 0.001f)
-            iceScale = 0.001f;
 
-        // Draw ice ball 1 (always)
-        Matrix_Translate(gCustomItemState.iceRodProjPos.x, gCustomItemState.iceRodProjPos.y,
-                         gCustomItemState.iceRodProjPos.z, MTXMODE_NEW);
-        Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-        Matrix_Scale(iceScale, iceScale, iceScale, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        // Use ice arrow effect display list if available, otherwise simple sphere
-        gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL); // Placeholder - will look like blue fire
-
-        // Draw ice ball 2 (slash spread)
-        if (projCount >= 2) {
-            Matrix_Translate(gCustomItemState.iceRodProjPos2.x, gCustomItemState.iceRodProjPos2.y,
-                             gCustomItemState.iceRodProjPos2.z, MTXMODE_NEW);
-            Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            Matrix_Scale(iceScale, iceScale, iceScale, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
-        }
-
-        // Draw ice ball 3 (slash spread)
-        if (projCount >= 3) {
-            Matrix_Translate(gCustomItemState.iceRodProjPos3.x, gCustomItemState.iceRodProjPos3.y,
-                             gCustomItemState.iceRodProjPos3.z, MTXMODE_NEW);
-            Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            Matrix_Scale(iceScale, iceScale, iceScale, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
-        }
-
-        // Draw trail for center ice ball (fading ice particles)
-        for (s32 i = 1; i < 4; i++) {
-            Vec3f* trailPos = &gCustomItemState.iceRodProjTrail[i];
-            f32 trailScale = iceScale * (1.0f - (i * 0.25f));
-            if (trailScale < 0.0005f)
+        RodProjSet* sets = IceRod_GetProjSets();
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+            RodProjSet* set = &sets[s];
+            if (!set->active)
                 continue;
 
-            Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
-            Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+            f32 iceScale = set->scale * 0.002f;
+            if (iceScale < 0.001f)
+                iceScale = 0.001f;
+
+            // Draw all iceballs in this set (1-3)
+            for (s32 p = 0; p < set->count; p++) {
+                Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                Matrix_Scale(iceScale, iceScale, iceScale, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+            }
+
+            // Draw trail for center iceball of this set
+            for (s32 i = 1; i < 4; i++) {
+                Vec3f* trailPos = &set->trail[i];
+                f32 trailScale = iceScale * (1.0f - (i * 0.25f));
+                if (trailScale < 0.0005f)
+                    continue;
+
+                Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
+                Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+            }
         }
     }
 

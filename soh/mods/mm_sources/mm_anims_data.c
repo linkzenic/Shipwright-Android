@@ -699,6 +699,13 @@ const MmAnimDef gMmAnims[MM_ANIM_MAX] = {
     [MM_ANIM_PN_GAKKISTART] = DEKU_ANIM("gPlayerAnim_pn_gakkistart", 12),
     [MM_ANIM_PN_GAKKIPLAY] = DEKU_ANIM("gPlayerAnim_pn_gakkiplay", 8),
 
+    // ========================================
+    // Human Link (alink_) special animations
+    // ========================================
+
+    // Kamaro's Mask dance (from gameplay_keep, 145 frames)
+    [MM_ANIM_ALINK_DANCE_LOOP] = LINK_ANIM("gPlayerAnim_alink_dance_loop", 145),
+
     // Remaining animations use placeholder definitions
     // Each entry that isn't explicitly defined will have NULL path and 0 frames
 };

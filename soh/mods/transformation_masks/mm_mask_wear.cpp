@@ -28,6 +28,14 @@ extern "C" Color_RGB8 sTunicColors[];
 // For GameInteractor_ExecuteOnFlagSet (Don Gero frog rewards)
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
+// For Kamaro's Mask → Darunia trigger (C header, needs extern "C" in C++)
+extern "C" {
+#include "overlays/actors/ovl_En_Du/z_en_du.h"
+}
+
+// For Kamaro's Mask → dance animation from MM (includes mm_anims.h for MmAnimId enum)
+#include "mods/anim_translator/mm_anim_loader.h"
+
 // =============================================================================
 // Worn Mask DL OTR Paths (from MM D_801C0B20[] - z_player_lib.c line 2853)
 // =============================================================================
@@ -120,6 +128,7 @@ static Gfx sBlastMaskXluSeg9[] = {
 #define MM_MASK_IDX_ALL_NIGHT 1
 #define MM_MASK_IDX_BLAST 2
 #define MM_MASK_IDX_STONE 3
+#define MM_MASK_IDX_GREAT_FAIRY 4
 #define MM_MASK_IDX_DON_GERO 9
 #define MM_MASK_IDX_ROMANI 12
 
@@ -142,6 +151,35 @@ static s32 sAllNightGsSpawned = 0; // Prevents re-spawning GS actors every frame
 
 // Couple's Mask passive regen timer (same rate as Lens of Truth: 1 per 80 frames)
 static s32 sCouplesMaskTimer = 0;
+
+// Captain's Hat state
+static s32 sCaptainHatSpawnTimer = 0;
+
+// Kamaro's Mask state
+static s32 sKamaroDancing = 0;
+static LinkAnimationHeader* sKamaroDanceAnim = NULL;
+static f32 sKamaroDanceFrame = 0.0f;
+static s32 sDaruniaDanceTimer = 0; // Frames Darunia has been dancing with player
+
+// Great Fairy Mask state
+static s32 sGreatFairyMenuOpen = 0;
+static s32 sGreatFairyMenuCursor = 0;
+static s32 sGreatFairyInputSkip = 0; // Skip input on first frame (same-frame open/close guard)
+
+// Great Fairy fountain teleport table
+static const struct {
+    const char* name;
+    u16 entrance;
+    s32 flagType; // 0=isMagicAcquired, 1=ITEMGETINF
+    s32 flagValue;
+} sGreatFairyFountains[] = {
+    { "DMT - Magic", 0x0315, 0, 0 },
+    { "DMC - Double Magic", 0x04BE, 1, ITEMGETINF_30 },
+    { "OGC - Defense", 0x04C2, 1, ITEMGETINF_38 },
+    { "ZF - Farore", 0x0371, 1, ITEMGETINF_19 },
+    { "HC - Din", 0x0578, 1, ITEMGETINF_18 },
+    { "Colossus - Nayru", 0x0588, 1, ITEMGETINF_1A },
+};
 
 // Chateau Romani state (persists across scene transitions, cleared on death)
 static s32 sChateauRomaniActive = 0;
@@ -232,6 +270,9 @@ extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
     if (sCurrentMmMask == itemId) {
         // Already wearing this mask - take it off
         sCurrentMmMask = ITEM_NONE;
+        sKamaroDancing = 0;
+        sGreatFairyMenuOpen = 0;
+        sCaptainHatSpawnTimer = 0;
     } else {
         // Put on this mask, clear any OOT mask
         sCurrentMmMask = itemId;
@@ -326,6 +367,24 @@ extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
                 gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)sBlastMaskDefaultSeg9);
                 gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
             }
+        } else if (idx == MM_MASK_IDX_GREAT_FAIRY) {
+            // =================================================================
+            // Great Fairy Mask: DL references segment 0x0B for 6 leaf matrices
+            // (MM uses physics simulation for animated leaves; here static identity)
+            // Also references 0x0D for head limb matrix (already set by player draw)
+            // =================================================================
+            Mtx* leafMtx = (Mtx*)Graph_Alloc(play->state.gfxCtx, 6 * sizeof(Mtx));
+            if (leafMtx != NULL) {
+                // Rotate 180° on Y so leaves point backward (they extend in +Z in DL space)
+                Matrix_Push();
+                Matrix_RotateY(M_PI, MTXMODE_APPLY);
+                for (s32 i = 0; i < 6; i++) {
+                    Matrix_ToMtx(&leafMtx[i], (char*)__FILE__, __LINE__);
+                }
+                Matrix_Pop();
+                gSPSegment(POLY_OPA_DISP++, 0x0B, (uintptr_t)leafMtx);
+            }
+            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
         } else {
             // =================================================================
             // All other masks: single DL draw
@@ -412,8 +471,41 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
             }
             case 3: // Stone Mask - effect handled in z_actor.c via MmMaskWear_IsStoneMaskActive()
                 break;
-            case 4: // Great Fairy Mask
+            case 4: // Great Fairy Mask — A to claim reward in fountain + B for teleport
+            {
+                if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE))
+                    break;
+
+                // A) In fountain scenes: A press triggers reward (sets switch flag 0x38)
+                if (play->sceneNum == SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC ||
+                    play->sceneNum == SCENE_GREAT_FAIRYS_FOUNTAIN_SPELLS) {
+                    if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_A)) {
+                        Flags_SetSwitch(play, 0x38);
+                    }
+                    break;
+                }
+
+                // B) Outside fountains: B press opens teleport menu (pause-based, like Minish Cap)
+                // Menu navigation is handled by MmMaskWear_GreatFairyWarpUpdate called from z_play.c
+                if (!sGreatFairyMenuOpen && CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+                    // Don't open if pause menu is already open or transitioning
+                    PauseContext* pauseCtx = &play->pauseCtx;
+                    if (pauseCtx->state != 0 || pauseCtx->debugState != 0)
+                        break;
+                    if (play->transitionTrigger != TRANS_TRIGGER_OFF)
+                        break;
+                    if (play->gameOverCtx.state != GAMEOVER_INACTIVE)
+                        break;
+
+                    sGreatFairyMenuOpen = 1;
+                    sGreatFairyMenuCursor = 0;
+                    sGreatFairyInputSkip = 1; // Prevent same-frame close (B still pressed)
+                    pauseCtx->state = 1;      // Freeze gameplay (Minish Cap pattern)
+                    Audio_PlaySoundGeneral(NA_SE_SY_WIN_OPEN, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                }
                 break;
+            }
             case 5: // Deku Mask (transformation - shouldn't reach here)
                 break;
             case 6: // Keaton Mask
@@ -502,18 +594,20 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 break;
             case 14: // Kafei's Mask
                 break;
-            case 15: // Couple's Mask — passive regen (day=HP, night=MP) at Lens of Truth rate
+            case 15: // Couple's Mask — passive regen (day=HP, night=MP)
             {
+                // Target: full recovery in ~32 seconds (640 frames at 20fps)
+                // Day: 10 hearts (160 HP) in 640 frames = 1 HP every 4 frames
+                // Night: 96 magic in 640 frames = 1 MP every ~7 frames
                 sCouplesMaskTimer--;
                 if (sCouplesMaskTimer <= 0) {
-                    sCouplesMaskTimer = 80; // Same rate as Lens of Truth drain
                     if (IS_DAY) {
-                        // Recover 1 HP (quarter-heart units)
+                        sCouplesMaskTimer = 4;
                         if (gSaveContext.health < gSaveContext.healthCapacity) {
                             gSaveContext.health++;
                         }
                     } else {
-                        // Recover 1 MP
+                        sCouplesMaskTimer = 7;
                         if (gSaveContext.magic < gSaveContext.magicCapacity) {
                             gSaveContext.magic++;
                         }
@@ -525,14 +619,154 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 break;
             case 17: // Zora Mask (transformation - shouldn't reach here)
                 break;
-            case 18: // Kamaro's Mask
+            case 18: // Kamaro's Mask — hold A to dance, triggers Darunia's joy
+            {
+                // Don't process while busy
+                if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE)) {
+                    sKamaroDancing = 0;
+                    break;
+                }
+
+                // Hold A = dance, release A = stop (raw input, not filtered sp44)
+                if (CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_A)) {
+                    if (!sKamaroDancing) {
+                        // Start dancing — load animation if needed
+                        if (sKamaroDanceAnim == NULL && MmAssets_IsAvailable()) {
+                            sKamaroDanceAnim = MmAnim_Load(MM_ANIM_ALINK_DANCE_LOOP);
+                        }
+                        if (sKamaroDanceAnim != NULL) {
+                            sKamaroDancing = 1;
+                            sKamaroDanceFrame = 0.0f;
+                        }
+                    }
+                } else {
+                    // A released → stop dancing
+                    if (sKamaroDancing && EnDu_IsDancing()) {
+                        // Stop Darunia's dance too (find him in Goron City)
+                        Actor* npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
+                        while (npc != NULL) {
+                            if (npc->id == ACTOR_EN_DU) {
+                                EnDu_StopDancing(npc, play);
+                                break;
+                            }
+                            npc = npc->next;
+                        }
+                        sDaruniaDanceTimer = 0;
+                    }
+                    sKamaroDancing = 0;
+                }
+
+                // While dancing: override animation AFTER Player_UpdateCommon already ran
+                // Input is zeroed in z_player.c when sKamaroDancing=true (via MmMaskWear_IsKamaroDancing)
+                if (sKamaroDancing) {
+                    // Set dance animation header (PlayLoop sets mode, endFrame, etc.)
+                    LinkAnimation_PlayLoop(play, &player->skelAnime, sKamaroDanceAnim);
+
+                    // Override curFrame with our tracked position (PlayLoop resets to 0)
+                    player->skelAnime.curFrame = sKamaroDanceFrame;
+
+                    // CRITICAL: Queue frame loading into jointTable so draw actually shows the dance.
+                    // Without this, Player_UpdateCommon's SkelAnime_Update already queued the idle anim.
+                    // Our SetLoadFrame runs after, so it overwrites idle data in AnimationContext_Update.
+                    AnimationContext_SetLoadFrame(play, sKamaroDanceAnim, (s32)sKamaroDanceFrame,
+                                                  player->skelAnime.limbCount, player->skelAnime.jointTable);
+
+                    // Advance our tracked frame
+                    sKamaroDanceFrame += 1.0f;
+                    if (sKamaroDanceFrame >= player->skelAnime.animLength) {
+                        sKamaroDanceFrame = 0.0f;
+                    }
+
+                    // Lock movement
+                    player->linearVelocity = 0.0f;
+
+                    // Check for Darunia in Goron City — dance together, then trigger reward
+                    if (play->sceneNum == SCENE_GORON_CITY && !Flags_GetRandomizerInf(RAND_INF_DARUNIAS_JOY)) {
+                        Actor* npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
+                        while (npc != NULL) {
+                            if (npc->id == ACTOR_EN_DU && npc->xzDistToPlayer < 200.0f) {
+                                // Start Darunia dancing alongside player (no cutscene yet)
+                                if (!EnDu_IsDancing()) {
+                                    EnDu_StartDancing(npc, play);
+                                    sDaruniaDanceTimer = 0;
+                                }
+                                sDaruniaDanceTimer++;
+
+                                // After ~5 seconds of dancing together, trigger joy reward
+                                if (sDaruniaDanceTimer >= 100) {
+                                    EnDu_StopDancing(npc, play);
+                                    EnDu_TriggerDaruniasJoy(npc, play);
+                                    sKamaroDancing = 0;
+                                    sDaruniaDanceTimer = 0;
+                                }
+                                break;
+                            }
+                            npc = npc->next;
+                        }
+                    }
+                }
                 break;
+            }
             case 19: // Gibdo Mask
                 break;
             case 20: // Garo's Mask
                 break;
-            case 21: // Captain's Hat
+            case 21: // Captain's Hat — spawn giant Stalchildren/Stalfos at night in Hyrule Field
+            {
+                if (play->sceneNum != SCENE_HYRULE_FIELD || IS_DAY) {
+                    sCaptainHatSpawnTimer = 0;
+                    break;
+                }
+
+                // Don't spawn if player is busy
+                if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE))
+                    break;
+
+                sCaptainHatSpawnTimer++;
+                if (sCaptainHatSpawnTimer < 100) // Every ~5 seconds
+                    break;
+
+                // Count current enemies in scene, max 3
+                s32 enemyCount = 0;
+                Actor* enemy = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
+                while (enemy != NULL) {
+                    if (enemy->id == ACTOR_EN_SKB || enemy->id == ACTOR_EN_TEST) {
+                        if (enemy->home.rot.z == 0x7FFF)
+                            enemyCount++;
+                    }
+                    enemy = enemy->next;
+                }
+
+                if (enemyCount >= 3) {
+                    sCaptainHatSpawnTimer = 80; // Check again sooner
+                    break;
+                }
+
+                // Random spawn position 200-400 units from Link
+                f32 angle = Rand_ZeroOne() * 65536.0f;
+                f32 dist = 200.0f + Rand_ZeroOne() * 200.0f;
+                f32 spawnX = player->actor.world.pos.x + Math_SinS((s16)angle) * dist;
+                f32 spawnZ = player->actor.world.pos.z + Math_CosS((s16)angle) * dist;
+                f32 spawnY = player->actor.world.pos.y;
+
+                Actor* spawned;
+                if (LINK_IS_ADULT) {
+                    // Adult: Stalfos
+                    spawned = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_TEST, spawnX, spawnY, spawnZ, 0, (s16)angle,
+                                          0, 0, true);
+                } else {
+                    // Child: Giant Stalchild (params=10 → 2x scale, 2x speed)
+                    spawned = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_SKB, spawnX, spawnY, spawnZ, 0, (s16)angle, 0,
+                                          10, true);
+                }
+
+                if (spawned != NULL) {
+                    spawned->home.rot.z = 0x7FFF; // Drop sentinel
+                }
+
+                sCaptainHatSpawnTimer = 0;
                 break;
+            }
             case 22: // Giant's Mask
                 break;
             case 23: // Fierce Deity Mask (transformation - shouldn't reach here)
@@ -565,7 +799,14 @@ extern "C" void MmMaskWear_Clear(void) {
     sDonGeroReward = GI_NONE;
     sAllNightGsSpawned = 0;
     sCouplesMaskTimer = 0;
+    sCaptainHatSpawnTimer = 0;
+    sKamaroDancing = 0;
+    sDaruniaDanceTimer = 0;
+    sGreatFairyMenuOpen = 0;
+    sGreatFairyMenuCursor = 0;
+    sGreatFairyInputSkip = 0;
     // NOTE: sChateauRomaniActive is NOT cleared here (persists across scenes, cleared on death)
+    // NOTE: sKamaroDanceAnim is NOT cleared (cached animation, reusable)
 }
 
 extern "C" s32 MmMaskWear_IsStoneMaskActive(void) {
@@ -607,5 +848,161 @@ extern "C" void MmMaskWear_DeactivateChateauRomani(void) {
     if (sChateauDidSetFlag) {
         Flags_UnsetRandomizerInf(RAND_INF_HAS_INFINITE_MAGIC_METER);
         sChateauDidSetFlag = 0;
+    }
+}
+
+// =============================================================================
+// Great Fairy Mask - Teleport Menu Overlay (GfxPrint)
+// =============================================================================
+
+extern "C" void MmMaskWear_DrawOverlay(PlayState* play) {
+    if (!sGreatFairyMenuOpen)
+        return;
+
+    try {
+        GraphicsContext* gfxCtx = play->state.gfxCtx;
+        OPEN_DISPS(gfxCtx);
+
+        // 1. Dark semi-transparent background on OVERLAY_DISP
+        gDPPipeSync(OVERLAY_DISP++);
+        gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
+        gDPSetCombineMode(OVERLAY_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+        gDPSetOtherMode(OVERLAY_DISP++,
+                        G_AD_DISABLE | G_CD_DISABLE | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE |
+                            G_TD_CLAMP | G_TP_NONE | G_CYC_1CYCLE | G_PM_NPRIMITIVE,
+                        G_AC_NONE | G_ZS_PRIM | G_RM_CLD_SURF | G_RM_CLD_SURF2);
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 160);
+        gSPWideTextureRectangle(OVERLAY_DISP++, 0, 0, SCREEN_WIDTH << 2, SCREEN_HEIGHT << 2, G_TX_RENDERTILE, 0, 0, 0,
+                                0);
+        gDPPipeSync(OVERLAY_DISP++);
+
+        // 2. GfxPrint text — write directly into OVERLAY_DISP buffer (large enough for all text).
+        //    Previous approach used Graph_Alloc(512 entries) which overflowed because
+        //    gSPTextureRectangle uses 3 Gfx entries per char (with shadow = ~8 entries/char).
+        GfxPrint printer;
+        GfxPrint_Init(&printer);
+        GfxPrint_Open(&printer, OVERLAY_DISP);
+
+        // Title
+        GfxPrint_SetColor(&printer, 200, 255, 200, 255);
+        GfxPrint_SetPos(&printer, 8, 6);
+        GfxPrint_Printf(&printer, "Great Fairy Fountains");
+
+        GfxPrint_SetColor(&printer, 150, 150, 150, 255);
+        GfxPrint_SetPos(&printer, 8, 8);
+        GfxPrint_Printf(&printer, "DPad:Select A:Warp B:Cancel");
+
+        // List fountains
+        for (s32 i = 0; i < 6; i++) {
+            s32 discovered = 0;
+            if (sGreatFairyFountains[i].flagType == 0) {
+                discovered = gSaveContext.isMagicAcquired;
+            } else {
+                discovered = Flags_GetItemGetInf(sGreatFairyFountains[i].flagValue);
+            }
+
+            GfxPrint_SetPos(&printer, 10, 10 + i);
+
+            if (i == sGreatFairyMenuCursor) {
+                if (discovered) {
+                    GfxPrint_SetColor(&printer, 255, 255, 100, 255);
+                } else {
+                    GfxPrint_SetColor(&printer, 200, 100, 100, 255);
+                }
+                GfxPrint_Printf(&printer, "> %s", sGreatFairyFountains[i].name);
+            } else {
+                if (discovered) {
+                    GfxPrint_SetColor(&printer, 200, 200, 200, 255);
+                } else {
+                    GfxPrint_SetColor(&printer, 80, 80, 80, 255);
+                }
+                GfxPrint_Printf(&printer, "  %s", sGreatFairyFountains[i].name);
+            }
+        }
+
+        OVERLAY_DISP = GfxPrint_Close(&printer);
+        GfxPrint_Destroy(&printer);
+
+        CLOSE_DISPS(gfxCtx);
+    } catch (...) {}
+}
+
+// =============================================================================
+// Kamaro Dance query
+// =============================================================================
+
+extern "C" s32 MmMaskWear_IsKamaroDancing(void) {
+    return sKamaroDancing;
+}
+
+// =============================================================================
+// Great Fairy Warp — pause-based update (called from z_play.c when paused)
+// =============================================================================
+
+extern "C" s32 MmMaskWear_IsGreatFairyWarpActive(void) {
+    return sGreatFairyMenuOpen;
+}
+
+extern "C" void MmMaskWear_GreatFairyWarpUpdate(PlayState* play) {
+    if (!sGreatFairyMenuOpen)
+        return;
+
+    // Skip input on the first frame to prevent same-frame open/close.
+    // The B press that opened the menu is still active in this frame's input,
+    // so the cancel check below would immediately close the menu.
+    if (sGreatFairyInputSkip) {
+        sGreatFairyInputSkip = 0;
+        return;
+    }
+
+    Input* input = &play->state.input[0];
+
+    // D-pad navigation
+    if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+        sGreatFairyMenuCursor--;
+        if (sGreatFairyMenuCursor < 0)
+            sGreatFairyMenuCursor = 5;
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+    if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
+        sGreatFairyMenuCursor++;
+        if (sGreatFairyMenuCursor > 5)
+            sGreatFairyMenuCursor = 0;
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+
+    // B cancels
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        sGreatFairyMenuOpen = 0;
+        play->pauseCtx.state = 0;
+        Audio_PlaySoundGeneral(NA_SE_SY_WIN_CLOSE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    // A confirms warp
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        s32 sel = sGreatFairyMenuCursor;
+        s32 discovered = 0;
+        if (sGreatFairyFountains[sel].flagType == 0) {
+            discovered = gSaveContext.isMagicAcquired;
+        } else {
+            discovered = Flags_GetItemGetInf(sGreatFairyFountains[sel].flagValue);
+        }
+
+        if (discovered) {
+            sGreatFairyMenuOpen = 0;
+            play->pauseCtx.state = 0; // Unpause so transition can process
+            play->nextEntranceIndex = sGreatFairyFountains[sel].entrance;
+            play->transitionTrigger = TRANS_TRIGGER_START;
+            play->transitionType = TRANS_TYPE_FADE_BLACK;
+            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        } else {
+            Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
     }
 }

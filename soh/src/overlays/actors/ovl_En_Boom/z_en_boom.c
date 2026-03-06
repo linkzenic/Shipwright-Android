@@ -6,6 +6,7 @@
 
 #include "z_en_boom.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -66,25 +67,48 @@ void EnBoom_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
 
-    blure.p1StartColor[0] = 255;
-    blure.p1StartColor[1] = 255;
-    blure.p1StartColor[2] = 100;
-    blure.p1StartColor[3] = 255;
+    // Zora fin boomerangs (params 1=left, 2=right) use cyan trail
+    if (this->actor.params == 1 || this->actor.params == 2) {
+        blure.p1StartColor[0] = 100;
+        blure.p1StartColor[1] = 220;
+        blure.p1StartColor[2] = 255;
+        blure.p1StartColor[3] = 255;
 
-    blure.p2StartColor[0] = 255;
-    blure.p2StartColor[1] = 255;
-    blure.p2StartColor[2] = 100;
-    blure.p2StartColor[3] = 64;
+        blure.p2StartColor[0] = 50;
+        blure.p2StartColor[1] = 180;
+        blure.p2StartColor[2] = 255;
+        blure.p2StartColor[3] = 64;
 
-    blure.p1EndColor[0] = 255;
-    blure.p1EndColor[1] = 255;
-    blure.p1EndColor[2] = 100;
-    blure.p1EndColor[3] = 0;
+        blure.p1EndColor[0] = 50;
+        blure.p1EndColor[1] = 180;
+        blure.p1EndColor[2] = 255;
+        blure.p1EndColor[3] = 0;
 
-    blure.p2EndColor[0] = 255;
-    blure.p2EndColor[1] = 255;
-    blure.p2EndColor[2] = 100;
-    blure.p2EndColor[3] = 0;
+        blure.p2EndColor[0] = 50;
+        blure.p2EndColor[1] = 180;
+        blure.p2EndColor[2] = 255;
+        blure.p2EndColor[3] = 0;
+    } else {
+        blure.p1StartColor[0] = 255;
+        blure.p1StartColor[1] = 255;
+        blure.p1StartColor[2] = 100;
+        blure.p1StartColor[3] = 255;
+
+        blure.p2StartColor[0] = 255;
+        blure.p2StartColor[1] = 255;
+        blure.p2StartColor[2] = 100;
+        blure.p2StartColor[3] = 64;
+
+        blure.p1EndColor[0] = 255;
+        blure.p1EndColor[1] = 255;
+        blure.p1EndColor[2] = 100;
+        blure.p1EndColor[3] = 0;
+
+        blure.p2EndColor[0] = 255;
+        blure.p2EndColor[1] = 255;
+        blure.p2EndColor[2] = 100;
+        blure.p2EndColor[3] = 0;
+    }
 
     blure.elemDuration = 8;
     blure.unkFlag = 0;
@@ -272,7 +296,15 @@ void EnBoom_Draw(Actor* thisx, PlayState* play) {
     Matrix_RotateY((this->activeTimer * 12000) * (M_PI / 0x8000), MTXMODE_APPLY);
 
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, gBoomerangRefDL);
+
+    // Zora fin boomerangs: use MM fin DLs instead of OOT boomerang
+    if (this->actor.params == 1 && gZoraFinBoomerangLDL != NULL) {
+        gSPDisplayList(POLY_OPA_DISP++, gZoraFinBoomerangLDL);
+    } else if (this->actor.params == 2 && gZoraFinBoomerangRDL != NULL) {
+        gSPDisplayList(POLY_OPA_DISP++, gZoraFinBoomerangRDL);
+    } else {
+        gSPDisplayList(POLY_OPA_DISP++, gBoomerangRefDL);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

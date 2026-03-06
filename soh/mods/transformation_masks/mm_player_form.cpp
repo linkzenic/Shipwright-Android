@@ -53,9 +53,6 @@
 
 #define MMFORM_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
 
-// Temporarily disable MM sounds. Set to 1 to disable all MM audio.
-#define MM_SOUNDS_DISABLED 0
-
 // =============================================================================
 // Gameplay Constants (used throughout the file)
 // =============================================================================
@@ -636,6 +633,8 @@ typedef struct {
     u8 rollWallBounceTimer;  // unk_B8C: frames to ignore input after wall bounce
     u8 rollNoInputTimer;     // unk_B8E: frames of zero input after spike disable
     u8 rollGroundPoundTimer; // unk_B8A: ground pound fall/pause timer
+    f32 rollColorLerp;       // unk_B10[0]: ground pound color lerp (0=white, 1=blue)
+    s16 rollDriftYaw;        // unk_B28: drift direction yaw for ball directional tilt
 
     // Ground pound crack visual (from 2Ship ACTOR_EN_TEST: dark circle on floor at impact)
     Vec3f groundPoundImpactPos;          // World position of impact
@@ -702,13 +701,30 @@ typedef struct {
     u8 fastSwimActive;    // Equivalent to PLAYER_STATE3_8000 (dolphin swim mode)
     s16 swimRollSmoothed; // Smoothed roll for draw (unk_B8E equivalent in MM)
     // Fast swim 3-phase state machine (from 2Ship Player_Action_56)
-    u8 swimPhase;         // 0=waterroll transition, 1=active swimming, 2=exiting
-    s16 swimPhaseCounter; // av2 equivalent (5 loops for waterroll→fishswim)
-    f32 swimSpeedB48;     // unk_B48 — speed accumulator for cos/sin velocity split
-    s16 swimYawRate;      // unk_B8A — stick X → yaw accumulation rate
-    u8 swimExitFlag;      // unk_B86[0] — 0=swimming, 1=exiting swim
-    s16 swimFloorTimer;   // unk_B8C — floor bounce cooldown during fast swim
-    s16 bootToggleDelay;  // av2 equivalent for boot toggle (20 frames before dive allowed)
+    u8 swimPhase;          // 0=waterroll transition, 1=active swimming, 2=exiting
+    s16 swimPhaseCounter;  // av2 equivalent (5 loops for waterroll→fishswim)
+    f32 swimSpeedB48;      // unk_B48 — speed accumulator for cos/sin velocity split
+    s16 swimYawRate;       // unk_B8A — stick X → yaw accumulation rate
+    u8 swimExitFlag;       // unk_B86[0] — 0=swimming, 1=exiting swim
+    s16 swimFloorTimer;    // unk_B8C — floor bounce cooldown during fast swim
+    s16 bootToggleDelay;   // av2 equivalent for boot toggle (20 frames before dive allowed)
+    u8 boomerangHoldTimer; // Frames B held before entering boomerang aim (needs 10, like MM unk_ACC)
+
+    // Zora punch swing trail
+    s32 punchTrailEffectIndex; // EffectBlure index (-1 = inactive)
+    u8 punchTrailActive;
+    u8 punchComboCounter; // unk_ADD: progressive combo counter for Zora SFX selection
+
+    // Gakki (instrument) state — form-specific ocarina override (from MM z_player.c D_8085D17C)
+    u8 gakkiActive;                      // 0=inactive, 1=start anim, 2=playing loop, 3=ending
+    LinkAnimationHeader* gakkiStartAnim; // Loaded per-form gakkistart
+    LinkAnimationHeader* gakkiPlayAnim;  // Loaded per-form gakkiplay
+    Vec3f gakkiScale0;                   // Container/base instrument scale (keyframe interp)
+    Vec3f gakkiScale1;                   // Per-piece instrument scale
+    f32 gakkiPieceScales[5];             // Per-piece scales (Goron drums / Deku pipes)
+
+    // Deku cheek inflation during bubble charge (from 2Ship z_player_lib.c:2434-2458)
+    f32 dekuCheekScale; // Head limb scale factor (1.0 = normal, up to 1.3 when charging)
 
     // Whether form DL resources have been pinned (held alive in shared_ptrs)
     u8 formDLsPinned;
@@ -737,9 +753,97 @@ static u8 sForceInstantTransform = 0; // Set to 1 for scene-transition reactivat
 static ItemEquips sPreTransformEquips;
 static u8 sEquipsSaved = 0;
 
-// Per-form gravity for different action states.
-// Values from 2Ship z_player.c: Player_Action_25 (line 15165), Player_Action_29 (line 15382),
-// Player_Action_96 (lines 20142/20145).
+// =============================================================================
+// Gakki (Instrument) Keyframe System — from MM z_player_lib.c
+// struct_80124618 = { s16 frame, Vec3s scale(×0.01f) }
+// func_80124618 = keyframe interpolator (z_player_lib.c:1783)
+// =============================================================================
+
+typedef struct {
+    s16 frame;
+    Vec3s scale; // ×0.01f (100 = 1.0x)
+} GakkiKeyframe;
+
+// Keyframe interpolation (VERBATIM from MM func_80124618, z_player_lib.c:1783-1809)
+static void GakkiKeyframe_Interp(GakkiKeyframe frames[], f32 curFrame, Vec3f* out) {
+    GakkiKeyframe* prev;
+    s32 currentFrame = curFrame;
+    s16 nextFrame;
+    f32 progress;
+    f32 temp;
+
+    do {
+        nextFrame = frames[1].frame;
+        frames++;
+    } while (nextFrame < currentFrame);
+
+    prev = frames - 1;
+
+    progress = (curFrame - (f32)prev->frame) / ((f32)nextFrame - (f32)prev->frame);
+
+    temp = prev->scale.x;
+    out->x = F32_LERPIMP(temp, (f32)frames->scale.x, progress) * 0.01f;
+
+    temp = prev->scale.y;
+    out->y = F32_LERPIMP(temp, (f32)frames->scale.y, progress) * 0.01f;
+
+    temp = prev->scale.z;
+    out->z = F32_LERPIMP(temp, (f32)frames->scale.z, progress) * 0.01f;
+}
+
+// Deku Pipes — start animation: container scale (D_801C0340, z_player_lib.c:1254)
+static GakkiKeyframe sGakkiDekuStartContainer[] = {
+    { 0, { 0, 0, 0 } },       { 5, { 0, 0, 0 } },        { 7, { 100, 100, 100 } },
+    { 9, { 110, 110, 110 } }, { 11, { 100, 100, 100 } },
+};
+// Deku Pipes — start animation: per-piece scale (D_801C0368, z_player_lib.c:1259)
+static GakkiKeyframe sGakkiDekuStartPieces[] = {
+    { 0, { 0, 0, 0 } },       { 4, { 0, 0, 0 } },      { 6, { 120, 150, 60 } },   { 8, { 130, 80, 160 } },
+    { 9, { 100, 100, 100 } }, { 10, { 90, 100, 90 } }, { 11, { 100, 100, 100 } },
+};
+// Deku Pipes — play animation: uniform scale (D_801C03A0, z_player_lib.c:1265)
+static GakkiKeyframe sGakkiDekuPlay[] = {
+    { 0, { 100, 100, 100 } },
+    { 2, { 120, 120, 120 } },
+    { 6, { 90, 90, 90 } },
+    { 7, { 93, 93, 93 } },
+};
+
+// Goron Drums — start animation: drum body scale (D_801C0428, z_player_lib.c:1283)
+static GakkiKeyframe sGakkiGoronStart[] = {
+    { 0, { 0, 0, 0 } },      { 6, { 0, 0, 0 } },        { 7, { 60, 60, 50 } },     { 8, { 120, 130, 100 } },
+    { 9, { 100, 120, 80 } }, { 11, { 100, 100, 100 } }, { 13, { 100, 100, 100 } },
+};
+// Goron Drums — play animation: drum body scale (D_801C0490, z_player_lib.c:1296)
+static GakkiKeyframe sGakkiGoronPlay[] = {
+    { 0, { 100, 100, 100 } },  { 1, { 100, 100, 100 } },  { 2, { 90, 100, 105 } },  { 4, { 110, 100, 100 } },
+    { 5, { 90, 100, 105 } },   { 6, { 100, 100, 100 } },  { 7, { 90, 100, 105 } },  { 8, { 100, 100, 100 } },
+    { 9, { 90, 100, 105 } },   { 10, { 100, 100, 100 } }, { 11, { 90, 100, 105 } }, { 12, { 110, 100, 100 } },
+    { 13, { 100, 100, 100 } }, { 14, { 90, 100, 105 } },  { 15, { 90, 100, 105 } }, { 17, { 100, 100, 100 } },
+};
+// Goron Drums — wait/idle scale (D_801C0510, z_player_lib.c:1311)
+static GakkiKeyframe sGakkiGoronWait[] = {
+    { 0, { 100, 100, 100 } }, { 4, { 100, 100, 100 } }, { 5, { 90, 110, 100 } },
+    { 6, { 110, 105, 100 } }, { 8, { 100, 100, 100 } },
+};
+
+// Zora Guitar — start animation: guitar scale (D_801C0538, z_player_lib.c:1316)
+static GakkiKeyframe sGakkiZoraStart[] = {
+    { 0, { 100, 100, 100 } }, { 5, { 100, 100, 100 } },  { 6, { 0, 0, 0 } },
+    { 8, { 100, 100, 100 } }, { 14, { 100, 100, 100 } },
+};
+// Zora Guitar — play animation: guitar scale (D_801C0560, z_player_lib.c:1321)
+// Includes AVOID_UB fix: MM reads past end when frame==6 > last keyframe frame==5
+static GakkiKeyframe sGakkiZoraPlay[] = {
+    { 0, { 100, 100, 100 } },
+    { 2, { 95, 95, 100 } },
+    { 3, { 105, 105, 100 } },
+    { 5, { 102, 102, 102 } },
+    // Extra entries to avoid OOB read when curFrame==6 (from MM AVOID_UB fix)
+    { 6, { 100, 100, 100 } },
+    { 9, { 100, 100, 100 } },
+};
+
 // =============================================================================
 // Slot-Based Restriction Helpers
 // =============================================================================
@@ -1386,6 +1490,10 @@ static void MmForm_PreloadZoraDLs(void) {
     if (sCachedZoraFinRDL) {
         MmForm_PreResolveDLHashes(sCachedZoraFinRDL, "gLinkZoraRightForearmShieldDL", 0);
     }
+
+    // Expose fin DLs globally for EnBoom visual override (z_en_boom.c)
+    gZoraFinBoomerangLDL = sCachedZoraFinLDL;
+    gZoraFinBoomerangRDL = sCachedZoraFinRDL;
 }
 
 static void MmForm_PreloadDekuDLs(void) {
@@ -1449,6 +1557,10 @@ static void MmForm_ClearCachedDLs(void) {
     sCachedBarrierDL = NULL;
     sCachedZoraFinLDL = NULL;
     sCachedZoraFinRDL = NULL;
+
+    // Clear global fin DL pointers (EnBoom visual override)
+    gZoraFinBoomerangLDL = NULL;
+    gZoraFinBoomerangRDL = NULL;
     sCurledDLCount = 0;
     sSpikeGeomDLCount = 0;
     sEnergyEffect1DLCount = 0;
@@ -1666,6 +1778,10 @@ static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) 
             gFormState.doorAOpen = MmAnim_Load(MM_ANIM_PG_DOORA_OPEN);
             gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PG_DOORB_OPEN);
             gFormState.chestOpen = MmAnim_Load(MM_ANIM_PG_TBOX_OPEN);
+
+            // Gakki (instrument) animations — Goron Drums (from 2Ship z_player.c:D_8085D17C)
+            gFormState.gakkiStartAnim = MmAnim_Load(MM_ANIM_PG_GAKKISTART); // 20 frames
+            gFormState.gakkiPlayAnim = MmAnim_Load(MM_ANIM_PG_GAKKIPLAY);   // 4 frames (play loop)
         } else if (form == MM_PLAYER_FORM_ZORA) {
             // Zora punch combo (from 2Ship sMeleeAttackAnimInfo, z_player.c line 3575-3580)
             gFormState.punchA = MmAnim_Load(MM_ANIM_PZ_ATTACKA);
@@ -1770,6 +1886,10 @@ static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) 
             gFormState.doorBOpen = MmAnim_Load(MM_ANIM_PZ_DOORB_OPEN);
             gFormState.chestOpen = MmAnim_Load(MM_ANIM_PZ_TBOX_OPEN);
 
+            // Gakki (instrument) animations — Zora Guitar (from 2Ship z_player.c:D_8085D17C)
+            gFormState.gakkiStartAnim = MmAnim_Load(MM_ANIM_PZ_GAKKISTART); // 15 frames
+            gFormState.gakkiPlayAnim = MmAnim_Load(MM_ANIM_PZ_GAKKIPLAY);   // 7 frames (play loop)
+
             // Initialize shield damage protection collider for Zora guard stance
             // Same collider as Goron (from 2Ship D_8085C318, z_player.c line 1686)
             // Zora uses shieldCylinder for both defense (AC) and barrier (AT) in MM
@@ -1827,6 +1947,10 @@ static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) 
 
             // Chest animation (from 2Ship ageProperties: pn_Tbox_open)
             gFormState.chestOpen = MmAnim_Load(MM_ANIM_PN_TBOX_OPEN);
+
+            // Gakki (instrument) animations — Deku Pipes (from 2Ship z_player.c:D_8085D17C)
+            gFormState.gakkiStartAnim = MmAnim_Load(MM_ANIM_PN_GAKKISTART); // 12 frames
+            gFormState.gakkiPlayAnim = MmAnim_Load(MM_ANIM_PN_GAKKIPLAY);   // 8 frames (play loop)
 
         } else if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
             // Fierce Deity mask removal (for detransformation)
@@ -2201,7 +2325,20 @@ static void MmForm_RestoreOotState(Player* player) {
     gFormState.fastSwimActive = 0;
     gFormState.swimRollSmoothed = 0;
 
+    // Cleanup punch trail
+    if (gFormState.punchTrailActive && gPlayState != NULL) {
+        Effect_Delete(gPlayState, gFormState.punchTrailEffectIndex);
+    }
+    gFormState.punchTrailActive = 0;
+    gFormState.punchTrailEffectIndex = -1;
+
+    // Cleanup gakki (instrument) state
+    gFormState.gakkiActive = 0;
+    gFormState.gakkiStartAnim = NULL;
+    gFormState.gakkiPlayAnim = NULL;
+
     // Cleanup boomerang (En_Boom actors self-destruct, just clear our tracking)
+    gFormState.boomerangHoldTimer = 0;
     gFormState.boomerangState = 0;
     gFormState.boomerangActorL = NULL;
     gFormState.boomerangActorR = NULL;
@@ -2549,6 +2686,7 @@ static s16 sShieldLockedYaw = 0;
 
 static void MmForm_EnterShield(Player* player, PlayState* play) {
     player->linearVelocity = 0.0f;
+    player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC; // Block OOT movement during shield
 
     if (gFormState.currentForm == MM_PLAYER_FORM_DEKU && gFormState.dekuGuardAnim != NULL) {
         // From 2Ship Player_ActionHandler_11 (z_player.c line 8544):
@@ -2643,14 +2781,20 @@ static void MmForm_GoronAction_Idle(Player* player, PlayState* play) {
         }
     }
 
-    // B hold (Zora only) → boomerang throw (from 2Ship func_80830E30, z_player.c:4207)
+    // B hold (Zora only) → boomerang throw after 10 frames (from 2Ship func_80830E30, unk_ACC = 0xA)
     // In MM you must do an action first (punch/jump kick), THEN hold B to enter aim mode.
     // This check also triggers from PUNCH_END and other post-action states (see those handlers).
-    if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
-        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
-            gFormState.cutterAttack != NULL) {
-            MmForm_StartBoomerangThrow(player, play);
-            return;
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
+        gFormState.cutterAttack != NULL) {
+        if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
+            gFormState.boomerangHoldTimer++;
+            if (gFormState.boomerangHoldTimer >= 10) {
+                gFormState.boomerangHoldTimer = 0;
+                MmForm_StartBoomerangThrow(player, play);
+                return;
+            }
+        } else if (!CHECK_BTN_ALL(input->cur.button, BTN_B)) {
+            gFormState.boomerangHoldTimer = 0;
         }
     }
 
@@ -3076,21 +3220,58 @@ static void MmForm_StartPunch(Player* player, PlayState* play) {
     if (gFormState.punchA == NULL)
         return;
 
+    gFormState.boomerangHoldTimer = 0;
     gFormState.comboStep = 0;
     gFormState.comboBPressed = 0;
     MmForm_DisablePunchQuad(player); // Clear any leftover quad state
     MmForm_SetAction(GORON_ACT_PUNCH_A, play, gFormState.punchA, 1.0f, ANIMMODE_ONCE);
 
+    // Zora punch swing trail (cyan EffectBlure on active fin)
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
+        // Clean up any existing trail first
+        if (gFormState.punchTrailActive) {
+            Effect_Delete(play, gFormState.punchTrailEffectIndex);
+            gFormState.punchTrailActive = 0;
+        }
+        EffectBlureInit1 blure = {};
+        blure.p1StartColor[0] = 100;
+        blure.p1StartColor[1] = 220;
+        blure.p1StartColor[2] = 255;
+        blure.p1StartColor[3] = 200;
+        blure.p2StartColor[0] = 50;
+        blure.p2StartColor[1] = 180;
+        blure.p2StartColor[2] = 255;
+        blure.p2StartColor[3] = 100;
+        blure.p1EndColor[0] = 50;
+        blure.p1EndColor[1] = 180;
+        blure.p1EndColor[2] = 255;
+        blure.p1EndColor[3] = 0;
+        blure.p2EndColor[0] = 50;
+        blure.p2EndColor[1] = 180;
+        blure.p2EndColor[2] = 255;
+        blure.p2EndColor[3] = 0;
+        blure.elemDuration = 8;
+        blure.unkFlag = 0;
+        blure.calcMode = 0;
+        Effect_Add(play, &gFormState.punchTrailEffectIndex, EFFECT_BLURE1, 0, 0, &blure);
+        gFormState.punchTrailActive = 1;
+    }
+
     // Play attack voice (from 2Ship Player_AnimSfx_PlayVoice in melee handler)
     MmForm_PlayAttackVoice(player);
 
-    // Play punch SFX
-    // From 2Ship func_8082FA5C: Goron = NA_SE_IT_GORON_PUNCH_SWING
-    //   Zora left/combo = NA_SE_IT_SWORD_SWING_HARD, kick = NA_SE_IT_GORON_PUNCH_SWING
+    // Play punch swing SFX (from 2Ship func_8082FA5C)
+    // Zora uses lighter swing SFX for finned punches
     if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
-        MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, NA_SE_IT_SWORD_SWING_HARD);
+        MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, NA_SE_IT_SWORD_SWING);
     } else {
-        MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_PUNCH, NA_SE_PL_BODY_HIT);
+        MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, NA_SE_IT_SWORD_SWING_HARD);
+    }
+
+    // Goron foot dust at punch start (from 2Ship func_80833864: dust at feet when stomping)
+    if (gFormState.currentForm == MM_PLAYER_FORM_GORON && MMFORM_ON_GROUND(player)) {
+        EffectSsHahen_SpawnBurst(play, &player->bodyPartsPos[PLAYER_BODYPART_L_FOOT], 3.0f, 0, 6, 4, 2, -1, 10, NULL);
+        EffectSsHahen_SpawnBurst(play, &player->bodyPartsPos[PLAYER_BODYPART_R_FOOT], 3.0f, 0, 6, 4, 2, -1, 10, NULL);
     }
 
     // Player_StopHorizontalMovement (from 2Ship Player_AnimReplace_Setup line 1979)
@@ -3141,6 +3322,16 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
     } else if (curFrame >= earlyStart) {
         // In hit detection range - set up directional quad and submit to collision
         MmForm_EnablePunchQuad(player, play, step, damage);
+
+        // Goron butt punch (step 2) ground impact burst (from 2Ship Player_Action_84 line 18788)
+        // Spawns debris/dust at impact frame when butt hits ground
+        if (isGoron && step == 2 && curFrame >= (f32)hitStart && curFrame < (f32)hitStart + 1.5f &&
+            MMFORM_ON_GROUND(player)) {
+            Vec3f burstPos = player->actor.world.pos;
+            burstPos.y += 5.0f;
+            EffectSsHahen_SpawnBurst(play, &burstPos, 4.0f, 0, 12, 6, 3, -1, 10, NULL);
+            Player_PlaySfx(&player->actor, NA_SE_IT_HAMMER_HIT);
+        }
     }
 
     // Forward movement: BOTH Goron and Zora use animation root motion
@@ -3185,12 +3376,13 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
 
                 // Play voice + SFX for combo continuation
                 MmForm_PlayAttackVoice(player);
+                // Swing SFX differentiated by combo step (from 2Ship func_8082FA5C)
+                // Zora: step 1 = medium swing, step 2 = heavy kick
                 if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
-                    // From 2Ship: kick (step 2) = NA_SE_IT_GORON_PUNCH_SWING, others = SWORD_SWING_HARD
-                    u16 ootSfx = (nextStep == 2) ? NA_SE_IT_SWORD_SWING_HARD : NA_SE_IT_SWORD_SWING_HARD;
-                    MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, ootSfx);
+                    u16 ootSwingSfx = (nextStep == 2) ? NA_SE_IT_SWORD_SWING_HARD : NA_SE_IT_SWORD_SWING;
+                    MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, ootSwingSfx);
                 } else {
-                    MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_PUNCH, NA_SE_PL_BODY_HIT);
+                    MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, NA_SE_IT_SWORD_SWING_HARD);
                 }
 
                 // Start root motion for next punch in combo
@@ -3208,6 +3400,13 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
 
         // Stop root motion (punch is over)
         MmForm_StopRootMotion();
+
+        // Clean up Zora punch trail
+        if (gFormState.punchTrailActive) {
+            Effect_Delete(play, gFormState.punchTrailEffectIndex);
+            gFormState.punchTrailActive = 0;
+            gFormState.punchTrailEffectIndex = -1;
+        }
 
         if (endAnim != NULL) {
             MmForm_SetAction(GORON_ACT_PUNCH_END, play, endAnim, 1.0f, ANIMMODE_ONCE);
@@ -3240,16 +3439,20 @@ static void MmForm_GoronAction_PunchEnd(Player* player, PlayState* play) {
     // Decelerate during recovery
     Math_StepToF(&player->linearVelocity, 0.0f, 5.0f);
 
-    // B hold during/after punch recovery → boomerang aim (Zora only)
+    // B hold during/after punch recovery → boomerang aim after 10 frames (Zora only)
     // In MM, you do an action first (punch/kick), THEN hold B to enter boomerang mode.
-    {
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
+        gFormState.cutterAttack != NULL) {
         Input* input = &play->state.input[0];
         if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
-            if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
-                gFormState.cutterAttack != NULL) {
+            gFormState.boomerangHoldTimer++;
+            if (gFormState.boomerangHoldTimer >= 10) {
+                gFormState.boomerangHoldTimer = 0;
                 MmForm_StartBoomerangThrow(player, play);
                 return;
             }
+        } else if (!CHECK_BTN_ALL(input->cur.button, BTN_B)) {
+            gFormState.boomerangHoldTimer = 0;
         }
     }
 
@@ -3450,7 +3653,6 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
     // Play form-specific voice SFX via MM audio system
     // From 2Ship: Player_AnimSfx_PlayVoice(this, NA_SE_VO_LI_DAMAGE_S)
     // MM transforms use different voice banks per form
-#if !MM_SOUNDS_DISABLED
     if (MmSfx_IsAvailable()) {
         u16 voiceSfx = 0;
         switch (gFormState.currentForm) {
@@ -3469,10 +3671,8 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         if (voiceSfx != 0) {
             MmSfx_PlayAtPos(voiceSfx, &player->actor.projectedPos);
         }
-    } else
-#endif
-    {
-        // OOT Link voice (used when MM sounds disabled or mm.o2r unavailable)
+    } else {
+        // OOT Link voice (used when mm.o2r unavailable)
         Audio_PlaySoundGeneral(NA_SE_VO_LI_DAMAGE_S, &player->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
@@ -3508,6 +3708,16 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         Camera* cam = Play_GetCamera(play, 0);
         Camera_ChangeMode(cam, CAM_MODE_NORMAL);
     }
+
+    // Clean up punch swing trail
+    if (gFormState.punchTrailActive) {
+        Effect_Delete(play, gFormState.punchTrailEffectIndex);
+        gFormState.punchTrailActive = 0;
+        gFormState.punchTrailEffectIndex = -1;
+    }
+
+    // Clean up gakki (instrument) state — damage interrupts ocarina
+    gFormState.gakkiActive = 0;
 
     // Clean up swim visual state when taking damage while swimming
     // Reset pitch/roll so the model doesn't stay rotated during damage animation
@@ -3915,27 +4125,10 @@ static void MmForm_GoronAction_Damage(Player* player, PlayState* play) {
  * @param ootSfxId  Unused (kept for call-site compatibility)
  */
 static void MmForm_PlaySfx(Player* player, u16 mmSfxId, u16 ootSfxId) {
-#if MM_SOUNDS_DISABLED
-    // MM audio disabled - play OOT fallback if available
-    if (ootSfxId != 0) {
-        Player_PlaySfx(&player->actor, ootSfxId);
-    }
-#else
-    // Try MM audio first, fall back to OOT if MM fails
+    // Only play MM sounds — never fall back to OOT equivalents
     if (MmSfx_IsAvailable() && mmSfxId != 0) {
-        if (MmSfx_PlayAtPos(mmSfxId, &player->actor.projectedPos)) {
-            return; // MM sound played successfully
-        }
-        MMFORM_LOG("[MmForm_PlaySfx] MM 0x%04X failed, fallback to OOT 0x%04X", mmSfxId, ootSfxId);
-    } else if (mmSfxId != 0) {
-        MMFORM_LOG("[MmForm_PlaySfx] MM not available (avail=%d), fallback to OOT 0x%04X", MmSfx_IsAvailable(),
-                   ootSfxId);
+        MmSfx_PlayAtPos(mmSfxId, &player->actor.projectedPos);
     }
-    // Fallback: play OOT equivalent
-    if (ootSfxId != 0) {
-        Player_PlaySfx(&player->actor, ootSfxId);
-    }
-#endif
 }
 
 /**
@@ -3943,7 +4136,6 @@ static void MmForm_PlaySfx(Player* player, u16 mmSfxId, u16 ootSfxId) {
  * From 2Ship: each form has its own voice bank for attacks.
  */
 static void MmForm_PlayAttackVoice(Player* player) {
-#if !MM_SOUNDS_DISABLED
     if (MmSfx_IsAvailable()) {
         u16 voiceSfx = 0;
         switch (gFormState.currentForm) {
@@ -3963,7 +4155,6 @@ static void MmForm_PlayAttackVoice(Player* player) {
             MmSfx_PlayAtPos(voiceSfx, &player->actor.projectedPos);
         }
     }
-#endif
 }
 
 /**
@@ -4582,16 +4773,25 @@ static void MmForm_Action_ZTargetWalk(Player* player, PlayState* play) {
         }
     }
 
-    // B press → boomerang/punch (Zora: boomerang first, punch if fins out)
+    // B press → punch (all forms), B hold 10 frames → boomerang aim (Zora only)
     if (gFormState.currentForm == MM_PLAYER_FORM_GORON || gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
         if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
-            if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
-                gFormState.cutterAttack != NULL) {
-                MmForm_StartBoomerangThrow(player, play);
-            } else {
-                MmForm_StartPunch(player, play);
-            }
+            MmForm_StartPunch(player, play);
             return;
+        }
+        // B hold → boomerang aim after 10 frames (Zora only, from 2Ship unk_ACC = 0xA)
+        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
+            gFormState.cutterAttack != NULL) {
+            if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
+                gFormState.boomerangHoldTimer++;
+                if (gFormState.boomerangHoldTimer >= 10) {
+                    gFormState.boomerangHoldTimer = 0;
+                    MmForm_StartBoomerangThrow(player, play);
+                    return;
+                }
+            } else if (!CHECK_BTN_ALL(input->cur.button, BTN_B)) {
+                gFormState.boomerangHoldTimer = 0;
+            }
         }
     }
 
@@ -4948,7 +5148,6 @@ static void MmForm_Action_HazardVoidOut(Player* player, PlayState* play) {
                 player->bodyIsBurning = true;
                 // Damage voice
                 Player_PlayVoiceSfx(player, NA_SE_VO_LI_FALL_L);
-#if !MM_SOUNDS_DISABLED
                 if (MmSfx_IsAvailable()) {
                     u16 voiceSfx = 0;
                     if (gFormState.currentForm == MM_PLAYER_FORM_ZORA)
@@ -4958,7 +5157,6 @@ static void MmForm_Action_HazardVoidOut(Player* player, PlayState* play) {
                     if (voiceSfx != 0)
                         MmSfx_PlayAtPos(voiceSfx, &player->actor.projectedPos);
                 }
-#endif
                 // Damage animation (front hit)
                 LinkAnimationHeader* anim = gFormState.dmgAnims[4]; // front_hit
                 if (anim == NULL)
@@ -5188,9 +5386,8 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
                 Quake_SetCountdown(quakeIdx, 20);
             }
 
-            // Ground pound SFX (from 2Ship: Player_RequestQuakeAndRumble + NA_SE_PL_GORON_PUNCH)
-            Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
-            MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_SQUAT, NA_SE_PL_BODY_HIT);
+            // Ground pound SFX (from 2Ship func_80857AEC line 19869: NA_SE_PL_GORON_PUNCH)
+            MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_PUNCH, NA_SE_PL_BODY_HIT);
             func_800AA000(0.0f, 255, 20, 150); // Rumble (MM values)
 
             // White shockwave effect (from 2Ship func_80857AEC line 19871)
@@ -5385,9 +5582,7 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
                     if (gFormState.rollChargeLevel < 0x100) {
                         gFormState.rollChargeLevel++;
                     }
-#if !MM_SOUNDS_DISABLED
                     MmSfx_PlayAtPos(MM_NA_SE_PL_GORON_BALL_CHARGE, &player->actor.projectedPos);
-#endif
                 } else {
                     gFormState.rollChargeLevel = 4; // Reset (from 2Ship: av1 = 4)
                 }
@@ -5407,6 +5602,12 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
                 }
             }
         }
+
+        // Steering lean contribution (from 2Ship z_player.c:19632-19633)
+        // sp7C = lateral lean proportional to steering difference
+        s16 sp7C = (s16)((s16)(yawTarget - player->yaw) * -0.5f);
+        // Squared steering adds to bounce energy (from 2Ship line 19633)
+        gFormState.rollBounce += (f32)(SQ(sp7C)) * 8e-9f;
 
         // --- Core rolling physics (from 2Ship line 20093-20165) ---
         {
@@ -5472,10 +5673,12 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
             //   decel = (Math_SinS(floorPitch) * 8.0f) + 0.6f
             f32 accel;
             s16 absSpinRate = (gFormState.rollSpinRate >= 0) ? gFormState.rollSpinRate : -gFormState.rollSpinRate;
-            // From 2Ship: slippery surfaces (ice/sand) with high spin → 0.08 accel
-            // OOT has NA_SE_PL_WALK_ICE and NA_SE_PL_WALK_SAND (no SNOW)
+            // From 2Ship: slippery surfaces (ice/sand/snow/FLOOR_TYPE_5) with high spin → 0.08 accel
+            // OOT has NA_SE_PL_WALK_ICE, NA_SE_PL_WALK_SAND, NA_SE_PL_WALK_DIRT
+            // MM also includes FLOOR_TYPE_5 (snow) and FLOOR_TYPE_4 (dirt) in this check
             if (absSpinRate >= 0x7D0 && (player->floorSfxOffset == (NA_SE_PL_WALK_ICE - SFX_FLAG) ||
-                                         player->floorSfxOffset == (NA_SE_PL_WALK_SAND - SFX_FLAG))) {
+                                         player->floorSfxOffset == (NA_SE_PL_WALK_SAND - SFX_FLAG) ||
+                                         player->floorSfxOffset == (NA_SE_PL_WALK_DIRT - SFX_FLAG))) {
                 accel = 0.08f; // Slippery surfaces: higher accel
             } else {
                 accel = 0.0003f * absSpinRate;
@@ -5517,6 +5720,25 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
         player->actor.velocity.y = gFormState.rollBallSpeed * Math_SinS(player->floorPitch);
         player->actor.world.rot.y = player->yaw;
 
+        // Store drift yaw for directional tilt (from 2Ship z_player.c:19689)
+        // Computed from lateral drift direction (spA0/spA4 are drift XZ)
+        {
+            f32 driftX = player->actor.velocity.x - (gFormState.rollBallSpeed * Math_SinS(gFormState.rollHomeYaw));
+            f32 driftZ = player->actor.velocity.z - (gFormState.rollBallSpeed * Math_CosS(gFormState.rollHomeYaw));
+            if (SQ(driftX) + SQ(driftZ) > 1.0f) {
+                gFormState.rollDriftYaw = Math_Atan2S(driftZ, driftX);
+            }
+        }
+
+        // Color lerp toward blue during ground pound (from 2Ship z_player.c:13108, 19513)
+        // Math_AsymStepToF(&unk_B10[0], (unk_B8A != 0) ? 1.0f : 0.0f, 0.8f, 0.05f)
+        Math_AsymStepToF(&gFormState.rollColorLerp, (gFormState.rollGroundPoundTimer != 0) ? 1.0f : 0.0f, 0.8f, 0.05f);
+
+        // PLAYER_STATE2_8 flag for fast roll (from 2Ship z_player.c:19719-19721)
+        if (ABS(gFormState.rollSpinRate) > 0xFA0) {
+            player->stateFlags2 |= PLAYER_STATE2_NAVI_ALERT;
+        }
+
         // Height probes for lateral Z tilt (from 2Ship func_808573A8)
         // Raycast ground at left/right offsets perpendicular to roll direction
         // to calculate terrain tilt for visual ball lean
@@ -5534,17 +5756,20 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
             f32 rightY = BgCheck_EntityRaycastFloor3(&play->colCtx, &rightPoly, &rightBgId, &rightPos);
 
             if (leftY > BGCHECK_Y_MIN && rightY > BGCHECK_Y_MIN) {
-                // atan2(heightDiff, horizontalDist=60) gives tilt angle
+                // atan2(heightDiff, horizontalDist=60) gives terrain tilt angle
                 s16 tiltTarget = Math_Atan2S(60.0f, rightY - leftY);
-                Math_ScaledStepToS(&player->actor.shape.rot.z, tiltTarget, 0x190);
+                // Add steering lean contribution (from 2Ship z_player.c:19647)
+                // var_a3 + sp7C: terrain tilt + steering lean
+                Math_ScaledStepToS(&player->actor.shape.rot.z, tiltTarget + sp7C, 0x190);
             } else {
-                Math_ScaledStepToS(&player->actor.shape.rot.z, 0, 0x190);
+                Math_ScaledStepToS(&player->actor.shape.rot.z, sp7C, 0x190);
             }
         }
 
         // Rolling SFX - dual mode (from 2Ship line 19692-19702 + 19774-19783)
         // Mode 1 (av2==0): counter += speed * 800, trigger on zero-crossing
         // Mode 2 (av2!=0): trigger when shape.rot.x crosses zero
+        // From 2Ship line 19781: charged roll uses NA_SE_PL_GORON_CHG_ROLL when unk_B86[1] != 0
         if (gFormState.rollSpinRate == 0) {
             // Mode 1: slow roll / no spin (from 2Ship line 19692-19702)
             s16 prevCounter = gFormState.rollSfxCounter;
@@ -5552,9 +5777,11 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
             gFormState.rollSfxCounter += increment;
             if ((player->actor.bgCheckFlags & 1) && increment != 0 &&
                 ((s32)(prevCounter + increment) * (s32)prevCounter) <= 0) {
-#if !MM_SOUNDS_DISABLED
-                MmSfx_PlayGoronRoll(&player->actor.projectedPos, gFormState.rollBallSpeed);
-#endif
+                if (gFormState.rollSpikeActive > 0) {
+                    MmSfx_PlayGoronChgRoll(&player->actor.projectedPos, gFormState.rollBallSpeed);
+                } else {
+                    MmSfx_PlayGoronRoll(&player->actor.projectedPos, gFormState.rollBallSpeed);
+                }
             }
         } else {
             // Mode 2: spinning (from 2Ship line 19774-19783)
@@ -5564,9 +5791,11 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
             // rot.x was already updated by rollSpinRate earlier, check zero-crossing
             if ((player->actor.bgCheckFlags & 1) &&
                 (((s32)(gFormState.rollSpinRate + prevRotX) * (s32)prevRotX) <= 0)) {
-#if !MM_SOUNDS_DISABLED
-                MmSfx_PlayGoronRoll(&player->actor.projectedPos, gFormState.rollBallSpeed);
-#endif
+                if (gFormState.rollSpikeActive > 0) {
+                    MmSfx_PlayGoronChgRoll(&player->actor.projectedPos, gFormState.rollBallSpeed);
+                } else {
+                    MmSfx_PlayGoronRoll(&player->actor.projectedPos, gFormState.rollBallSpeed);
+                }
             }
         }
 
@@ -5581,15 +5810,31 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
 
             // Slip SFX when skid > 0x1770 (from 2Ship line 19343)
             if (skidFactor > 0x1770) {
-#if !MM_SOUNDS_DISABLED
                 MmSfx_PlayAtPos(MM_NA_SE_PL_GORON_SLIP, &player->actor.projectedPos);
-#endif
             }
 
             // Dust only when skid > 0x7D0 (from 2Ship line 19340)
+            // Surface-adaptive dust colors (from 2Ship func_808576BC + func_800B1210)
             if (skidFactor > 0x7D0 && (gFormState.actionTimer % 2) == 0) {
-                Color_RGBA8 dustPrim = { 170, 130, 90, 255 };
-                Color_RGBA8 dustEnv = { 100, 80, 60, 255 };
+                Color_RGBA8 dustPrim;
+                Color_RGBA8 dustEnv;
+                if (player->floorSfxOffset == (NA_SE_PL_WALK_ICE - SFX_FLAG)) {
+                    // Snow/ice: white dust (from 2Ship: sREG(64) path, white effect)
+                    dustPrim = { 220, 220, 240, 255 };
+                    dustEnv = { 180, 180, 200, 255 };
+                } else if (player->floorSfxOffset == (NA_SE_PL_WALK_SAND - SFX_FLAG)) {
+                    // Sand: yellow/brown dust
+                    dustPrim = { 200, 170, 110, 255 };
+                    dustEnv = { 130, 100, 60, 255 };
+                } else if (player->floorSfxOffset == (NA_SE_PL_WALK_GRASS - SFX_FLAG)) {
+                    // Grass: green-tinted leaves (from 2Ship: leaf particle path)
+                    dustPrim = { 120, 160, 80, 255 };
+                    dustEnv = { 80, 120, 50, 255 };
+                } else {
+                    // Default ground: gray/brown dust
+                    dustPrim = { 170, 130, 90, 255 };
+                    dustEnv = { 100, 80, 60, 255 };
+                }
                 Vec3f dustPos = { player->actor.world.pos.x + Rand_CenteredFloat(10.0f), player->actor.world.pos.y,
                                   player->actor.world.pos.z + Rand_CenteredFloat(10.0f) };
                 Vec3f dustVel = { -Math_SinS(player->yaw) * gFormState.rollBallSpeed * 0.1f, 1.5f,
@@ -5797,7 +6042,7 @@ static void MmForm_Action_DekuSpin(Player* player, PlayState* play) {
         EffectSsKiraKira_SpawnDispersed(play, &kiraPos, &kiraVel, &kiraAccel, &primColor, &envColor, kiraScale, 32);
     }
 
-    // === VFX: Dust when spinning fast (from 2Ship line 19311) ===
+    // === VFX: Surface-adaptive dust when spinning fast (from 2Ship line 19311) ===
     // if (unk_B10[0] > 9500.0f) { func_8083F8A8(play, this, 2.0f, 1, 2.5f, 10, 18, true) }
     if (gFormState.dekuSpinSpeed > 9500.0f) {
         Vec3f dustPos = player->actor.world.pos;
@@ -5807,18 +6052,28 @@ static void MmForm_Action_DekuSpin(Player* player, PlayState* play) {
         f32 angle = Rand_ZeroFloat(65536.0f);
         dustVel.x = Math_SinS((s16)angle) * 2.5f;
         dustVel.z = Math_CosS((s16)angle) * 2.5f;
-        Color_RGBA8 dustPrim = { 200, 180, 130, 255 };
-        Color_RGBA8 dustEnv = { 120, 100, 60, 255 };
+        // Surface-adaptive colors (from 2Ship func_8083F8A8 + SurfaceType lookup)
+        Color_RGBA8 dustPrim;
+        Color_RGBA8 dustEnv;
+        if (player->floorSfxOffset == (NA_SE_PL_WALK_ICE - SFX_FLAG)) {
+            dustPrim = { 220, 220, 240, 255 };
+            dustEnv = { 180, 180, 200, 255 };
+        } else if (player->floorSfxOffset == (NA_SE_PL_WALK_GRASS - SFX_FLAG)) {
+            dustPrim = { 120, 180, 80, 255 };
+            dustEnv = { 80, 120, 50, 255 };
+        } else if (player->floorSfxOffset == (NA_SE_PL_WALK_SAND - SFX_FLAG)) {
+            dustPrim = { 200, 170, 110, 255 };
+            dustEnv = { 130, 100, 60, 255 };
+        } else {
+            dustPrim = { 200, 180, 130, 255 };
+            dustEnv = { 120, 100, 60, 255 };
+        }
         EffectSsDust_Spawn(play, 0, &dustPos, &dustVel, &dustAccel, &dustPrim, &dustEnv, 10, 18, 20, 0);
     }
 
     // Floor SFX (from 2Ship line 19315: Actor_PlaySfx_Flagged2 with NA_SE_PL_SLIP_LEVEL)
     if ((gFormState.actionTimer % 4) == 0) {
-#if !MM_SOUNDS_DISABLED
         MmSfx_PlayAtPos(MM_NA_SE_PL_SLIP_LEVEL, &player->actor.projectedPos);
-#else
-        Player_PlaySfx(&player->actor, NA_SE_PL_SLIP_LEVEL);
-#endif
     }
     gFormState.actionTimer++;
 }
@@ -5874,6 +6129,10 @@ static void MmForm_DekuWaterHop(Player* player, PlayState* play) {
         u16 hopSfx = MM_NA_SE_PL_DEKUNUTS_JUMP5 + 1 - gFormState.dekuHopsRemaining;
         MmForm_PlaySfx(player, hopSfx, NA_SE_PL_JUMP);
     }
+
+    // Voice SFX during water hops (from 2Ship z_player.c:7203-7204)
+    // MM plays a voice grunt on each hop
+    MmForm_PlayAttackVoice(player);
 
     // Decrement counter (from 2Ship line 7204)
     gFormState.dekuHopsRemaining--;
@@ -5984,7 +6243,7 @@ static void MmForm_FireBubble(Player* player, PlayState* play) {
     MmForm_InitBubbleCollider(player, play);
 
     // SFX (from 2Ship func_8088A594 line 241: Player_PlaySfx NA_SE_PL_DEKUNUTS_FIRE)
-    MmForm_PlaySfx(player, MM_NA_SE_PL_DEKUNUTS_FIRE, NA_SE_IT_SHIELD_REFLECT_SW);
+    MmForm_PlaySfx(player, MM_NA_SE_PL_DEKUNUTS_FIRE, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -5998,9 +6257,7 @@ static void MmForm_Action_DekuBubbleAim(Player* player, PlayState* play) {
     // First frame: enter first-person
     if (gFormState.bubbleChargeTimer == 0) {
         FirstPerson_Init(player, play);
-#if !MM_SOUNDS_DISABLED
         MmSfx_PlayAtPos(MM_NA_SE_PL_DEKUNUTS_BUBLE_BREATH, &player->actor.projectedPos);
-#endif
     }
 
     // Keep first-person mode active
@@ -6027,17 +6284,21 @@ static void MmForm_Action_DekuBubbleAim(Player* player, PlayState* play) {
         Math_SmoothStepToF(&gFormState.bubbleCharge, 16.0f, 0.07f, 1.8f, 0.01f);
         gFormState.bubbleChargeTimer++;
 
+        // Cheek inflation during charge (from 2Ship z_player_lib.c:2434-2458)
+        // MM: unk_B10[5] = scale, lerps from 1.0 to 1.3 as bubble grows
+        f32 cheekTarget = 1.0f + (gFormState.bubbleCharge / 16.0f) * 0.3f;
+        Math_SmoothStepToF(&gFormState.dekuCheekScale, cheekTarget, 0.3f, 0.05f, 0.01f);
+
         // Charging SFX loop (breath sound every 8 frames)
         if ((gFormState.bubbleChargeTimer % 8) == 0) {
-#if !MM_SOUNDS_DISABLED
             MmSfx_PlayAtPos(MM_NA_SE_PL_DEKUNUTS_BUBLE_BREATH, &player->actor.projectedPos);
-#endif
         }
     } else {
         // B released → fire
         MmForm_FireBubble(player, play);
         FirstPerson_Exit(player, play);
         gFormState.bubbleCharging = 0;
+        gFormState.dekuCheekScale = 1.0f; // Reset cheek after fire
 
         // Switch to fire animation
         if (gFormState.dekuBowShoot != NULL) {
@@ -6053,9 +6314,8 @@ static void MmForm_Action_DekuBubbleAim(Player* player, PlayState* play) {
         FirstPerson_Exit(player, play);
         gFormState.bubbleCharging = 0;
         gFormState.bubbleCharge = 0.0f;
-#if !MM_SOUNDS_DISABLED
+        gFormState.dekuCheekScale = 1.0f; // Reset cheek on cancel
         MmSfx_Stop(MM_NA_SE_PL_DEKUNUTS_BUBLE_BREATH);
-#endif
         MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
         return;
     }
@@ -6102,7 +6362,7 @@ static void MmForm_UpdateBubbleProjectile(Player* player, PlayState* play) {
     gFormState.bubble.timer--;
     if (gFormState.bubble.timer <= 0) {
         // Pop SFX (from 2Ship line 430: NA_SE_IT_DEKUNUTS_BUBLE_VANISH)
-        Player_PlaySfx(&player->actor, NA_SE_IT_SHIELD_REFLECT_SW);
+        MmSfx_PlayAtPos(MM_NA_SE_IT_DEKUNUTS_BUBLE_VANISH, &player->actor.projectedPos);
         MmForm_KillBubble(player, play);
         return;
     }
@@ -6178,7 +6438,7 @@ static void MmForm_UpdateBubbleProjectile(Player* player, PlayState* play) {
                 // Already bounced → pop (from 2Ship line 426-430)
                 MmForm_KillBubble(player, play);
                 EffectSsBubble_Spawn(play, &wallHit, 0.0f, 5.0f, 10.0f, 0.13f);
-                Player_PlaySfx(&player->actor, NA_SE_IT_SHIELD_REFLECT_SW);
+                MmSfx_PlayAtPos(MM_NA_SE_IT_DEKUNUTS_BUBLE_BROKEN, &player->actor.projectedPos);
                 return;
             }
         }
@@ -6209,7 +6469,7 @@ static void MmForm_UpdateBubbleProjectile(Player* player, PlayState* play) {
             MmForm_KillBubble(player, play);
             // Pop effects (from 2Ship line 426-430)
             EffectSsBubble_Spawn(play, &gFormState.bubble.pos, 0.0f, 5.0f, 15.0f, 0.15f);
-            Player_PlaySfx(&player->actor, NA_SE_IT_SHIELD_REFLECT_SW);
+            MmSfx_PlayAtPos(MM_NA_SE_IT_DEKUNUTS_BUBLE_BROKEN, &player->actor.projectedPos);
             return;
         }
     }
@@ -6687,6 +6947,21 @@ static void MmForm_Action_DekuFly(Player* player, PlayState* play) {
             EffectSsHahen_SpawnBurst(play, &player->bodyPartsPos[PLAYER_BODYPART_R_HAND], 2.0f, 0, 4, 4, 2, -1, 10,
                                      NULL);
         }
+        // Landing leaf VFX (from 2Ship func_80837134: green kirakira scattered at landing)
+        // Scatter green sparkles around the landing point to simulate petal/leaf debris
+        for (s32 i = 0; i < 6; i++) {
+            Vec3f leafPos = player->actor.world.pos;
+            leafPos.x += Rand_CenteredFloat(30.0f);
+            leafPos.y += Rand_ZeroFloat(20.0f);
+            leafPos.z += Rand_CenteredFloat(30.0f);
+            Vec3f leafVel = { Rand_CenteredFloat(3.0f), 2.0f + Rand_ZeroFloat(2.0f), Rand_CenteredFloat(3.0f) };
+            Vec3f leafAccel = { 0.0f, -0.15f, 0.0f };
+            Color_RGBA8 leafPrim = { 100, 200, 50, 255 };
+            Color_RGBA8 leafEnv = { 50, 150, 20, 0 };
+            EffectSsKiraKira_SpawnDispersed(play, &leafPos, &leafVel, &leafAccel, &leafPrim, &leafEnv, 2000, 20);
+        }
+        // Landing SFX
+        Player_PlaySfx(&player->actor, NA_SE_PL_LAND);
         gFormState.dekuFlightFlags = 0;
         player->actor.shape.shadowScale = gFormState.dekuSavedShadowScale;
         player->cylinder.dim.radius = (s16)sFormProps[gFormState.currentForm].cylinderRadius;
@@ -6752,6 +7027,21 @@ static void MmForm_Action_DekuFly(Player* player, PlayState* play) {
         return;
     }
 
+    // B press → drop Deku Nut during flight (from 2Ship z_player.c:19132-19145)
+    // MM drops a Deku Nut projectile below the player when B is pressed mid-flight
+    // OOT doesn't have EN_DEKUNUTS_NUT, so use EffectSsHahen + flash as visual equivalent
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        Vec3f nutPos = player->actor.world.pos;
+        nutPos.y -= 10.0f;
+        // Visual: debris burst at drop position
+        EffectSsHahen_SpawnBurst(play, &nutPos, 3.0f, 0, 8, 4, 2, -1, 10, NULL);
+        // Stun flash (EffectSsExtra: score popup visual, serves as stun flash indicator)
+        Vec3f nutVel = { 0.0f, -8.0f, 0.0f };
+        Vec3f nutAccel = { 0.0f, -1.5f, 0.0f };
+        EffectSsExtra_Spawn(play, &nutPos, &nutVel, &nutAccel, 4, 0);
+        Player_PlaySfx(&player->actor, NA_SE_IT_DEKU);
+    }
+
     // === Main glide physics (from 2Ship line 19130-19270) ===
     {
         s16 petalTarget;
@@ -6800,7 +7090,8 @@ static void MmForm_Action_DekuFly(Player* player, PlayState* play) {
                 LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.dekuFlightFlutter, 1.0f, 0.0f,
                                      Animation_GetLastFrame(gFormState.dekuFlightFlutter), ANIMMODE_LOOP, -8.0f);
             } else if (LinkAnimation_OnFrame(&gFormState.formSkelAnime, 6.0f)) {
-                Audio_PlayActorSound2(&player->actor, NA_SE_PL_WALK_GROUND);
+                // From 2Ship Player_Action_94 line 19194: NA_SE_PL_DEKUNUTS_STRUGGLE on frame 6
+                MmForm_PlaySfx(player, MM_NA_SE_PL_DEKUNUTS_STRUGGLE, NA_SE_PL_WALK_GROUND);
             }
         }
 
@@ -6816,6 +7107,15 @@ static void MmForm_Action_DekuFly(Player* player, PlayState* play) {
             }
         }
         gFormState.dekuPetalAngle += gFormState.dekuPetalSpeed;
+
+        // Propeller SFX (from 2Ship z_player.c:19212: propeller whirr during flight)
+        // Play struggle/flutter sound while petals spin fast
+        {
+            s32 absSpeed = ABS(gFormState.dekuPetalSpeed);
+            if (absSpeed > 0x7D0 && (gFormState.actionTimer & 7) == 0) {
+                MmSfx_PlayAtPos(MM_NA_SE_PL_DEKUNUTS_STRUGGLE, &player->actor.projectedPos);
+            }
+        }
 
         {
             s32 absSpeed = ABS(gFormState.dekuPetalSpeed);
@@ -7091,19 +7391,34 @@ static void MmForm_UpdateBarrier(Player* player, PlayState* play) {
         CollisionCheck_SetAT(play, &play->colChkCtx, &gFormState.barrierCollider.base);
     }
 
-    // Screen tint (from 2Ship func_8082F1AC line 2969: Player_LerpEnvLighting)
-    // MM uses sZoraBarrierEnvLighting = { {0,0,0}, {255,255,155}, fogColor={20,20,50}, 940, 5000 }
-    // We approximate by blending fog color toward blue based on intensity ratio
+    // Environment lighting (from 2Ship func_8082F1AC line 2969: Player_LerpEnvLighting)
+    // MM: sZoraBarrierEnvLighting = { ambient={0,0,0}, diffuse={255,255,155},
+    //      fogColor={20,20,50}, fogNear=940, zFar=5000 }
+    // Full implementation: blend ambient toward black, diffuse toward blue-white, fog toward blue
     if (gFormState.barrierIntensity > 0) {
         f32 blend = gFormState.barrierIntensity / 255.0f;
-        // Blend fog color toward (20, 20, 50) from MM's sZoraBarrierEnvLighting
-        play->envCtx.adjFogColor[0] = (s16)(-blend * 20.0f); // Reduce red
-        play->envCtx.adjFogColor[1] = (s16)(-blend * 20.0f); // Reduce green
-        play->envCtx.adjFogColor[2] = (s16)(blend * 30.0f);  // Push blue
-        // Adjust fog near for darker atmosphere (from MM fogNear=940)
+        // Ambient: blend toward {0,0,0} (darken scene)
+        play->envCtx.adjAmbientColor[0] = (s16)(-blend * 40.0f);
+        play->envCtx.adjAmbientColor[1] = (s16)(-blend * 40.0f);
+        play->envCtx.adjAmbientColor[2] = (s16)(-blend * 20.0f);
+        // Light1 (diffuse): blend toward {255,255,155} (electric blue-white)
+        play->envCtx.adjLight1Color[0] = (s16)(blend * 30.0f);
+        play->envCtx.adjLight1Color[1] = (s16)(blend * 30.0f);
+        play->envCtx.adjLight1Color[2] = (s16)(blend * 60.0f);
+        // Fog: blend toward {20,20,50}
+        play->envCtx.adjFogColor[0] = (s16)(-blend * 20.0f);
+        play->envCtx.adjFogColor[1] = (s16)(-blend * 20.0f);
+        play->envCtx.adjFogColor[2] = (s16)(blend * 30.0f);
+        // Fog near: darker atmosphere (from MM fogNear=940)
         play->envCtx.adjFogNear = (s16)(-blend * 100.0f);
     } else if (prevIntensity > 0) {
-        // Reset adjustments when barrier fully off
+        // Reset all adjustments when barrier fully off
+        play->envCtx.adjAmbientColor[0] = 0;
+        play->envCtx.adjAmbientColor[1] = 0;
+        play->envCtx.adjAmbientColor[2] = 0;
+        play->envCtx.adjLight1Color[0] = 0;
+        play->envCtx.adjLight1Color[1] = 0;
+        play->envCtx.adjLight1Color[2] = 0;
         play->envCtx.adjFogColor[0] = 0;
         play->envCtx.adjFogColor[1] = 0;
         play->envCtx.adjFogColor[2] = 0;
@@ -7127,8 +7442,8 @@ static void MmForm_CheckBootToggle(Player* player, PlayState* play) {
 
     Input* input = &play->state.input[0];
     if (gFormState.zoraBoots == 1) { // UNDERWATER
-        if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
-            gFormState.zoraBoots = 0; // → LAND (free swim)
+        if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+            gFormState.zoraBoots = 0; // → LAND (free swim) — B toggles both directions
         }
         // Set dive delay when in swim idle (from 2Ship func_8083A04C line 8349-8351)
         if (gFormState.goronAction == MMFORM_ACT_SWIM_IDLE) {
@@ -7171,6 +7486,7 @@ static u8 MmForm_IsBoomerangAlive(Actor* boom) {
 static void MmForm_StartBoomerangThrow(Player* player, PlayState* play) {
     if (gFormState.boomerangState != 0)
         return;
+    gFormState.boomerangHoldTimer = 0;
 
     // Play aiming wait animation (from 2Ship Player_UpperAction_12 → 13: cutterwaitanim loop)
     LinkAnimationHeader* aimAnim = gFormState.cutterWaitAnim;
@@ -7310,16 +7626,17 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
             // Use aim direction: body facing + aim yaw offset from aiming phase
             s16 rotY = player->actor.shape.rot.y + gFormState.boomerangAimYaw;
             s16 pitchX = gFormState.boomerangAimPitch;
-            f32 posY = player->actor.world.pos.y + 50.0f;
             u8 hasTarget = (player->focusActor != NULL);
 
-            // LEFT BOOMERANG (from 2Ship: left hand, spread angle)
-            f32 posLX = player->actor.world.pos.x + Math_SinS(rotY - 0x2000) * 5.0f;
-            f32 posLZ = player->actor.world.pos.z + Math_CosS(rotY - 0x2000) * 5.0f;
+            // LEFT BOOMERANG: spawn from left hand bodyPartsPos (from 2Ship: Player_UpperAction_14)
+            // MM uses this->bodyPartsPos[PLAYER_BODYPART_L_HAND] for left fin spawn position
+            f32 posLX = player->bodyPartsPos[PLAYER_BODYPART_L_HAND].x;
+            f32 posLY = player->bodyPartsPos[PLAYER_BODYPART_L_HAND].y;
+            f32 posLZ = player->bodyPartsPos[PLAYER_BODYPART_L_HAND].z;
             s16 yawL = hasTarget ? (rotY + 0x36B0) : (rotY - 0x190);
 
-            EnBoom* leftBoom = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posLX, posY, posLZ, pitchX,
-                                                    yawL, 0, 0, true);
+            EnBoom* leftBoom = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posLX, posLY, posLZ, pitchX,
+                                                    yawL, 0, 1, true); // params=1: left Zora fin
 
             if (leftBoom != NULL) {
                 // From MM: unk_1CC = unk_1CF(16) + 0x24(36) = 52 frames flight time
@@ -7328,13 +7645,14 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
                 gFormState.boomerangActorL = &leftBoom->actor;
             }
 
-            // RIGHT BOOMERANG (from 2Ship: right hand, opposite spread)
-            f32 posRX = player->actor.world.pos.x + Math_SinS(rotY + 0x2000) * 5.0f;
-            f32 posRZ = player->actor.world.pos.z + Math_CosS(rotY + 0x2000) * 5.0f;
+            // RIGHT BOOMERANG: spawn from right hand bodyPartsPos (from 2Ship: right fin position)
+            f32 posRX = player->bodyPartsPos[PLAYER_BODYPART_R_HAND].x;
+            f32 posRY = player->bodyPartsPos[PLAYER_BODYPART_R_HAND].y;
+            f32 posRZ = player->bodyPartsPos[PLAYER_BODYPART_R_HAND].z;
             s16 yawR = hasTarget ? (rotY - 0x36B0) : (rotY + 0x190);
 
-            EnBoom* rightBoom = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posRX, posY, posRZ, pitchX,
-                                                     yawR, 0, 0, true);
+            EnBoom* rightBoom = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posRX, posRY, posRZ, pitchX,
+                                                     yawR, 0, 2, true); // params=2: right Zora fin
 
             if (rightBoom != NULL) {
                 rightBoom->returnTimer = 52;
@@ -7395,9 +7713,7 @@ static void MmForm_TrackBoomerangsInFlight(Player* player, PlayState* play) {
     u8 rightDone = !MmForm_IsBoomerangAlive(gFormState.boomerangActorR);
 
     if (leftDone && rightDone) {
-        // Both caught! Clean up state (no animation interruption — player keeps doing what they're doing)
-        // In MM, Player_UpperAction_15 transitions to Player_UpperAction_16 (catch anim) but that's
-        // upper-body only. Since we don't have upper/lower split, just play the SFX and reset state.
+        // Both caught! Play catch animation (from 2Ship Player_UpperAction_16: pz_cuttercatch)
         gFormState.boomerangActorL = NULL;
         gFormState.boomerangActorR = NULL;
         player->stateFlags1 &= ~PLAYER_STATE1_BOOMERANG_THROWN;
@@ -7405,10 +7721,15 @@ static void MmForm_TrackBoomerangsInFlight(Player* player, PlayState* play) {
         gFormState.boomerangState = 0;
 
         // Clear forced PARALLEL if player isn't actually Z-targeting with button.
-        // OOT re-evaluates PARALLEL each frame when Z is held, so safe to clear.
         if (!(player->stateFlags1 &
               (PLAYER_STATE1_HOSTILE_LOCK_ON | PLAYER_STATE1_Z_TARGETING | PLAYER_STATE1_FRIENDLY_ACTOR_FOCUS))) {
             player->stateFlags1 &= ~PLAYER_STATE1_PARALLEL;
+        }
+
+        // Play catch animation if available (from 2Ship Player_UpperAction_16: cuttercatch)
+        if (gFormState.cutterCatch != NULL) {
+            LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterCatch, 1.0f, 0.0f,
+                                 Animation_GetLastFrame(gFormState.cutterCatch), ANIMMODE_ONCE, -6.0f);
         }
 
         MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_BOOMERANG_CATCH, NA_SE_PL_CATCH_BOOMERANG);
@@ -7500,6 +7821,29 @@ static void MmForm_SwimEffects(Player* player, PlayState* play) {
             splashScale = 500;
         s16 splashType = (fabsf(player->linearVelocity) > 10.0f) ? 1 : 0;
         EffectSsGSplash_Spawn(play, &ripplePos, NULL, NULL, splashType, splashScale);
+    }
+
+    // Body-part splash during fast swim (from 2Ship z_player.c:9120-9140)
+    // MM spawns splashes at body part positions that are near the water surface
+    if (gFormState.fastSwimActive && (gFormState.actionTimer & 3) == 0) {
+        f32 waterY = player->actor.world.pos.y + player->actor.yDistToWater;
+        static const s32 sSwimSplashParts[] = { PLAYER_BODYPART_L_HAND, PLAYER_BODYPART_R_HAND, PLAYER_BODYPART_L_FOOT,
+                                                PLAYER_BODYPART_R_FOOT };
+        for (s32 i = 0; i < 4; i++) {
+            f32 partY = player->bodyPartsPos[sSwimSplashParts[i]].y;
+            // Splash if body part is near water surface (within 30 units)
+            if (fabsf(partY - waterY) < 30.0f) {
+                Vec3f splashPos = player->bodyPartsPos[sSwimSplashParts[i]];
+                splashPos.y = waterY;
+                EffectSsGSplash_Spawn(play, &splashPos, NULL, NULL, 0, 80);
+            }
+        }
+    }
+
+    // Zora PLAYER_STATE2_DISABLE_DRAW_SHIELD_HAND (from 2Ship z_player.c:9095)
+    // During fast swim, disable shield/hand items display
+    if (gFormState.fastSwimActive) {
+        player->stateFlags2 |= PLAYER_STATE2_DISABLE_DRAW;
     }
 }
 
@@ -7657,7 +8001,7 @@ static void MmForm_Action_SwimIdle(Player* player, PlayState* play) {
                 gFormState.fastSwimActive = 1;                    // Visible from first frame
                 gFormState.swimRoll = 0;                          // Reset roll for clean 2-rotation barrel roll
                 gFormState.swimRollSmoothed = 0;
-                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM, NA_SE_PL_DIVE_BUBBLE);
+                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
                 return;
             }
         }
@@ -7742,7 +8086,7 @@ static void MmForm_Action_SwimSurfaceWalk(Player* player, PlayState* play) {
             gFormState.swimExitFlag = 0;
             gFormState.swimSpeedB48 = player->linearVelocity;
             player->actor.velocity.y = 0.0f;
-            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM, NA_SE_PL_DIVE_BUBBLE);
+            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
             return;
         }
     }
@@ -7894,7 +8238,7 @@ static s32 MmForm_CheckDolphinJump(Player* player, PlayState* play) {
     // DON'T clear: fastSwimActive, swimPitch, swimRoll (preserved for visual during arc)
     gFormState.swimExitFlag = 0;
     gFormState.swimYawRate = 0;
-    player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
+    player->actor.gravity = -1.0f;    // MM Player_Action_28 uses -1.0f (not -1.2f)
     player->actor.bgCheckFlags &= ~1; // Force airborne
     gFormState.wasOnGround = 0;
 
@@ -7913,8 +8257,14 @@ static s32 MmForm_CheckDolphinJump(Player* player, PlayState* play) {
 static void MmForm_Action_DolphinJump(Player* player, PlayState* play) {
     LinkAnimation_Update(play, &gFormState.formSkelAnime);
 
-    // Smooth pitch toward 0 (Zora levels out during arc)
-    Math_SmoothStepToS(&gFormState.swimPitch, 0, 4, 0x500, 0x100);
+    // Enforce MM gravity every frame (OOT may reset to its default)
+    player->actor.gravity = -1.0f; // MM Player_Action_28 uses -1.0f
+
+    // Recalculate pitch from actual velocity trajectory (MM Player_Action_28 line 15377)
+    gFormState.swimPitch = Math_Atan2S(player->linearVelocity, -player->actor.velocity.y);
+
+    // Smooth roll toward 0 during arc (MM Player_Action_28)
+    Math_SmoothStepToS(&gFormState.swimRoll, 0, 6, 0x7D0, 0x190);
 
     // Water re-entry: back in water deep enough AND falling
     if (player->actor.yDistToWater > ZORA_SWIM_THRESHOLD && player->actor.velocity.y <= 0.0f) {
@@ -7934,7 +8284,7 @@ static void MmForm_Action_DolphinJump(Player* player, PlayState* play) {
             gFormState.fastSwimActive = 1;
             gFormState.swimSpeedB48 = player->linearVelocity;
             player->actor.velocity.y = 0.0f;
-            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_DIVE, NA_SE_PL_DIVE_BUBBLE);
+            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
         } else {
             MmForm_EnterSwimIdle(player, play);
         }
@@ -8084,7 +8434,7 @@ static void MmForm_Action_SwimFast(Player* player, PlayState* play) {
         } else {
             speedTarget = 9.0f;
             // Looping swim SFX (from 2Ship line 16978: NA_SE_PL_ZORA_SWIM_LV - SFX_FLAG)
-            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM, NA_SE_PL_SWIM);
+            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_LV, NA_SE_PL_SWIM);
         }
 
         // Pitch from stick Y (from 2Ship line 16982-16991)
@@ -8118,7 +8468,7 @@ static void MmForm_Action_SwimFast(Player* player, PlayState* play) {
             // Barrel roll SFX on cross-over (from 2Ship line 17004-17006)
             if ((ABS(gFormState.swimYawRate) > 0xFA0) &&
                 (((prevRoll + gFormState.swimYawRate) - crossThreshold) * (prevRoll - crossThreshold)) <= 0) {
-                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM, NA_SE_PL_SWIM);
+                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_ROLL, NA_SE_PL_SWIM);
             }
         }
 
@@ -8160,7 +8510,7 @@ static void MmForm_Action_SwimFast(Player* player, PlayState* play) {
                 gFormState.fastSwimActive = 1; // Visible from first frame
                 gFormState.swimRoll = 0;       // Reset roll for clean barrel roll
                 gFormState.swimRollSmoothed = 0;
-                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM, NA_SE_PL_DIVE_BUBBLE);
+                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
                 return;
             }
         }
@@ -8339,6 +8689,152 @@ static void MmForm_DrawZoraBarrier(Player* player, PlayState* play) {
     Matrix_Pop();
 
     CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ---------------------------------------------------------------------------
+// Gakki (Instrument) System — Form-Specific Ocarina Override
+//
+// In MM, each transformation plays a different instrument when using the ocarina:
+//   Goron → Taiko Drums (at TORSO), Zora → Guitar (at L_HAND), Deku → Pipes (at HEAD)
+//
+// We intercept the yield block when OOT's ocarina action (Player_Action_8084E3C4)
+// is active and play the form's gakkistart/gakkiplay animations on formSkelAnime
+// instead of copying OOT's ocarina jointTable.
+//
+// From MM z_player.c: Player_Action_63, func_808525C4, func_8085255C
+// From MM z_player_lib.c: func_80124618 (keyframe interp), PostLimbDraw instrument drawing
+// ---------------------------------------------------------------------------
+
+// Forward declaration (defined in z_player.c line 352, non-static)
+extern "C" void Player_Action_8084E3C4(Player* this_, PlayState* play);
+
+// Interpolate per-form instrument scales based on current gakki phase and frame.
+// From MM z_player_lib.c PostLimbDraw: each phase uses different keyframe arrays.
+static void MmForm_GakkiInterpScales(f32 curFrame) {
+    MmPlayerTransformation form = gFormState.currentForm;
+
+    switch (gFormState.gakkiActive) {
+        case 1: // gakkistart — instruments appearing
+        case 3: // gakkistart reverse — instruments disappearing (same arrays, frame goes backward)
+            if (form == MM_PLAYER_FORM_GORON) {
+                // Goron: single drum body scale (D_801C0428)
+                GakkiKeyframe_Interp(sGakkiGoronStart, curFrame, &gFormState.gakkiScale0);
+            } else if (form == MM_PLAYER_FORM_ZORA) {
+                // Zora: guitar scale (D_801C0538)
+                GakkiKeyframe_Interp(sGakkiZoraStart, curFrame, &gFormState.gakkiScale0);
+            } else if (form == MM_PLAYER_FORM_DEKU) {
+                // Deku: container scale (D_801C0340) + per-piece scale (D_801C0368)
+                Vec3f containerScale;
+                GakkiKeyframe_Interp(sGakkiDekuStartContainer, curFrame, &containerScale);
+                gFormState.gakkiScale0.x = containerScale.x; // Deku uses uniform x for container
+                gFormState.gakkiScale0.y = containerScale.x;
+                gFormState.gakkiScale0.z = containerScale.x;
+                Vec3f pieceScale;
+                GakkiKeyframe_Interp(sGakkiDekuStartPieces, curFrame, &pieceScale);
+                for (s32 i = 0; i < 5; i++) {
+                    gFormState.gakkiPieceScales[i] = pieceScale.x; // Uniform per-piece
+                }
+            }
+            break;
+
+        case 2: // gakkiplay — instruments active, rhythmic scaling
+            if (form == MM_PLAYER_FORM_GORON) {
+                // Goron: drum body pulse (D_801C0490)
+                GakkiKeyframe_Interp(sGakkiGoronPlay, curFrame, &gFormState.gakkiScale0);
+            } else if (form == MM_PLAYER_FORM_ZORA) {
+                // Zora: guitar strum bounce (D_801C0560)
+                GakkiKeyframe_Interp(sGakkiZoraPlay, curFrame, &gFormState.gakkiScale0);
+            } else if (form == MM_PLAYER_FORM_DEKU) {
+                // Deku: per-pipe scale (D_801C03A0, uniform)
+                Vec3f pipeScale;
+                GakkiKeyframe_Interp(sGakkiDekuPlay, curFrame, &pipeScale);
+                gFormState.gakkiScale0.x = 1.0f;
+                gFormState.gakkiScale0.y = 1.0f;
+                gFormState.gakkiScale0.z = 1.0f;
+                for (s32 i = 0; i < 5; i++) {
+                    gFormState.gakkiPieceScales[i] = pipeScale.x;
+                }
+            }
+            break;
+    }
+}
+
+// Enter gakki mode: play gakkistart animation on formSkelAnime.
+// From MM z_player.c line 7926: Player_Anim_PlayOnceAdjusted(D_8085D17C[transformation])
+static void MmForm_EnterGakki(Player* player, PlayState* play) {
+    if (gFormState.gakkiStartAnim == NULL)
+        return;
+
+    gFormState.gakkiActive = 1;
+    // Play gakkistart on formSkelAnime (forward, once)
+    LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.gakkiStartAnim, 1.0f, 0.0f,
+                         Animation_GetLastFrame(gFormState.gakkiStartAnim), ANIMMODE_ONCE, -6.0f);
+    // Init instrument scales to zero (appear during start anim)
+    memset(&gFormState.gakkiScale0, 0, sizeof(Vec3f));
+    memset(&gFormState.gakkiScale1, 0, sizeof(Vec3f));
+    memset(gFormState.gakkiPieceScales, 0, sizeof(gFormState.gakkiPieceScales));
+    MMFORM_LOG("[MmForm] Gakki enter: form=%d", gFormState.currentForm);
+}
+
+// Update gakki animation each frame while in gakki mode.
+// From MM z_player.c: Player_Action_63 + func_808525C4 + func_8085255C
+static void MmForm_UpdateGakki(Player* player, PlayState* play) {
+    s32 animDone = LinkAnimation_Update(play, &gFormState.formSkelAnime);
+    f32 curFrame = gFormState.formSkelAnime.curFrame;
+
+    switch (gFormState.gakkiActive) {
+        case 1: { // Start animation playing
+            MmForm_GakkiInterpScales(curFrame);
+            // Check if start anim finished (from MM Player_Action_63 line 17418)
+            if (animDone) {
+                gFormState.gakkiActive = 2;
+                // Transition to play loop (from MM func_808525C4 line 17382-17392)
+                if (gFormState.gakkiPlayAnim != NULL) {
+                    LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.gakkiPlayAnim, 1.0f, 0.0f,
+                                         Animation_GetLastFrame(gFormState.gakkiPlayAnim), ANIMMODE_LOOP, -6.0f);
+                }
+                // Set scales to 1.0 for play mode
+                gFormState.gakkiScale0.x = 1.0f;
+                gFormState.gakkiScale0.y = 1.0f;
+                gFormState.gakkiScale0.z = 1.0f;
+                for (s32 i = 0; i < 5; i++) {
+                    gFormState.gakkiPieceScales[i] = 1.0f;
+                }
+                MMFORM_LOG("[MmForm] Gakki: start→play");
+            }
+            break;
+        }
+
+        case 2: // Play loop active
+            MmForm_GakkiInterpScales(curFrame);
+            break;
+
+        case 3: { // Exit (reverse start animation)
+            MmForm_GakkiInterpScales(curFrame);
+            // Reverse animation: curFrame goes from lastFrame toward 0
+            // Done when LinkAnimation_Update returns true (reached endFrame=0)
+            if (animDone || curFrame <= 0.5f) {
+                gFormState.gakkiActive = 0;
+                MMFORM_LOG("[MmForm] Gakki: exit done");
+            }
+            break;
+        }
+    }
+}
+
+// Start gakki exit: play gakkistart in reverse (from MM z_player.c line 17441)
+static void MmForm_ExitGakki(Player* player, PlayState* play) {
+    if (gFormState.gakkiStartAnim == NULL || gFormState.gakkiActive == 0) {
+        gFormState.gakkiActive = 0;
+        return;
+    }
+    gFormState.gakkiActive = 3;
+    f32 lastFrame = Animation_GetLastFrame(gFormState.gakkiStartAnim);
+    // Play gakkistart in reverse: negative speed, from lastFrame to 0
+    // From MM: Player_Anim_PlayOnceAdjustedReverse(D_8085D17C[transformation])
+    LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.gakkiStartAnim, -1.0f, lastFrame, 0.0f,
+                         ANIMMODE_ONCE, -8.0f);
+    MMFORM_LOG("[MmForm] Gakki: starting exit (reverse)");
 }
 
 // ---------------------------------------------------------------------------
@@ -8682,14 +9178,43 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 if (!(yieldFlags & PLAYER_STATE1_DAMAGED)) {
                     player->linearVelocity = 0.0f;
                 }
+
+                // Gakki: if this yield is for ocarina AND the form has instruments,
+                // start the gakki animation so instruments appear during the start anim.
+                // From MM z_player.c line 7926: entering Player_Action_63 plays gakkistart.
+                if ((yieldFlags & PLAYER_STATE1_IN_ITEM_CS) && (player->actionFunc == Player_Action_8084E3C4) &&
+                    (gFormState.currentForm >= MM_PLAYER_FORM_GORON) &&
+                    (gFormState.currentForm <= MM_PLAYER_FORM_DEKU) && (gFormState.gakkiStartAnim != NULL)) {
+                    MmForm_EnterGakki(player, play);
+                }
             }
+
+            // Gakki: update instrument animation each frame while yielded.
+            // This runs the form's own animation on formSkelAnime so MmForm_Draw
+            // can use it instead of OOT's ocarina jointTable.
+            if (gFormState.gakkiActive) {
+                MmForm_UpdateGakki(player, play);
+            }
+
             // Don't run form logic - OOT is in control.
-            // jointTable copy happens in MmForm_Draw.
+            // jointTable copy happens in MmForm_Draw (unless gakkiActive overrides).
             return;
         }
 
         // Yield flags cleared - return to idle if we were yielding
         if (gFormState.goronAction == MMFORM_ACT_OOT_ACTION) {
+            // Gakki exit: if gakki was active during yield, start the reverse animation
+            // before returning to idle. From MM z_player.c line 17441.
+            if (gFormState.gakkiActive == 1 || gFormState.gakkiActive == 2) {
+                MmForm_ExitGakki(player, play);
+            }
+            // Gakki exit in progress: keep updating until reverse animation finishes
+            if (gFormState.gakkiActive == 3) {
+                MmForm_UpdateGakki(player, play);
+                player->linearVelocity = 0.0f;
+                return; // Stay in OOT_ACTION while instrument exit animation plays
+            }
+
             // Wait for OOT's one-shot animation to finish before accepting input.
             // OOT clears CLIMBING_LEDGE ~34 frames before the climb animation ends.
             // Without this check, the MM form returns to idle and accepts movement
@@ -9016,6 +9541,8 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 gFormState.rollGroundPoundTimer = 0;
                 gFormState.goronAction = GORON_ACT_GORON_ROLL;
                 gFormState.actionTimer = 0;
+                // Curl SFX (from 2Ship line 7051: NA_SE_PL_GORON_TO_BALL)
+                MmSfx_PlayAtPos(MM_NA_SE_PL_GORON_TO_BALL, &player->actor.projectedPos);
                 // Shadow: smaller circle during ball mode (from 2Ship z_player.c line 13353)
                 // MmForm_UpdateActive sets DrawCircle per-frame for ball actions
                 gFormState.savedShadowScale = player->actor.shape.shadowScale;
@@ -9224,6 +9751,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
 
             // Stay in shield while R is held
             if (!CHECK_BTN_ALL(shieldInput->cur.button, BTN_R)) {
+                player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
                 player->stateFlags1 &= ~PLAYER_STATE1_SHIELDING;
 
                 // Restore player cylinder to form defaults
@@ -9379,11 +9907,9 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
             gFormState.currentForm = gFormState.targetForm;
 
             // Play flash SFX
-#if !MM_SOUNDS_DISABLED
             if (MmSfx_IsAvailable()) {
                 MmSfx_PlayTransformFlash();
             }
-#endif
         }
 
         // Build flash up
@@ -9441,12 +9967,21 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
                     // Play transform voice SFX at frame 30 (handled below)
                 }
 
-                // SFX at specific frames (from 2Ship D_8085D8F0)
+                // SFX at specific frames (from 2Ship D_8085D8F0, z_player.c.ref:18992)
+                if (gFormState.cutsceneTimer == 2) {
+                    MmSfx_PlayAtPos(MM_NA_SE_PL_PUT_OUT_ITEM, &player->actor.projectedPos);
+                }
                 if (gFormState.cutsceneTimer == 4) {
-                    // NA_SE_IT_SET_TRANSFORM_MASK - putting on mask
-                    Audio_PlaySoundGeneral(NA_SE_PL_PUT_OUT_ITEM, &player->actor.projectedPos, 4,
-                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                           &gSfxDefaultReverb);
+                    MmSfx_PlayAtPos(MM_NA_SE_IT_SET_TRANSFORM_MASK, &player->actor.projectedPos);
+                }
+                if (gFormState.cutsceneTimer == 11) {
+                    MmSfx_PlayAtPos(MM_NA_SE_PL_FREEZE_S, &player->actor.projectedPos);
+                }
+                if (gFormState.cutsceneTimer == 20) {
+                    MmSfx_PlayAtPos(MM_NA_SE_IT_TRANSFORM_MASK_BROKEN, &player->actor.projectedPos);
+                }
+                if (gFormState.cutsceneTimer == 30) {
+                    MmSfx_PlayAtPos(MM_NA_SE_PL_TRANSFORM_VOICE, &player->actor.projectedPos);
                 }
 
                 // Build toward flash
@@ -9457,6 +9992,12 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
 
             case 1: // Flash build-up
                 gFormState.flashAlpha += 45;
+
+                // Lightning at start of flash (from 2Ship line 19124: Lib_PlaySfx_2)
+                if (gFormState.flashAlpha >= 45 && gFormState.flashAlpha < 90) {
+                    MmSfx_PlayAtPos(MM_NA_SE_EV_LIGHTNING_HARD, NULL);
+                }
+
                 if (gFormState.flashAlpha >= 255) {
                     gFormState.flashAlpha = 255;
 
@@ -9473,14 +10014,8 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
                     MmForm_ApplyFormProperties(player, gFormState.targetForm);
                     gFormState.currentForm = gFormState.targetForm;
 
-                    // Play flash SFX
-#if !MM_SOUNDS_DISABLED
-                    if (MmSfx_IsAvailable()) {
-                        MmSfx_PlayTransformFlash();
-                    }
-#endif
-                    Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    // Play flash SFX (from 2Ship line 19116: NA_SE_SY_TRANSFORM_MASK_FLASH)
+                    MmSfx_PlayTransformFlash();
 
                     gFormState.cutscenePhase = 2;
                 }
@@ -9517,11 +10052,9 @@ static void MmForm_UpdateDetransforming(Player* player, PlayState* play) {
             player->linearVelocity = 0.0f;
 
             // Play flash SFX
-#if !MM_SOUNDS_DISABLED
             if (MmSfx_IsAvailable()) {
                 MmSfx_PlayTransformFlash();
             }
-#endif
         }
 
         if (gFormState.cutsceneTimer <= 3) {
@@ -9561,6 +10094,14 @@ static void MmForm_UpdateDetransforming(Player* player, PlayState* play) {
                     player->yaw = player->actor.shape.rot.y;
                 }
 
+                // SFX at specific frames (from 2Ship D_8085D904, z_player.c.ref:19000)
+                if (gFormState.cutsceneTimer == 8) {
+                    MmSfx_PlayAtPos(MM_NA_SE_IT_SET_TRANSFORM_MASK, &player->actor.projectedPos);
+                }
+                if (gFormState.cutsceneTimer == 15) {
+                    MmSfx_PlayAtPos(MM_NA_SE_PL_FACE_CHANGE, &player->actor.projectedPos);
+                }
+
                 if (gFormState.cutsceneTimer >= 30) {
                     gFormState.cutscenePhase = 1;
                 }
@@ -9579,11 +10120,7 @@ static void MmForm_UpdateDetransforming(Player* player, PlayState* play) {
                     gFormState.currentForm = MM_PLAYER_FORM_HUMAN;
                     gFormState.skeletonLoaded = 0;
 
-#if !MM_SOUNDS_DISABLED
-                    if (MmSfx_IsAvailable()) {
-                        MmSfx_PlayTransformFlash();
-                    }
-#endif
+                    MmSfx_PlayTransformFlash();
 
                     gFormState.cutscenePhase = 2;
                 }
@@ -9621,8 +10158,13 @@ static u8 MmForm_UsesOotAnim(void) {
     s32 act = gFormState.goronAction;
 
     // Generic OOT yield (items, dialogue, carrying, etc.)
-    if (act == MMFORM_ACT_OOT_ACTION)
-        return 1;
+    // Exception: gakki (instrument) mode plays form-specific animation on formSkelAnime,
+    // so we must NOT copy OOT's jointTable. From MM z_player.c: Player_Action_63.
+    if (act == MMFORM_ACT_OOT_ACTION) {
+        if (gFormState.gakkiActive)
+            return 0; // Use formSkelAnime (gakki animation)
+        return 1;     // Use OOT's jointTable (default yield behavior)
+    }
 
     // Shared link_normal_* / link_fighter_* animations played by OOT's skelAnime.
     // Note: SIDEHOP, BACKFLIP, ROLL are NOT here — they play MM anims on formSkelAnime.
@@ -9700,6 +10242,13 @@ static s32 MmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, 
         rot->x += player->headLimbRot.z;
         rot->y -= player->headLimbRot.y;
         rot->z += player->headLimbRot.x;
+
+        // Deku cheek inflation during bubble charge (from 2Ship z_player_lib.c:2434-2458)
+        // Scale the head limb to simulate cheek puffing while charging bubble
+        if (gFormState.currentForm == MM_PLAYER_FORM_DEKU && gFormState.dekuCheekScale > 1.01f) {
+            Matrix_Scale(gFormState.dekuCheekScale, gFormState.dekuCheekScale, gFormState.dekuCheekScale,
+                         MTXMODE_APPLY);
+        }
     }
 
     // From OOT z_player_lib.c:1387-1400 — apply upperLimbRot to UPPER limb
@@ -9865,8 +10414,20 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
     // === 3. Update focus.pos at HEAD (Navi tracking, Z-targeting) ===
     // OOT z_player_lib.c:2077-2078: Matrix_MultVec3f(&D_801260D4, &this->actor.focus.pos)
     // D_801260D4 = { 1100.0f, -700.0f, 0.0f } (head offset from limb origin to eye level)
+    // Form-specific offsets (from 2Ship z_player_lib.c:2077 per-form sPlayerFocusHeadLimbOffset):
+    //   Deku:  { 600.0f, -400.0f, 0.0f } (shorter, smaller head)
+    //   Goron: { 1400.0f, -900.0f, 0.0f } (taller, wider head)
+    //   Zora:  { 1100.0f, -700.0f, 0.0f } (same as human)
+    //   FD:    { 1100.0f, -700.0f, 0.0f } (same as human)
     if (limbIndex == PLAYER_LIMB_HEAD) {
-        Vec3f headOffset = { 1100.0f, -700.0f, 0.0f };
+        Vec3f headOffset;
+        if (gFormState.currentForm == MM_PLAYER_FORM_DEKU) {
+            headOffset = { 600.0f, -400.0f, 0.0f };
+        } else if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
+            headOffset = { 1400.0f, -900.0f, 0.0f };
+        } else {
+            headOffset = { 1100.0f, -700.0f, 0.0f };
+        }
         Matrix_MultVec3f(&headOffset, &player->actor.focus.pos);
     }
 
@@ -9913,7 +10474,10 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
     // Draws gLinkGoronGoronPunchEffectDL (red translucent) on the active hand
     // during punch hit frames. unk_3D0.unk_00 = 3 selects this DL in 2Ship.
     // D_801BFDD0[2] = { {255,0,0}, gLinkGoronGoronPunchEffectDL }
-    // Left hand = LINK_GORON_LIMB_LEFT_HAND (12), Right hand = LINK_GORON_LIMB_RIGHT_HAND (15)
+    // Left hand = PLAYER_LIMB_L_HAND (16), Right hand = PLAYER_LIMB_R_HAND (19)
+    // NOTE: LINK_GORON_LIMB_* enums are object DL indices (19 entries), NOT skeleton limb indices.
+    // All MM form skeletons share the same 22-limb hierarchy as OOT (confirmed in mm_decomp z64player.h).
+    // Must use PLAYER_LIMB_* constants which match the skeleton's limbIndex in callbacks.
     if (gFormState.currentForm == MM_PLAYER_FORM_GORON &&
         (gFormState.goronAction >= GORON_ACT_PUNCH_A && gFormState.goronAction <= GORON_ACT_PUNCH_C)) {
 
@@ -9932,11 +10496,11 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
         if (isHitFrame) {
             // Draw effect on left hand for punchA, right hand for punchB, waist area for punchC
             s32 targetLimb = -1;
-            if (step == 0 && limbIndex == LINK_GORON_LIMB_LEFT_HAND)
+            if (step == 0 && limbIndex == PLAYER_LIMB_L_HAND)
                 targetLimb = limbIndex;
-            if (step == 1 && limbIndex == LINK_GORON_LIMB_RIGHT_HAND)
+            if (step == 1 && limbIndex == PLAYER_LIMB_R_HAND)
                 targetLimb = limbIndex;
-            if (step == 2 && limbIndex == LINK_GORON_LIMB_WAIST)
+            if (step == 2 && limbIndex == PLAYER_LIMB_WAIST)
                 targetLimb = limbIndex;
 
             if (targetLimb >= 0) {
@@ -10054,8 +10618,10 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
             // From 2Ship func_80126BD0: heldItemAction == PLAYER_IA_ZORA_BOOMERANG → (1,1,1)
             //                           else → (0.4, 0.6, 0.7)
             f32 scX, scY, scZ;
-            if (gFormState.goronAction == MMFORM_ACT_SHIELD || gFormState.boomerangState == 1) {
-                // Full scale during shield or boomerang aiming (state 1 = holding B, fins extended)
+            if (gFormState.goronAction == MMFORM_ACT_SHIELD || gFormState.boomerangState == 1 ||
+                gFormState.goronAction == GORON_ACT_PUNCH_A || gFormState.goronAction == GORON_ACT_PUNCH_B ||
+                gFormState.goronAction == GORON_ACT_PUNCH_C) {
+                // Full scale during shield, boomerang aiming, or punch attacks
                 scX = 1.0f;
                 scY = 1.0f;
                 scZ = 1.0f;
@@ -10091,6 +10657,29 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
             }
 
             Matrix_Pop();
+
+            // Zora punch swing trail: add vertices during hit frames for the active limb
+            // Step 0 (PunchA) = left hand, Step 1/2 (PunchB/C) = right hand
+            if (gFormState.punchTrailActive &&
+                (gFormState.goronAction >= GORON_ACT_PUNCH_A && gFormState.goronAction <= GORON_ACT_PUNCH_C)) {
+                u8 step = gFormState.comboStep;
+                u8 isActiveLimb = (step == 0 && limbIndex == PLAYER_LIMB_L_FOREARM) ||
+                                  (step != 0 && limbIndex == PLAYER_LIMB_R_FOREARM);
+                if (isActiveLimb) {
+                    f32 curFrame = gFormState.formSkelAnime.curFrame;
+                    if (curFrame >= sZoraPunchFrames[step][0] && curFrame <= sZoraPunchFrames[step][1]) {
+                        Vec3f trailP1, trailP2;
+                        // Fin base and tip positions in limb-local space
+                        static Vec3f sTipBase = { 0.0f, 0.0f, 0.0f };
+                        static Vec3f sTipEnd = { 0.0f, -800.0f, 0.0f };
+                        Matrix_MultVec3f(&sTipBase, &trailP1);
+                        Matrix_MultVec3f(&sTipEnd, &trailP2);
+                        EffectBlure_AddVertex((EffectBlure*)Effect_GetByIndex(gFormState.punchTrailEffectIndex),
+                                              &trailP1, &trailP2);
+                    }
+                }
+            }
+
             CLOSE_DISPS(play->state.gfxCtx);
         }
     }
@@ -10143,6 +10732,105 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
             }
 
             Matrix_Pop();
+
+            CLOSE_DISPS(play->state.gfxCtx);
+        }
+    }
+
+    // === 10. Gakki (Instrument) DL Drawing ===
+    // From MM z_player_lib.c PostLimbDraw: draw form-specific instrument parts
+    // when gakki animations are playing. Each form attaches at a different limb:
+    //   Goron drums → PLAYER_LIMB_TORSO (6 DL pieces)
+    //   Zora guitar → PLAYER_LIMB_L_HAND (1 DL)
+    //   Deku pipes  → PLAYER_LIMB_HEAD (6 DL pieces)
+    if (gFormState.gakkiActive) {
+        MmPlayerTransformation form = gFormState.currentForm;
+
+        // --- Goron Drums at TORSO ---
+        // From MM z_player_lib.c:3892-3941 (PostLimbDraw at PLAYER_LIMB_TORSO)
+        if (form == MM_PLAYER_FORM_GORON && limbIndex == PLAYER_LIMB_TORSO && gFormState.gakkiScale0.x > 0.01f) {
+            OPEN_DISPS(play->state.gfxCtx);
+
+            // Draw drum container (body) with gakkiScale0
+            Matrix_Push();
+            Matrix_Scale(gFormState.gakkiScale0.x, gFormState.gakkiScale0.y, gFormState.gakkiScale0.z, MTXMODE_APPLY);
+            gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gLinkGoronDrumContainerDL);
+            Matrix_Pop();
+
+            // Draw 5 drum skin pieces (from MM D_801C0DF0[])
+            // In Phase 1, all pieces use the same scale as the container.
+            // (Full per-piece scale requires Goron drum hit system with AnimTaskQueue blending.)
+            static const char* sDrumPieceDLs[5] = {
+                gLinkGoronDrumPiece1DL, gLinkGoronDrumPiece2DL, gLinkGoronDrumPiece3DL,
+                gLinkGoronDrumPiece4DL, gLinkGoronDrumPiece5DL,
+            };
+            for (s32 i = 0; i < 5; i++) {
+                Matrix_Push();
+                Matrix_Scale(gFormState.gakkiScale0.x, gFormState.gakkiScale0.y, gFormState.gakkiScale0.z,
+                             MTXMODE_APPLY);
+                gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sDrumPieceDLs[i]);
+                Matrix_Pop();
+            }
+
+            CLOSE_DISPS(play->state.gfxCtx);
+        }
+
+        // --- Zora Guitar at LEFT_HAND ---
+        // From MM z_player_lib.c:2574-2587 (OverrideLimbDraw at PLAYER_LIMB_LEFT_HAND)
+        // In MM, guitar replaces the left hand DL via OverrideLimbDraw. Here we draw it
+        // as a post-limb attachment since OverrideLimbDraw is more complex to intercept.
+        if (form == MM_PLAYER_FORM_ZORA && limbIndex == PLAYER_LIMB_L_HAND) {
+            // Only draw when scale is non-zero (guitar scales in during gakkistart frame 6+)
+            if (gFormState.gakkiScale0.x > 0.01f) {
+                OPEN_DISPS(play->state.gfxCtx);
+
+                Matrix_Push();
+                Matrix_Scale(gFormState.gakkiScale0.x, gFormState.gakkiScale0.y, gFormState.gakkiScale0.z,
+                             MTXMODE_APPLY);
+                gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gLinkZoraGuitarDL);
+                Matrix_Pop();
+
+                CLOSE_DISPS(play->state.gfxCtx);
+            }
+        }
+
+        // --- Deku Pipes at HEAD ---
+        // From MM z_player_lib.c:4011-4076 (PostLimbDraw at PLAYER_LIMB_HEAD)
+        if (form == MM_PLAYER_FORM_DEKU && limbIndex == PLAYER_LIMB_HEAD) {
+            OPEN_DISPS(play->state.gfxCtx);
+
+            // Draw pipe container (body) with uniform gakkiScale0.x
+            f32 containerScale = gFormState.gakkiScale0.x;
+            if (containerScale > 0.01f) {
+                Matrix_Push();
+                Matrix_Scale(containerScale, containerScale, containerScale, MTXMODE_APPLY);
+                gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gLinkDekuPipeContainerDL);
+                Matrix_Pop();
+            }
+
+            // Draw 5 pipe horn pieces with individual scales (from MM D_801C0E2C[])
+            static const char* sPipePieceDLs[5] = {
+                gLinkDekuPipe1DL, gLinkDekuPipe2DL, gLinkDekuPipe3DL, gLinkDekuPipe4DL, gLinkDekuPipe5DL,
+            };
+            for (s32 i = 0; i < 5; i++) {
+                f32 pipeScale = gFormState.gakkiPieceScales[i];
+                if (pipeScale > 0.01f) {
+                    Matrix_Push();
+                    Matrix_Scale(pipeScale, pipeScale, pipeScale, MTXMODE_APPLY);
+                    gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)sPipePieceDLs[i]);
+                    Matrix_Pop();
+                }
+            }
 
             CLOSE_DISPS(play->state.gfxCtx);
         }
@@ -10644,16 +11332,40 @@ void MmForm_Draw(PlayState* play, Player* player) {
                                  player->actor.world.pos.z, MTXMODE_NEW);
                 Matrix_RotateY(player->actor.shape.rot.y * (M_PI / 0x8000), MTXMODE_APPLY);
                 Matrix_RotateZ(player->actor.shape.rot.z * (M_PI / 0x8000), MTXMODE_APPLY);
+
+                // Directional tilt from drift/bounce (from 2Ship z_player.c:13095-13099)
+                // unk_B28 = drift yaw, unk_B86[0] = rollSfxCounter (tilt offset)
+                // Rotates ball in the direction of lateral drift
+                if (gFormState.rollSfxCounter != 0 && gFormState.rollDriftYaw != 0) {
+                    Matrix_RotateY(gFormState.rollDriftYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                    Matrix_RotateX(gFormState.rollSfxCounter * (M_PI / 0x8000), MTXMODE_APPLY);
+                    Matrix_RotateY(-gFormState.rollDriftYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                }
+
+                // Squash/stretch (from 2Ship z_player.c:13088-13105)
+                // spB8 = unk_ABC + 1.0f (Y: stretched when squash positive)
+                // spB4 = 1.0f - (unk_ABC * 0.5f) (X: compressed when squash positive)
+                // Z = CLAMP_MIN(spB8, spB4) (takes the bigger)
                 {
                     f32 sq = gFormState.rollSquash;
-                    Matrix_Scale(player->actor.scale.x * 1.15f * (1.0f + sq),
-                                 player->actor.scale.y * 1.15f * (1.0f - sq),
-                                 player->actor.scale.z * 1.15f * (1.0f + sq), MTXMODE_APPLY);
+                    f32 spB8 = sq + 1.0f;
+                    f32 spB4 = 1.0f - (sq * 0.5f);
+                    f32 scaleZ = (spB8 > spB4) ? spB8 : spB4;
+                    Matrix_Scale(player->actor.scale.x * spB4 * 1.15f, player->actor.scale.y * spB8 * 1.15f,
+                                 player->actor.scale.z * scaleZ * 1.15f, MTXMODE_APPLY);
                 }
                 Matrix_RotateX(player->actor.shape.rot.x * (M_PI / 0x8000), MTXMODE_APPLY);
             }
 
-            gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
+            // Ball color lerp (from 2Ship z_player.c:13108): white→(80,80,200) during ground pound
+            // Color_RGB8_Lerp(&D_8085D580={255,255,255}, &D_8085D584={80,80,200}, rollColorLerp)
+            {
+                f32 t = gFormState.rollColorLerp;
+                u8 envR = (u8)(255.0f - (175.0f * t)); // 255→80
+                u8 envG = (u8)(255.0f - (175.0f * t)); // 255→80
+                u8 envB = (u8)(255.0f - (55.0f * t));  // 255→200
+                gDPSetEnvColor(POLY_OPA_DISP++, envR, envG, envB, 255);
+            }
             gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
                       G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
@@ -10830,6 +11542,7 @@ void MmForm_Draw(PlayState* play, Player* player) {
                     gSPDisplayList(POLY_XLU_DISP++, dlCopy);
                 }
             }
+
         } else if (gFormState.goronAction == MMFORM_ACT_SHIELD && gFormState.currentForm == MM_PLAYER_FORM_GORON &&
                    gFormState.shieldSkelLoaded) {
             // Shield mode: draw gLinkGoronShieldingSkel (4-limb guard pose skeleton)
@@ -11022,6 +11735,12 @@ void MmForm_Reset(void) {
         gFormState.barrierActive = 0;
         gFormState.barrierColliderInit = 0;
         if (gPlayState != NULL) {
+            gPlayState->envCtx.adjAmbientColor[0] = 0;
+            gPlayState->envCtx.adjAmbientColor[1] = 0;
+            gPlayState->envCtx.adjAmbientColor[2] = 0;
+            gPlayState->envCtx.adjLight1Color[0] = 0;
+            gPlayState->envCtx.adjLight1Color[1] = 0;
+            gPlayState->envCtx.adjLight1Color[2] = 0;
             gPlayState->envCtx.adjFogColor[0] = 0;
             gPlayState->envCtx.adjFogColor[1] = 0;
             gPlayState->envCtx.adjFogColor[2] = 0;
@@ -11041,6 +11760,14 @@ void MmForm_Reset(void) {
             player->upperLimbRot.y = 0;
             player->upperLimbRot.x = 0;
         }
+
+        // Cleanup gakki (instrument) state
+        gFormState.gakkiActive = 0;
+        gFormState.gakkiStartAnim = NULL;
+        gFormState.gakkiPlayAnim = NULL;
+        memset(&gFormState.gakkiScale0, 0, sizeof(Vec3f));
+        memset(&gFormState.gakkiScale1, 0, sizeof(Vec3f));
+        memset(gFormState.gakkiPieceScales, 0, sizeof(gFormState.gakkiPieceScales));
 
         // Cleanup hazard void state
         gFormState.hazardVoidType = 0;
@@ -11087,6 +11814,12 @@ void MmForm_Reset(void) {
         gFormState.dekuFlightLaunchType = 0;
         gFormState.dekuSparkleAcc = 0;
         gFormState.dekuSavedShadowScale = 0.0f;
+        gFormState.dekuCheekScale = 1.0f;
+
+        // Cleanup new state variables
+        gFormState.rollColorLerp = 0.0f;
+        gFormState.rollDriftYaw = 0;
+        gFormState.punchComboCounter = 0;
 
         gFormState.formDLsPinned = 0;
         MmForm_ClearCachedDLs();

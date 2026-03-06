@@ -9,7 +9,7 @@
  * z_play.c guards KaleidoScopeCall_Update/Draw when minishCapWarpMode is set,
  * calling MinishKaleido_Update/Draw instead.
  *
- * Navigation: analog stick nearest-neighbor between 9 pod soil points.
+ * Navigation: analog stick nearest-neighbor between 10 pod soil points.
  * A = confirm warp, B/START = cancel.
  */
 
@@ -88,6 +88,11 @@ static const MinishKaleidoSoilData sSoilAreaData[POD_SOIL_COUNT] = {
       10,
       { gGerudoValleyPositionNameENGTex, gGerudoValleyPositionNameGERTex, gGerudoValleyPositionNameFRATex,
         gGerudoValleyPositionNameJPNTex } },
+    // #9 Zora's River (always unlocked)
+    { 78,
+      18,
+      { gZorasRiverPositionNameENGTex, gZorasRiverPositionNameGERTex, gZorasRiverPositionNameFRATex,
+        gZorasRiverPositionNameJPNTex } },
 };
 
 // ============================================================

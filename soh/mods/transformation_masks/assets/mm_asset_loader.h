@@ -284,6 +284,12 @@ void MmSfx_Stop(u16 sfxId);
 void MmSfx_PlayGoronRoll(Vec3f* pos, f32 speed);
 
 /**
+ * Play Goron charged roll sound with speed-based pitch (spikes active)
+ * From 2Ship line 19781: NA_SE_PL_GORON_CHG_ROLL when unk_B86[1] != 0
+ */
+void MmSfx_PlayGoronChgRoll(Vec3f* pos, f32 speed);
+
+/**
  * Play Goron charge sound with charge level pitch
  */
 void MmSfx_PlayGoronCharge(Vec3f* pos, f32 chargeLevel);

@@ -7,6 +7,7 @@
 
 #include "z64.h"
 #include "../custom_items.h"
+#include "../logic/item_rod_light.h"
 #include "macros.h"
 #include "functions.h"
 #include <math.h>
@@ -43,7 +44,7 @@ Gfx* gLightRodGiveDL = g_light_rod_dl;
 // ============================================================================
 
 void CustomItems_DrawLightRod(Player* player, PlayState* play) {
-    if (!gCustomItemState.lightRodActive)
+    if (!lightRodActive)
         return;
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -87,71 +88,52 @@ void CustomItems_DrawLightRod(Player* player, PlayState* play) {
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, g_light_rod_xlu_dl);
 
-    // Draw all active light balls (1-3 depending on attack type)
-    // Uses EXACT same approach as Dominion Rod's CustomItems_DrawDominionRod
-    if (gCustomItemState.lightRodProjActive) {
-        u8 projCount = gCustomItemState.lightRodProjCount;
-
-        // Rotation for energy ball effect (same formula as Dominion Rod)
+    // Draw all active light ball sets (up to 5 concurrent sets)
+    if (LightRod_HasAnyActiveSet()) {
         s16 rotZ = (play->gameplayFrames * 0x1000) + (s16)(Rand_ZeroOne() * 0x4000);
 
-        // Draw light ball 1 (always) - exact same order as Dominion Rod
-        Matrix_Translate(gCustomItemState.lightRodProjPos.x, gCustomItemState.lightRodProjPos.y,
-                         gCustomItemState.lightRodProjPos.z, MTXMODE_NEW);
-        Matrix_ReplaceRotation(&play->billboardMtxF);
-        Matrix_Scale(LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, MTXMODE_APPLY);
-        Matrix_RotateZ((rotZ / (f32)0x8000) * M_PI, MTXMODE_APPLY);
-
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-
         gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, LIGHTROD_ORB_PRIM_R, LIGHTROD_ORB_PRIM_G, LIGHTROD_ORB_PRIM_B,
                         LIGHTROD_ORB_PRIM_A);
         gDPSetEnvColor(POLY_XLU_DISP++, LIGHTROD_ORB_ENV_R, LIGHTROD_ORB_ENV_G, LIGHTROD_ORB_ENV_B, LIGHTROD_ORB_ENV_A);
         gDPPipeSync(POLY_XLU_DISP++);
 
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
-
-        // Draw light ball 2 (slash spread)
-        if (projCount >= 2) {
-            Matrix_Translate(gCustomItemState.lightRodProjPos2.x, gCustomItemState.lightRodProjPos2.y,
-                             gCustomItemState.lightRodProjPos2.z, MTXMODE_NEW);
-            Matrix_ReplaceRotation(&play->billboardMtxF);
-            Matrix_Scale(LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, MTXMODE_APPLY);
-            Matrix_RotateZ(((rotZ + 0x5555) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
-        }
-
-        // Draw light ball 3 (slash spread)
-        if (projCount >= 3) {
-            Matrix_Translate(gCustomItemState.lightRodProjPos3.x, gCustomItemState.lightRodProjPos3.y,
-                             gCustomItemState.lightRodProjPos3.z, MTXMODE_NEW);
-            Matrix_ReplaceRotation(&play->billboardMtxF);
-            Matrix_Scale(LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, MTXMODE_APPLY);
-            Matrix_RotateZ(((rotZ + 0xAAAA) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
-        }
-
-        // Draw trail for center light ball (fading energy balls)
-        for (s32 i = 1; i < 4; i++) {
-            Vec3f* trailPos = &gCustomItemState.lightRodProjTrail[i];
-            f32 trailScale = LIGHTROD_ORB_SCALE * (1.0f - (i * 0.25f));
-            if (trailScale < 1.0f)
+        RodProjSet* sets = LightRod_GetProjSets();
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+            RodProjSet* set = &sets[s];
+            if (!set->active)
                 continue;
 
-            // Fade alpha for trail
-            u8 trailAlpha = (u8)(LIGHTROD_ORB_PRIM_A * (1.0f - (i * 0.3f)));
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, LIGHTROD_ORB_PRIM_R, LIGHTROD_ORB_PRIM_G, LIGHTROD_ORB_PRIM_B,
-                            trailAlpha);
+            // Draw all light balls in this set (1-3)
+            for (s32 p = 0; p < set->count; p++) {
+                Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                Matrix_ReplaceRotation(&play->billboardMtxF);
+                Matrix_Scale(LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, MTXMODE_APPLY);
+                Matrix_RotateZ(((rotZ + (p * 0x5555)) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
+            }
 
-            Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
-            Matrix_ReplaceRotation(&play->billboardMtxF);
-            Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
-            Matrix_RotateZ(((rotZ - (i * 0x2000)) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
+            // Draw trail for center light ball of this set (fading energy balls)
+            for (s32 i = 1; i < 4; i++) {
+                Vec3f* trailPos = &set->trail[i];
+                f32 trailScale = LIGHTROD_ORB_SCALE * (1.0f - (i * 0.25f));
+                if (trailScale < 1.0f)
+                    continue;
+
+                u8 trailAlpha = (u8)(LIGHTROD_ORB_PRIM_A * (1.0f - (i * 0.3f)));
+                gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, LIGHTROD_ORB_PRIM_R, LIGHTROD_ORB_PRIM_G, LIGHTROD_ORB_PRIM_B,
+                                trailAlpha);
+
+                Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
+                Matrix_ReplaceRotation(&play->billboardMtxF);
+                Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
+                Matrix_RotateZ(((rotZ - (i * 0x2000)) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
+            }
         }
     }
 

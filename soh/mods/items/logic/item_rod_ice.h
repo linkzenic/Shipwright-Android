@@ -55,6 +55,30 @@
 #define ICE_ROD_PROJ_RADIUS 10
 #define ICE_ROD_PROJ_HEIGHT 20
 #define ICE_ROD_PROJ_DAMAGE 4
+#define ROD_MAX_PROJ_SETS 5
+
+// =============================================================================
+// MULTI-SET PROJECTILE STRUCT (shared by fire/ice/light rods)
+// =============================================================================
+
+#ifndef ROD_PROJ_SET_DEFINED
+#define ROD_PROJ_SET_DEFINED
+typedef struct {
+    Vec3f pos[3];
+    Vec3f vel[3];
+    Vec3f trail[6];
+    s16 timer;
+    f32 scale;
+    f32 targetScale;
+    s16 rotZ;
+    u8 count;
+    u8 active;
+    s16 yaw;
+    s16 pitch;
+    ColliderCylinder colliders[3];
+    u8 collidersInited;
+} RodProjSet;
+#endif // ROD_PROJ_SET_DEFINED
 
 // =============================================================================
 // SLASH SETTINGS (3 iceballs spread)
@@ -210,5 +234,9 @@ void Handle_IceRod(Player* player, PlayState* play);
 void Player_InitIceRodIA(PlayState* play, Player* player);
 void CustomItems_DrawIceRod(Player* player, PlayState* play);
 void CustomItems_DrawIceRodReticle(Player* player, PlayState* play);
+
+// Multi-set accessors (for draw code)
+RodProjSet* IceRod_GetProjSets(void);
+u8 IceRod_HasAnyActiveSet(void);
 
 #endif

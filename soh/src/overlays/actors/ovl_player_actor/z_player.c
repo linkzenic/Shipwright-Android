@@ -60,16 +60,17 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 // TRANSFORMATION MASKS IMPLEMENTATION - Uses VANILLA MM code with hooks
 // ============================================================================
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/transformation_masks/mm_mask_wear.h"
 #include "mods/transformation_masks/mm_router.c" // All MM code in one router
 
 // ============================================================================
-// PROP HUNT - Draw prop DL instead of Link for hiders
+// PIKACHU ACTOR - Fast3D exported model with SkelAnime
 // ============================================================================
-#include "soh/Network/HarpoonToggle.h"
-#ifdef ENABLE_HARPOON
-#define PROP_HUNT_ENABLE_DRAW
-#include "soh/Network/Harpoon/HarpoonPropHunt.h"
-#endif
+#include "mods/actors/pikachu/pikachu.c"
+#include "mods/actors/pikachu/pikachu_skel.c"
+#include "mods/actors/pikachu/pika_wait.c"
+#include "mods/actors/pikachu/pikachu_behavior.h"
+#include "mods/actors/pikachu/pikachu_behavior.c"
 
 // Some player animations are played at this reduced speed, for reasons yet unclear.
 // This is called "adjusted" for now.
@@ -3481,9 +3482,7 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
 
         if ((itemAction == PLAYER_IA_NONE) || !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) ||
             ((this->actor.bgCheckFlags & 1) &&
-             ((itemAction == PLAYER_IA_HOOKSHOT) || (itemAction == PLAYER_IA_LONGSHOT))) ||
-            (!(this->stateFlags2 & PLAYER_STATE2_UNDERWATER) && TransformMasks_IsEnabled() &&
-             TransformMasks_GetMaskType(item) == TRANSFORM_MASK_ZORA)) {
+             ((itemAction == PLAYER_IA_HOOKSHOT) || (itemAction == PLAYER_IA_LONGSHOT)))) {
 
             if ((play->bombchuBowlingStatus == 0) &&
                 (((itemAction == PLAYER_IA_DEKU_STICK) && (AMMO(ITEM_STICK) == 0)) ||
@@ -12607,12 +12606,24 @@ void Player_Update(Actor* thisx, PlayState* play) {
                 sp44.press.button &= ~(BTN_A | BTN_B | BTN_CUP);
             }
 
-            // Blast Mask: B button = explode, not sword.
-            // Block BTN_B from reaching Player_UpdateCommon so sword doesn't activate.
-            // The bomb spawn is handled in MmMaskWear_Update reading raw input.
-            if (TransformMasks_WearGetCurrent() == ITEM_MM_MASK_BLAST) {
-                sp44.cur.button &= ~BTN_B;
-                sp44.press.button &= ~BTN_B;
+            // Block BTN_B from reaching Player_UpdateCommon for masks that use B for effects.
+            // The actual B handling is in MmMaskWear_Update which reads raw input.
+            {
+                s32 wornMask = TransformMasks_WearGetCurrent();
+                if (wornMask == ITEM_MM_MASK_BLAST || wornMask == ITEM_MM_MASK_GREAT_FAIRY) {
+                    sp44.cur.button &= ~BTN_B;
+                    sp44.press.button &= ~BTN_B;
+                }
+            }
+
+            // Kamaro dance: freeze ALL input while dancing so player can't move or act.
+            // Dance animation is applied in MmMaskWear_Update after Player_UpdateCommon.
+            if (MmMaskWear_IsKamaroDancing()) {
+                sp44.cur.button = 0;
+                sp44.press.button = 0;
+                sp44.rel.button = 0;
+                sp44.cur.stick_x = 0;
+                sp44.cur.stick_y = 0;
             }
         }
 
@@ -12645,6 +12656,9 @@ void Player_Update(Actor* thisx, PlayState* play) {
 
         // MM MASK WEARING: Per-mask effects update
         TransformMasks_WearUpdate(play, this);
+
+        // PIKACHU: CVAR-based spawn
+        PikachuBehavior_Update(play, this);
     }
 
     MREG(52) = this->actor.world.pos.x;
@@ -12859,17 +12873,6 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         // Skeleton not loaded: draw flash overlay only, then fall through to OOT Link draw
         TransformMasks_Draw(play, this);
     }
-
-    // Prop Hunt: If local player is a hider with a prop, draw prop DL instead of Link
-#ifdef ENABLE_HARPOON
-    if (thisx == &GET_PLAYER(play2)->actor && PropHunt_IsLocalHiderWithProp()) {
-        s32 propIdx = PropHunt_GetLocalPropIndex();
-        if (propIdx >= 0) {
-            HarpoonPropHunt_DrawProp(thisx, play, propIdx);
-            return;
-        }
-    }
-#endif
 
     if (LINK_AGE_IN_YEARS == YEARS_CHILD) {
         pos.x = 2.0f;

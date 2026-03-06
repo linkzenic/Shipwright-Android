@@ -18,6 +18,8 @@
 #include "mm_asset_loader.h"
 #include <filesystem>
 #include <cstring>
+#include <cmath>
+#include <cstdio>
 #include <exception>
 #include <libultraship/libultraship.h>
 #include <libultraship/log/luslog.h>
@@ -28,6 +30,10 @@
 // Logging macros (same pattern as mm_anim_loader.c)
 #define MMASSETS_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
 #define MMSFX_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
+
+// Path to extracted MM samples from decomp (WAV files decoded from N64 ADPCM)
+#define MM_DECOMP_SAMPLEBANK_PATH \
+    "C:/Users/LENOVO/Documents/mm_decomp/extracted/n64-us/assets/audio/samples/SampleBank_0/"
 
 // Static state - base MM archive
 static bool sMmO2rDetected = false;
@@ -924,6 +930,7 @@ void* MmAssets_LoadFierceMaskWornDL(void) {
 
 // MM Goron SFX IDs
 #define MM_NA_SE_PL_GORON_ROLL 0x0990
+#define MM_NA_SE_PL_GORON_CHG_ROLL 0x0980
 #define MM_NA_SE_PL_GORON_BALL_CHARGE 0x08EB
 #define MM_NA_SE_SY_TRANSFORM_MASK_FLASH 0x484F
 
@@ -1160,17 +1167,23 @@ static s16* MmDirectAudio_DecodeADPCM(SoundFontSample* sample, u32* outLength) {
 // Direct Audio: Playing Sound List + Mixer
 // =============================================================================
 
-#define MM_DIRECT_MAX_SOUNDS 8
+#define MM_DIRECT_MAX_SOUNDS 16
 
 typedef struct {
-    s16* pcmData;    // Decoded PCM buffer (allocated, must be freed)
-    u32 pcmLength;   // Total samples in buffer
-    f32 pcmPosition; // Current fractional playback position
-    f32 advance;     // Samples to advance per output sample (tuning * freqScale)
-    f32 volume;      // Volume [0..1]
-    f32 pan;         // Pan [0=left, 0.5=center, 1=right]
-    u16 mmSfxId;     // MM SFX ID for stop/identify
-    u8 active;       // 1=playing, 0=free
+    s16* pcmData;     // Decoded PCM buffer (allocated, must be freed)
+    u32 pcmLength;    // Total samples in buffer
+    f32 pcmPosition;  // Current fractional playback position
+    f32 advance;      // Samples to advance per output sample (tuning * freqScale)
+    f32 volume;       // Volume [0..1]
+    f32 pan;          // Pan [0=left, 0.5=center, 1=right]
+    u32 loopStart;    // Loop start sample (from sample->loop)
+    u32 loopEnd;      // Loop end sample (0 = no loop)
+    f32 vibratoPhase; // Vibrato LFO phase [0..1]
+    f32 vibratoRate;  // Vibrato LFO rate (Hz), 0 = no vibrato
+    f32 vibratoDepth; // Vibrato pitch modulation depth [0..1]
+    u16 mmSfxId;      // MM SFX ID for stop/identify
+    u8 active;        // 1=playing, 0=free
+    u8 ownsPcm;       // 1=owns pcmData (must free on reuse), 0=cached WAV (don't free)
 } MmPlayingSound;
 
 static MmPlayingSound sPlayingSounds[MM_DIRECT_MAX_SOUNDS];
@@ -1197,6 +1210,10 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0811, 0, 49 },  // JUMP: INST_0, PITCH_CS3
     { 0x0812, 0, 61 },  // LAND: INST_0, PITCH_CS4
     { 0x0814, 9, 66 },  // CLIMB_CLIFF: INST_9, PITCH_FS4
+    { 0x0839, 20, 48 }, // SWIM: CHAN_EV_LURE_MOVE_W → INST_20, PITCH_C3 (portamento A3→C3)
+    { 0x0874, 15, 52 }, // FREEZE_S L0: INST_15, PITCH_E3 (portamento E4→E3)
+    { 0x0874, 80, 35 }, // FREEZE_S L1: INST_80, PITCH_B1 (portamento F2→B1)
+    { 0x0877, 9, 53 },  // PUT_OUT_ITEM: CHAN_PL_PUT_OUT_ITEM → INST_9, PITCH_F3 (transform cutscene)
     { 0x08D0, 12, 60 }, // SLIP_LEVEL: INST_12, PITCH_C4
     // === Player Bank: Deku SFX ===
     { 0x08E0, 74, 49 },  // DEKUNUTS_FIRE: INST_74, PITCH_E3 (bubble spit)
@@ -1206,10 +1223,12 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x08E1, 102, 55 }, // GORON_BALLJUMP: INST_102, PITCH_G3
     { 0x08E4, 68, 78 },  // TRANSFORM: INST_68, PITCH_GF5 (primary of 3 layers)
     { 0x08E5, 47, 55 },  // TRANSFORM_DEMO: INST_47, PITCH_G3
-    { 0x08E6, 47, 55 },  // GORON_TO_BALL: INST_47 (same channel as TRANSFORM_DEMO)
-    { 0x08E7, 47, 35 },  // BALL_TO_GORON: INST_47, PITCH_B1
-    { 0x08E8, 65, 53 },  // GORON_PUNCH: INST_65, PITCH_F3 (primary of 2 layers)
-    { 0x08EB, 35, 65 },  // GORON_BALL_CHARGE: INST_35, PITCH_F4 (primary, looping)
+    { 0x08E6, 47, 55 },  // GORON_TO_BALL: INST_47, PITCH_G3 (portamento G3→B1)
+    { 0x08E7, 47, 31 },  // BALL_TO_GORON: INST_47, PITCH_G1 (portamento E3→G1)
+    { 0x08E8, 65, 53 },  // GORON_PUNCH L0: INST_65, PITCH_F3
+    { 0x08E8, 77, 60 },  // GORON_PUNCH L1: INST_77, PITCH_C4
+    { 0x08EB, 35, 113 }, // GORON_BALL_CHARGE L0: INST_35, PITCH_F4 + transpose 48 (looping)
+    { 0x08EB, 75, 66 },  // GORON_BALL_CHARGE L1: INST_75, PITCH_E4 + transpose 2
     // === Player Bank: Zora SFX ===
     { 0x08EC, 20, 73 },  // ZORA_SWIM_DASH: INST_20, PITCH_DF5
     { 0x08ED, 72, 38 },  // ZORA_SWIM_LV: INST_72, PITCH_F2
@@ -1224,13 +1243,16 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x08F5, 31, 23 }, // ZORA_BOOMERANG_CATCH: INST_31, PITCH_B0 (same channel)
     // === Player Bank: Goron roll SFX ===
     { 0x0980, 35, 67 }, // GORON_CHG_ROLL: INST_35, PITCH_G4
-    { 0x0990, 77, 58 }, // GORON_ROLL: INST_77, PITCH_BF3 (primary of 3 layers)
+    { 0x0990, 77, 58 }, // GORON_ROLL L1: INST_77, PITCH_BF3 (rolling sound)
+    { 0x0990, 47, 41 }, // GORON_ROLL L2: INST_47, PITCH_F2 (low rumble)
     // === Player Bank: Deku SFX (0x9A0 range) ===
     { 0x09A0, 52, 51 },  // DEKUNUTS_BUD: INST_52, PITCH_EF3 (primary, multi-note)
     { 0x09A1, 74, 54 },  // DEKUNUTS_BUBLE_BREATH: INST_74, PITCH_A3 (looping)
     { 0x09A2, 35, 36 },  // GORON_BALL_CHARGE_FAILED: INST_35, PITCH_C2
     { 0x09A3, 75, 71 },  // GORON_BALL_CHARGE_DASH: INST_75, PITCH_B4
+    { 0x09A4, 69, 53 },  // FACE_CHANGE: CHAN_PL_FACE_CHANGE → INST_69, PITCH_F3 (de-transform)
     { 0x09A9, 27, 24 },  // DEKUNUTS_ATTACK: INST_27, PITCH_C1 (spin attack)
+    { 0x09AA, 127, 4 },  // TRANSFORM_VOICE: FONTANY_INSTR_DRUM → drums[4] (PITCH_DF1)
     { 0x09AD, 111, 60 }, // GORON_SLIP: INST_111, PITCH_C4 (looping)
     { 0x09AF, 46, 63 },  // ZORA_SPARK_BARRIER: INST_46, PITCH_E4
     { 0x09B8, 77, 77 },  // GORON_STOMACH_EXPLOSION: INST_77, PITCH_F5
@@ -1239,96 +1261,269 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x184F, 32, 60 },  // IT_GORON_BALLFANG: INST_32, PITCH_C4
     { 0x1850, 27, 43 },  // IT_DEKUNUTS_FLOWER_OPEN: INST_27, PITCH_G2 (primary of 2 layers)
     { 0x1852, 78, 65 },  // IT_DEKUNUTS_FLOWER_CLOSE: INST_78, PITCH_F4
+    { 0x1853, 41, 60 },  // IT_DEKUNUTS_BUBLE_BROKEN: INST_41, PITCH_C4
+    { 0x1854, 41, 60 },  // IT_DEKUNUTS_BUBLE_VANISH: same channel as BROKEN
+    { 0x1856, 9, 55 },   // IT_SET_TRANSFORM_MASK: shares LAYER_08CB → INST_9, PITCH_G3
     { 0x1857, 27, 24 },  // IT_GORON_PUNCH_SWING: INST_27, PITCH_C1
+    { 0x1858, 15, 36 },  // IT_TRANSFORM_MASK_BROKEN: INST_15, PITCH_C2 (arpeggio C2→F2→A2→C3)
     { 0x1859, 39, 42 },  // IT_ZORA_KICK_SWING: INST_39, PITCH_GF2
+    { 0x185A, 34, 57 },  // IT_DEKUNUTS_BUBLE_SHOT_LEVEL: INST_34, PITCH_A3
     { 0x185E, 102, 45 }, // IT_GORON_ROLLING_REFLECTION: INST_102, PITCH_A2
+    // === Player Bank: Deku form-specific (added for missing action sounds) ===
+    { 0x09A6, 27, 43 }, // DEKUNUTS_STRUGGLE: INST_27, PITCH_G2 (from CHAN_PL_DEKUNUTS_STRUGGLE)
+    { 0x09BF, 74, 71 }, // DEKUNUTS_MISS_FIRE: INST_74, PITCH_B4 (from CHAN_PL_DEKUNUTS_MISS_FIRE)
+    // === Player Bank: Deku hop SFX (0x09B0-0x09B4) ===
+    // Layer 0: FONTANY_INSTR_TRIANGLE (129) at ascending notes (C major scale)
+    // Layer 1: SF0_INST_4 (step_water) at A3, constant across all variants
+    { 0x09B0, 129, 60 }, // DEKUNUTS_JUMP L0: TRIANGLE, C4
+    { 0x09B0, 4, 57 },   // DEKUNUTS_JUMP L1: INST_4, A3
+    { 0x09B1, 129, 62 }, // DEKUNUTS_JUMP2 L0: TRIANGLE, D4
+    { 0x09B1, 4, 57 },   // DEKUNUTS_JUMP2 L1: INST_4, A3
+    { 0x09B2, 129, 64 }, // DEKUNUTS_JUMP3 L0: TRIANGLE, E4
+    { 0x09B2, 4, 57 },   // DEKUNUTS_JUMP3 L1: INST_4, A3
+    { 0x09B3, 129, 65 }, // DEKUNUTS_JUMP4 L0: TRIANGLE, F4
+    { 0x09B3, 4, 57 },   // DEKUNUTS_JUMP4 L1: INST_4, A3
+    { 0x09B4, 129, 67 }, // DEKUNUTS_JUMP5 L0: TRIANGLE, G4
+    { 0x09B4, 4, 57 },   // DEKUNUTS_JUMP5 L1: INST_4, A3
+    // === Environment Bank ===
+    { 0x2912, 47, 72 }, // EV_LIGHTNING_HARD: INST_47, PITCH_C5 (transform flash)
     // === System Bank: Transform flash ===
-    { 0x484F, 64, 84 }, // SY_TRANSFORM_MASK_FLASH: INST_64, C4+24 transpose
+    { 0x484F, 64, 84 }, // SY_TRANSFORM_MASK_FLASH L0: INST_64, C4 + transpose 24
+    { 0x484F, 68, 96 }, // SY_TRANSFORM_MASK_FLASH L1: INST_68, C4 + transpose 36
     { 0x4835, 64, 84 }, // (legacy ID - same sound)
 };
 static const s32 sMmSfxInstrMapSize = sizeof(sMmSfxInstrMap) / sizeof(sMmSfxInstrMap[0]);
 
 // =============================================================================
-// Voice Bank: Goron voices = Human Link voices with transpose +4
+// Voice Bank: Form voices use two sample sets from Soundfont_0
 // =============================================================================
-// From seq_0.prg.seq: Goron voice channels (DUMMY_192-223) call CHAN_BD84
-// which sets transpose=4, then jump to the corresponding human Link voice
-// channel. The voice channels use FONTANY_INSTR_SFX mode which indexes into
-// font->soundEffects[].
+// From seq_0.prg.seq tracing:
+//   - ADULT set (Fierce Deity channels): used by FD (no transpose), Zora (+3), Goron (+4)
+//   - CHILD set (Human Link channels): used by HL (no transpose), Deku (+3)
 //
-// For voices with directly defined effect indices (from seq_0):
+// Each voice action has 2-4 alternative soundEffect entries for random variation.
+// Vibrato: Deku (depth=88, freq=128), Zora (depth=32, freq=240), Goron (none).
+
+// Special voice overrides (voices that don't follow the standard redirect)
 typedef struct {
     u16 sfxId;     // MM Voice SFX ID
     u16 effectIdx; // SF0_EFFECT_X index into soundEffects[]
-    s8 transpose;  // Semitone transpose (4 for Goron, 1 for some others)
+    s8 transpose;  // Semitone transpose
 } MmVoiceMapEntry;
 
 static const MmVoiceMapEntry sMmVoiceMap[] = {
-    // Directly defined in seq_0 with explicit SF0_EFFECT indices:
-    { 0x68CA, 23, 4 }, // DUMMY_202 (GORON_DOWN alt): SF0_EFFECT_23, transpose 4
-    { 0x68CB, 20, 4 }, // DUMMY_203 (GORON_DOWN): SF0_EFFECT_20, transpose 4
-    { 0x68D0, 17, 4 }, // DUMMY_208: SF0_EFFECT_17, transpose 4 (looping)
-    { 0x68D8, 6, 4 },  // DUMMY_216: SF0_EFFECT_6, transpose 4
-    { 0x68DA, 24, 4 }, // DUMMY_218: SF0_EFFECT_24, transpose 4
-    { 0x68E1, 35, 1 }, // DUMMY_225: SF0_EFFECT_35, transpose 1
-    { 0x68E5, 36, 1 }, // DUMMY_229: SF0_EFFECT_36, transpose 1
+    { 0x68CA, 23, 4 }, // GORON_BREATH_DRINK: SF0_EFFECT_23, transpose 4
+    { 0x68CB, 20, 4 }, // GORON_DOWN: SF0_EFFECT_20, transpose 4
+    { 0x68D0, 17, 4 }, // GORON_DRINK: SF0_EFFECT_17, transpose 4 (looping)
+    { 0x68D8, 6, 4 },  // GORON_PUSH: SF0_EFFECT_6, transpose 4
+    { 0x68DA, 24, 4 }, // GORON_LAND_DAMAGE_S: SF0_EFFECT_24, transpose 4
+    { 0x68E1, 35, 1 }, // SCENTS_225: SF0_EFFECT_35, transpose 1
+    { 0x68E5, 36, 1 }, // SCENTS_229: SF0_EFFECT_36, transpose 1
 };
 static const s32 sMmVoiceMapSize = sizeof(sMmVoiceMap) / sizeof(sMmVoiceMap[0]);
 
-// =============================================================================
-// Goron voice → human Link voice redirect table
-// =============================================================================
-// Goron voices (0x68C0-0x68DF) that redirect to human Link voice channels
-// via CHAN_BD84 (transpose +4). The human Link voices are at bank 6 offset 0x00.
-// Each Goron voice index maps to a human Link voice that uses a specific
-// SF0_EFFECT. These effect indices were traced from seq_0 channel handlers.
-//
-// Human Link voice channels and their SF0_EFFECT indices:
-//   LI_SWORD_N  → effect 0    LI_SWORD_L  → effect 1
-//   LI_LASH     → effect 2    LI_HANG     → effect 3
-//   LI_CLIMB_END→ effect 4    LI_DAMAGE_S → effect 5
-//   LI_FREEZE   → effect 6    LI_FALL_S   → effect 7
-//   LI_FALL_L   → effect 8    LI_BREATH_REST→ effect 9
-//
-// All form voices redirect to the same 10 human Link voice channels.
-// The mapping is: voice[i] → SF0_EFFECT index for human Link voice i.
-// Goron, Deku, Zora all use the SAME effect indices, but different transposes:
-//   Goron: transpose +4 (CHAN_BD84)
-//   Deku:  transpose +3 (CHAN_BC5E, vibdepth 88, vibfreq 128)
-//   Zora:  transpose +3 (CHAN_BCF3, vibdepth 32, vibfreq 240)
-//
-// Human Link voice channels and their SF0_EFFECT indices:
-//   [0] LI_SWORD_N   → effect 0    [1] LI_SWORD_L    → effect 1
-//   [2] LI_LASH      → effect 0*   [3] LI_HANG        → effect 3
-//   [4] LI_CLIMB_END → effect 4    [5] LI_DAMAGE_S    → effect 5
-//   [6] LI_FREEZE    → effect 6    [7] LI_FALL_S      → effect 7
-//   [8] LI_FALL_L    → effect 8    [9] LI_BREATH_REST → effect 9
-//   *LASH redirects to SWORD_N channel
-static const s32 sFormVoiceToEffect[] = {
-    0, // [0] SWORD_N  → SF0_EFFECT_0
-    1, // [1] SWORD_L  → SF0_EFFECT_1
-    0, // [2] LASH     → SF0_EFFECT_0 (same channel as SWORD_N)
-    3, // [3] HANG     → SF0_EFFECT_3
-    4, // [4] CLIMB_END→ SF0_EFFECT_4
-    5, // [5] DAMAGE_S → SF0_EFFECT_5
-    6, // [6] FREEZE   → SF0_EFFECT_6
-    7, // [7] FALL_S   → SF0_EFFECT_7
-    8, // [8] FALL_L   → SF0_EFFECT_8
-    9, // [9] BREATH_REST→SF0_EFFECT_9
+// Voice effect alternatives: each entry has up to 4 soundEffect indices
+typedef struct {
+    u8 effects[4]; // SF0_EFFECT indices (0 = unused slot)
+    u8 count;      // Number of valid alternatives
+} MmVoiceEffectEntry;
+
+// Adult voice set (Fierce Deity channels) — traced from seq_0 arrays
+// Used by: Fierce Deity (no transpose), Zora (+3 semitones), Goron (+4 semitones)
+static const MmVoiceEffectEntry sAdultVoiceEffects[] = {
+    // [0] SWORD_N:    ARRAY_B6A0 = {0,1,2,3}
+    { { 0, 1, 2, 3 }, 4 },
+    // [1] SWORD_L:    ARRAY_B6CD = {4,5}
+    { { 4, 5, 0, 0 }, 2 },
+    // [2] LASH:       CHAN_VO_LI_LASH → reuses SWORD_N effects
+    { { 0, 1, 2, 3 }, 4 },
+    // [3] HANG:       CHAN_VO_LI_LASH → reuses SWORD_N effects
+    { { 0, 1, 2, 3 }, 4 },
+    // [4] CLIMB_END:  CHAN_VO_LI_LASH → reuses SWORD_N effects
+    { { 0, 1, 2, 3 }, 4 },
+    // [5] DAMAGE_S:   ARRAY_B73E = {9,10}
+    { { 9, 10, 0, 0 }, 2 },
+    // [6] FREEZE:     ARRAY_B758 = {12,13,14}
+    { { 12, 13, 14, 0 }, 3 },
+    // [7] FALL_S:     CHAN_VO_LI_LASH → reuses SWORD_N effects
+    { { 0, 1, 2, 3 }, 4 },
+    // [8] FALL_L:     ARRAY_B78A = {15,16}
+    { { 15, 16, 0, 0 }, 2 },
+    // [9] BREATH_REST: ARRAY_B7A2 = {19,23}
+    { { 19, 23, 0, 0 }, 2 },
 };
-static const s32 sFormVoiceToEffectSize = sizeof(sFormVoiceToEffect) / sizeof(sFormVoiceToEffect[0]);
+static const s32 sAdultVoiceEffectsSize = sizeof(sAdultVoiceEffects) / sizeof(sAdultVoiceEffects[0]);
+
+// Child voice set (Human Link channels) — traced from seq_0 arrays
+// Used by: Human Link (no transpose), Deku (+3 semitones)
+static const MmVoiceEffectEntry sChildVoiceEffects[] = {
+    // [0] SWORD_N:    ARRAY_B896 = {28,29,30,31}
+    { { 28, 29, 30, 31 }, 4 },
+    // [1] SWORD_L:    ARRAY_B8C4 = {32,33}
+    { { 32, 33, 0, 0 }, 2 },
+    // [2] LASH:       ARRAY_B8DF = {10,11}
+    { { 10, 11, 0, 0 }, 2 },
+    // [3] HANG:       ARRAY_B90B = {34,50}
+    { { 34, 50, 0, 0 }, 2 },
+    // [4] CLIMB_END:  ARRAY_B923 = {35,36}
+    { { 35, 36, 0, 0 }, 2 },
+    // [5] DAMAGE_S:   ARRAY_B93B = {37,38}
+    { { 37, 38, 0, 0 }, 2 },
+    // [6] FREEZE:     ARRAY_B955 = {40,41,42}
+    { { 40, 41, 42, 0 }, 3 },
+    // [7] FALL_S:     ARRAY_B96F = {45,46}
+    { { 45, 46, 0, 0 }, 2 },
+    // [8] FALL_L:     ARRAY_B987 = {43,44}
+    { { 43, 44, 0, 0 }, 2 },
+    // [9] BREATH_REST: ARRAY_B99F = {47,48}
+    { { 47, 48, 0, 0 }, 2 },
+};
+static const s32 sChildVoiceEffectsSize = sizeof(sChildVoiceEffects) / sizeof(sChildVoiceEffects[0]);
+
+// =============================================================================
+// Decomp WAV Mapping Tables (Soundfont_0.xml → WAV filenames)
+// =============================================================================
+// Maps instrument indices and voice effect indices to WAV files in the decomp's
+// extracted SampleBank_0. Used by the WAV loader as an alternative to mm.o2r ADPCM.
+
+// Instrument → WAV mapping (for non-voice SFX)
+// rangeSplitNote: notes <= this use this entry; 127 = all notes
+// Entries for the same instrument MUST be ordered: low-range first, high-range second.
+typedef struct {
+    u8 instrumentIdx;
+    u8 rangeSplitNote;
+    u8 baseNote;    // MIDI base note from Soundfont_0.xml (usually 60=C4)
+    u32 sampleRate; // WAV native sample rate
+    const char* wavFile;
+} MmInstWavEntry;
+
+static const MmInstWavEntry sMmInstWavMap[] = {
+    { 0, 127, 60, 22050, "step_ground.wav" },
+    { 4, 127, 60, 16000, "step_water.wav" },
+    { 9, 127, 60, 22050, "small_splash.wav" },
+    { 12, 127, 60, 16000, "sliding_block.wav" },
+    { 15, 71, 60, 16000, "Sample045.half.wav" }, // RangeHi=B5
+    { 15, 127, 60, 16000, "howling.wav" },       // hi range
+    { 20, 127, 60, 16000, "swimming.wav" },
+    { 27, 127, 60, 22050, "whish.wav" },
+    { 31, 127, 60, 22050, "air_whistle.wav" },
+    { 32, 127, 60, 22050, "sword_striking_metal_shield.wav" },
+    { 34, 71, 60, 22050, "moving_metal_chain.wav" }, // RangeHi=B5
+    { 34, 127, 60, 16000, "Sample072.wav" },         // hi range
+    { 35, 71, 60, 16000, "Sample058.half.wav" },     // RangeHi=B5
+    { 35, 127, 60, 22050, "bombchu_motor.wav" },     // hi range
+    { 39, 127, 60, 22050, "air_whoosh.wav" },
+    { 41, 71, 60, 22050, "whip_snap.wav" },            // RangeHi=B5
+    { 41, 127, 60, 22050, "popping_cork.wav" },        // hi range
+    { 46, 72, 60, 22050, "Sample107.wav" },            // RangeHi=C6 (XML SampleRate override)
+    { 46, 127, 60, 22050, "shimmering_treasure.wav" }, // hi range
+    { 47, 127, 60, 16000, "explosion1.wav" },
+    { 52, 127, 60, 32000, "ocarina_looped.wav" },
+    { 64, 127, 60, 24000, "flying_fairy.wav" },
+    { 65, 127, 60, 16000, "settled_stone_block.wav" },
+    { 68, 127, 60, 32000, "warp_circle_ambience.wav" },
+    { 69, 127, 60, 16000, "fairy_magic.wav" },
+    { 72, 127, 60, 16000, "underwater_bubbles.wav" },
+    { 74, 71, 60, 16000, "Sample390.wav" },       // RangeHi=B5
+    { 74, 127, 12, 22050, "Sample016.half.wav" }, // hi, BaseNote=C0
+    { 75, 127, 60, 16000, "heavy_platform_rotating.wav" },
+    { 77, 71, 60, 16000, "Sample391.half.wav" },             // RangeHi=B5
+    { 77, 127, 60, 16000, "mechanical_ramp_up.wav" },        // hi range
+    { 78, 96, 60, 16000, "flapping_cloak.wav" },             // RangeHi=C7
+    { 78, 127, 12, 16000, "rustling_large_wings.half.wav" }, // hi, BaseNote=C0
+    { 80, 127, 60, 22050, "cloth_ripping.half.wav" },
+    { 102, 127, 72, 32000, "timpani.wav" }, // BaseNote=C5
+    { 105, 127, 60, 24000, "Sample046.wav" },
+    { 106, 71, 60, 16000, "Sample047.wav" },  // RangeHi=B5
+    { 106, 127, 12, 16000, "gulp.half.wav" }, // hi, BaseNote=C0
+    { 111, 127, 60, 16000, "Sample048.wav" },
+};
+static const s32 sMmInstWavMapSize = sizeof(sMmInstWavMap) / sizeof(sMmInstWavMap[0]);
+
+// Voice Effect → WAV mapping (for voice bank sounds)
+typedef struct {
+    u8 effectIdx;
+    u8 baseNote;
+    u32 sampleRate;
+    const char* wavFile;
+} MmEffectWavEntry;
+
+static const MmEffectWavEntry sMmEffectWavMap[] = {
+    // Adult Link voices (effects 0-27)
+    { 0, 60, 20000, "adult_link_attack1.wav" },
+    { 1, 60, 20000, "adult_link_attack2.wav" },
+    { 2, 60, 20000, "adult_link_attack3.wav" },
+    { 3, 60, 20000, "adult_link_attack4.wav" },
+    { 4, 60, 20000, "adult_link_strong_attack1.wav" },
+    { 5, 60, 20000, "adult_link_strong_attack2.wav" },
+    { 6, 60, 20000, "Sample162.wav" },
+    { 7, 60, 20000, "Sample164.wav" },
+    { 8, 60, 20000, "Sample165.wav" },
+    { 9, 60, 20000, "Sample167.wav" },
+    { 10, 60, 20000, "Sample169.wav" },
+    { 11, 60, 20000, "Sample171.wav" },
+    { 12, 60, 20000, "Sample173.wav" },
+    { 13, 60, 20000, "Sample175.wav" },
+    { 14, 60, 20000, "Sample177.wav" },
+    { 15, 60, 20000, "adult_link_falling1.wav" },
+    { 16, 60, 20000, "adult_link_falling2.wav" },
+    { 17, 60, 20000, "adult_link_falling2.wav" }, // Same sample as 16
+    { 18, 60, 20000, "Sample182.wav" },
+    { 19, 60, 20000, "Sample184.wav" },
+    { 20, 60, 20000, "Sample225.wav" },
+    { 21, 60, 20000, "Sample148.half.wav" },
+    { 22, 60, 20000, "Sample148.half.wav" }, // Same sample as 21
+    { 23, 60, 20000, "Sample186.wav" },
+    { 24, 60, 20000, "Sample188.wav" },
+    { 25, 60, 20000, "Sample163.wav" },
+    { 26, 60, 20000, "adult_link_hup.wav" },
+    { 27, 60, 20000, "adult_link_gasp1.wav" },
+    // Child Link voices (effects 28-50)
+    { 28, 60, 20000, "Sample193.wav" },
+    { 29, 60, 20000, "Sample194.wav" },
+    { 30, 60, 20000, "Sample195.wav" },
+    { 31, 60, 20000, "Sample196.wav" },
+    { 32, 60, 20000, "child_link_strong_attack1.wav" },
+    { 33, 60, 20000, "child_link_strong_attack2.wav" },
+    { 34, 60, 20000, "Sample203.wav" },
+    { 35, 60, 20000, "Sample205.wav" },
+    { 36, 60, 20000, "Sample206.wav" },
+    { 37, 60, 20000, "Sample207.wav" },
+    { 38, 60, 20000, "Sample208.wav" },
+    { 39, 60, 20000, "Sample209.wav" },
+    { 40, 60, 20000, "Sample210.wav" },
+    { 41, 60, 20000, "Sample211.wav" },
+    { 42, 60, 20000, "Sample212.wav" },
+    { 43, 60, 20000, "Sample213.wav" },
+    { 44, 60, 20000, "Sample214.wav" },
+    { 45, 60, 20000, "child_link_gasp1.wav" },
+    { 46, 60, 20000, "child_link_gasp2.wav" },
+    { 47, 60, 20000, "Sample217.wav" },
+    { 48, 60, 20000, "Sample218.wav" },
+    { 49, 60, 20000, "Sample223.wav" },
+    { 50, 60, 20000, "Sample204.wav" },
+};
+static const s32 sMmEffectWavMapSize = sizeof(sMmEffectWavMap) / sizeof(sMmEffectWavMap[0]);
+
+// Drum → WAV mapping (for FONTANY_INSTR_DRUM sounds)
+typedef struct {
+    u8 drumIdx;
+    u8 baseNote;
+    u32 sampleRate;
+    const char* wavFile;
+} MmDrumWavEntry;
+
+static const MmDrumWavEntry sMmDrumWavMap[] = {
+    { 4, 53, 20000, "child_link_gasp1.wav" }, // TRANSFORM_VOICE drum, BaseNote=F3
+};
+static const s32 sMmDrumWavMapSize = sizeof(sMmDrumWavMap) / sizeof(sMmDrumWavMap[0]);
 
 // Form voice base addresses and transposes
+#define MM_VOICE_FD_BASE 0x6800
+#define MM_VOICE_HL_BASE 0x6820
 #define MM_VOICE_DEKU_BASE 0x6880
 #define MM_VOICE_ZORA_BASE 0x68A0
 #define MM_VOICE_GORON_BASE 0x68C0
-#define MM_VOICE_DEKU_TRANSPOSE 3
-#define MM_VOICE_ZORA_TRANSPOSE 3
-#define MM_VOICE_GORON_TRANSPOSE 4
-
-// Legacy alias (used in existing redirect code below)
-static const s32* sGoronVoiceToEffect = sFormVoiceToEffect;
-static const s32 sGoronVoiceToEffectSize = sFormVoiceToEffectSize;
 
 // Pitch factor for semitone transpose: 2^(semitones/12)
 static f32 MmDirectAudio_TransposeFactor(s32 semitones) {
@@ -1406,13 +1601,12 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
 
     // =========================================================================
     // Voice bank (6): uses soundEffects[] in FONTANY_INSTR_SFX mode
-    // All form voices redirect to human Link voices with form-specific transpose:
-    //   Deku  (0x6880-0x689F): transpose +3 (CHAN_BC5E)
-    //   Zora  (0x68A0-0x68BF): transpose +3 (CHAN_BCF3)
-    //   Goron (0x68C0-0x68DF): transpose +4 (CHAN_BD84)
+    // Two voice sample sets in Soundfont_0 (traced from seq_0.prg.seq):
+    //   ADULT set (FD channels): FD (no transpose), Zora (+3), Goron (+4)
+    //   CHILD set (HL channels): HL (no transpose), Deku (+3)
     // =========================================================================
     if (bank == 6) {
-        // First check the explicit voice map (special voices with unique effect indices)
+        // 1. Check explicit voice map (special cases with unique effect indices)
         for (s32 i = 0; i < sMmVoiceMapSize; i++) {
             if (sMmVoiceMap[i].sfxId == mmSfxId) {
                 u16 effectIdx = sMmVoiceMap[i].effectIdx;
@@ -1426,55 +1620,66 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             }
         }
 
-        // Form voice redirect: all forms use the same human Link voice channels
-        // with form-specific transpose. Check each form range.
-        u16 formBase = 0;
+        // 2. Form voice redirect: select correct sample set and transpose
+        const MmVoiceEffectEntry* voiceSet = nullptr;
+        s32 voiceSetSize = 0;
         s32 transpose = 0;
+        s32 voiceIdx = -1;
         const char* formName = nullptr;
 
-        if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
-            formBase = MM_VOICE_DEKU_BASE;
-            transpose = MM_VOICE_DEKU_TRANSPOSE;
-            formName = "Deku";
-        } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
-            formBase = MM_VOICE_ZORA_BASE;
-            transpose = MM_VOICE_ZORA_TRANSPOSE;
-            formName = "Zora";
-        } else if (mmSfxId >= MM_VOICE_GORON_BASE && mmSfxId < MM_VOICE_GORON_BASE + 0x20) {
-            formBase = MM_VOICE_GORON_BASE;
-            transpose = MM_VOICE_GORON_TRANSPOSE;
+        if (mmSfxId >= MM_VOICE_GORON_BASE && mmSfxId < MM_VOICE_GORON_BASE + 0x20) {
+            voiceSet = sAdultVoiceEffects; // Goron → adult (Fierce Deity) set
+            voiceSetSize = sAdultVoiceEffectsSize;
+            transpose = 4;
+            voiceIdx = mmSfxId - MM_VOICE_GORON_BASE;
             formName = "Goron";
+        } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
+            voiceSet = sAdultVoiceEffects; // Zora → adult (Fierce Deity) set
+            voiceSetSize = sAdultVoiceEffectsSize;
+            transpose = 3;
+            voiceIdx = mmSfxId - MM_VOICE_ZORA_BASE;
+            formName = "Zora";
+        } else if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
+            voiceSet = sChildVoiceEffects; // Deku → child (Human Link) set
+            voiceSetSize = sChildVoiceEffectsSize;
+            transpose = 3;
+            voiceIdx = mmSfxId - MM_VOICE_DEKU_BASE;
+            formName = "Deku";
+        } else if (mmSfxId >= MM_VOICE_FD_BASE && mmSfxId < MM_VOICE_FD_BASE + 0x20) {
+            voiceSet = sAdultVoiceEffects; // Fierce Deity → adult set, no transpose
+            voiceSetSize = sAdultVoiceEffectsSize;
+            transpose = 0;
+            voiceIdx = mmSfxId - MM_VOICE_FD_BASE;
+            formName = "FierceDt";
+        } else if (mmSfxId >= MM_VOICE_HL_BASE && mmSfxId < MM_VOICE_HL_BASE + 0x20) {
+            voiceSet = sChildVoiceEffects; // Human Link → child set, no transpose
+            voiceSetSize = sChildVoiceEffectsSize;
+            transpose = 0;
+            voiceIdx = mmSfxId - MM_VOICE_HL_BASE;
+            formName = "HumanLnk";
         }
 
-        if (formBase != 0) {
-            s32 voiceIdx = mmSfxId - formBase;
+        if (voiceSet && voiceIdx >= 0 && voiceIdx < voiceSetSize) {
+            const MmVoiceEffectEntry* entry = &voiceSet[voiceIdx];
+            if (entry->count > 0) {
+                // Random selection from alternatives (like seq_0 does)
+                s32 altIdx = rand() % entry->count;
+                s32 effectIdx = entry->effects[altIdx];
 
-            // First 10 voices (0-9) map through sFormVoiceToEffect table
-            if (voiceIdx < sFormVoiceToEffectSize) {
-                s32 effectIdx = sFormVoiceToEffect[voiceIdx];
-                if (effectIdx >= 0 && (u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
+                if ((u32)effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
                     font0->soundEffects[effectIdx].sample->sampleAddr) {
                     sMmLastPitchScale = MmDirectAudio_TransposeFactor(transpose);
-                    MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d], transpose +%d", formName, mmSfxId,
-                              effectIdx, transpose);
+                    MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d] (alt %d/%d), transpose +%d", formName,
+                              mmSfxId, effectIdx, altIdx, entry->count, transpose);
                     return &font0->soundEffects[effectIdx];
                 }
             }
-
-            // Voices beyond index 9: use voice index as best-effort effect index
-            if ((u32)voiceIdx < font0->numSfx && font0->soundEffects[voiceIdx].sample &&
-                font0->soundEffects[voiceIdx].sample->sampleAddr) {
-                sMmLastPitchScale = MmDirectAudio_TransposeFactor(transpose);
-                MMSFX_LOG("[MmDirectAudio] %s voice 0x%04X: soundEffects[%d] (offset), transpose +%d", formName,
-                          mmSfxId, voiceIdx, transpose);
-                return &font0->soundEffects[voiceIdx];
-            }
         }
 
-        // Human Link voices (0x6800-0x687F): use sfxIndex directly, no transpose
+        // 3. Fallback: use sfxIndex directly for any unhandled voice entries
         if ((u32)sfxIndex < font0->numSfx && font0->soundEffects[sfxIndex].sample &&
             font0->soundEffects[sfxIndex].sample->sampleAddr) {
-            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (human Link)", mmSfxId, sfxIndex);
+            MMSFX_LOG("[MmDirectAudio] Voice 0x%04X: soundEffects[%d] (fallback)", mmSfxId, sfxIndex);
             return &font0->soundEffects[sfxIndex];
         }
 
@@ -1493,6 +1698,20 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
         if (sMmSfxInstrMap[i].sfxId == mmSfxId) {
             u8 instIdx = sMmSfxInstrMap[i].instrumentIdx;
             u8 note = sMmSfxInstrMap[i].midiNote;
+
+            // FONTANY_INSTR_DRUM (127): use font->drums[] instead of instruments[]
+            // Used by TRANSFORM_VOICE (0x09AA) which plays drums[37] in seq_0
+            if (instIdx == 127) {
+                if (font0->drums && note < font0->numDrums && font0->drums[note]) {
+                    sMmLastPitchScale = 1.0f; // Drums already have correct pitch in tuning
+                    MMSFX_LOG("[MmDirectAudio] Drum 0x%04X: drums[%d]", mmSfxId, note);
+                    return &font0->drums[note]->sound;
+                }
+                MMSFX_LOG("[MmDirectAudio] Drum 0x%04X: drums[%d] not found (numDrums=%d)", mmSfxId, note,
+                          font0->numDrums);
+                break;
+            }
+
             SoundFontSound* sound = MmDirectAudio_GetInstrumentSound(font0, instIdx, note);
             if (sound) {
                 // Pitch correction: the tuning is calibrated for MIDI note 60 (middle C)
@@ -1515,12 +1734,308 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
     return nullptr;
 }
 
-// Start playing an MM sound. Returns 1 if played, 0 if no valid sample found.
-static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale) {
-    SoundFontSound* sfxSound = MmDirectAudio_GetSound(mmSfxId);
-    f32 pitchScale = sMmLastPitchScale; // Saved by GetSound
+// Compute volume and pan from projected position (view-space coordinates).
+// pos->x = left/right offset from camera, pos->z = depth from camera.
+static void MmDirectAudio_ComputeSpatial(Vec3f* pos, f32* outVol, f32* outPan) {
+    if (!pos) {
+        // No position (2D sound) - full volume, center pan
+        *outVol = 0.85f;
+        *outPan = 0.5f;
+        return;
+    }
+
+    // Distance-based volume attenuation (matches OOT's squared distance formula)
+    f32 distSq = (pos->x * pos->x * 0.25f + pos->y * pos->y + pos->z * pos->z) * 0.1f;
+    f32 dist = sqrtf(distSq);
+    f32 maxDist = 500.0f; // Full volume within this range
+    f32 vol;
+    if (dist <= maxDist) {
+        vol = 0.85f;
+    } else {
+        vol = 0.85f * (1.0f - (dist - maxDist) / (10000.0f - maxDist));
+    }
+    if (vol < 0.0f)
+        vol = 0.0f;
+    if (vol > 0.85f)
+        vol = 0.85f;
+
+    // Stereo pan from X/Z position (similar to OOT's AudioSfx_ComputePanSigned)
+    f32 pan = 0.5f;
+    f32 absZ = (pos->z > 0.0f) ? pos->z : -pos->z;
+    if (absZ > 1.0f) {
+        pan = 0.5f + (pos->x / (absZ + 100.0f)) * 0.4f;
+        if (pan < 0.05f)
+            pan = 0.05f;
+        if (pan > 0.95f)
+            pan = 0.95f;
+    }
+
+    *outVol = vol;
+    *outPan = pan;
+}
+
+// =============================================================================
+// Built-in Waveform: FONTANY_INSTR_TRIANGLE (129)
+// =============================================================================
+// MM's audio engine synthesizes triangle/sine waves on-the-fly for instruments
+// 129 (triangle) and 130 (sine). We pre-generate a multi-cycle triangle wave
+// buffer to play via PlaySinglePCM at the correct pitch.
+// Used by: DEKUNUTS_JUMP (0x09B0-0x09B7) - the Deku hop "boing" sound.
+
+#define FONTANY_INSTR_TRIANGLE 129
+#define TRIANGLE_CYCLE_LEN 64
+#define TRIANGLE_NUM_CYCLES 200
+#define TRIANGLE_TOTAL_SAMPLES (TRIANGLE_CYCLE_LEN * TRIANGLE_NUM_CYCLES)
+// Virtual sample rate: at C4 (261.63 Hz), one cycle = 64 samples → 261.63 * 64 = 16744
+#define TRIANGLE_SAMPLE_RATE 16744
+#define TRIANGLE_BASE_NOTE 60
+#define TRIANGLE_AMPLITUDE 10000
+
+static s16 sTriangleWave[TRIANGLE_TOTAL_SAMPLES];
+static bool sTriangleGenerated = false;
+
+static void MmWav_GenerateTriangle(void) {
+    if (sTriangleGenerated)
+        return;
+    for (s32 i = 0; i < TRIANGLE_TOTAL_SAMPLES; i++) {
+        s32 phase = i % TRIANGLE_CYCLE_LEN;
+        s32 half = TRIANGLE_CYCLE_LEN / 2;
+        if (phase < half) {
+            sTriangleWave[i] = (s16)(-TRIANGLE_AMPLITUDE + (2 * TRIANGLE_AMPLITUDE * phase) / half);
+        } else {
+            sTriangleWave[i] = (s16)(TRIANGLE_AMPLITUDE - (2 * TRIANGLE_AMPLITUDE * (phase - half)) / half);
+        }
+    }
+    sTriangleGenerated = true;
+    MMSFX_LOG("[MmWav] Generated triangle wave: %d samples", TRIANGLE_TOTAL_SAMPLES);
+}
+
+// =============================================================================
+// Decomp WAV Cache + Loader
+// =============================================================================
+// Loads 16-bit PCM WAV files from the MM decomp's extracted SampleBank_0.
+// Results are cached permanently (samples are small, <100KB each).
+
+#define MM_WAV_CACHE_SIZE 96
+
+typedef struct {
+    const char* filename; // Key: pointer to static string in mapping table
+    s16* pcmData;         // Cached PCM data (owned by cache, never freed during gameplay)
+    u32 pcmLength;        // Number of samples
+    u32 sampleRate;       // From WAV header
+} MmWavCacheEntry;
+
+static MmWavCacheEntry sWavCache[MM_WAV_CACHE_SIZE];
+static s32 sWavCacheCount = 0;
+static bool sWavPathValid = false;
+static bool sWavPathChecked = false;
+
+// Load a WAV file from decomp SampleBank_0. Returns cached PCM data (caller must NOT free).
+static s16* MmWav_Load(const char* filename, u32* outLength, u32* outSampleRate) {
+    if (!filename)
+        return nullptr;
+
+    // Check if decomp path exists (once)
+    if (!sWavPathChecked) {
+        sWavPathChecked = true;
+        FILE* test = fopen(MM_DECOMP_SAMPLEBANK_PATH "step_ground.wav", "rb");
+        if (test) {
+            fclose(test);
+            sWavPathValid = true;
+            MMSFX_LOG("[MmWav] Decomp SampleBank_0 found at %s", MM_DECOMP_SAMPLEBANK_PATH);
+        } else {
+            MMSFX_LOG("[MmWav] Decomp SampleBank_0 NOT found - WAV loading disabled");
+        }
+    }
+    if (!sWavPathValid)
+        return nullptr;
+
+    // Check cache
+    for (s32 i = 0; i < sWavCacheCount; i++) {
+        if (sWavCache[i].filename == filename || strcmp(sWavCache[i].filename, filename) == 0) {
+            if (sWavCache[i].pcmData) {
+                *outLength = sWavCache[i].pcmLength;
+                *outSampleRate = sWavCache[i].sampleRate;
+                return sWavCache[i].pcmData;
+            }
+            return nullptr; // Previously failed to load
+        }
+    }
+
+    // Build path and open file
+    char path[512];
+    snprintf(path, sizeof(path), "%s%s", MM_DECOMP_SAMPLEBANK_PATH, filename);
+
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        MMSFX_LOG("[MmWav] Failed to open: %s", filename);
+        // Cache the failure
+        if (sWavCacheCount < MM_WAV_CACHE_SIZE) {
+            sWavCache[sWavCacheCount].filename = filename;
+            sWavCache[sWavCacheCount].pcmData = nullptr;
+            sWavCache[sWavCacheCount].pcmLength = 0;
+            sWavCache[sWavCacheCount].sampleRate = 0;
+            sWavCacheCount++;
+        }
+        return nullptr;
+    }
+
+    // Read RIFF header
+    u8 hdr[12];
+    if (fread(hdr, 1, 12, f) != 12 || memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
+        MMSFX_LOG("[MmWav] Invalid RIFF header: %s", filename);
+        fclose(f);
+        return nullptr;
+    }
+
+    // Parse chunks to find fmt and data
+    u32 sampleRate = 0;
+    s16* pcmData = nullptr;
+    u32 pcmLength = 0;
+
+    while (!feof(f)) {
+        u8 chunkHdr[8];
+        if (fread(chunkHdr, 1, 8, f) != 8)
+            break;
+
+        u32 chunkSize;
+        memcpy(&chunkSize, chunkHdr + 4, 4);
+
+        if (memcmp(chunkHdr, "fmt ", 4) == 0) {
+            u8 fmt[16];
+            if (chunkSize < 16 || fread(fmt, 1, 16, f) != 16)
+                break;
+            u16 audioFormat;
+            memcpy(&audioFormat, fmt, 2);
+            memcpy(&sampleRate, fmt + 4, 4);
+            if (audioFormat != 1) { // Not PCM
+                MMSFX_LOG("[MmWav] Not PCM format (%d): %s", audioFormat, filename);
+                break;
+            }
+            if (chunkSize > 16)
+                fseek(f, chunkSize - 16, SEEK_CUR);
+        } else if (memcmp(chunkHdr, "data", 4) == 0) {
+            pcmLength = chunkSize / 2; // 16-bit samples → sample count
+            pcmData = (s16*)malloc(chunkSize);
+            if (!pcmData || fread(pcmData, 1, chunkSize, f) != chunkSize) {
+                if (pcmData) {
+                    free(pcmData);
+                    pcmData = nullptr;
+                }
+                break;
+            }
+        } else {
+            // Skip unknown chunks (fact, etc.)
+            fseek(f, chunkSize, SEEK_CUR);
+        }
+    }
+
+    fclose(f);
+
+    if (!pcmData || pcmLength == 0 || sampleRate == 0) {
+        if (pcmData)
+            free(pcmData);
+        MMSFX_LOG("[MmWav] Failed to parse: %s", filename);
+        return nullptr;
+    }
+
+    // Cache the loaded WAV
+    if (sWavCacheCount < MM_WAV_CACHE_SIZE) {
+        sWavCache[sWavCacheCount].filename = filename;
+        sWavCache[sWavCacheCount].pcmData = pcmData;
+        sWavCache[sWavCacheCount].pcmLength = pcmLength;
+        sWavCache[sWavCacheCount].sampleRate = sampleRate;
+        sWavCacheCount++;
+    }
+
+    MMSFX_LOG("[MmWav] Loaded %s: %u samples, %u Hz", filename, pcmLength, sampleRate);
+    *outLength = pcmLength;
+    *outSampleRate = sampleRate;
+    return pcmData;
+}
+
+// Look up WAV for an instrument index + MIDI note (handles range splits)
+static s16* MmWav_GetForInstrument(u8 instIdx, u8 midiNote, u32* outLength, u32* outSampleRate, u8* outBaseNote) {
+    for (s32 i = 0; i < sMmInstWavMapSize; i++) {
+        if (sMmInstWavMap[i].instrumentIdx == instIdx && midiNote <= sMmInstWavMap[i].rangeSplitNote) {
+            *outBaseNote = sMmInstWavMap[i].baseNote;
+            return MmWav_Load(sMmInstWavMap[i].wavFile, outLength, outSampleRate);
+        }
+    }
+    return nullptr;
+}
+
+// Look up WAV for a voice effect index
+static s16* MmWav_GetForEffect(u8 effectIdx, u32* outLength, u32* outSampleRate, u8* outBaseNote) {
+    for (s32 i = 0; i < sMmEffectWavMapSize; i++) {
+        if (sMmEffectWavMap[i].effectIdx == effectIdx) {
+            *outBaseNote = sMmEffectWavMap[i].baseNote;
+            return MmWav_Load(sMmEffectWavMap[i].wavFile, outLength, outSampleRate);
+        }
+    }
+    return nullptr;
+}
+
+// Look up WAV for a drum index
+static s16* MmWav_GetForDrum(u8 drumIdx, u32* outLength, u32* outSampleRate, u8* outBaseNote) {
+    for (s32 i = 0; i < sMmDrumWavMapSize; i++) {
+        if (sMmDrumWavMap[i].drumIdx == drumIdx) {
+            *outBaseNote = sMmDrumWavMap[i].baseNote;
+            return MmWav_Load(sMmDrumWavMap[i].wavFile, outLength, outSampleRate);
+        }
+    }
+    return nullptr;
+}
+
+// Play pre-loaded PCM data (from WAV cache) into a slot. Does NOT own the PCM data.
+static s32 MmDirectAudio_PlaySinglePCM(s16* pcm, u32 pcmLength, f32 advance, u16 mmSfxId, f32 volume, f32 pan,
+                                       f32 vibratoRate, f32 vibratoDepth) {
+    if (!pcm || pcmLength == 0)
+        return 0;
+
+    // Find free slot (or evict oldest)
+    s32 freeSlot = -1;
+    for (s32 i = 0; i < MM_DIRECT_MAX_SOUNDS; i++) {
+        if (!sPlayingSounds[i].active) {
+            freeSlot = i;
+            break;
+        }
+    }
+    if (freeSlot < 0) {
+        freeSlot = 0;
+        if (sPlayingSounds[0].pcmData && sPlayingSounds[0].ownsPcm)
+            free(sPlayingSounds[0].pcmData);
+        sPlayingSounds[0].pcmData = nullptr;
+        sPlayingSounds[0].active = 0;
+    }
+
+    MmPlayingSound* snd = &sPlayingSounds[freeSlot];
+    if (snd->pcmData && snd->ownsPcm)
+        free(snd->pcmData);
+
+    snd->pcmData = pcm;
+    snd->pcmLength = pcmLength;
+    snd->pcmPosition = 0.0f;
+    snd->advance = advance;
+    snd->volume = volume;
+    snd->pan = pan;
+    snd->mmSfxId = mmSfxId;
+    snd->loopStart = 0;
+    snd->loopEnd = 0;
+    snd->vibratoPhase = 0.0f;
+    snd->vibratoRate = vibratoRate;
+    snd->vibratoDepth = vibratoDepth;
+    snd->ownsPcm = 0; // Cached WAV data - do NOT free
+    snd->active = 1;
+
+    MMSFX_LOG("[MmWav] Playing 0x%04X: %u samples, advance=%.3f", mmSfxId, pcmLength, advance);
+    return 1;
+}
+
+// Play a single sample into a slot. Returns 1 if played, 0 if failed.
+static s32 MmDirectAudio_PlaySingle(SoundFontSound* sfxSound, f32 pitchScale, f32 freqScale, u16 mmSfxId, f32 volume,
+                                    f32 pan, f32 vibratoRate, f32 vibratoDepth) {
     if (!sfxSound || !sfxSound->sample) {
-        MMSFX_LOG("[MmDirectAudio] No sample for 0x%04X", mmSfxId);
         return 0;
     }
 
@@ -1541,29 +2056,215 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale) {
     }
     if (freeSlot < 0) {
         freeSlot = 0;
-        if (sPlayingSounds[0].pcmData)
+        if (sPlayingSounds[0].pcmData && sPlayingSounds[0].ownsPcm)
             free(sPlayingSounds[0].pcmData);
         sPlayingSounds[0].pcmData = nullptr;
         sPlayingSounds[0].active = 0;
     }
 
     MmPlayingSound* snd = &sPlayingSounds[freeSlot];
-    if (snd->pcmData)
+    if (snd->pcmData && snd->ownsPcm)
         free(snd->pcmData);
 
     snd->pcmData = pcm;
     snd->pcmLength = pcmLength;
     snd->pcmPosition = 0.0f;
-    // Apply both the sample's base tuning, pitch correction for the note, and user freq scale
     snd->advance = sfxSound->tuning * pitchScale * freqScale;
-    snd->volume = 0.8f;
-    snd->pan = 0.5f;
+    snd->volume = volume;
+    snd->pan = pan;
     snd->mmSfxId = mmSfxId;
+
+    // Set loop points from sample metadata (used by continuous sounds like GORON_ROLL, GORON_SLIP)
+    SoundFontSample* sample = sfxSound->sample;
+    if (sample->loop && sample->loop->count != 0 && sample->loop->loopEnd > sample->loop->start) {
+        snd->loopStart = sample->loop->start;
+        snd->loopEnd = (sample->loop->loopEnd < pcmLength) ? sample->loop->loopEnd : pcmLength;
+        MMSFX_LOG("[MmDirectAudio] Loop 0x%04X: %u -> %u (count=%d)", mmSfxId, snd->loopStart, snd->loopEnd,
+                  sample->loop->count);
+    } else {
+        snd->loopStart = 0;
+        snd->loopEnd = 0;
+    }
+    snd->vibratoPhase = 0.0f;
+    snd->vibratoRate = vibratoRate;
+    snd->vibratoDepth = vibratoDepth;
+    snd->ownsPcm = 1; // ADPCM-decoded data is owned by this slot
     snd->active = 1;
 
     MMSFX_LOG("[MmDirectAudio] Playing 0x%04X: %u samples, tuning=%.3f, pitch=%.3f, freq=%.3f, advance=%.3f", mmSfxId,
               pcmLength, sfxSound->tuning, pitchScale, freqScale, snd->advance);
     return 1;
+}
+
+// Start playing an MM sound with multi-layer support.
+// Tries decomp WAV files first (from extracted SampleBank_0), falls back to mm.o2r ADPCM.
+// Returns 1 if at least one layer played, 0 if no valid sample found.
+static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
+    // MM audio disabled — return 0 (no sound plays, no OOT fallback)
+    return 0;
+
+    s32 bank = MM_SFX_BANK_INDEX(mmSfxId);
+    s32 played = 0;
+
+    // Compute volume/pan from position
+    f32 vol, pan;
+    MmDirectAudio_ComputeSpatial(pos, &vol, &pan);
+
+    // =========================================================================
+    // Voice bank (6): resolve effectIdx + transpose, try WAV then ADPCM
+    // =========================================================================
+    if (bank == 6) {
+        s32 effectIdx = -1;
+        s32 transpose = 0;
+
+        // 1. Check explicit voice map (special cases)
+        for (s32 i = 0; i < sMmVoiceMapSize; i++) {
+            if (sMmVoiceMap[i].sfxId == mmSfxId) {
+                effectIdx = sMmVoiceMap[i].effectIdx;
+                transpose = sMmVoiceMap[i].transpose;
+                break;
+            }
+        }
+
+        // 2. Form voice redirect with correct sample set
+        if (effectIdx < 0) {
+            const MmVoiceEffectEntry* voiceSet = nullptr;
+            s32 voiceSetSize = 0;
+            s32 voiceIdx = -1;
+
+            if (mmSfxId >= MM_VOICE_GORON_BASE && mmSfxId < MM_VOICE_GORON_BASE + 0x20) {
+                voiceSet = sAdultVoiceEffects;
+                voiceSetSize = sAdultVoiceEffectsSize;
+                transpose = 4;
+                voiceIdx = mmSfxId - MM_VOICE_GORON_BASE;
+            } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
+                voiceSet = sAdultVoiceEffects;
+                voiceSetSize = sAdultVoiceEffectsSize;
+                transpose = 3;
+                voiceIdx = mmSfxId - MM_VOICE_ZORA_BASE;
+            } else if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
+                voiceSet = sChildVoiceEffects;
+                voiceSetSize = sChildVoiceEffectsSize;
+                transpose = 3;
+                voiceIdx = mmSfxId - MM_VOICE_DEKU_BASE;
+            } else if (mmSfxId >= MM_VOICE_FD_BASE && mmSfxId < MM_VOICE_FD_BASE + 0x20) {
+                voiceSet = sAdultVoiceEffects;
+                voiceSetSize = sAdultVoiceEffectsSize;
+                transpose = 0;
+                voiceIdx = mmSfxId - MM_VOICE_FD_BASE;
+            } else if (mmSfxId >= MM_VOICE_HL_BASE && mmSfxId < MM_VOICE_HL_BASE + 0x20) {
+                voiceSet = sChildVoiceEffects;
+                voiceSetSize = sChildVoiceEffectsSize;
+                transpose = 0;
+                voiceIdx = mmSfxId - MM_VOICE_HL_BASE;
+            }
+
+            if (voiceSet && voiceIdx >= 0 && voiceIdx < voiceSetSize && voiceSet[voiceIdx].count > 0) {
+                s32 altIdx = rand() % voiceSet[voiceIdx].count;
+                effectIdx = voiceSet[voiceIdx].effects[altIdx];
+            }
+        }
+
+        // 3. Fallback: direct sfxIndex
+        if (effectIdx < 0) {
+            effectIdx = MM_SFX_SOUND_INDEX(mmSfxId);
+        }
+
+        // Vibrato parameters (from seq_0)
+        f32 vibRate = 0.0f, vibDepth = 0.0f;
+        if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
+            vibRate = 128.0f * (1.0f / 16.0f);
+            vibDepth = 88.0f / 256.0f * 0.03f;
+        } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
+            vibRate = 240.0f * (1.0f / 16.0f);
+            vibDepth = 32.0f / 256.0f * 0.03f;
+        }
+
+        // Try decomp WAV first
+        u32 wavLen, wavRate;
+        u8 wavBase;
+        s16* wavPcm = MmWav_GetForEffect((u8)effectIdx, &wavLen, &wavRate, &wavBase);
+        if (wavPcm) {
+            f32 pitchScale = MmDirectAudio_TransposeFactor(transpose);
+            f32 advance = ((f32)wavRate / 32000.0f) * pitchScale * freqScale;
+            MMSFX_LOG("[MmWav] Voice 0x%04X: effect[%d] transpose=%d advance=%.3f", mmSfxId, effectIdx, transpose,
+                      advance);
+            return MmDirectAudio_PlaySinglePCM(wavPcm, wavLen, advance, mmSfxId, vol, pan, vibRate, vibDepth);
+        }
+
+        // ADPCM fallback via GetSound
+        SoundFontSound* sfxSound = MmDirectAudio_GetSound(mmSfxId);
+        f32 pitchScale = sMmLastPitchScale;
+        if (sfxSound && sfxSound->sample) {
+            return MmDirectAudio_PlaySingle(sfxSound, pitchScale, freqScale, mmSfxId, vol, pan, vibRate, vibDepth);
+        }
+        MMSFX_LOG("[MmDirectAudio] No sample for voice 0x%04X", mmSfxId);
+        return 0;
+    }
+
+    // =========================================================================
+    // Non-voice banks: multi-layer, try WAV per layer then ADPCM fallback
+    // =========================================================================
+    for (s32 i = 0; i < sMmSfxInstrMapSize; i++) {
+        if (sMmSfxInstrMap[i].sfxId != mmSfxId)
+            continue;
+
+        u8 instIdx = sMmSfxInstrMap[i].instrumentIdx;
+        u8 note = sMmSfxInstrMap[i].midiNote;
+
+        if (instIdx == FONTANY_INSTR_TRIANGLE) {
+            // Built-in triangle wave (used by Deku hops)
+            MmWav_GenerateTriangle();
+            f32 advance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
+                          powf(2.0f, ((f32)note - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+            played += MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, advance, mmSfxId, vol * 0.6f,
+                                                  pan, 0.0f, 0.0f);
+            MMSFX_LOG("[MmWav] Triangle 0x%04X: note=%d advance=%.3f", mmSfxId, note, advance);
+            continue;
+        } else if (instIdx == 127) { // FONTANY_INSTR_DRUM
+            // Try decomp WAV
+            u32 wavLen, wavRate;
+            u8 wavBase;
+            s16* wavPcm = MmWav_GetForDrum(note, &wavLen, &wavRate, &wavBase);
+            if (wavPcm) {
+                f32 advance = ((f32)wavRate / 32000.0f) * freqScale;
+                played += MmDirectAudio_PlaySinglePCM(wavPcm, wavLen, advance, mmSfxId, vol, pan, 0.0f, 0.0f);
+                continue;
+            }
+            // ADPCM fallback
+            SoundFont* font0 = MmSfx_LoadFont(0);
+            if (font0 && font0->drums && note < font0->numDrums && font0->drums[note]) {
+                played += MmDirectAudio_PlaySingle(&font0->drums[note]->sound, 1.0f, freqScale, mmSfxId, vol, pan, 0.0f,
+                                                   0.0f);
+            }
+        } else {
+            // Try decomp WAV
+            u32 wavLen, wavRate;
+            u8 wavBase;
+            s16* wavPcm = MmWav_GetForInstrument(instIdx, note, &wavLen, &wavRate, &wavBase);
+            if (wavPcm) {
+                f32 advance = ((f32)wavRate / 32000.0f) * powf(2.0f, ((f32)note - (f32)wavBase) / 12.0f) * freqScale;
+                played += MmDirectAudio_PlaySinglePCM(wavPcm, wavLen, advance, mmSfxId, vol, pan, 0.0f, 0.0f);
+                MMSFX_LOG("[MmWav] Layer 0x%04X: inst[%d] note=%d advance=%.3f", mmSfxId, instIdx, note, advance);
+                continue;
+            }
+            // ADPCM fallback
+            SoundFont* font0 = MmSfx_LoadFont(0);
+            if (font0) {
+                SoundFontSound* sound = MmDirectAudio_GetInstrumentSound(font0, instIdx, note);
+                if (sound && sound->sample) {
+                    f32 pitchScale = powf(2.0f, ((f32)note - 60.0f) / 12.0f);
+                    played += MmDirectAudio_PlaySingle(sound, pitchScale, freqScale, mmSfxId, vol, pan, 0.0f, 0.0f);
+                }
+            }
+        }
+        // Continue scanning for more layers
+    }
+
+    if (played == 0) {
+        MMSFX_LOG("[MmDirectAudio] No mapping for 0x%04X (bank=%d) - no sound", mmSfxId, bank);
+    }
+    return played > 0 ? 1 : 0;
 }
 
 // Mix all active MM sounds into the output buffer (called from audio thread)
@@ -1580,8 +2281,24 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
         for (u32 i = 0; i < numSamples; i++) {
             u32 pos = (u32)snd->pcmPosition;
             if (snd->pcmLength < 2 || pos >= snd->pcmLength - 2) {
-                snd->active = 0;
-                break;
+                // Check if this sound should loop
+                if (snd->loopEnd > snd->loopStart) {
+                    snd->pcmPosition = (f32)snd->loopStart;
+                    pos = snd->loopStart;
+                } else {
+                    snd->active = 0;
+                    break;
+                }
+            }
+
+            // Loop wrap: if we've passed loopEnd, wrap to loopStart
+            if (snd->loopEnd > snd->loopStart && pos >= snd->loopEnd) {
+                snd->pcmPosition = (f32)snd->loopStart + (snd->pcmPosition - (f32)snd->loopEnd);
+                pos = (u32)snd->pcmPosition;
+                if (pos >= snd->pcmLength - 2) {
+                    snd->active = 0;
+                    break;
+                }
             }
 
             // Linear interpolation between adjacent samples
@@ -1603,7 +2320,16 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
             outBuf[i * 2] = (s16)outL;
             outBuf[i * 2 + 1] = (s16)outR;
 
-            snd->pcmPosition += snd->advance;
+            // Apply vibrato: modulate advance rate with sine LFO
+            f32 advance = snd->advance;
+            if (snd->vibratoRate > 0.0f) {
+                snd->vibratoPhase += snd->vibratoRate / 32000.0f;
+                if (snd->vibratoPhase >= 1.0f)
+                    snd->vibratoPhase -= 1.0f;
+                f32 vibMod = sinf(snd->vibratoPhase * 6.2831853f) * snd->vibratoDepth;
+                advance *= (1.0f + vibMod);
+            }
+            snd->pcmPosition += advance;
         }
     }
 }
@@ -1622,7 +2348,8 @@ void MmDirectAudio_StopAll(void) {
     for (s32 i = 0; i < MM_DIRECT_MAX_SOUNDS; i++) {
         sPlayingSounds[i].active = 0;
         if (sPlayingSounds[i].pcmData) {
-            free(sPlayingSounds[i].pcmData);
+            if (sPlayingSounds[i].ownsPcm)
+                free(sPlayingSounds[i].pcmData);
             sPlayingSounds[i].pcmData = nullptr;
         }
     }
@@ -1756,7 +2483,7 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
     }
 
     f32 freq = freqScale ? *freqScale : 1.0f;
-    return MmDirectAudio_Play(sfxId, freq);
+    return MmDirectAudio_Play(sfxId, freq, pos);
 }
 
 void MmSfx_Stop(u16 sfxId) {
@@ -1770,6 +2497,15 @@ void MmSfx_PlayGoronRoll(Vec3f* pos, f32 speed) {
     if (sTempFreqScale < 0.5f)
         sTempFreqScale = 0.5f;
     MmSfx_PlayEx(MM_NA_SE_PL_GORON_ROLL, pos, 4, &sTempFreqScale, nullptr, nullptr);
+}
+
+void MmSfx_PlayGoronChgRoll(Vec3f* pos, f32 speed) {
+    sTempFreqScale = 0.8f + (speed / 20.0f) * 0.4f;
+    if (sTempFreqScale > 1.5f)
+        sTempFreqScale = 1.5f;
+    if (sTempFreqScale < 0.5f)
+        sTempFreqScale = 0.5f;
+    MmSfx_PlayEx(MM_NA_SE_PL_GORON_CHG_ROLL, pos, 4, &sTempFreqScale, nullptr, nullptr);
 }
 
 void MmSfx_PlayGoronCharge(Vec3f* pos, f32 chargeLevel) {

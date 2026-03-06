@@ -7,6 +7,7 @@
 
 #include "z64.h"
 #include "../custom_items.h"
+#include "../logic/item_rod_fire.h"
 #include "macros.h"
 #include "functions.h"
 #include <math.h>
@@ -29,7 +30,7 @@ Gfx* gFireRodGiveDL = g_fire_rod_dl;
 // ============================================================================
 
 void CustomItems_DrawFireRod(Player* player, PlayState* play) {
-    if (!gCustomItemState.fireRodActive)
+    if (!fireRodActive)
         return;
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -67,11 +68,8 @@ void CustomItems_DrawFireRod(Player* player, PlayState* play) {
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, g_fire_rod_dl);
 
-    // Draw all active fireballs (1-3 depending on attack type)
-    if (gCustomItemState.fireRodProjActive) {
-        f32 baseScale = gCustomItemState.fireRodProjScale;
-        u8 projCount = gCustomItemState.fireRodProjCount;
-
+    // Draw all active fireball sets (up to 5 concurrent sets)
+    if (FireRod_HasAnyActiveSet()) {
         sFireRodFlameScroll -= 20;
         sFireRodFlameScroll &= 0x1FF;
 
@@ -82,50 +80,41 @@ void CustomItems_DrawFireRod(Player* player, PlayState* play) {
         gDPSetEnvColor(POLY_XLU_DISP++, 255, 0, 0, 0);
 
         s16 camYaw = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000;
-        f32 flameScale = baseScale * 0.0015f;
-        if (flameScale < 0.001f)
-            flameScale = 0.001f;
 
-        // Draw fireball 1 (always)
-        Matrix_Translate(gCustomItemState.fireRodProjPos.x, gCustomItemState.fireRodProjPos.y,
-                         gCustomItemState.fireRodProjPos.z, MTXMODE_NEW);
-        Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-        Matrix_Scale(flameScale, flameScale, flameScale, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
-
-        // Draw fireball 2 (slash spread)
-        if (projCount >= 2) {
-            Matrix_Translate(gCustomItemState.fireRodProjPos2.x, gCustomItemState.fireRodProjPos2.y,
-                             gCustomItemState.fireRodProjPos2.z, MTXMODE_NEW);
-            Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            Matrix_Scale(flameScale, flameScale, flameScale, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
-        }
-
-        // Draw fireball 3 (slash spread)
-        if (projCount >= 3) {
-            Matrix_Translate(gCustomItemState.fireRodProjPos3.x, gCustomItemState.fireRodProjPos3.y,
-                             gCustomItemState.fireRodProjPos3.z, MTXMODE_NEW);
-            Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            Matrix_Scale(flameScale, flameScale, flameScale, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
-        }
-
-        // Draw trail for center fireball
-        for (s32 i = 1; i < 4; i++) {
-            Vec3f* trailPos = &gCustomItemState.fireRodProjTrail[i];
-            f32 trailScale = flameScale * (1.0f - (i * 0.25f));
-            if (trailScale < 0.0005f)
+        RodProjSet* sets = FireRod_GetProjSets();
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+            RodProjSet* set = &sets[s];
+            if (!set->active)
                 continue;
 
-            Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
-            Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+            f32 flameScale = set->scale * 0.0015f;
+            if (flameScale < 0.001f)
+                flameScale = 0.001f;
+
+            // Draw all fireballs in this set (1-3)
+            for (s32 p = 0; p < set->count; p++) {
+                Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                Matrix_Scale(flameScale, flameScale, flameScale, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+            }
+
+            // Draw trail for center fireball of this set
+            for (s32 i = 1; i < 4; i++) {
+                Vec3f* trailPos = &set->trail[i];
+                f32 trailScale = flameScale * (1.0f - (i * 0.25f));
+                if (trailScale < 0.0005f)
+                    continue;
+
+                Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
+                Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+            }
         }
     }
 

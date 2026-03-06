@@ -6,7 +6,7 @@
  *
  * Features:
  *   - Opens custom kaleido with full world map + area box indicators
- *   - Navigate between 9 pod soil locations with analog stick
+ *   - Navigate between 10 pod soil locations with analog stick
  *   - Unlocked soils shown in color + name, locked in grey + skulltula
  *   - Warps player to the selected pod soil position
  *   - Pod soil is "unlocked" when its Gold Skulltula has been killed
@@ -22,9 +22,10 @@
 #include "functions.h"
 #include "variables.h"
 
-// Pod Soil table: 9 confirmed ObjMakekinsuta placements in OOT (all overworld)
+// Pod Soil table: 10 OOT bean spots (all overworld)
 // Positions and GS flags extracted from OOT decomp scene actor lists
 // areaIdx = world map area index used for area box position/texture in minish_kaleido.c
+// gsMask=0 means always unlocked (no skulltula required)
 const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
     // #0 Kokiri Forest (spot04 room_0) - params 0x4D01
     {
@@ -134,11 +135,27 @@ const PodSoilWarpPoint sPodSoilTable[POD_SOIL_COUNT] = {
         9,    // areaIdx (Gerudo Valley)
         "Gerudo Valley",
     },
+    // #9 Zora's River (spot03 room_0) - ObjBean params 0x1F03
+    // Always unlocked (gsMask=0 sentinel)
+    {
+        SCENE_ZORAS_RIVER,
+        ENTR_ZORAS_RIVER_WEST_EXIT,
+        { -730.0f, 100.0f, -220.0f },
+        0x4000, // Face downstream (west)
+        0,      // gsGroup (unused — always unlocked)
+        0x00,   // gsMask=0 → always unlocked sentinel
+        0,      // roomIndex (spot03_room_0)
+        3,      // areaIdx (Zora's River)
+        "Zora's River",
+    },
 };
 
 s32 MinishCap_IsPodSoilUnlocked(s32 idx) {
     if (idx < 0 || idx >= POD_SOIL_COUNT)
         return 0;
+    // gsMask=0 sentinel means always unlocked (no skulltula required)
+    if (sPodSoilTable[idx].gsMask == 0)
+        return 1;
     return (GET_GS_FLAGS(sPodSoilTable[idx].gsGroup) & sPodSoilTable[idx].gsMask) != 0;
 }
 

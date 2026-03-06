@@ -42,6 +42,18 @@
 #define gLinkDekuRightHandDL "__OTR__objects/object_link_nuts/gLinkDekuRightHandDL"
 
 // ============================================================================
+// Deku Pipes DLs (from z_player_lib.c PostLimbDraw at PLAYER_LIMB_HEAD)
+// Container + 5 individual pipe pieces
+// ============================================================================
+
+#define gLinkDekuPipeContainerDL "__OTR__objects/object_link_nuts/object_link_nuts_DL_007390"
+#define gLinkDekuPipe1DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_007A28"
+#define gLinkDekuPipe2DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_0077D0"
+#define gLinkDekuPipe3DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_007548"
+#define gLinkDekuPipe4DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_007900"
+#define gLinkDekuPipe5DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_0076A0"
+
+// ============================================================================
 // Limb DLs
 // ============================================================================
 

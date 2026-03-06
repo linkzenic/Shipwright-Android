@@ -1,6 +1,6 @@
 /**
  * Hylia's Grace Item Header
- * Fairy transformation spell - costs 24 MP, transforms Link into a fairy for 10 seconds
+ * Fairy transformation spell - costs 24 MP (no fairy required), transforms Link into a fairy for 10 seconds
  *
  * Sequence: Farore's Wind cast -> blue warp enter -> fairy flight -> warp exit
  * A=ascend, B=descend, L=sprint, stick=direction

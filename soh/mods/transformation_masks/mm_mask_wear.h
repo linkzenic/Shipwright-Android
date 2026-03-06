@@ -55,6 +55,18 @@ s32 MmMaskWear_IsChateauRomaniActive(void);
 void MmMaskWear_ActivateChateauRomani(void);
 void MmMaskWear_DeactivateChateauRomani(void);
 
+// Draw overlay for Great Fairy teleport menu (call from PlayState draw, after HUD).
+void MmMaskWear_DrawOverlay(PlayState* play);
+
+// Returns true if Kamaro dance is active (used by z_player.c to freeze input).
+s32 MmMaskWear_IsKamaroDancing(void);
+
+// Returns true if Great Fairy warp menu is active (used by z_play.c to override pause).
+s32 MmMaskWear_IsGreatFairyWarpActive(void);
+
+// Update for Great Fairy warp menu while game is paused (called from z_play.c).
+void MmMaskWear_GreatFairyWarpUpdate(PlayState* play);
+
 #ifdef __cplusplus
 }
 #endif

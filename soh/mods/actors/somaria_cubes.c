@@ -1,6 +1,11 @@
 /**
- * Somaria Cubes - Colored cubes with hookshot + switchhook support
+ * Somaria Cubes - Elegy statues with hookshot + switchhook support
+ * Uses MM Elegy of Emptiness shell models from mm.o2r
  * Uses actor hijacking on En_Lightbox
+ *
+ * Behavior is identical to the original colored cubes:
+ * pick up, throw, wall bounce, switch pressing, hookshot, switchhook.
+ * Only the visuals changed to elegy shell DLs.
  */
 
 #include "somaria_cubes.h"
@@ -19,69 +24,37 @@ static void SomariaCube_Update(Actor* thisx, PlayState* play);
 static void SomariaCube_Draw(Actor* thisx, PlayState* play);
 static void SomariaCube_DestroyFunc(Actor* thisx, PlayState* play);
 
+// Forward declarations for transformation system
+extern u8 TransformMasks_IsTransformed(void);
+// MmPlayerTransformation: FD=0, Goron=1, Zora=2, Deku=3, Human=4
+extern int MmPlayer_GetForm(void);
+
 static ActorFunc sOriginalDestroy = NULL;
 static ActorFunc sSomariaCubeUpdate = SomariaCube_Update;
 
 // ============================================================================
-// DISPLAY LIST - Cube (30x30x30 units)
+// ELEGY SHELL DISPLAY LISTS (indexed by form)
 // ============================================================================
 
-static Vtx sSomariaCubeVtx[] = {
-    // Front face (Z+)
-    VTX(-15, 0, 15, 0, 0, 0, 0, 127, 255),
-    VTX(15, 0, 15, 0, 0, 0, 0, 127, 255),
-    VTX(15, 30, 15, 0, 0, 0, 0, 127, 255),
-    VTX(-15, 30, 15, 0, 0, 0, 0, 127, 255),
-    // Back face (Z-)
-    VTX(15, 0, -15, 0, 0, 0, 0, -127, 255),
-    VTX(-15, 0, -15, 0, 0, 0, 0, -127, 255),
-    VTX(-15, 30, -15, 0, 0, 0, 0, -127, 255),
-    VTX(15, 30, -15, 0, 0, 0, 0, -127, 255),
-    // Top face (Y+)
-    VTX(-15, 30, 15, 0, 0, 0, 127, 0, 255),
-    VTX(15, 30, 15, 0, 0, 0, 127, 0, 255),
-    VTX(15, 30, -15, 0, 0, 0, 127, 0, 255),
-    VTX(-15, 30, -15, 0, 0, 0, 127, 0, 255),
-    // Bottom face (Y-)
-    VTX(-15, 0, -15, 0, 0, 0, -127, 0, 255),
-    VTX(15, 0, -15, 0, 0, 0, -127, 0, 255),
-    VTX(15, 0, 15, 0, 0, 0, -127, 0, 255),
-    VTX(-15, 0, 15, 0, 0, 0, -127, 0, 255),
-    // Right face (X+)
-    VTX(15, 0, 15, 0, 0, 127, 0, 0, 255),
-    VTX(15, 0, -15, 0, 0, 127, 0, 0, 255),
-    VTX(15, 30, -15, 0, 0, 127, 0, 0, 255),
-    VTX(15, 30, 15, 0, 0, 127, 0, 0, 255),
-    // Left face (X-)
-    VTX(-15, 0, -15, 0, 0, -127, 0, 0, 255),
-    VTX(-15, 0, 15, 0, 0, -127, 0, 0, 255),
-    VTX(-15, 30, 15, 0, 0, -127, 0, 0, 255),
-    VTX(-15, 30, -15, 0, 0, -127, 0, 0, 255),
+static const char* sShellDLists[ELEGY_FORM_MAX] = {
+    gElegyShellHumanDL, // ELEGY_FORM_HUMAN
+    gElegyShellGoronDL, // ELEGY_FORM_GORON
+    gElegyShellZoraDL,  // ELEGY_FORM_ZORA
+    gElegyShellDekuDL,  // ELEGY_FORM_DEKU
+    gElegyShellHumanDL, // ELEGY_FORM_FD (Fierce Deity uses human shell)
 };
 
-static Gfx sSomariaCubeDL[] = {
-    gsSPVertex(sSomariaCubeVtx, 24, 0),           gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
-    gsSP2Triangles(4, 5, 6, 0, 4, 6, 7, 0),       gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),
-    gsSP2Triangles(12, 13, 14, 0, 12, 14, 15, 0), gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),
-    gsSP2Triangles(20, 21, 22, 0, 20, 22, 23, 0), gsSPEndDisplayList(),
-};
-
-// ============================================================================
-// COLOR TABLE
-// ============================================================================
-
-typedef struct {
-    u8 r, g, b;
-} CubeColor;
-
-static CubeColor sColorTable[SOMARIA_COLOR_MAX] = {
-    { 80, 80, 255 },  // BLUE
-    { 255, 80, 80 },  // RED
-    { 80, 255, 80 },  // GREEN
-    { 255, 255, 80 }, // YELLOW
-    { 200, 80, 255 }, // PURPLE
-    { 80, 255, 255 }, // CYAN
-    { 255, 160, 80 }, // ORANGE
+// MM's EnTorch2_Draw calls Scene_SetRenderModeXlu(play, 0, 0x01) which sets
+// segment 0x0C to sRenderModeSetNoneDL (all gsSPEndDisplayList). The elegy DLs
+// reference 0x0C at offsets 0x00 and 0x10, so those calls become no-ops.
+// The DLs have their own gsSPLoadGeometryMode calls for culling.
+// Setting actual cull modes here would ADD cull bits on top of existing ones,
+// making both CULL_BACK+CULL_FRONT active = everything invisible.
+static Gfx sSegment0xC_Noop[] = {
+    gsSPEndDisplayList(), // offset 0x00 (called by 0x0C000000)
+    gsSPEndDisplayList(), // offset 0x08
+    gsSPEndDisplayList(), // offset 0x10 (called by 0x0C000010)
+    gsSPEndDisplayList(), // offset 0x18
 };
 
 // ============================================================================
@@ -109,7 +82,7 @@ static ColliderCylinderInit sColliderInit = {
 };
 
 // ============================================================================
-// STATIC COLLIDER POOL (max 3 cubes)
+// STATIC COLLIDER POOL (max colliders for local + remote cubes)
 // Using static pool because Actor_Spawn only allocates sizeof(EnLightbox),
 // so we CANNOT add extra fields to the actor struct!
 // ============================================================================
@@ -120,10 +93,10 @@ typedef struct {
     u8 initialized;
 } ColliderSlot;
 
-static ColliderSlot sColliderPool[SOMARIA_MAX_CUBES] = { 0 };
+static ColliderSlot sColliderPool[SOMARIA_MAX_COLLIDERS] = { 0 };
 
 static s8 SomariaCube_GetColliderSlot(Actor* actor) {
-    for (s8 i = 0; i < SOMARIA_MAX_CUBES; i++) {
+    for (s8 i = 0; i < SOMARIA_MAX_COLLIDERS; i++) {
         if (sColliderPool[i].owner == actor)
             return i;
     }
@@ -131,7 +104,7 @@ static s8 SomariaCube_GetColliderSlot(Actor* actor) {
 }
 
 static s8 SomariaCube_AllocCollider(PlayState* play, Actor* actor) {
-    for (s8 i = 0; i < SOMARIA_MAX_CUBES; i++) {
+    for (s8 i = 0; i < SOMARIA_MAX_COLLIDERS; i++) {
         if (sColliderPool[i].owner == NULL) {
             if (!sColliderPool[i].initialized) {
                 Collider_InitCylinder(play, &sColliderPool[i].collider);
@@ -160,6 +133,15 @@ static void SomariaCube_FreeCollider(PlayState* play, Actor* actor) {
 void SomariaCube_PlaySound(Actor* actor, u16 sfxId) {
     Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                            &gSfxDefaultReverb);
+}
+
+u8 SomariaCube_GetForm(Actor* actor) {
+    if (actor == NULL)
+        return ELEGY_FORM_HUMAN;
+    s16 form = SOMARIA_GET_FORM(actor);
+    if (form < 0 || form >= ELEGY_FORM_MAX)
+        return ELEGY_FORM_HUMAN;
+    return (u8)form;
 }
 
 // Check and activate Bg_Bdan_Switch (YELLOW_HEAVY type 0x01) when cube is on top
@@ -210,7 +192,32 @@ u8 SomariaCube_IsSwitchable(Actor* actor) {
 }
 
 // ============================================================================
-// UPDATE
+// GET CURRENT FORM (based on transformation masks system)
+// ============================================================================
+
+static u8 SomariaCube_GetCurrentForm(void) {
+    if (!TransformMasks_IsTransformed())
+        return ELEGY_FORM_HUMAN;
+
+    // Map MM form enum (FD=0,Goron=1,Zora=2,Deku=3,Human=4)
+    // to Elegy form enum (Human=0,Goron=1,Zora=2,Deku=3,FD=4)
+    int mmForm = MmPlayer_GetForm();
+    switch (mmForm) {
+        case 1:
+            return ELEGY_FORM_GORON;
+        case 2:
+            return ELEGY_FORM_ZORA;
+        case 3:
+            return ELEGY_FORM_DEKU;
+        case 0:
+            return ELEGY_FORM_FD;
+        default:
+            return ELEGY_FORM_HUMAN;
+    }
+}
+
+// ============================================================================
+// UPDATE (original behavior: spawn, idle, held, thrown)
 // ============================================================================
 
 static void SomariaCube_Update(Actor* thisx, PlayState* play) {
@@ -311,34 +318,27 @@ static void SomariaCube_Update(Actor* thisx, PlayState* play) {
 }
 
 // ============================================================================
-// DRAW
+// DRAW (MM Elegy Shell DLs — only visual change from original)
 // ============================================================================
 
 static void SomariaCube_Draw(Actor* thisx, PlayState* play) {
     if (thisx->scale.x <= 0.001f)
         return;
 
-    SomariaCubeColor colorIdx = SOMARIA_GET_COLOR(thisx);
-    if (colorIdx >= SOMARIA_COLOR_MAX)
-        colorIdx = SOMARIA_COLOR_BLUE;
+    u8 form = SomariaCube_GetForm(thisx);
+    if (form >= ELEGY_FORM_MAX)
+        form = ELEGY_FORM_HUMAN;
 
-    CubeColor* color = &sColorTable[colorIdx];
+    const char* dlPath = sShellDLists[form];
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    // MM's EnTorch2_Draw sets segment 0x0C to no-op DLists via Scene_SetRenderModeXlu.
+    // The elegy DLs call gsSPDisplayList(0x0C000000/0x0C000010) which become no-ops.
+    gSPSegment(POLY_OPA_DISP++, 0x0C, sSegment0xC_Noop);
 
-    // Position and scale the cube
-    Matrix_Translate(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, MTXMODE_NEW);
-    Matrix_RotateY(BINANG_TO_RAD(thisx->shape.rot.y), MTXMODE_APPLY);
-    Matrix_Scale(thisx->scale.x, thisx->scale.y, thisx->scale.z, MTXMODE_APPLY);
-
-    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, color->r, color->g, color->b, 180);
-    gDPSetEnvColor(POLY_XLU_DISP++, color->r / 2, color->g / 2, color->b / 2, 180);
-
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-
-    gSPDisplayList(POLY_XLU_DISP++, sSomariaCubeDL);
+    gDPSetEnvColor(POLY_OPA_DISP++, 255, 255, 255, 255);
+    Gfx_DrawDListOpa(play, (Gfx*)dlPath);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -399,13 +399,11 @@ Actor* SomariaCube_Spawn(PlayState* play, Vec3f* pos, s16 yaw) {
     cube->shape.shadowDraw = NULL;
     cube->shape.shadowScale = 0.0f;
 
-    // Random color
-    SomariaCubeColor randomColor = (SomariaCubeColor)(Rand_ZeroOne() * SOMARIA_COLOR_MAX);
-    if (randomColor >= SOMARIA_COLOR_MAX)
-        randomColor = SOMARIA_COLOR_BLUE;
-    SOMARIA_SET_COLOR(cube, randomColor);
+    // Set form based on current transformation
+    u8 form = SomariaCube_GetCurrentForm();
+    SOMARIA_SET_FORM(cube, form);
 
-    // Spawn animation
+    // Spawn animation (scale from 0 to SOMARIA_CUBE_SCALE)
     Actor_SetScale(cube, 0.0f);
     SOMARIA_SET_STATE(cube, SOMARIA_STATE_SPAWN);
     SOMARIA_SET_TIMER(cube, SOMARIA_SPAWN_FRAMES);
@@ -414,4 +412,75 @@ Actor* SomariaCube_Spawn(PlayState* play, Vec3f* pos, s16 yaw) {
     SomariaCube_PlaySound(cube, NA_SE_PL_MAGIC_FIRE);
 
     return cube;
+}
+
+// ============================================================================
+// REMOTE CUBE SUPPORT (Harpoon multiplayer)
+// ============================================================================
+
+static void SomariaCube_UpdateRemote(Actor* thisx, PlayState* play) {
+    thisx->focus.pos = thisx->world.pos;
+    thisx->focus.pos.y += 30.0f;
+
+    s8 slot = SomariaCube_GetColliderSlot(thisx);
+    if (slot >= 0) {
+        Collider_UpdateCylinder(thisx, &sColliderPool[slot].collider);
+        CollisionCheck_SetAC(play, &play->colChkCtx, &sColliderPool[slot].collider.base);
+    }
+}
+
+static ActorFunc sSomariaCubeUpdateRemote = SomariaCube_UpdateRemote;
+
+u8 SomariaCube_IsRemoteCube(Actor* actor) {
+    if (actor == NULL || actor->update == NULL)
+        return 0;
+    return (actor->update == sSomariaCubeUpdateRemote);
+}
+
+Actor* SomariaCube_SpawnRemote(PlayState* play, Vec3f* pos, s16 yaw, u8 form) {
+    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX, pos->x, pos->y, pos->z, 0, yaw, 0, 0, true);
+    if (cube == NULL)
+        return NULL;
+
+    EnLightbox* lightbox = (EnLightbox*)cube;
+
+    if (sOriginalDestroy == NULL) {
+        sOriginalDestroy = cube->destroy;
+    }
+
+    cube->update = SomariaCube_UpdateRemote;
+    cube->draw = SomariaCube_Draw;
+    cube->destroy = SomariaCube_DestroyFunc;
+
+    if (lightbox->dyna.bgId != BGACTOR_NEG_ONE) {
+        DynaPoly_DeleteBgActor(play, &play->colCtx.dyna, lightbox->dyna.bgId);
+        lightbox->dyna.bgId = BGACTOR_NEG_ONE;
+    }
+
+    SomariaCube_AllocCollider(play, cube);
+
+    cube->gravity = SOMARIA_GRAVITY;
+    cube->minVelocityY = SOMARIA_MIN_VEL_Y;
+    cube->flags |= ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
+    cube->flags |= ACTOR_FLAG_SWITCHHOOKABLE;
+    cube->shape.shadowDraw = NULL;
+    cube->shape.shadowScale = 0.0f;
+    cube->room = -1;
+
+    if (form >= ELEGY_FORM_MAX)
+        form = ELEGY_FORM_HUMAN;
+    SOMARIA_SET_FORM(cube, form);
+    SOMARIA_SET_STATE(cube, SOMARIA_STATE_IDLE);
+
+    Actor_SetScale(cube, SOMARIA_CUBE_SCALE);
+
+    return cube;
+}
+
+void SomariaCube_UpdateRemotePos(Actor* cube, Vec3f* pos, f32 scale, s16 rotY) {
+    if (cube == NULL)
+        return;
+    Math_Vec3f_Copy(&cube->world.pos, pos);
+    cube->shape.rot.y = rotY;
+    Actor_SetScale(cube, scale);
 }

@@ -247,6 +247,11 @@ void TransformMasks_WearClear(void);
 // Returns NULL if not loaded. Caller uses with gSPDisplayList on POLY_XLU_DISP.
 Gfx* TransformMasks_GetFDSwordBeamDL(PlayState* play);
 
+// Zora fin DLs for boomerang visual override (set by mm_player_form.cpp, read by z_en_boom.c)
+// NULL when Zora assets not loaded. EnBoom with params==1 uses L, params==2 uses R.
+extern Gfx* gZoraFinBoomerangLDL;
+extern Gfx* gZoraFinBoomerangRDL;
+
 // FD melee weapon quad registration (sword damage). Called from MmForm_PostLimbDraw.
 // Defined in z_player_lib.c since it accesses static variables (D_80126080, etc.)
 void Player_FDMeleeWeaponPostLimb(PlayState* play, Player* player);

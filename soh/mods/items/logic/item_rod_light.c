@@ -26,11 +26,12 @@ static u8 sLightLastSwingType = 0;
 static u8 sLightJumpEffectSpawned = 0;
 static u8 sLightChargeButtonHeld = 0;
 static s16 sLightChargeHoldCounter = 0;
-static f32 sLightRodTargetScale = 2.0f;
 static f32 sLightSpinExpandProgress = 0.0f;
 static u8 sLightSpinColliderInited = 0;
 static u8 sLightBeamCollidersInited = 0;
-static u8 sLightMultiCollidersInited = 0;
+
+// Multi-set projectile system (5 concurrent sets)
+static RodProjSet sLightProjSets[ROD_MAX_PROJ_SETS];
 
 static RodColor sLightRodColor = { LIGHT_ROD_PRIM_R, LIGHT_ROD_PRIM_G, LIGHT_ROD_PRIM_B, LIGHT_ROD_PRIM_A,
                                    LIGHT_ROD_ENV_R,  LIGHT_ROD_ENV_G,  LIGHT_ROD_ENV_B,  LIGHT_ROD_ENV_A };
@@ -38,13 +39,7 @@ static RodColor sLightRodColor = { LIGHT_ROD_PRIM_R, LIGHT_ROD_PRIM_G, LIGHT_ROD
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 
-// Aliases for multi-projectile system
-#define lightRodProjPos2 gCustomItemState.lightRodProjPos2
-#define lightRodProjPos3 gCustomItemState.lightRodProjPos3
-#define lightRodProjVel gCustomItemState.lightRodProjVel
-#define lightRodProjCount gCustomItemState.lightRodProjCount
-#define lightRodCollider2 gCustomItemState.lightRodCollider2
-#define lightRodCollider3 gCustomItemState.lightRodCollider3
+// Aliases for beam system (unchanged)
 #define lightRodBeamActive gCustomItemState.lightRodBeamActive
 #define lightRodBeamTimer gCustomItemState.lightRodBeamTimer
 #define lightRodBeamPos gCustomItemState.lightRodBeamPos
@@ -102,20 +97,39 @@ static u8 LightRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 b
 }
 
 // =============================================================================
-// MULTI-PROJECTILE SYSTEM - Supports 1-3 simultaneous light balls
+// MULTI-SET PROJECTILE SYSTEM - Up to 5 concurrent sets of 1-3 light balls
 // =============================================================================
 
-static void LightRod_InitColliders(Player* p, PlayState* play) {
-    if (sLightMultiCollidersInited)
-        return;
+// Multi-set accessors
+RodProjSet* LightRod_GetProjSets(void) {
+    return sLightProjSets;
+}
+u8 LightRod_HasAnyActiveSet(void) {
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        if (sLightProjSets[s].active)
+            return 1;
+    return 0;
+}
+static RodProjSet* LightRod_FindFreeSet(void) {
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        if (!sLightProjSets[s].active)
+            return &sLightProjSets[s];
+    // All full — recycle oldest (lowest timer)
+    RodProjSet* oldest = &sLightProjSets[0];
+    for (s32 s = 1; s < ROD_MAX_PROJ_SETS; s++)
+        if (sLightProjSets[s].timer < oldest->timer)
+            oldest = &sLightProjSets[s];
+    return oldest;
+}
 
-    Collider_InitCylinder(play, &lightRodCollider);
-    Collider_SetCylinder(play, &lightRodCollider, &p->actor, &sLightRodProjColInit);
-    Collider_InitCylinder(play, &lightRodCollider2);
-    Collider_SetCylinder(play, &lightRodCollider2, &p->actor, &sLightRodProjColInit);
-    Collider_InitCylinder(play, &lightRodCollider3);
-    Collider_SetCylinder(play, &lightRodCollider3, &p->actor, &sLightRodProjColInit);
-    sLightMultiCollidersInited = 1;
+static void LightRod_InitSetColliders(RodProjSet* set, Player* p, PlayState* play) {
+    if (set->collidersInited)
+        return;
+    for (s32 i = 0; i < 3; i++) {
+        Collider_InitCylinder(play, &set->colliders[i]);
+        Collider_SetCylinder(play, &set->colliders[i], &p->actor, &sLightRodProjColInit);
+    }
+    set->collidersInited = 1;
 }
 
 static void LightRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
@@ -127,65 +141,64 @@ static void LightRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
     Matrix_Pop();
 }
 
-// Spawns single projectile (stab, first-person)
+// Spawns single projectile into a free set slot (stab, first-person)
 static void LightRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
                                           f32 maxRange) {
-    LightRod_InitColliders(p, play);
+    RodProjSet* set = LightRod_FindFreeSet();
+    LightRod_InitSetColliders(set, p, play);
 
-    sLightRodTargetScale = 2.0f;
-    lightRodProjActive = 1;
-    lightRodProjCount = 1;
-    lightRodProjPos = *startPos;
-    lightRodProjTimer = (s16)(maxRange / LIGHT_ROD_PROJ_SPEED);
-    if (lightRodProjTimer < 10)
-        lightRodProjTimer = 10;
-    if (lightRodProjTimer > 25)
-        lightRodProjTimer = 25;
+    set->targetScale = 2.0f;
+    set->active = 1;
+    set->count = 1;
+    set->pos[0] = *startPos;
+    set->timer = (s16)(maxRange / LIGHT_ROD_PROJ_SPEED);
+    if (set->timer < 10)
+        set->timer = 10;
+    if (set->timer > 25)
+        set->timer = 25;
 
-    lightRodProjScale = 0.0f;
-    lightRodProjRotZ = 0;
-    lightRodProjTrailIdx = 0;
+    set->scale = 0.0f;
+    set->rotZ = 0;
     for (s32 i = 0; i < 6; i++)
-        lightRodProjTrail[i] = *startPos;
+        set->trail[i] = *startPos;
 
-    lightRodProjYaw = yaw;
-    lightRodProjPitch = pitch;
-    LightRod_CalcVelocity(&lightRodProjVel[0], yaw, pitch);
+    set->yaw = yaw;
+    set->pitch = pitch;
+    LightRod_CalcVelocity(&set->vel[0], yaw, pitch);
 }
 
-// Spawns 3 light balls spread at configurable angles (slash attack)
+// Spawns 3 light balls spread into a free set slot (slash attack)
 static void LightRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 baseYaw, s16 pitch) {
-    LightRod_InitColliders(p, play);
+    RodProjSet* set = LightRod_FindFreeSet();
+    LightRod_InitSetColliders(set, p, play);
 
-    sLightRodTargetScale = 2.0f;
-    lightRodProjActive = 1;
-    lightRodProjCount = 3;
+    set->targetScale = 2.0f;
+    set->active = 1;
+    set->count = 3;
 
     s16 spreadAngle = (s16)(LIGHT_ROD_SLASH_SPREAD * (0x10000 / 360));
-    s16 timer = (s16)(LIGHT_ROD_SLASH_RANGE / LIGHT_ROD_PROJ_SPEED);
-    if (timer < 10)
-        timer = 10;
-    lightRodProjTimer = timer;
+    set->timer = (s16)(LIGHT_ROD_SLASH_RANGE / LIGHT_ROD_PROJ_SPEED);
+    if (set->timer < 10)
+        set->timer = 10;
 
-    lightRodProjScale = 0.0f;
-    lightRodProjRotZ = 0;
-    lightRodProjTrailIdx = 0;
+    set->scale = 0.0f;
+    set->rotZ = 0;
 
     // Center light ball
-    lightRodProjPos = *startPos;
-    lightRodProjYaw = baseYaw;
-    lightRodProjPitch = pitch;
-    LightRod_CalcVelocity(&lightRodProjVel[0], baseYaw, pitch);
+    set->pos[0] = *startPos;
+    set->yaw = baseYaw;
+    set->pitch = pitch;
+    LightRod_CalcVelocity(&set->vel[0], baseYaw, pitch);
     for (s32 i = 0; i < 6; i++)
-        lightRodProjTrail[i] = *startPos;
+        set->trail[i] = *startPos;
 
     // Left light ball (-spread angle)
-    lightRodProjPos2 = *startPos;
-    LightRod_CalcVelocity(&lightRodProjVel[1], baseYaw - spreadAngle, pitch);
+    set->pos[1] = *startPos;
+    LightRod_CalcVelocity(&set->vel[1], baseYaw - spreadAngle, pitch);
 
     // Right light ball (+spread angle)
-    lightRodProjPos3 = *startPos;
-    LightRod_CalcVelocity(&lightRodProjVel[2], baseYaw + spreadAngle, pitch);
+    set->pos[2] = *startPos;
+    LightRod_CalcVelocity(&set->vel[2], baseYaw + spreadAngle, pitch);
 }
 
 static void LightRod_UpdateCollider(ColliderCylinder* col, Vec3f* pos, f32 scale, PlayState* play) {
@@ -272,83 +285,91 @@ static void LightRod_SpawnLightSparks(PlayState* play, Vec3f* pos, f32 scale) {
     LightRod_SpawnKiraKira(play, pos, scale * 10.0f, count);
 }
 
-static void LightRod_UpdateProjectile(Player* p, PlayState* play) {
-    if (!lightRodProjActive)
-        return;
+// Update a single projectile set
+static void LightRod_UpdateOneSet(RodProjSet* set, Player* p, PlayState* play) {
+    set->rotZ += 6000;
 
-    lightRodProjRotZ += 6000;
+    if (set->timer > 0)
+        set->timer--;
+    if (set->timer == 0)
+        set->targetScale = 0.0f;
 
-    if (lightRodProjTimer > 0)
-        lightRodProjTimer--;
-    if (lightRodProjTimer == 0)
-        sLightRodTargetScale = 0.0f;
+    Math_ApproachF(&set->scale, set->targetScale, 0.2f, 0.5f);
 
-    Math_ApproachF(&lightRodProjScale, sLightRodTargetScale, 0.2f, 0.5f);
-
-    if (lightRodProjTimer == 0 && lightRodProjScale < 0.1f) {
-        lightRodProjActive = 0;
-        sLightRodTargetScale = 2.0f;
-        Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
+    if (set->timer == 0 && set->scale < 0.1f) {
+        set->active = 0;
         return;
     }
 
-    // Update all active projectiles
-    lightRodProjPos.x += lightRodProjVel[0].x;
-    lightRodProjPos.y += lightRodProjVel[0].y;
-    lightRodProjPos.z += lightRodProjVel[0].z;
-
-    if (lightRodProjCount >= 2) {
-        lightRodProjPos2.x += lightRodProjVel[1].x;
-        lightRodProjPos2.y += lightRodProjVel[1].y;
-        lightRodProjPos2.z += lightRodProjVel[1].z;
-    }
-    if (lightRodProjCount >= 3) {
-        lightRodProjPos3.x += lightRodProjVel[2].x;
-        lightRodProjPos3.y += lightRodProjVel[2].y;
-        lightRodProjPos3.z += lightRodProjVel[2].z;
+    // Update all projectile positions in this set
+    for (s32 i = 0; i < set->count; i++) {
+        set->pos[i].x += set->vel[i].x;
+        set->pos[i].y += set->vel[i].y;
+        set->pos[i].z += set->vel[i].z;
     }
 
     // Trail for center projectile
-    lightRodProjTrail[0] = lightRodProjPos;
     for (s32 i = 4; i >= 0; i--)
-        lightRodProjTrail[i + 1] = lightRodProjTrail[i];
+        set->trail[i + 1] = set->trail[i];
+    set->trail[0] = set->pos[0];
 
-    // Sparks and sound - throttle particle spawning like Dominion Rod does
-    if (lightRodProjScale >= 0.4f) {
-        // Only spawn particles every 3 frames to avoid overwhelming the effect system
+    // Sparks and sound - throttle particle spawning
+    if (set->scale >= 0.4f) {
         if ((play->gameplayFrames % 3) == 0) {
-            LightRod_SpawnLightSparks(play, &lightRodProjPos, lightRodProjScale);
-            if (lightRodProjCount >= 2)
-                LightRod_SpawnLightSparks(play, &lightRodProjPos2, lightRodProjScale);
-            if (lightRodProjCount >= 3)
-                LightRod_SpawnLightSparks(play, &lightRodProjPos3, lightRodProjScale);
+            for (s32 i = 0; i < set->count; i++)
+                LightRod_SpawnLightSparks(play, &set->pos[i], set->scale);
         }
         Audio_PlayActorSound2(&p->actor, LIGHT_ROD_SFX_LIGHT_LOOP - SFX_FLAG);
     }
 
     // Colliders
-    if (lightRodProjScale >= 0.6f) {
-        LightRod_UpdateCollider(&lightRodCollider, &lightRodProjPos, lightRodProjScale, play);
-        if (lightRodProjCount >= 2)
-            LightRod_UpdateCollider(&lightRodCollider2, &lightRodProjPos2, lightRodProjScale, play);
-        if (lightRodProjCount >= 3)
-            LightRod_UpdateCollider(&lightRodCollider3, &lightRodProjPos3, lightRodProjScale, play);
+    if (set->scale >= 0.6f) {
+        for (s32 i = 0; i < set->count; i++)
+            LightRod_UpdateCollider(&set->colliders[i], &set->pos[i], set->scale, play);
     }
 
     // Hit detection
-    u8 anyHit = LightRod_CheckHit(&lightRodCollider, &lightRodProjPos, play, p);
-    if (lightRodProjCount >= 2)
-        anyHit |= LightRod_CheckHit(&lightRodCollider2, &lightRodProjPos2, play, p);
-    if (lightRodProjCount >= 3)
-        anyHit |= LightRod_CheckHit(&lightRodCollider3, &lightRodProjPos3, play, p);
+    u8 anyHit = 0;
+    for (s32 i = 0; i < set->count; i++)
+        anyHit |= LightRod_CheckHit(&set->colliders[i], &set->pos[i], play, p);
 
     if (anyHit) {
-        lightRodProjVel[0].x = lightRodProjVel[0].y = lightRodProjVel[0].z = 0.0f;
-        lightRodProjVel[1].x = lightRodProjVel[1].y = lightRodProjVel[1].z = 0.0f;
-        lightRodProjVel[2].x = lightRodProjVel[2].y = lightRodProjVel[2].z = 0.0f;
-        lightRodProjTimer = 0;
-        sLightRodTargetScale = 0.0f;
+        for (s32 i = 0; i < 3; i++)
+            set->vel[i].x = set->vel[i].y = set->vel[i].z = 0.0f;
+        set->timer = 0;
+        set->targetScale = 0.0f;
     }
+}
+
+// Update ALL active projectile sets and sync gCustomItemState for network
+static void LightRod_UpdateProjectile(Player* p, PlayState* play) {
+    u8 anyActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        if (!sLightProjSets[s].active)
+            continue;
+        LightRod_UpdateOneSet(&sLightProjSets[s], p, play);
+        if (sLightProjSets[s].active)
+            anyActive = 1;
+    }
+
+    // Sync first active set to gCustomItemState for Harpoon network visual
+    lightRodProjActive = anyActive;
+    if (anyActive) {
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+            if (sLightProjSets[s].active) {
+                lightRodProjPos = sLightProjSets[s].pos[0];
+                gCustomItemState.lightRodProjPos2 = sLightProjSets[s].pos[1];
+                gCustomItemState.lightRodProjPos3 = sLightProjSets[s].pos[2];
+                gCustomItemState.lightRodProjCount = sLightProjSets[s].count;
+                lightRodProjScale = sLightProjSets[s].scale;
+                memcpy(lightRodProjTrail, sLightProjSets[s].trail, sizeof(sLightProjSets[s].trail));
+                break;
+            }
+        }
+    }
+
+    if (!anyActive)
+        Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
 }
 
 // =============================================================================
@@ -870,9 +891,11 @@ static void LightRod_OnEquip(PlayState* play, Player* p) {
     sLightLastSwingType = 0;
     sLightJumpEffectSpawned = 0;
     lightRodProjActive = 0;
-    lightRodProjCount = 0;
+    gCustomItemState.lightRodProjCount = 0;
     lightRodFirstPerson = 0;
     lightRodBeamActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        sLightProjSets[s].active = 0;
 
     lightRodCharging = 0;
     lightRodChargeLevel = 0.0f;
@@ -893,8 +916,10 @@ static void LightRod_OnUnequip(PlayState* play, Player* p) {
     lightRodState = LIGHT_ROD_STATE_INACTIVE;
     sLightLastSwingType = 0;
     lightRodProjActive = 0;
-    lightRodProjCount = 0;
+    gCustomItemState.lightRodProjCount = 0;
     lightRodBeamActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        sLightProjSets[s].active = 0;
     Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
 
     lightRodCharging = 0;
@@ -1019,7 +1044,7 @@ void Player_InitLightRodIA(PlayState* play, Player* p) {
     sLightLastSwingType = 0;
     sLightJumpEffectSpawned = 0;
     lightRodProjActive = 0;
-    lightRodProjCount = 0;
+    gCustomItemState.lightRodProjCount = 0;
     lightRodBlureIdx = -1;
     lightRodFirstPerson = 0;
     lightRodButtonMask = 0;
@@ -1032,7 +1057,11 @@ void Player_InitLightRodIA(PlayState* play, Player* p) {
     sLightChargeButtonHeld = 0;
     sLightChargeHoldCounter = 0;
 
-    LightRod_InitColliders(p, play);
+    // Init all projectile sets
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        sLightProjSets[s].active = 0;
+        sLightProjSets[s].collidersInited = 0;
+    }
     LightRod_InitBeamColliders(p, play);
 
     if (!sLightSpinColliderInited) {

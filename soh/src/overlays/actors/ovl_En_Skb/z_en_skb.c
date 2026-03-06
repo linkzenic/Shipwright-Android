@@ -425,6 +425,13 @@ void func_80AFD7B4(EnSkb* this, PlayState* play) {
 
 void func_80AFD880(EnSkb* this, PlayState* play) {
     if (BodyBreak_SpawnParts(&this->actor, &this->bodyBreak, play, 1)) {
+        // Captain's Hat sentinel: guaranteed 50 rupee drop
+        if (this->actor.home.rot.z == 0x7FFF) {
+            Item_DropCollectible(play, &this->actor.world.pos, ITEM00_RUPEE_PURPLE);
+            this->unk_283 |= 8;
+            Actor_Kill(&this->actor);
+            return;
+        }
         if (this->actor.scale.x == 0.01f) {
             Item_DropCollectibleRandom(play, &this->actor, &this->actor.world.pos, 0x10);
         } else if (this->actor.scale.x <= 0.015f) {

@@ -27,11 +27,12 @@ static u8 sIceLastSwingType = 0;
 static u8 sIceJumpEffectSpawned = 0;
 static u8 sIceChargeButtonHeld = 0;
 static s16 sIceChargeHoldCounter = 0;
-static f32 sIceRodTargetScale = 2.0f;
 static f32 sIceSpinExpandProgress = 0.0f;
 static u8 sIceSpinColliderInited = 0;
 static u8 sIceWaveCollidersInited = 0;
-static u8 sIceMultiCollidersInited = 0;
+
+// Multi-set projectile system (5 concurrent sets)
+static RodProjSet sIceProjSets[ROD_MAX_PROJ_SETS];
 
 static RodColor sIceRodColor = { ICE_ROD_PRIM_R, ICE_ROD_PRIM_G, ICE_ROD_PRIM_B, ICE_ROD_PRIM_A,
                                  ICE_ROD_ENV_R,  ICE_ROD_ENV_G,  ICE_ROD_ENV_B,  ICE_ROD_ENV_A };
@@ -39,13 +40,7 @@ static RodColor sIceRodColor = { ICE_ROD_PRIM_R, ICE_ROD_PRIM_G, ICE_ROD_PRIM_B,
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
 
-// Aliases for multi-projectile system
-#define iceRodProjPos2 gCustomItemState.iceRodProjPos2
-#define iceRodProjPos3 gCustomItemState.iceRodProjPos3
-#define iceRodProjVel gCustomItemState.iceRodProjVel
-#define iceRodProjCount gCustomItemState.iceRodProjCount
-#define iceRodCollider2 gCustomItemState.iceRodCollider2
-#define iceRodCollider3 gCustomItemState.iceRodCollider3
+// Aliases for wave/beam system (unchanged)
 #define iceRodWaveActive gCustomItemState.iceRodWaveActive
 #define iceRodWaveTimer gCustomItemState.iceRodWaveTimer
 #define iceRodWavePos gCustomItemState.iceRodWavePos
@@ -82,20 +77,39 @@ static u8 IceRod_CheckBackfire(Player* p, PlayState* play, s16 magicCost, u8 bac
 }
 
 // =============================================================================
-// MULTI-PROJECTILE SYSTEM - Supports 1-3 simultaneous iceballs
+// MULTI-SET PROJECTILE SYSTEM - Up to 5 concurrent sets of 1-3 iceballs
 // =============================================================================
 
-static void IceRod_InitColliders(Player* p, PlayState* play) {
-    if (sIceMultiCollidersInited)
-        return;
+// Multi-set accessors
+RodProjSet* IceRod_GetProjSets(void) {
+    return sIceProjSets;
+}
+u8 IceRod_HasAnyActiveSet(void) {
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        if (sIceProjSets[s].active)
+            return 1;
+    return 0;
+}
+static RodProjSet* IceRod_FindFreeSet(void) {
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        if (!sIceProjSets[s].active)
+            return &sIceProjSets[s];
+    // All full — recycle oldest (lowest timer)
+    RodProjSet* oldest = &sIceProjSets[0];
+    for (s32 s = 1; s < ROD_MAX_PROJ_SETS; s++)
+        if (sIceProjSets[s].timer < oldest->timer)
+            oldest = &sIceProjSets[s];
+    return oldest;
+}
 
-    Collider_InitCylinder(play, &iceRodCollider);
-    Collider_SetCylinder(play, &iceRodCollider, &p->actor, &sIceRodProjColInit);
-    Collider_InitCylinder(play, &iceRodCollider2);
-    Collider_SetCylinder(play, &iceRodCollider2, &p->actor, &sIceRodProjColInit);
-    Collider_InitCylinder(play, &iceRodCollider3);
-    Collider_SetCylinder(play, &iceRodCollider3, &p->actor, &sIceRodProjColInit);
-    sIceMultiCollidersInited = 1;
+static void IceRod_InitSetColliders(RodProjSet* set, Player* p, PlayState* play) {
+    if (set->collidersInited)
+        return;
+    for (s32 i = 0; i < 3; i++) {
+        Collider_InitCylinder(play, &set->colliders[i]);
+        Collider_SetCylinder(play, &set->colliders[i], &p->actor, &sIceRodProjColInit);
+    }
+    set->collidersInited = 1;
 }
 
 static void IceRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
@@ -107,64 +121,63 @@ static void IceRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
     Matrix_Pop();
 }
 
-// Spawns single projectile (stab, first-person)
+// Spawns single projectile into a free set slot (stab, first-person)
 static void IceRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch, f32 maxRange) {
-    IceRod_InitColliders(p, play);
+    RodProjSet* set = IceRod_FindFreeSet();
+    IceRod_InitSetColliders(set, p, play);
 
-    sIceRodTargetScale = 2.0f;
-    iceRodProjActive = 1;
-    iceRodProjCount = 1;
-    iceRodProjPos = *startPos;
-    iceRodProjTimer = (s16)(maxRange / ICE_ROD_PROJ_SPEED);
-    if (iceRodProjTimer < 10)
-        iceRodProjTimer = 10;
-    if (iceRodProjTimer > 30)
-        iceRodProjTimer = 30;
+    set->targetScale = 2.0f;
+    set->active = 1;
+    set->count = 1;
+    set->pos[0] = *startPos;
+    set->timer = (s16)(maxRange / ICE_ROD_PROJ_SPEED);
+    if (set->timer < 10)
+        set->timer = 10;
+    if (set->timer > 30)
+        set->timer = 30;
 
-    iceRodProjScale = 0.0f;
-    iceRodProjRotZ = 0;
-    iceRodProjTrailIdx = 0;
+    set->scale = 0.0f;
+    set->rotZ = 0;
     for (s32 i = 0; i < 6; i++)
-        iceRodProjTrail[i] = *startPos;
+        set->trail[i] = *startPos;
 
-    iceRodProjYaw = yaw;
-    iceRodProjPitch = pitch;
-    IceRod_CalcVelocity(&iceRodProjVel[0], yaw, pitch);
+    set->yaw = yaw;
+    set->pitch = pitch;
+    IceRod_CalcVelocity(&set->vel[0], yaw, pitch);
 }
 
-// Spawns 3 iceballs spread at configurable angles (slash attack)
+// Spawns 3 iceballs spread into a free set slot (slash attack)
 static void IceRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 baseYaw, s16 pitch) {
-    IceRod_InitColliders(p, play);
+    RodProjSet* set = IceRod_FindFreeSet();
+    IceRod_InitSetColliders(set, p, play);
 
-    sIceRodTargetScale = 2.0f;
-    iceRodProjActive = 1;
-    iceRodProjCount = 3;
+    set->targetScale = 2.0f;
+    set->active = 1;
+    set->count = 3;
 
     s16 spreadAngle = (s16)(ICE_ROD_SLASH_SPREAD * (0x10000 / 360));
-    s16 timer = (s16)(ICE_ROD_SLASH_RANGE / ICE_ROD_PROJ_SPEED);
-    if (timer < 10)
-        timer = 10;
-    iceRodProjTimer = timer;
+    set->timer = (s16)(ICE_ROD_SLASH_RANGE / ICE_ROD_PROJ_SPEED);
+    if (set->timer < 10)
+        set->timer = 10;
 
-    iceRodProjScale = 0.0f;
-    iceRodProjRotZ = 0;
-    iceRodProjTrailIdx = 0;
+    set->scale = 0.0f;
+    set->rotZ = 0;
 
     // Center iceball
-    iceRodProjPos = *startPos;
-    iceRodProjYaw = baseYaw;
-    iceRodProjPitch = pitch;
-    IceRod_CalcVelocity(&iceRodProjVel[0], baseYaw, pitch);
+    set->pos[0] = *startPos;
+    set->yaw = baseYaw;
+    set->pitch = pitch;
+    IceRod_CalcVelocity(&set->vel[0], baseYaw, pitch);
     for (s32 i = 0; i < 6; i++)
-        iceRodProjTrail[i] = *startPos;
+        set->trail[i] = *startPos;
 
     // Left iceball (-spread angle)
-    iceRodProjPos2 = *startPos;
-    IceRod_CalcVelocity(&iceRodProjVel[1], baseYaw - spreadAngle, pitch);
+    set->pos[1] = *startPos;
+    IceRod_CalcVelocity(&set->vel[1], baseYaw - spreadAngle, pitch);
 
     // Right iceball (+spread angle)
-    iceRodProjPos3 = *startPos;
-    IceRod_CalcVelocity(&iceRodProjVel[2], baseYaw + spreadAngle, pitch);
+    set->pos[2] = *startPos;
+    IceRod_CalcVelocity(&set->vel[2], baseYaw + spreadAngle, pitch);
 }
 
 static void IceRod_UpdateCollider(ColliderCylinder* col, Vec3f* pos, f32 scale, PlayState* play) {
@@ -240,24 +253,21 @@ static u8 IceRod_CheckRedIceMelt(PlayState* play) {
         f32 iceHeight = (f32)ice->cylinder1.dim.height;
         u8 hit = 0;
 
-        // Check each active projectile position
-        for (s32 p = 0; p < iceRodProjCount; p++) {
-            Vec3f* projPos;
-            if (p == 0)
-                projPos = &iceRodProjPos;
-            else if (p == 1)
-                projPos = &iceRodProjPos2;
-            else
-                projPos = &iceRodProjPos3;
+        // Check all active projectile sets
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS && !hit; s++) {
+            RodProjSet* set = &sIceProjSets[s];
+            if (!set->active)
+                continue;
 
-            f32 dx = projPos->x - actor->world.pos.x;
-            f32 dy = projPos->y - actor->world.pos.y;
-            f32 dz = projPos->z - actor->world.pos.z;
-            f32 xzDist = sqrtf(SQ(dx) + SQ(dz));
+            for (s32 p = 0; p < set->count && !hit; p++) {
+                f32 dx = set->pos[p].x - actor->world.pos.x;
+                f32 dy = set->pos[p].y - actor->world.pos.y;
+                f32 dz = set->pos[p].z - actor->world.pos.z;
+                f32 xzDist = sqrtf(SQ(dx) + SQ(dz));
 
-            if (xzDist < iceRadius && dy > -projRadius && dy < iceHeight + projRadius) {
-                hit = 1;
-                break;
+                if (xzDist < iceRadius && dy > -projRadius && dy < iceHeight + projRadius) {
+                    hit = 1;
+                }
             }
         }
 
@@ -269,85 +279,93 @@ static u8 IceRod_CheckRedIceMelt(PlayState* play) {
     return melted;
 }
 
-static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
-    if (!iceRodProjActive)
-        return;
+// Update a single projectile set
+static void IceRod_UpdateOneSet(RodProjSet* set, Player* p, PlayState* play) {
+    set->rotZ += 5000;
 
-    iceRodProjRotZ += 5000;
+    if (set->timer > 0)
+        set->timer--;
+    if (set->timer == 0)
+        set->targetScale = 0.0f;
 
-    if (iceRodProjTimer > 0)
-        iceRodProjTimer--;
-    if (iceRodProjTimer == 0)
-        sIceRodTargetScale = 0.0f;
+    Math_ApproachF(&set->scale, set->targetScale, 0.2f, 0.4f);
 
-    Math_ApproachF(&iceRodProjScale, sIceRodTargetScale, 0.2f, 0.4f);
-
-    if (iceRodProjTimer == 0 && iceRodProjScale < 0.1f) {
-        iceRodProjActive = 0;
-        sIceRodTargetScale = 2.0f;
-        Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
+    if (set->timer == 0 && set->scale < 0.1f) {
+        set->active = 0;
         return;
     }
 
-    // Update all active projectiles
-    iceRodProjPos.x += iceRodProjVel[0].x;
-    iceRodProjPos.y += iceRodProjVel[0].y;
-    iceRodProjPos.z += iceRodProjVel[0].z;
-
-    if (iceRodProjCount >= 2) {
-        iceRodProjPos2.x += iceRodProjVel[1].x;
-        iceRodProjPos2.y += iceRodProjVel[1].y;
-        iceRodProjPos2.z += iceRodProjVel[1].z;
-    }
-    if (iceRodProjCount >= 3) {
-        iceRodProjPos3.x += iceRodProjVel[2].x;
-        iceRodProjPos3.y += iceRodProjVel[2].y;
-        iceRodProjPos3.z += iceRodProjVel[2].z;
+    // Update all projectile positions in this set
+    for (s32 i = 0; i < set->count; i++) {
+        set->pos[i].x += set->vel[i].x;
+        set->pos[i].y += set->vel[i].y;
+        set->pos[i].z += set->vel[i].z;
     }
 
     // Trail for center projectile
-    iceRodProjTrail[0] = iceRodProjPos;
     for (s32 i = 4; i >= 0; i--)
-        iceRodProjTrail[i + 1] = iceRodProjTrail[i];
+        set->trail[i + 1] = set->trail[i];
+    set->trail[0] = set->pos[0];
 
     // Sparks and sound
-    if (iceRodProjScale >= 0.4f) {
-        IceRod_SpawnIceSparks(play, &iceRodProjPos, iceRodProjScale);
-        if (iceRodProjCount >= 2)
-            IceRod_SpawnIceSparks(play, &iceRodProjPos2, iceRodProjScale);
-        if (iceRodProjCount >= 3)
-            IceRod_SpawnIceSparks(play, &iceRodProjPos3, iceRodProjScale);
+    if (set->scale >= 0.4f) {
+        for (s32 i = 0; i < set->count; i++)
+            IceRod_SpawnIceSparks(play, &set->pos[i], set->scale);
         Audio_PlayActorSound2(&p->actor, ICE_ROD_SFX_ICE_LOOP - SFX_FLAG);
     }
 
     // Colliders
-    if (iceRodProjScale >= 0.6f) {
-        IceRod_UpdateCollider(&iceRodCollider, &iceRodProjPos, iceRodProjScale, play);
-        if (iceRodProjCount >= 2)
-            IceRod_UpdateCollider(&iceRodCollider2, &iceRodProjPos2, iceRodProjScale, play);
-        if (iceRodProjCount >= 3)
-            IceRod_UpdateCollider(&iceRodCollider3, &iceRodProjPos3, iceRodProjScale, play);
-    }
-
-    // Red ice melt check (BG_ICE_SHELTER)
-    if (iceRodProjScale >= 0.6f) {
-        IceRod_CheckRedIceMelt(play);
+    if (set->scale >= 0.6f) {
+        for (s32 i = 0; i < set->count; i++)
+            IceRod_UpdateCollider(&set->colliders[i], &set->pos[i], set->scale, play);
     }
 
     // Hit detection
-    u8 anyHit = IceRod_CheckHit(&iceRodCollider, &iceRodProjPos, play, p);
-    if (iceRodProjCount >= 2)
-        anyHit |= IceRod_CheckHit(&iceRodCollider2, &iceRodProjPos2, play, p);
-    if (iceRodProjCount >= 3)
-        anyHit |= IceRod_CheckHit(&iceRodCollider3, &iceRodProjPos3, play, p);
+    u8 anyHit = 0;
+    for (s32 i = 0; i < set->count; i++)
+        anyHit |= IceRod_CheckHit(&set->colliders[i], &set->pos[i], play, p);
 
     if (anyHit) {
-        iceRodProjVel[0].x = iceRodProjVel[0].y = iceRodProjVel[0].z = 0.0f;
-        iceRodProjVel[1].x = iceRodProjVel[1].y = iceRodProjVel[1].z = 0.0f;
-        iceRodProjVel[2].x = iceRodProjVel[2].y = iceRodProjVel[2].z = 0.0f;
-        iceRodProjTimer = 0;
-        sIceRodTargetScale = 0.0f;
+        for (s32 i = 0; i < 3; i++)
+            set->vel[i].x = set->vel[i].y = set->vel[i].z = 0.0f;
+        set->timer = 0;
+        set->targetScale = 0.0f;
     }
+}
+
+// Update ALL active projectile sets and sync gCustomItemState for network
+static void IceRod_UpdateProjectile(Player* p, PlayState* play) {
+    u8 anyActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        if (!sIceProjSets[s].active)
+            continue;
+        IceRod_UpdateOneSet(&sIceProjSets[s], p, play);
+        if (sIceProjSets[s].active)
+            anyActive = 1;
+    }
+
+    // Sync first active set to gCustomItemState for Harpoon network visual
+    iceRodProjActive = anyActive;
+    if (anyActive) {
+        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+            if (sIceProjSets[s].active) {
+                iceRodProjPos = sIceProjSets[s].pos[0];
+                gCustomItemState.iceRodProjPos2 = sIceProjSets[s].pos[1];
+                gCustomItemState.iceRodProjPos3 = sIceProjSets[s].pos[2];
+                gCustomItemState.iceRodProjCount = sIceProjSets[s].count;
+                iceRodProjScale = sIceProjSets[s].scale;
+                memcpy(iceRodProjTrail, sIceProjSets[s].trail, sizeof(sIceProjSets[s].trail));
+                break;
+            }
+        }
+    }
+
+    // Red ice melt check across all active sets
+    if (anyActive)
+        IceRod_CheckRedIceMelt(play);
+
+    if (!anyActive)
+        Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
 }
 
 // =============================================================================
@@ -825,9 +843,11 @@ static void IceRod_OnEquip(PlayState* play, Player* p) {
     sIceLastSwingType = 0;
     sIceJumpEffectSpawned = 0;
     iceRodProjActive = 0;
-    iceRodProjCount = 0;
+    gCustomItemState.iceRodProjCount = 0;
     iceRodFirstPerson = 0;
     iceRodWaveActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        sIceProjSets[s].active = 0;
 
     iceRodCharging = 0;
     iceRodChargeLevel = 0.0f;
@@ -848,8 +868,10 @@ static void IceRod_OnUnequip(PlayState* play, Player* p) {
     iceRodState = ICE_ROD_STATE_INACTIVE;
     sIceLastSwingType = 0;
     iceRodProjActive = 0;
-    iceRodProjCount = 0;
+    gCustomItemState.iceRodProjCount = 0;
     iceRodWaveActive = 0;
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+        sIceProjSets[s].active = 0;
     Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
 
     iceRodCharging = 0;
@@ -974,7 +996,7 @@ void Player_InitIceRodIA(PlayState* play, Player* p) {
     sIceLastSwingType = 0;
     sIceJumpEffectSpawned = 0;
     iceRodProjActive = 0;
-    iceRodProjCount = 0;
+    gCustomItemState.iceRodProjCount = 0;
     iceRodBlureIdx = -1;
     iceRodFirstPerson = 0;
     iceRodButtonMask = 0;
@@ -987,7 +1009,11 @@ void Player_InitIceRodIA(PlayState* play, Player* p) {
     sIceChargeButtonHeld = 0;
     sIceChargeHoldCounter = 0;
 
-    IceRod_InitColliders(p, play);
+    // Init all projectile sets
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        sIceProjSets[s].active = 0;
+        sIceProjSets[s].collidersInited = 0;
+    }
     IceRod_InitWaveColliders(p, play);
 
     if (!sIceSpinColliderInited) {

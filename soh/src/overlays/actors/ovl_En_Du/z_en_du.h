@@ -29,4 +29,12 @@ typedef struct EnDu {
     /* 0x01F4 */ NpcInteractInfo interactInfo;
 } EnDu; // size = 0x021C
 
+// Public: Trigger Darunia's joy cutscene + reward (used by Kamaro's Mask dance)
+void EnDu_TriggerDaruniasJoy(Actor* thisx, PlayState* play);
+
+// Public: Dance alongside player with Kamaro's Mask (no cutscene, just animation)
+void EnDu_StartDancing(Actor* thisx, PlayState* play);
+void EnDu_StopDancing(Actor* thisx, PlayState* play);
+s32 EnDu_IsDancing(void);
+
 #endif

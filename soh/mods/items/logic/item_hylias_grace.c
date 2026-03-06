@@ -2,7 +2,7 @@
  * item_hylias_grace.c - Hylia's Grace (fairy transformation)
  *
  * Controls:
- *   C Button:     Activate (consumes magic + fairy in bottle)
+ *   C Button:     Activate (consumes 24 magic)
  *   A (flying):   Ascend (drains timer faster)
  *   B (flying):   Descend
  *   L (flying):   Sprint (drains timer faster)
@@ -39,9 +39,7 @@ static s32 sHGPhaseEnd = 0; // Absolute hgTimer value when current animation pha
 static Vec3f sFairyPos;
 static u8 sFairyPosValid = 0;
 
-// Camera yaw captured at fairy mode start — fixed reference for stick movement.
-// The free camera (NORMAL0) orbits unpredictably so we lock the movement reference.
-static s16 sFairyCamYaw = 0;
+// (sFairyCamYaw removed — now uses live camera yaw each frame)
 
 // Halved from vanilla 0.83f to compensate for double LinkAnimation_Update
 // (vanilla's Player_Action_Idle calls it once, we call it again — Demise pattern).
@@ -258,13 +256,6 @@ static void HGrace_Start(Player* p, PlayState* play) {
     if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
         return;
 
-    // Requires a fairy in a bottle — consumed on cast (bottle becomes empty)
-    if (!Inventory_ConsumeFairy(play)) {
-        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-        return;
-    }
-
     hgActive = 1;
     hgState = HGRACE_STATE_CASTING;
     hgSubPhase = HGRACE_CAST_KAZE1;
@@ -413,12 +404,6 @@ static void HGrace_StateWarpEnter(Player* p, PlayState* play) {
         p->stateFlags1 &= ~PLAYER_STATE1_IN_ITEM_CS;
         func_8005B1A4(Play_GetCamera(play, 0));
 
-        // Lock movement reference yaw from the current camera direction
-        {
-            Camera* cam = Play_GetCamera(play, 0);
-            sFairyCamYaw = Math_Atan2S(cam->at.x - cam->eye.x, cam->at.z - cam->eye.z);
-        }
-
         hgState = HGRACE_STATE_FAIRY;
         hgTimer = HGRACE_FAIRY_DURATION;
     }
@@ -506,11 +491,11 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     f32 stickMag = sqrtf(SQ((f32)stickX) + SQ((f32)stickY));
 
     if (stickMag > 10.0f) {
-        // Use the fixed reference yaw captured at fairy mode start.
-        // Reading the live camera would create a feedback loop because NORMAL0
-        // orbits behind rot.y and the angle drifts unpredictably.
+        // Live camera-relative movement: read current camera yaw each frame
+        Camera* cam = Play_GetCamera(play, 0);
+        s16 camYaw = Math_Atan2S(cam->at.x - cam->eye.x, cam->at.z - cam->eye.z);
         s16 stickAngle = Math_Atan2S((f32)stickX, (f32)stickY);
-        s16 moveYaw = sFairyCamYaw + stickAngle;
+        s16 moveYaw = camYaw + stickAngle;
 
         f32 normMag = stickMag / 127.0f;
         if (normMag > 1.0f)

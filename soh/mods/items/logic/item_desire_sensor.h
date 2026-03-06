@@ -7,6 +7,7 @@
 #define DSENSOR_STATE_IDLE 0
 #define DSENSOR_STATE_SENSING 1 // Mini-cutscene: player frozen, mystical sparkles
 #define DSENSOR_STATE_RESULT 2  // Result revealed: golden burst or Ganondorf laugh
+#define DSENSOR_STATE_TEXTBOX 3 // Hint textbox displayed, waiting for player to dismiss
 
 // Timings (frames at 20fps)
 #define DSENSOR_SENSING_DURATION 50 // ~2.5 seconds sensing phase
@@ -19,6 +20,9 @@
 #define DSENSOR_SE_FOUND NA_SE_SY_CORRECT_CHIME // 0x4802 - Major item found
 #define DSENSOR_SE_NOTHING NA_SE_EN_GANON_LAUGH // 0x39C7 - No major item
 #define DSENSOR_SE_ERROR NA_SE_SY_ERROR         // Not enough health / not rando
+
+// Custom message text ID for hint textbox (hooked in DesireSensorHints.cpp)
+#define DSENSOR_HINT_TEXT_ID 0x9300
 
 // State aliases (map to CustomItemState fields)
 #define dsActive gCustomItemState.desireSensorActive

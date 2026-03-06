@@ -17,6 +17,7 @@
 #include "soh/framebuffer_effects.h"
 #include "mods/items/custom_items.h"
 #include "mods/items/helpers/minish_kaleido.h"
+#include "mods/transformation_masks/mm_mask_wear.h"
 #include <libultraship/libultraship.h>
 
 #include <time.h>
@@ -1277,6 +1278,8 @@ void Play_Update(PlayState* play) {
                 PLAY_LOG(3721);
                 if (gCustomItemState.minishCapWarpMode) {
                     MinishKaleido_Update(play);
+                } else if (MmMaskWear_IsGreatFairyWarpActive()) {
+                    MmMaskWear_GreatFairyWarpUpdate(play);
                 } else {
                     KaleidoScopeCall_Update(play);
                 }
@@ -1342,7 +1345,7 @@ skip:
 
 void Play_DrawOverlayElements(PlayState* play) {
     if ((play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0)) {
-        if (!gCustomItemState.minishCapWarpMode) {
+        if (!gCustomItemState.minishCapWarpMode && !MmMaskWear_IsGreatFairyWarpActive()) {
             KaleidoScopeCall_Draw(play);
         }
     }
@@ -1356,6 +1359,9 @@ void Play_DrawOverlayElements(PlayState* play) {
     if (play->gameOverCtx.state != GAMEOVER_INACTIVE) {
         GameOver_FadeInLights(play);
     }
+
+    // Great Fairy Mask teleport menu overlay
+    MmMaskWear_DrawOverlay(play);
 
     // Minish Cap warp overlay — drawn last on OVERLAY_DISP so it covers HUD
     if (gCustomItemState.minishCapWarpMode) {

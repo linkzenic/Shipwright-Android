@@ -6,10 +6,6 @@
 #include <soh/Network/Sail/Sail.h>
 #include <soh/Network/CrowdControl/CrowdControl.h>
 #include <soh/Network/Anchor/Anchor.h>
-#include "soh/Network/HarpoonToggle.h"
-#ifdef ENABLE_HARPOON
-#include <soh/Network/Harpoon/Harpoon.h>
-#endif
 
 namespace SohGui {
 
@@ -36,6 +32,8 @@ void SohMenu::AddMenuNetwork() {
     // Anchor
     path = { "Network", "Anchor", SECTION_COLUMN_1 };
     AddSidebarEntry("Network", path.sidebarName, 3);
+
+    // Harpoon sidebar is registered by HarpoonMenu.cpp via RegisterMenuInitFunc
 
     // Sail
     path = { "Network", "Sail", SECTION_COLUMN_1 };

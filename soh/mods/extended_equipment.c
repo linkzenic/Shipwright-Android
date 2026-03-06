@@ -40,16 +40,20 @@ void ExtEquip_Init(void) {
     memset(&gExtEquipState, 0, sizeof(gExtEquipState));
 
     // Load persisted equipped state from CVars
-    gExtEquipState.currentExtSword  = (u8)CVarGetInteger(CVAR_EXT_EQUIP_SWORD, 0);
+    gExtEquipState.currentExtSword = (u8)CVarGetInteger(CVAR_EXT_EQUIP_SWORD, 0);
     gExtEquipState.currentExtShield = (u8)CVarGetInteger(CVAR_EXT_EQUIP_SHIELD, 0);
-    gExtEquipState.currentExtTunic  = (u8)CVarGetInteger(CVAR_EXT_EQUIP_TUNIC, 0);
-    gExtEquipState.currentExtBoots  = (u8)CVarGetInteger(CVAR_EXT_EQUIP_BOOTS, 0);
+    gExtEquipState.currentExtTunic = (u8)CVarGetInteger(CVAR_EXT_EQUIP_TUNIC, 0);
+    gExtEquipState.currentExtBoots = (u8)CVarGetInteger(CVAR_EXT_EQUIP_BOOTS, 0);
 
     // Clamp to valid range
-    if (gExtEquipState.currentExtSword > 3) gExtEquipState.currentExtSword = 0;
-    if (gExtEquipState.currentExtShield > 3) gExtEquipState.currentExtShield = 0;
-    if (gExtEquipState.currentExtTunic > 3) gExtEquipState.currentExtTunic = 0;
-    if (gExtEquipState.currentExtBoots > 3) gExtEquipState.currentExtBoots = 0;
+    if (gExtEquipState.currentExtSword > 3)
+        gExtEquipState.currentExtSword = 0;
+    if (gExtEquipState.currentExtShield > 3)
+        gExtEquipState.currentExtShield = 0;
+    if (gExtEquipState.currentExtTunic > 3)
+        gExtEquipState.currentExtTunic = 0;
+    if (gExtEquipState.currentExtBoots > 3)
+        gExtEquipState.currentExtBoots = 0;
 
     // Generate placeholder icons
     ExtEquip_GenerateIcons();
@@ -76,7 +80,8 @@ int ExtEquip_GetPage(void) {
 }
 
 void ExtEquip_SwitchPage(void) {
-    if (!ExtEquip_IsEnabled()) return;
+    if (!ExtEquip_IsEnabled())
+        return;
 
     gExtEquipState.equipPage = (gExtEquipState.equipPage == 0) ? 1 : 0;
     gExtEquipState.pageSwitchTimer = EXT_EQUIP_PAGE_SWITCH_COOLDOWN;
@@ -96,25 +101,39 @@ u8 ExtEquip_IsEnabled(void) {
 
 static void ExtEquip_SetCurrentByType(s16 equipType, u8 index) {
     switch (equipType) {
-        case EQUIP_TYPE_SWORD:  gExtEquipState.currentExtSword = index; break;
-        case EQUIP_TYPE_SHIELD: gExtEquipState.currentExtShield = index; break;
-        case EQUIP_TYPE_TUNIC:  gExtEquipState.currentExtTunic = index; break;
-        case EQUIP_TYPE_BOOTS:  gExtEquipState.currentExtBoots = index; break;
+        case EQUIP_TYPE_SWORD:
+            gExtEquipState.currentExtSword = index;
+            break;
+        case EQUIP_TYPE_SHIELD:
+            gExtEquipState.currentExtShield = index;
+            break;
+        case EQUIP_TYPE_TUNIC:
+            gExtEquipState.currentExtTunic = index;
+            break;
+        case EQUIP_TYPE_BOOTS:
+            gExtEquipState.currentExtBoots = index;
+            break;
     }
 }
 
 static const char* ExtEquip_GetCVarKey(s16 equipType) {
     switch (equipType) {
-        case EQUIP_TYPE_SWORD:  return CVAR_EXT_EQUIP_SWORD;
-        case EQUIP_TYPE_SHIELD: return CVAR_EXT_EQUIP_SHIELD;
-        case EQUIP_TYPE_TUNIC:  return CVAR_EXT_EQUIP_TUNIC;
-        case EQUIP_TYPE_BOOTS:  return CVAR_EXT_EQUIP_BOOTS;
-        default: return NULL;
+        case EQUIP_TYPE_SWORD:
+            return CVAR_EXT_EQUIP_SWORD;
+        case EQUIP_TYPE_SHIELD:
+            return CVAR_EXT_EQUIP_SHIELD;
+        case EQUIP_TYPE_TUNIC:
+            return CVAR_EXT_EQUIP_TUNIC;
+        case EQUIP_TYPE_BOOTS:
+            return CVAR_EXT_EQUIP_BOOTS;
+        default:
+            return NULL;
     }
 }
 
 void ExtEquip_Equip(s16 equipType, u8 index) {
-    if (index == 0 || index > 3) return;
+    if (index == 0 || index > 3)
+        return;
 
     // If already equipped, toggle off (unequip)
     u8 current = ExtEquip_GetCurrent(equipType);
@@ -162,11 +181,16 @@ void ExtEquip_Unequip(s16 equipType) {
 
 u8 ExtEquip_GetCurrent(s16 equipType) {
     switch (equipType) {
-        case EQUIP_TYPE_SWORD:  return gExtEquipState.currentExtSword;
-        case EQUIP_TYPE_SHIELD: return gExtEquipState.currentExtShield;
-        case EQUIP_TYPE_TUNIC:  return gExtEquipState.currentExtTunic;
-        case EQUIP_TYPE_BOOTS:  return gExtEquipState.currentExtBoots;
-        default: return 0;
+        case EQUIP_TYPE_SWORD:
+            return gExtEquipState.currentExtSword;
+        case EQUIP_TYPE_SHIELD:
+            return gExtEquipState.currentExtShield;
+        case EQUIP_TYPE_TUNIC:
+            return gExtEquipState.currentExtTunic;
+        case EQUIP_TYPE_BOOTS:
+            return gExtEquipState.currentExtBoots;
+        default:
+            return 0;
     }
 }
 
@@ -206,7 +230,8 @@ void* ExtEquip_GetNameTex(u16 itemId, u8 language) {
 // ---------------------------------------------------------------------------
 
 void ExtEquip_UpdateBehavior(void* playerVoid, void* playVoid) {
-    if (!ExtEquip_IsEnabled()) return;
+    if (!ExtEquip_IsEnabled())
+        return;
 
     Player* player = (Player*)playerVoid;
     PlayState* play = (PlayState*)playVoid;
