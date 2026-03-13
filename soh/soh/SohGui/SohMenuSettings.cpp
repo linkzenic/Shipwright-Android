@@ -653,6 +653,18 @@ void SohMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip("Removes the cooldown on Blast Mask.\n"
                                            "Normally there is a 310-frame (~5 second) cooldown between uses."));
 
+    AddWidget(path, "Pikachu Transformation (Keaton Mask)", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.Pikachu.FormEnabled")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip("Equipping the Keaton Mask transforms Link into Pikachu.\n"
+                                           "Pikachu has a Smash Bros-inspired combat system:\n"
+                                           "  A = Jab / Fwd Tilt / Fwd Smash / Air attacks\n"
+                                           "  B = Thunder (ground) / Electric Ball (air)\n"
+                                           "  R = Smash shield (parry in 3 frames to reflect)\n"
+                                           "  Hookshot/Whip = Grab, Hammer/B&C = Up Tilt\n"
+                                           "  Spell items = Mega Thunder (hits all bosses)\n\n"
+                                           "Does NOT require mm.o2r."));
+
     // ===================== COLUMN 3: Randomizer =====================
     path.column = SECTION_COLUMN_3;
 

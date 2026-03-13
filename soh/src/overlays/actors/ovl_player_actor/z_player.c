@@ -11,6 +11,7 @@
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h"
 #include "overlays/actors/ovl_En_Boom/z_en_boom.h"
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
+#include "overlays/actors/ovl_En_M_Thunder/z_en_m_thunder.h"
 #include "overlays/actors/ovl_En_Box/z_en_box.h"
 #include "overlays/actors/ovl_En_Door/z_en_door.h"
 #include "overlays/actors/ovl_En_Elf/z_en_elf.h"
@@ -67,10 +68,14 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 // PIKACHU ACTOR - Fast3D exported model with SkelAnime
 // ============================================================================
 #include "mods/actors/pikachu/pikachu.c"
-#include "mods/actors/pikachu/pikachu_skel.c"
-#include "mods/actors/pikachu/pika_wait.c"
 #include "mods/actors/pikachu/pikachu_behavior.h"
 #include "mods/actors/pikachu/pikachu_behavior.c"
+
+// ============================================================================
+// SW97 SPACEWORLD '97 EXPANSION - Hat Physics, Spells, Arrows
+// Original: z64proto/sw97 team
+// ============================================================================
+#include "expansions/sw97/sw97_router.c"
 
 // Some player animations are played at this reduced speed, for reasons yet unclear.
 // This is called "adjusted" for now.
@@ -601,6 +606,7 @@ static s32 sWorldYawToTouchedWall = 0;
 static s16 sFloorShapePitch = 0;
 static s32 sUseHeldItem = false; // When true, the current held item is used. Is reset to false every frame.
 static s32 sHeldItemButtonIsHeldDown = false; // Indicates if the button for the current held item is held down.
+static s32 sSw97SpellActive = false;          // True only when the active magic spell came from a SW97 medallion item.
 
 extern u8 gMogmaMittsClimbActive; // Mogma Mitts climb-any-wall flag (defined in item_mitts.c)
 
@@ -1592,7 +1598,7 @@ static u8 sMagicSpellCosts[] = { 12, 24, 24, 12, 24, 12 };
 
 static u16 D_80854398[] = { NA_SE_IT_BOW_DRAW, NA_SE_IT_SLING_DRAW, NA_SE_IT_HOOKSHOT_READY };
 
-static u8 sMagicArrowCosts[] = { 4, 4, 8 };
+static u8 sMagicArrowCosts[] = { 4, 4, 8, 4, 4, 4 }; // fire, ice, light, dark, soul, wind
 
 static LinkAnimationHeader* D_808543A4[] = {
     &gPlayerAnim_link_anchor_waitR2defense,
@@ -1776,6 +1782,12 @@ void Player_RequestRumble(Player* this, s32 sourceStrength, s32 duration, s32 de
 }
 
 void Player_PlayVoiceSfx(Player* this, u16 sfxId) {
+    // Suppress ALL OOT voice SFX when in MM transformation form
+    // (MM forms play their own voices via MmSfx_PlayAtPos)
+    if (TransformMasks_IsTransformed()) {
+        return;
+    }
+
     if (this->actor.category == ACTORCAT_PLAYER) {
         Player_PlaySfx(this, sfxId + this->ageProperties->unk_92);
     } else {
@@ -2376,6 +2388,12 @@ void func_80833A20(Player* this, s32 newMeleeWeaponState) {
     u16 voiceSfx;
 
     if (this->meleeWeaponState == 0) {
+        // Suppress OOT weapon/voice SFX when in MM form (MM handles its own SFX)
+        if (TransformMasks_IsTransformed()) {
+            this->meleeWeaponState = newMeleeWeaponState;
+            return;
+        }
+
         if (TransformMasks_IsFDSkinMode() ||
             ((this->heldItemAction == PLAYER_IA_SWORD_BIGGORON) && (gSaveContext.swordHealth > 0.0f))) {
             itemSfx = NA_SE_IT_HAMMER_SWING;
@@ -2614,7 +2632,12 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             }
         } else if (GameInteractor_Should(VB_CHANGE_HELD_ITEM_AND_USE_ITEM, true, item)) {
             this->heldItemButton = i;
-            Player_UseItem(play, this, item);
+            // Per-form item interception: if transformed, check the form's item list first.
+            // Returns 1 if the form handled or blocked the item (skip Player_UseItem).
+            // Returns 0 to fall through to normal OOT item use.
+            if (!TransformMasks_HandleFormItemUse(play, this, item)) {
+                Player_UseItem(play, this, item);
+            }
         }
     }
 }
@@ -2698,10 +2721,26 @@ s32 func_80834380(PlayState* play, Player* this, s32* itemPtr, s32* typePtr) {
             *typePtr = ARROW_NORMAL_HORSE;
         } else {
             *typePtr = this->heldItemAction - 6;
+            // SW97: use dedicated params so vanilla fire/ice/light arrows are unaffected
+            if (SW97_MEDALLIONS_ENABLED() && this->heldItemButton < (s32)ARRAY_COUNT(gSaveContext.equips.buttonItems)) {
+                u8 heldItem = gSaveContext.equips.buttonItems[this->heldItemButton];
+                if (heldItem >= ITEM_SW97_ARROW_FIRE && heldItem <= ITEM_SW97_ARROW_WIND) {
+                    *typePtr = ARROW_SW97_FIRE + (heldItem - ITEM_SW97_ARROW_FIRE);
+                }
+            }
         }
     } else {
         *itemPtr = ITEM_SLINGSHOT;
-        *typePtr = ARROW_SEED;
+        if (SW97_MEDALLIONS_ENABLED() && this->heldItemButton < (s32)ARRAY_COUNT(gSaveContext.equips.buttonItems)) {
+            u8 heldItem = gSaveContext.equips.buttonItems[this->heldItemButton];
+            if (heldItem >= ITEM_SW97_ARROW_FIRE && heldItem <= ITEM_SW97_ARROW_WIND) {
+                *typePtr = ARROW_SEED_FIRE + (heldItem - ITEM_SW97_ARROW_FIRE);
+            } else {
+                *typePtr = ARROW_SEED;
+            }
+        } else {
+            *typePtr = ARROW_SEED;
+        }
     }
 
     if (gSaveContext.minigameState == 1) {
@@ -2735,7 +2774,7 @@ s32 func_8083442C(Player* this, PlayState* play) {
                 magicArrowType = arrowType - ARROW_FIRE;
 
                 if (this->unk_860 >= 0) {
-                    if ((magicArrowType >= 0) && (magicArrowType <= 2)) {
+                    if ((magicArrowType >= 0) && (magicArrowType <= 5)) {
                         if (GameInteractor_Should(VB_PLAYER_ARROW_MAGIC_CONSUMPTION, true, this, magicArrowType,
                                                   &arrowType)) {
                             if (!Magic_RequestChange(play, sMagicArrowCosts[magicArrowType], MAGIC_CONSUME_NOW)) {
@@ -3515,11 +3554,14 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                 }
             } else if ((temp = Player_ActionToMagicSpell(this, itemAction)) >= 0) {
                 // Handle magic spells
-                if (((itemAction == PLAYER_IA_FARORES_WIND) && (gSaveContext.respawn[RESPAWN_MODE_TOP].data > 0)) ||
+                s32 isMedallionSpell = SW97_MEDALLIONS_ENABLED() && Sw97_IsMedallionItem(item);
+                if (((itemAction == PLAYER_IA_FARORES_WIND) && (gSaveContext.respawn[RESPAWN_MODE_TOP].data > 0) &&
+                     !isMedallionSpell) ||
                     ((gSaveContext.magicCapacity != 0) && (gSaveContext.magicState == MAGIC_STATE_IDLE) &&
                      (gSaveContext.magic >= sMagicSpellCosts[temp]))) {
                     this->itemAction = itemAction;
                     this->unk_6AD = 4;
+                    sSw97SpellActive = isMedallionSpell;
                 } else {
                     Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
                 }
@@ -4560,13 +4602,16 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
     // From MM z_player.c func_808332A0 (line 5465): spawns EN_M_THUNDER with pitch toward target.
     // Magic: MM uses MAGIC_CONSUME_DEITY_BEAM (direct subtraction of 1 unit, bypasses state machine).
     // Use focusActor check (set by Player_UpdateZTargeting BEFORE action func runs).
-    if (TransformMasks_IsFDSkinMode() && this->focusActor != NULL && gSaveContext.magic > 0) {
-        // Pitch toward target (MM line 5480-5482)
-        s16 beamPitch = Math_Vec3f_Pitch(&this->bodyPartsPos[PLAYER_BODYPART_WAIST], &this->focusActor->focus.pos);
+    if (TransformMasks_IsFDSkinMode() && gSaveContext.magic > 0) {
+        // Target priority: hard lock-on (focusActor) → soft offering target (arrowPointedActor) → level.
+        // Yaw is overridden in EnMThunder_Init from player->actor.shape.rot.y + 0x8000, so spawn yaw arg = 0.
+        Actor* fdTarget = (this->focusActor != NULL) ? this->focusActor : play->actorCtx.targetCtx.arrowPointedActor;
+        s16 beamPitch =
+            (fdTarget != NULL) ? Math_Vec3f_Pitch(&this->bodyPartsPos[PLAYER_BODYPART_WAIST], &fdTarget->focus.pos) : 0;
         Actor* beam =
             Actor_Spawn(&play->actorCtx, play, ACTOR_EN_M_THUNDER, this->bodyPartsPos[PLAYER_BODYPART_WAIST].x,
                         this->bodyPartsPos[PLAYER_BODYPART_WAIST].y, this->bodyPartsPos[PLAYER_BODYPART_WAIST].z,
-                        beamPitch, this->actor.shape.rot.y, 0, 0x80, true);
+                        beamPitch, 0, 0, 0x80, true);
         if (beam != NULL) {
             // Direct magic subtraction (MM MAGIC_CONSUME_DEITY_BEAM behavior)
             gSaveContext.magic -= 1;
@@ -6046,7 +6091,7 @@ void func_8083AE40(Player* this, s16 objectId) {
 void func_8083AF44(PlayState* play, Player* this, s32 magicSpell) {
     Player_SetupActionPreserveItemAction(play, this, Player_Action_808507F4, 0);
 
-    this->av1.actionVar1 = magicSpell - 3;
+    this->av1.actionVar1 = sSw97SpellActive ? magicSpell : (magicSpell - 3);
 
     //! @bug `MAGIC_CONSUME_WAIT_PREVIEW` is not guaranteed to succeed.
     //! Ideally, the return value of `Magic_RequestChange` should be checked before allowing the process of
@@ -6131,7 +6176,7 @@ s32 Player_ActionHandler_13(Player* this, PlayState* play) {
             if (this->unk_6AD == 4) {
                 sp2C = Player_ActionToMagicSpell(this, this->itemAction);
                 if (sp2C >= 0) {
-                    if ((sp2C != 3) || (gSaveContext.respawn[RESPAWN_MODE_TOP].data <= 0)) {
+                    if ((sp2C != 3) || (gSaveContext.respawn[RESPAWN_MODE_TOP].data <= 0) || sSw97SpellActive) {
                         func_8083AF44(play, this, sp2C);
                     } else {
                         Player_SetupAction(play, this, Player_Action_8085063C, 1);
@@ -10912,6 +10957,19 @@ void Player_StartMode_WarpSong(PlayState* play, Player* this) {
 Actor* Player_SpawnMagicSpell(PlayState* play, Player* this, s32 spell) {
     static s16 sMagicSpellActorIds[] = { ACTOR_MAGIC_WIND, ACTOR_MAGIC_DARK, ACTOR_MAGIC_FIRE };
 
+    // SW97: Route to SW97 spell actors only when the active spell is from a medallion item
+    if (sSw97SpellActive) {
+        Actor* sw97Actor = Sw97_TrySpawnMagicSpell(play, this, spell);
+        if (sw97Actor != NULL) {
+            return sw97Actor;
+        }
+    }
+
+    // Vanilla only has 3 spells (indices 0-2); indices 3-5 are SW97-only
+    if (spell < 0 || spell >= ARRAY_COUNT(sMagicSpellActorIds)) {
+        return NULL;
+    }
+
     return Actor_Spawn(&play->actorCtx, play, sMagicSpellActorIds[spell], this->actor.world.pos.x,
                        this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0, true);
 }
@@ -12854,24 +12912,27 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     // their own OOT skeleton normally, not the local player's MM form.
     if (thisx == &GET_PLAYER(play2)->actor && (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode())) {
         if (TransformMasks_HasSkeleton()) {
-            // Skeleton loaded: draw MM form + flash overlay, skip OOT Link skeleton
-            TransformMasks_Draw(play, this);
+            if (this->unk_6AD == 0) {
+                // Normal gameplay: draw MM form, skip OOT Link skeleton.
+                TransformMasks_Draw(play, this);
 
-            // Still draw get-item animations and custom items on MM forms.
-            // Player_DrawGetItem reads sGetItemRefPos (set by MmForm_PostLimbDraw).
-            // CustomItems_OverrideDraw renders custom swords/shields/tools.
-            OPEN_DISPS(play->state.gfxCtx);
-            if (!(this->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW)) {
-                if (this->unk_862 > 0) {
-                    Player_DrawGetItem(play, this);
+                // Still draw get-item animations and custom items on MM forms.
+                OPEN_DISPS(play->state.gfxCtx);
+                if (!(this->stateFlags2 & PLAYER_STATE2_DISABLE_DRAW)) {
+                    if (this->unk_862 > 0) {
+                        Player_DrawGetItem(play, this);
+                    }
+                    CustomItems_OverrideDraw(this, play);
                 }
-                CustomItems_OverrideDraw(this, play);
+                CLOSE_DISPS(play->state.gfxCtx);
+                return;
             }
-            CLOSE_DISPS(play->state.gfxCtx);
-            return;
+            // First-person aim (unk_6AD != 0): skip MM body so OOT's
+            // Player_OverrideLimbDrawGameplayFirstPerson can draw the bow arm.
+        } else {
+            // Skeleton not loaded: draw flash overlay only, then fall through to OOT Link draw
+            TransformMasks_Draw(play, this);
         }
-        // Skeleton not loaded: draw flash overlay only, then fall through to OOT Link draw
-        TransformMasks_Draw(play, this);
     }
 
     if (LINK_AGE_IN_YEARS == YEARS_CHILD) {
@@ -15668,24 +15729,33 @@ void Player_Action_8085076C(Player* this, PlayState* play) {
 }
 
 static LinkAnimationHeader* D_80854A58[] = {
-    &gPlayerAnim_link_magic_kaze1,
-    &gPlayerAnim_link_magic_honoo1,
-    &gPlayerAnim_link_magic_tamashii1,
+    &gPlayerAnim_link_magic_kaze1,     // 0 = Farore's Wind / SW97: Forest(Wind)
+    &gPlayerAnim_link_magic_honoo1,    // 1 = Din's Fire    / SW97: Spirit(Soul)
+    &gPlayerAnim_link_magic_tamashii1, // 2 = Nayru's Love  / SW97: Shadow(Dark)
+    &gPlayerAnim_link_magic_kaze1,     // 3 = SW97: Water(Ice)
+    &gPlayerAnim_link_magic_tamashii1, // 4 = SW97: Light
+    &gPlayerAnim_link_magic_honoo1,    // 5 = SW97: Fire
 };
 
 static LinkAnimationHeader* D_80854A64[] = {
-    &gPlayerAnim_link_magic_kaze2,
-    &gPlayerAnim_link_magic_honoo2,
-    &gPlayerAnim_link_magic_tamashii2,
+    &gPlayerAnim_link_magic_kaze2,     // 0
+    &gPlayerAnim_link_magic_honoo2,    // 1
+    &gPlayerAnim_link_magic_tamashii2, // 2
+    &gPlayerAnim_link_magic_kaze2,     // 3
+    &gPlayerAnim_link_magic_tamashii2, // 4
+    &gPlayerAnim_link_magic_honoo2,    // 5
 };
 
 static LinkAnimationHeader* D_80854A70[] = {
-    &gPlayerAnim_link_magic_kaze3,
-    &gPlayerAnim_link_magic_honoo3,
-    &gPlayerAnim_link_magic_tamashii3,
+    &gPlayerAnim_link_magic_kaze3,     // 0
+    &gPlayerAnim_link_magic_honoo3,    // 1
+    &gPlayerAnim_link_magic_tamashii3, // 2
+    &gPlayerAnim_link_magic_kaze3,     // 3
+    &gPlayerAnim_link_magic_tamashii3, // 4
+    &gPlayerAnim_link_magic_honoo3,    // 5
 };
 
-static u8 D_80854A7C[] = { 70, 10, 10 };
+static u8 D_80854A7C[] = { 70, 10, 10, 70, 10, 10 };
 
 static AnimSfxEntry D_80854A80[] = {
     { NA_SE_PL_SKIP, ANIMSFX_DATA(ANIMSFX_TYPE_GENERAL, 20) },
@@ -15695,16 +15765,34 @@ static AnimSfxEntry D_80854A80[] = {
 
 static AnimSfxEntry D_80854A8C[][2] = {
     {
+        // 0 = Farore's Wind / SW97: Forest(Wind)
         { 0, ANIMSFX_DATA(ANIMSFX_TYPE_WALKING, 20) },
         { NA_SE_VO_LI_MAGIC_FROL, -ANIMSFX_DATA(ANIMSFX_TYPE_VOICE, 30) },
     },
     {
+        // 1 = Din's Fire / SW97: Spirit(Soul)
         { 0, ANIMSFX_DATA(ANIMSFX_TYPE_WALKING, 20) },
         { NA_SE_VO_LI_MAGIC_NALE, -ANIMSFX_DATA(ANIMSFX_TYPE_VOICE, 44) },
     },
     {
+        // 2 = Nayru's Love / SW97: Shadow(Dark)
         { NA_SE_VO_LI_MAGIC_ATTACK, ANIMSFX_DATA(ANIMSFX_TYPE_VOICE, 20) },
         { NA_SE_IT_SWORD_SWING_HARD, -ANIMSFX_DATA(ANIMSFX_TYPE_GENERAL, 20) },
+    },
+    {
+        // 3 = SW97: Water(Ice)
+        { 0, ANIMSFX_DATA(ANIMSFX_TYPE_WALKING, 20) },
+        { NA_SE_VO_LI_MAGIC_FROL, -ANIMSFX_DATA(ANIMSFX_TYPE_VOICE, 30) },
+    },
+    {
+        // 4 = SW97: Light
+        { NA_SE_VO_LI_MAGIC_ATTACK, ANIMSFX_DATA(ANIMSFX_TYPE_VOICE, 20) },
+        { NA_SE_IT_SWORD_SWING_HARD, -ANIMSFX_DATA(ANIMSFX_TYPE_GENERAL, 20) },
+    },
+    {
+        // 5 = SW97: Fire
+        { 0, ANIMSFX_DATA(ANIMSFX_TYPE_WALKING, 20) },
+        { NA_SE_VO_LI_MAGIC_NALE, -ANIMSFX_DATA(ANIMSFX_TYPE_VOICE, 44) },
     },
 };
 
@@ -15712,8 +15800,9 @@ void Player_Action_808507F4(Player* this, PlayState* play) {
     u8 isFastFarores = CVarGetInteger(CVAR_ENHANCEMENT("FastFarores"), 0) && this->itemAction == PLAYER_IA_FARORES_WIND;
     if (LinkAnimation_Update(play, &this->skelAnime)) {
         if (this->av1.actionVar1 < 0) {
-            if ((this->itemAction == PLAYER_IA_NAYRUS_LOVE) || isFastFarores ||
+            if ((this->itemAction == PLAYER_IA_NAYRUS_LOVE) || isFastFarores || sSw97SpellActive ||
                 (gSaveContext.magicState == MAGIC_STATE_IDLE)) {
+                sSw97SpellActive = false;
                 func_80839FFC(this, play);
                 func_8005B1A4(Play_GetCamera(play, 0));
             }
@@ -15724,17 +15813,23 @@ void Player_Action_808507F4(Player* this, PlayState* play) {
 
                 if (Player_SpawnMagicSpell(play, this, this->av1.actionVar1) != NULL) {
                     this->stateFlags1 |= PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE;
-                    if ((this->av1.actionVar1 != 0) || (gSaveContext.respawn[RESPAWN_MODE_TOP].data <= 0)) {
+                    // Vanilla: actionVar1==0 is Farore's Wind, skip magic consume if warp exists
+                    // SW97: actionVar1==0 is Forest spell, always consume magic
+                    if (sSw97SpellActive || (this->av1.actionVar1 != 0) ||
+                        (gSaveContext.respawn[RESPAWN_MODE_TOP].data <= 0)) {
                         gSaveContext.magicState = MAGIC_STATE_CONSUME_SETUP;
                     }
                 } else {
+                    sSw97SpellActive = false;
                     Magic_Reset(play);
                 }
             } else {
                 LinkAnimation_PlayLoopSetSpeed(play, &this->skelAnime, D_80854A64[this->av1.actionVar1],
                                                0.83f * (isFastFarores ? 2 : 1));
 
-                if (this->av1.actionVar1 == 0) {
+                // Vanilla: actionVar1==0 is Farore's Wind warp point save
+                // SW97: actionVar1==0 is Forest spell, skip warp logic
+                if (this->av1.actionVar1 == 0 && !sSw97SpellActive) {
                     this->av2.actionVar2 = -10;
                 }
             }
@@ -15765,7 +15860,10 @@ void Player_Action_808507F4(Player* this, PlayState* play) {
                 Player_ProcessAnimSfxList(this, D_80854A80);
             } else if (this->av2.actionVar2 == 1) {
                 Player_ProcessAnimSfxList(this, D_80854A8C[this->av1.actionVar1]);
-                if ((this->av1.actionVar1 == 2) && LinkAnimation_OnFrame(&this->skelAnime, 30.0f)) {
+                // Vanilla: only Nayru's Love (index 2) clears cutscene flags early
+                // SW97: all spells are fire-and-forget, clear flags for all
+                if (((this->av1.actionVar1 == 2) || sSw97SpellActive) &&
+                    LinkAnimation_OnFrame(&this->skelAnime, 30.0f)) {
                     this->stateFlags1 &= ~(PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE);
                 }
             } else if ((isFastFarores ? 10 : D_80854A7C[this->av1.actionVar1]) < this->av2.actionVar2++) {

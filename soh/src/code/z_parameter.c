@@ -25,6 +25,8 @@
 #include "soh/Enhancements/gameplaystats.h"
 #include "soh/ObjectExtension/ActorMaximumHealth.h"
 #include "mods/extended_inventory.h"
+#include "mods/transformation_masks/transformation_masks.h"
+#include "expansions/sw97/sw97_config.h"
 
 #include "message_data_static.h"
 extern MessageTableEntry* sNesMessageEntryTablePtr;
@@ -1732,23 +1734,33 @@ void func_800849EC(PlayState* play) {
 
 void Interface_LoadItemIcon1(PlayState* play, u16 button) {
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
+    u8 item = gSaveContext.equips.buttonItems[button];
+
+    // Items beyond vanilla icon_item_static range use OTR paths via ExtInv_GetItemIcon
+    // in the draw path. Skip DMA to avoid writing garbage into the icon segment buffer.
+    if (item >= 0x80) {
+        return;
+    }
 
     osCreateMesgQueue(&interfaceCtx->loadQueue, &interfaceCtx->loadMsg, OS_MESG_BLOCK);
     DmaMgr_SendRequest2(&interfaceCtx->dmaRequest_160, interfaceCtx->iconItemSegment + button * 0x1000,
-                        (uintptr_t)_icon_item_staticSegmentRomStart +
-                            (gSaveContext.equips.buttonItems[button] * 0x1000),
-                        0x1000, 0, &interfaceCtx->loadQueue, OS_MESG_PTR(NULL), __FILE__, __LINE__);
+                        (uintptr_t)_icon_item_staticSegmentRomStart + (item * 0x1000), 0x1000, 0,
+                        &interfaceCtx->loadQueue, OS_MESG_PTR(NULL), __FILE__, __LINE__);
     osRecvMesg(&interfaceCtx->loadQueue, NULL, OS_MESG_BLOCK);
 }
 
 void Interface_LoadItemIcon2(PlayState* play, u16 button) {
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
+    u8 item = gSaveContext.equips.buttonItems[button];
+
+    if (item >= 0x80) {
+        return;
+    }
 
     osCreateMesgQueue(&interfaceCtx->loadQueue, &interfaceCtx->loadMsg, OS_MESG_BLOCK);
     DmaMgr_SendRequest2(&interfaceCtx->dmaRequest_180, interfaceCtx->iconItemSegment + button * 0x1000,
-                        (uintptr_t)_icon_item_staticSegmentRomStart +
-                            (gSaveContext.equips.buttonItems[button] * 0x1000),
-                        0x1000, 0, &interfaceCtx->loadQueue, OS_MESG_PTR(NULL), __FILE__, __LINE__);
+                        (uintptr_t)_icon_item_staticSegmentRomStart + (item * 0x1000), 0x1000, 0,
+                        &interfaceCtx->loadQueue, OS_MESG_PTR(NULL), __FILE__, __LINE__);
     osRecvMesg(&interfaceCtx->loadQueue, NULL, OS_MESG_BLOCK);
 }
 
@@ -4656,13 +4668,61 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
         ItemIconPos[3][1] = ItemIconPos_ori[3][1];
     }
 
-    gDPLoadTextureBlock(OVERLAY_DISP++, texture, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0, G_TX_NOMIRROR | G_TX_WRAP,
-                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+    // Quest items (songs, medallions, stones, etc.) use 24x24 textures from icon_item_24_static.
+    // Regular items use 32x32 from icon_item_static. Detect and load with correct dimensions.
+    u8 btnItem = gSaveContext.equips.buttonItems[button];
+    s32 isSmallIcon = (btnItem >= ITEM_SONG_MINUET && btnItem <= ITEM_SKULL_TOKEN) ||
+                      (btnItem >= ITEM_SW97_ARROW_FIRE && btnItem <= ITEM_SW97_ARROW_WIND);
 
-    gSPWideTextureRectangle(OVERLAY_DISP++, ItemIconPos[button][0] << 2, ItemIconPos[button][1] << 2,
-                            (ItemIconPos[button][0] + gItemIconWidth[button]) << 2,
-                            (ItemIconPos[button][1] + gItemIconWidth[button]) << 2, G_TX_RENDERTILE, 0, 0,
-                            gItemIconDD[button] << 1, gItemIconDD[button] << 1);
+    // Composite icon for elemental weapon mode: medallion semi-alpha + weapon overlay (bow for adult, slingshot for
+    // child)
+    s32 isElementalWeapon =
+        SW97_MEDALLIONS_ENABLED() && (btnItem >= ITEM_SW97_ARROW_FIRE && btnItem <= ITEM_SW97_ARROW_WIND);
+
+    if (isElementalWeapon) {
+        s16 iconW = gItemIconWidth[button];
+        s32 x0 = ItemIconPos[button][0];
+        s32 y0 = ItemIconPos[button][1];
+
+        // Layer 1: Medallion icon at 50% alpha (24x24 texture)
+        gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, 128);
+        gDPLoadTextureBlock(OVERLAY_DISP++, texture, G_IM_FMT_RGBA, G_IM_SIZ_32b, 24, 24, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        s32 dd24 = 24 * 1024 / iconW;
+        gSPWideTextureRectangle(OVERLAY_DISP++, x0 << 2, y0 << 2, (x0 + iconW) << 2, (y0 + iconW) << 2, G_TX_RENDERTILE,
+                                0, 0, dd24, dd24);
+
+        // Layer 2: bow (adult) or slingshot (child) at full alpha, centered ~75% size
+        void* weaponTex = LINK_IS_ADULT ? ExtInv_GetItemIcon(ITEM_BOW) : ExtInv_GetItemIcon(ITEM_SLINGSHOT);
+        s16 smallW = (iconW * 3) / 4;
+        s16 offset = (iconW - smallW) / 2;
+        s32 dd32 = 32 * 1024 / smallW;
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, 255);
+        gDPLoadTextureBlock(OVERLAY_DISP++, weaponTex, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD,
+                            G_TX_NOLOD);
+        gSPWideTextureRectangle(OVERLAY_DISP++, (x0 + offset) << 2, (y0 + offset) << 2, (x0 + offset + smallW) << 2,
+                                (y0 + offset + smallW) << 2, G_TX_RENDERTILE, 0, 0, dd32, dd32);
+
+        // Restore combine mode for subsequent draws
+        gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, 255);
+    } else if (isSmallIcon) {
+        gDPLoadTextureBlock(OVERLAY_DISP++, texture, G_IM_FMT_RGBA, G_IM_SIZ_32b, 24, 24, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        s32 dd = 24 * 1024 / gItemIconWidth[button];
+        gSPWideTextureRectangle(OVERLAY_DISP++, ItemIconPos[button][0] << 2, ItemIconPos[button][1] << 2,
+                                (ItemIconPos[button][0] + gItemIconWidth[button]) << 2,
+                                (ItemIconPos[button][1] + gItemIconWidth[button]) << 2, G_TX_RENDERTILE, 0, 0, dd, dd);
+    } else {
+        gDPLoadTextureBlock(OVERLAY_DISP++, texture, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(OVERLAY_DISP++, ItemIconPos[button][0] << 2, ItemIconPos[button][1] << 2,
+                                (ItemIconPos[button][0] + gItemIconWidth[button]) << 2,
+                                (ItemIconPos[button][1] + gItemIconWidth[button]) << 2, G_TX_RENDERTILE, 0, 0,
+                                gItemIconDD[button] << 1, gItemIconDD[button] << 1);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -5457,14 +5517,14 @@ void Interface_Draw(PlayState* play) {
         if (!(interfaceCtx->unk_1FA)) {
             // B Button Icon & Ammo Count
             if (gSaveContext.equips.buttonItems[0] != ITEM_NONE) {
-                if (fullUi) {
+                if (fullUi && !TransformMasks_IsTransformed()) {
                     Interface_DrawItemIconTexture(play, ExtInv_GetItemIcon(gSaveContext.equips.buttonItems[0]), 0);
                 }
 
                 if ((player->stateFlags1 & PLAYER_STATE1_ON_HORSE) || (play->shootingGalleryStatus > 1) ||
                     ((play->sceneNum == SCENE_BOMBCHU_BOWLING_ALLEY) && Flags_GetSwitch(play, 0x38))) {
 
-                    if (!fullUi) {
+                    if (!fullUi && !TransformMasks_IsTransformed()) {
                         Interface_DrawItemIconTexture(play, ExtInv_GetItemIcon(gSaveContext.equips.buttonItems[0]), 0);
                     }
 

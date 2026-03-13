@@ -23,21 +23,15 @@ static const char* OFFICIAL_HOST = "54.209.53.9";
 static const int OFFICIAL_PORT = 43384;
 
 static const char* sGameStateNames[] = {
-    "Disconnected",
-    "Lobby",
-    "Map Select",
-    "Countdown",
-    "Hiding Phase",
-    "Playing",
-    "Spectating",
-    "Finished",
+    "Disconnected", "Lobby", "Map Select", "Countdown", "Hiding Phase", "Playing", "Spectating", "Finished",
 };
 
 static bool sUseOfficialRemote = false;
 
 static void HarpoonMainMenu(WidgetInfo& info) {
     auto harpoon = Harpoon::Instance;
-    if (harpoon == nullptr) return;
+    if (harpoon == nullptr)
+        return;
 
     bool isConnected = harpoon->isConnected;
     bool isConnecting = harpoon->isEnabled && !isConnected;
@@ -156,7 +150,7 @@ static void HarpoonMainMenu(WidgetInfo& info) {
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         ImGui::Text("Sync items, flags, checks, entrances, and dungeon keys\n"
-                     "between all connected players (for Randomizer).");
+                    "between all connected players (for Randomizer).");
         ImGui::EndTooltip();
     }
 
@@ -167,8 +161,8 @@ static void HarpoonMainMenu(WidgetInfo& info) {
     if (ImGui::IsItemHovered()) {
         ImGui::BeginTooltip();
         ImGui::Text("When enabled, players can damage and knockback each other.\n"
-                     "When disabled, status effects (fire, ice, electric) are still\n"
-                     "received but damage and knockback are ignored.");
+                    "When disabled, status effects (fire, ice, electric) are still\n"
+                    "received but damage and knockback are ignored.");
         ImGui::EndTooltip();
     }
 
@@ -219,13 +213,8 @@ static void HarpoonMainMenu(WidgetInfo& info) {
             ImGui::Text("Available Rooms:");
             for (auto& room : harpoon->roomList) {
                 ImGui::PushID(room.roomId.c_str());
-                ImGui::Text("  %s (%s) [%d/%d] %s%s",
-                    room.name.c_str(),
-                    room.gameMode.c_str(),
-                    room.playerCount,
-                    room.maxPlayers,
-                    room.state.c_str(),
-                    room.hasPassword ? " [PASS]" : "");
+                ImGui::Text("  %s (%s) [%d/%d] %s%s", room.name.c_str(), room.gameMode.c_str(), room.playerCount,
+                            room.maxPlayers, room.state.c_str(), room.hasPassword ? " [PASS]" : "");
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Join")) {
                     strncpy(roomIdBuf, room.roomId.c_str(), sizeof(roomIdBuf) - 1);
@@ -243,8 +232,8 @@ static void HarpoonMainMenu(WidgetInfo& info) {
     if (inRoom) {
         ImGui::Separator();
         ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Room: %s", harpoon->currentRoomName.c_str());
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "ID: %s | Mode: %s",
-            harpoon->currentRoomId.c_str(), harpoon->currentRoomGameMode.c_str());
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "ID: %s | Mode: %s", harpoon->currentRoomId.c_str(),
+                           harpoon->currentRoomGameMode.c_str());
         ImGui::Text("State: %s", sGameStateNames[harpoon->gameState]);
 
         if (harpoon->gameState == HARPOON_STATE_COUNTDOWN) {

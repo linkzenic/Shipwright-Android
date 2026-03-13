@@ -26,10 +26,10 @@ typedef struct EnArrow {
 } EnArrow; // size = 0x0260
 
 typedef enum {
-    /* -10 */ ARROW_CS_NUT = -10, // cutscene deku nuts are allowed to update in blocking mode
+    /* -10 */ ARROW_CS_NUT = -10,       // cutscene deku nuts are allowed to update in blocking mode
     /* -1  */ ARROW_NORMAL_SILENT = -1, // normal arrow that does not make a sound when being shot
-    /*  0  */ ARROW_NORMAL_LIT, // normal arrow lit on fire
-    /*  1  */ ARROW_NORMAL_HORSE, // normal arrow shot while riding a horse
+    /*  0  */ ARROW_NORMAL_LIT,         // normal arrow lit on fire
+    /*  1  */ ARROW_NORMAL_HORSE,       // normal arrow shot while riding a horse
     /*  2  */ ARROW_NORMAL,
     /*  3  */ ARROW_FIRE,
     /*  4  */ ARROW_ICE,
@@ -38,7 +38,20 @@ typedef enum {
     /*  7  */ ARROW_0D,
     /*  8  */ ARROW_0E,
     /*  9  */ ARROW_SEED,
-    /*  10 */ ARROW_NUT
+    /*  10 */ ARROW_NUT,
+    /*  11 */ ARROW_SEED_FIRE,
+    /*  12 */ ARROW_SEED_ICE,
+    /*  13 */ ARROW_SEED_LIGHT,
+    /*  14 */ ARROW_SEED_0C,
+    /*  15 */ ARROW_SEED_0D,
+    /*  16 */ ARROW_SEED_0E,
+    // SW97 medallion arrow params — distinct from vanilla ARROW_FIRE/ICE/LIGHT so vanilla stays vanilla
+    /*  17 */ ARROW_SW97_FIRE,
+    /*  18 */ ARROW_SW97_ICE,
+    /*  19 */ ARROW_SW97_LIGHT,
+    /*  20 */ ARROW_SW97_0C,
+    /*  21 */ ARROW_SW97_0D,
+    /*  22 */ ARROW_SW97_0E,
 } ArrowType;
 
 #endif

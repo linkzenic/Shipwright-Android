@@ -36,9 +36,19 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "mods/items/helpers/camera_helper.h"
 #include "mods/items/helpers/equip_helper.h"
+#include "mods/items/custom_items.h"
 
 // Static helpers (all functions are static, no linkage issue)
 #include "mods/transformation_masks/mm_form_combat.c"
+
+// Pikachu form — forward declarations (implemented in pikachu_form.cpp)
+extern "C" {
+u8 PikachuForm_LoadSkeleton(PlayState* play);
+void PikachuForm_Update(Player* player, PlayState* play);
+void PikachuForm_Draw(PlayState* play, Player* player);
+void PikachuForm_Cleanup(void);
+u8 PikachuForm_IsEnabled(void);
+}
 
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -214,6 +224,11 @@ static const MmFormProperties sFormProps[MM_PLAYER_FORM_MAX] = {
     // HUMAN (index 4) - not used by transformation system
     { NULL, MM_FORM_LIMB_COUNT, NULL, 0, NULL, 0, NULL, 0, 40.0f, 60.0f, 14.0f, 50, 12.0f, 50.0f, 0.0f, 1.0f,
       44.0f }, // cameraHeight: MM Player_GetHeight for Human
+    // PIKACHU (index 5) - local skeleton, NOT from mm.o2r.
+    // skelPath=NULL → MmForm_LoadFormSkeleton early-returns, PikachuForm_LoadSkeleton used instead.
+    // limbCount=23 (Armature from pikachu_skel.c: ROOT_POS/ROT + 21 body limbs).
+    // cameraHeight: Pikachu is ~52 units tall at scale 0.05.
+    { NULL, 23, NULL, 10, NULL, 6, NULL, 6, 44.0f, 50.0f, 16.0f, 40, 18.0f, 50.0f, 0.0f, 1.0f, 52.0f },
 };
 
 // =============================================================================
@@ -257,13 +272,122 @@ static const u8 sSlotAllowedDeku[72] = {
     // Page 3: POST ANGT BLST STON GFRY DEKU KEAT BREM BUNA DONG SCEN GORN ROMN CIRC KAFE COUP TRTH ZORA KAMA GIBD GARO CAPT GIAN FIER
                 0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,
 };
+static const u8 sSlotAllowedPikachu[72] = {
+    // Page 1: STICK NUT  BOMB BOW  FIRE DIN  SLING OCA  BCHU HOOK ICE  FAR  BOOM LENS BEAN HAM  LITE NAY  BTL1 BTL2 BTL3 BTL4 TRD_A TRD_C
+                0,   0,   0,   1,   0,   1,   1,    0,   0,   1,   0,   1,   1,   0,   0,   1,   0,   1,   1,   1,   1,   1,   0,    0,
+    // Page 2: ROCS WHIP SPIN BARR FROD DEM  DLEF TGAT BEET SWHO IROD ZPER MOGM GJAR BCHN DSEN LROD HYLS PND2 PND1 PND3 CSOM SHVL DROD
+                1,   1,   0,   0,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+    // Page 3: POST ANGT BLST STON GFRY DEKU KEAT BREM BUNA DONG SCEN GORN ROMN CIRC KAFE COUP TRTH ZORA KAMA GIBD GARO CAPT GIAN FIER
+                0,   0,   0,   0,   0,   1,   1,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,
+};
 // clang-format on
 static const u8* sFormSlotAllowed[MM_PLAYER_FORM_MAX] = {
-    sSlotAllowedFD,    // FIERCE_DEITY
-    sSlotAllowedGoron, // GORON
-    sSlotAllowedZora,  // ZORA
-    sSlotAllowedDeku,  // DEKU
-    NULL               // HUMAN - No restrictions
+    sSlotAllowedFD,      // FIERCE_DEITY
+    sSlotAllowedGoron,   // GORON
+    sSlotAllowedZora,    // ZORA
+    sSlotAllowedDeku,    // DEKU
+    NULL,                // HUMAN - No restrictions
+    sSlotAllowedPikachu, // PIKACHU
+};
+
+// =============================================================================
+// Per-Form C-Button Item Use Interception
+//
+// When a C-button item is pressed while transformed, TransformMasks_HandleFormItemUse
+// is called BEFORE Player_UseItem.  Each form declares a table of { itemId, handler }
+// pairs.  The handler returns:
+//   0 → pass through to Player_UseItem (OOT handles it)
+//   1 → item was consumed by the form (don't call Player_UseItem)
+// If the form is active but the item is NOT in the table → also return 1 (block).
+// This lets each form decide exactly what C-button items do without OOT interference.
+// =============================================================================
+
+typedef u8 (*FormItemHandlerFn)(PlayState* play, Player* player, s32 item);
+
+typedef struct {
+    s32 itemId;
+    FormItemHandlerFn handler;
+} FormItemEntry;
+
+// Forward declarations for Pikachu handlers (defined in pikachu_form.cpp)
+extern "C" {
+u8 PikaItem_RocsCape(PlayState* play, Player* player, s32 item);
+u8 PikaItem_ThunderJolt(PlayState* play, Player* player, s32 item);
+u8 PikaItem_WhipGrab(PlayState* play, Player* player, s32 item);
+u8 PikaItem_Thunder(PlayState* play, Player* player, s32 item);
+u8 PikaItem_QuickAtk(PlayState* play, Player* player, s32 item);
+u8 PikaItem_IronTail(PlayState* play, Player* player, s32 item);
+u8 PikaItem_ForwardTilt(PlayState* play, Player* player, s32 item);
+u8 PikaItem_PassThrough(PlayState* play, Player* player, s32 item);
+u8 PikaItem_BlockSword(PlayState* play, Player* player, s32 item);
+u8 PikaItem_Shield(PlayState* play, Player* player, s32 item);
+}
+
+// Pikachu item handler table.
+// Items listed here with PikaItem_PassThrough let Player_UseItem run (OOT handles them).
+// Items with custom handlers block Player_UseItem.
+// Items NOT in this table fall through to OOT by default (pass through).
+static const FormItemEntry sPikaItemHandlers[] = {
+    // ── Custom behavior (blocks Player_UseItem) ───────────────────────────────
+    { ITEM_ROCS_CAPE, PikaItem_RocsCape },           // 360° flip (air) / side spec (ground)
+    { ITEM_ROCS_FEATHER_SKIJER, PikaItem_RocsCape }, // same
+    { ITEM_BOW, PikaItem_ThunderJolt },              // Thunder Jolt blasts
+    { ITEM_DINS_FIRE, PikaItem_Thunder },            // Thunder (multi-phase + AoE bomb)
+    { ITEM_DEMISE_DESTRUCTION, PikaItem_Thunder },   // Thunder (custom version)
+    { ITEM_NAYRUS_LOVE, PikaItem_QuickAtk },         // Quick Attack dash/teleport
+    { ITEM_ZONAI_PERMAFROST, PikaItem_QuickAtk },    // Quick Attack (custom item 0xA1)
+    { ITEM_FARORES_WIND, PikaItem_IronTail },        // Iron Tail metallic hammer
+    { ITEM_HYLIAS_GRACE, PikaItem_IronTail },        // Iron Tail (custom item 0xA0)
+    { ITEM_WHIP, PikaItem_WhipGrab },                // Grab + pummel + throw
+    { ITEM_SLINGSHOT, PikaItem_PassThrough },        // OOT handles (no longer Up Special)
+
+    // ── Pass-through (OOT Player_UseItem handles these) ───────────────────────
+    { ITEM_HOOKSHOT, PikaItem_PassThrough },       // Grapple
+    { ITEM_LONGSHOT, PikaItem_PassThrough },       // Long grapple
+    { ITEM_BOOMERANG, PikaItem_ForwardTilt },      // Forward tilt dash (Z-target + ≤40u) or pass-through
+    { ITEM_HAMMER, PikaItem_PassThrough },         // Smash
+    { ITEM_BALL_AND_CHAIN, PikaItem_PassThrough }, // Swing
+    // Transformation masks: pass through so de/re-transform works
+    { ITEM_MASK_KEATON, PikaItem_PassThrough },
+    { ITEM_MASK_GORON, PikaItem_PassThrough },
+    { ITEM_MASK_ZORA, PikaItem_PassThrough },
+    { ITEM_MASK_GERUDO, PikaItem_PassThrough },
+    { ITEM_MASK_TRUTH, PikaItem_PassThrough },
+    // Bottles: all OOT bottle content items pass through (drink potion, catch fairy, etc.)
+    { ITEM_BOTTLE, PikaItem_PassThrough },
+    { ITEM_POTION_RED, PikaItem_PassThrough },
+    { ITEM_POTION_GREEN, PikaItem_PassThrough },
+    { ITEM_POTION_BLUE, PikaItem_PassThrough },
+    { ITEM_FAIRY, PikaItem_PassThrough },
+    { ITEM_FISH, PikaItem_PassThrough },
+    { ITEM_MILK_BOTTLE, PikaItem_PassThrough },
+    { ITEM_MILK_HALF, PikaItem_PassThrough },
+    { ITEM_LETTER_RUTO, PikaItem_PassThrough },
+    { ITEM_BLUE_FIRE, PikaItem_PassThrough },
+    { ITEM_BUG, PikaItem_PassThrough },
+    { ITEM_BIG_POE, PikaItem_PassThrough },
+    { ITEM_POE, PikaItem_PassThrough },
+    // Swords: explicitly blocked (OOT sword swing on Pikachu skeleton looks wrong)
+    { ITEM_SWORD_KOKIRI, PikaItem_BlockSword },
+    { ITEM_SWORD_MASTER, PikaItem_BlockSword },
+    { ITEM_SWORD_BGS, PikaItem_BlockSword },
+    { ITEM_SWORD_KNIFE, PikaItem_BlockSword },
+    { ITEM_SWORD_BROKEN, PikaItem_BlockSword },
+    // Shields: custom bubble effect (shrinks per press, breaks at 0 HP)
+    { ITEM_SHIELD_DEKU, PikaItem_Shield },
+    { ITEM_SHIELD_HYLIAN, PikaItem_Shield },
+    { ITEM_SHIELD_MIRROR, PikaItem_Shield },
+    { -1, NULL } // terminator
+};
+
+// Master form → handler table dispatch
+static const FormItemEntry* sFormItemHandlers[MM_PLAYER_FORM_MAX] = {
+    NULL,              // FIERCE_DEITY  — no interception (FD uses OOT sword system)
+    NULL,              // GORON
+    NULL,              // ZORA
+    NULL,              // DEKU
+    NULL,              // HUMAN
+    sPikaItemHandlers, // PIKACHU
 };
 
 // =============================================================================
@@ -318,6 +442,8 @@ static const char* sFormEyeTextures[MM_PLAYER_FORM_MAX][4] = {
     // DEKU - No dynamic eye textures (eyes baked into gLinkDekuHeadDL, confirmed from 2Ship)
     { NULL, NULL, NULL, NULL },
     // HUMAN (not used)
+    { NULL, NULL, NULL, NULL },
+    // PIKACHU - Eye/mouth textures handled in PikachuForm_Draw via pikachuDL.h variant tables
     { NULL, NULL, NULL, NULL },
 };
 
@@ -665,13 +791,14 @@ typedef struct {
     LinkAnimationHeader* cutterWaitAnim; // pz_cutterwaitanim (idle while fins flying)
     LinkAnimationHeader* bladeOn;        // pz_bladeon
 
-    u8 boomerangState;      // 0=idle, 1=aiming, 2=throwing, 3=thrown/waiting
-    s16 boomerangTimer;     // Frame counter for throw animation
-    Actor* boomerangActorL; // Left fin (OOT ACTOR_EN_BOOM)
-    Actor* boomerangActorR; // Right fin (OOT ACTOR_EN_BOOM)
-    s16 boomerangAimYaw;    // Aim yaw offset from body facing (from MM func_80847190)
-    s16 boomerangAimPitch;  // Aim pitch (vertical, from MM func_80847190)
-    s16 boomerangLockedYaw; // Saved shape.rot.y when entering aim (forced every frame during aim/throw)
+    u8 boomerangState;       // 0=idle, 1=aiming, 2=throwing, 3=thrown/waiting
+    s16 boomerangTimer;      // Frame counter for throw animation
+    s16 boomerangCatchTimer; // Frames remaining for catch animation priority (0=inactive)
+    Actor* boomerangActorL;  // Left fin (OOT ACTOR_EN_BOOM)
+    Actor* boomerangActorR;  // Right fin (OOT ACTOR_EN_BOOM)
+    s16 boomerangAimYaw;     // Aim yaw offset from body facing (from MM func_80847190)
+    s16 boomerangAimPitch;   // Aim pitch (vertical, from MM func_80847190)
+    s16 boomerangLockedYaw;  // Saved shape.rot.y when entering aim (forced every frame during aim/throw)
 
     // =========================================================================
     // Zora Swimming (from 2Ship Player_Action_54-58, z_player.c:16820-17072)
@@ -714,6 +841,7 @@ typedef struct {
     s32 punchTrailEffectIndex; // EffectBlure index (-1 = inactive)
     u8 punchTrailActive;
     u8 punchComboCounter; // unk_ADD: progressive combo counter for Zora SFX selection
+    u8 comboBufferTimer;  // Post-animation frames to wait for B-press before going to recovery
 
     // Gakki (instrument) state — form-specific ocarina override (from MM z_player.c D_8085D17C)
     u8 gakkiActive;                      // 0=inactive, 1=start anim, 2=playing loop, 3=ending
@@ -722,6 +850,7 @@ typedef struct {
     Vec3f gakkiScale0;                   // Container/base instrument scale (keyframe interp)
     Vec3f gakkiScale1;                   // Per-piece instrument scale
     f32 gakkiPieceScales[5];             // Per-piece scales (Goron drums / Deku pipes)
+    u8 gakkiLastNoteIdx;                 // Track last note to detect new presses (0xFF = none)
 
     // Deku cheek inflation during bubble charge (from 2Ship z_player_lib.c:2434-2458)
     f32 dekuCheekScale; // Head limb scale factor (1.0 = normal, up to 1.3 when charging)
@@ -1543,11 +1672,6 @@ static Gfx* MmForm_GetFDHandDL(PlayState* play, FDHandDLIndex index) {
     return dlCopy;
 }
 
-// Public getter for sword beam DL (called from transformation_masks.c → EN_M_THUNDER)
-extern "C" Gfx* MmForm_GetFDSwordBeamDL(PlayState* play) {
-    return MmForm_GetFDHandDL(play, FD_DL_SWORD_BEAM);
-}
-
 static void MmForm_ClearCachedDLs(void) {
     sCachedCurledDL = NULL;
     sCachedSpikeGeomDL = NULL;
@@ -1627,6 +1751,8 @@ static MmPlayerTransformation MmForm_MaskIdToForm(TransformMaskId maskId) {
             return MM_PLAYER_FORM_DEKU;
         case TRANSFORM_MASK_FIERCE_DEITY:
             return MM_PLAYER_FORM_FIERCE_DEITY;
+        case TRANSFORM_MASK_KEATON:
+            return MM_PLAYER_FORM_PIKACHU;
         default:
             return MM_PLAYER_FORM_HUMAN;
     }
@@ -1637,6 +1763,16 @@ static void MmForm_FreeRootMotion(void);
 static void MmForm_LoadPunchRootMotion(u8 punchIndex, MmAnimId animId);
 
 static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) {
+    // Pikachu uses a local skeleton (not mm.o2r) — route to its own loader
+    if (form == MM_PLAYER_FORM_PIKACHU) {
+        u8 ok = PikachuForm_LoadSkeleton(play);
+        if (ok) {
+            gFormState.skeletonLoaded = 1;
+            gFormState.currentForm = MM_PLAYER_FORM_PIKACHU;
+        }
+        return ok;
+    }
+
     const MmFormProperties* props = &sFormProps[form];
 
     if (props->skelPath == NULL) {
@@ -2288,8 +2424,9 @@ static void MmForm_RestoreOotState(Player* player) {
     player->cylinder.dim.height = 50;
     player->cylinder.dim.yShift = 0;
 
-    // Clear any leftover roll state flags
-    player->stateFlags2 &= ~(PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET | PLAYER_STATE2_DISABLE_ROTATION_ALWAYS);
+    // Clear any leftover roll/swim state flags
+    player->stateFlags2 &=
+        ~(PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET | PLAYER_STATE2_DISABLE_ROTATION_ALWAYS | PLAYER_STATE2_DISABLE_DRAW);
     player->actor.bgCheckFlags &= ~0x800;
     // Restore OOT input (may have been blocked during roll) and camera state
     player->stateFlags1 &= ~(PLAYER_STATE1_INPUT_DISABLED | PLAYER_STATE1_JUMPING);
@@ -2701,9 +2838,15 @@ static void MmForm_EnterShield(Player* player, PlayState* play) {
                              ANIMMODE_ONCE, 0.0f);
     } else if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
         // From 2Ship Player_ActionHandler_11 (line 8536): plays defense at endFrame (instant pose)
-        // D_8085BE84[PLAYER_ANIMGROUP_defense][PLAYER_ANIMTYPE_2] = gPlayerAnim_link_normal_defense
+        // Vanilla OOT: LinkAnimation_Change(..., anim, 1.0f, lastFrame, lastFrame, ANIMMODE_ONCE, 0.0f)
+        // Starting at lastFrame means Zora instantly assumes the defense pose and
+        // LinkAnimation_Update returns true on the very next frame → shieldAv2=1 immediately.
+        gFormState.goronAction = MMFORM_ACT_SHIELD;
+        gFormState.actionTimer = 0;
         LinkAnimationHeader* shieldAnim = (LinkAnimationHeader*)gPlayerAnim_link_normal_defense;
-        MmForm_SetAction(MMFORM_ACT_SHIELD, play, shieldAnim, 1.0f, ANIMMODE_ONCE);
+        f32 lastFrame = Animation_GetLastFrame(shieldAnim);
+        LinkAnimation_Change(play, &gFormState.formSkelAnime, shieldAnim, 1.0f, lastFrame, lastFrame, ANIMMODE_ONCE,
+                             0.0f);
     } else {
         // Goron: no form anim needed (uses shieldSkelAnime)
         MmForm_SetAction(MMFORM_ACT_SHIELD, play, NULL, 0.0f, ANIMMODE_ONCE);
@@ -3223,6 +3366,7 @@ static void MmForm_StartPunch(Player* player, PlayState* play) {
     gFormState.boomerangHoldTimer = 0;
     gFormState.comboStep = 0;
     gFormState.comboBPressed = 0;
+    gFormState.comboBufferTimer = 0;
     MmForm_DisablePunchQuad(player); // Clear any leftover quad state
     MmForm_SetAction(GORON_ACT_PUNCH_A, play, gFormState.punchA, 1.0f, ANIMMODE_ONCE);
 
@@ -3345,12 +3489,14 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
     // Apply root motion from animation data (replicates ANIM_FLAG_ENABLE_MOVEMENT)
     MmForm_ApplyRootMotion(player);
 
-    // Combo continuation: check B press during non-final punches
+    // Combo continuation: check B during non-final punches
     // (from 2Ship Player_Action_84 line 18833-18839)
-    // MM: if (form && MWA != last_punch) { av2.actionVar2 |= BTN_B ? 1 : 0; }
+    // Use cur.button (B held) instead of press.button so the combo chains
+    // fluidly without requiring frame-perfect re-presses. Zora's shorter
+    // animations gave too little window with press-only detection.
     if (step < 2) {
         Input* input = &play->state.input[0];
-        if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        if (CHECK_BTN_ALL(input->cur.button, BTN_B)) {
             gFormState.comboBPressed = 1;
         }
     }
@@ -3361,6 +3507,14 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
         // Disable directional quad AT
         MmForm_DisablePunchQuad(player);
 
+        // Check for B on this frame too (catches presses on the exact end frame)
+        if (step < 2) {
+            Input* bufInput = &play->state.input[0];
+            if (CHECK_BTN_ALL(bufInput->press.button, BTN_B) || CHECK_BTN_ALL(bufInput->cur.button, BTN_B)) {
+                gFormState.comboBPressed = 1;
+            }
+        }
+
         // Continue combo? (from 2Ship line 18801: sPlayerUseHeldItem = this->av2.actionVar2)
         // The combo advances if B was pressed and we're not on the last punch
         if (gFormState.comboBPressed && step < 2) {
@@ -3370,6 +3524,7 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
             if (nextAnim != NULL) {
                 gFormState.comboStep = nextStep;
                 gFormState.comboBPressed = 0;
+                gFormState.comboBufferTimer = 0;
                 GoronActionId nextAction = (GoronActionId)(GORON_ACT_PUNCH_A + nextStep);
                 MmForm_SetAction(nextAction, play, nextAnim, 1.0f, ANIMMODE_ONCE);
                 player->linearVelocity = 0.0f;
@@ -3390,6 +3545,14 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
 
                 return;
             }
+        }
+
+        // Buffer: wait extra frames for B-press before going to recovery.
+        // Zora's shorter animations leave little time during the anim itself,
+        // so allow 8 frames after it ends to still chain the combo.
+        if (!gFormState.comboBPressed && step < 2 && gFormState.comboBufferTimer < 8) {
+            gFormState.comboBufferTimer++;
+            return;
         }
 
         // No combo / combo ended → recovery animation
@@ -3543,15 +3706,18 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
             // Rumble (from 2Ship line 6083: Player_RequestRumble 180, 20, 100)
             func_800AA000(0.0f, 180, 20, 100);
 
-            // Metal spark VFX + reflect SFX (from OOT z_collision_check.c line 3441)
-            // CollisionCheck_SpawnShieldParticlesMetal plays NA_SE_IT_SHIELD_REFLECT_SW
-            // and spawns white light streak particles at the hit position
+            // Shield VFX based on equipped shield type
             {
                 Vec3f hitPos;
                 hitPos.x = player->actor.world.pos.x;
-                hitPos.y = player->actor.world.pos.y + 30.0f; // Shield center height
+                hitPos.y = player->actor.world.pos.y + 30.0f;
                 hitPos.z = player->actor.world.pos.z;
-                CollisionCheck_SpawnShieldParticlesMetal(play, &hitPos);
+                if (player->currentShield == PLAYER_SHIELD_DEKU) {
+                    CollisionCheck_SpawnShieldParticlesWood(play, &hitPos, &player->actor.world.pos);
+                } else {
+                    // Hylian, Mirror, or None — metal sparks
+                    CollisionCheck_SpawnShieldParticlesMetal(play, &hitPos);
+                }
             }
 
             // Knockback (from 2Ship line 6101-6103)
@@ -3574,6 +3740,31 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
     if (player->invincibilityTimer > 0) {
         gMmFormPendingDamage.hasPending = 0;
         return 0;
+    }
+
+    // Zora barrier immunity (from 2Ship func_8082F1AC: PLAYER_IMPACT_ZORA_BARRIER)
+    // While barrier is active with intensity > 0, block all incoming damage
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.barrierActive && gFormState.barrierIntensity > 0) {
+        // Spark VFX at hit position (from 2Ship line 2980: barrier absorbs damage)
+        CollisionCheck_SpawnShieldParticlesMetal(play, &player->actor.world.pos);
+        gMmFormPendingDamage.hasPending = 0;
+        return 0;
+    }
+
+    // Goron curled (rolling) frontal damage block (from 2Ship: PLAYER_STATE3_1000)
+    // When Goron is in ball form, frontal attacks are deflected
+    if (gFormState.currentForm == MM_PLAYER_FORM_GORON &&
+        (gFormState.goronAction == GORON_ACT_GORON_ROLL || gFormState.goronAction == GORON_ACT_GORON_ROLL_JUMP ||
+         gFormState.goronAction == GORON_ACT_GORON_ROLL_POUND)) {
+        if (gMmFormPendingDamage.hasPending && gMmFormPendingDamage.attacker != NULL) {
+            s16 angleToAttacker = Actor_WorldYawTowardActor(gMmFormPendingDamage.attacker, &player->actor);
+            s16 relAngle = angleToAttacker - player->actor.shape.rot.y;
+            // Frontal 120° arc: block damage (from 2Ship: curled body deflects front hits)
+            if (ABS(relAngle) > 0x4000) {
+                gMmFormPendingDamage.hasPending = 0;
+                return 0;
+            }
+        }
     }
 
     // Check for pending damage saved by OOT's func_808382DC.
@@ -3634,6 +3825,35 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         knockbackType = 1; // Strong knockback (heavy hit) - launched into air
     } else {
         knockbackType = 0; // Normal ground knockback
+    }
+
+    // Form-specific incoming damage modifiers (from 2Ship damage behavior per form)
+    // Goron: resistant to physical (0.75x), weak to fire (1.5x)
+    // Zora: weak to fire (1.5x), normal otherwise
+    // Deku: very weak to fire (2.0x) — instant void already handled above
+    // FD: tougher body (0.75x all)
+    {
+        f32 formMult = 1.0f;
+        u8 isFire = (acHitEffect == 9);
+        switch (gFormState.currentForm) {
+            case MM_PLAYER_FORM_GORON:
+                formMult = isFire ? 1.5f : 0.75f;
+                break;
+            case MM_PLAYER_FORM_ZORA:
+                formMult = isFire ? 1.5f : 1.0f;
+                break;
+            case MM_PLAYER_FORM_DEKU:
+                formMult = isFire ? 2.0f : 1.0f;
+                break;
+            case MM_PLAYER_FORM_FIERCE_DEITY:
+                formMult = 0.75f;
+                break;
+            default:
+                break;
+        }
+        damage = (s32)(damage * formMult);
+        if (damage < 1)
+            damage = 1;
     }
 
     // Apply HP damage (from 2Ship func_808339D4, line 5830)
@@ -5029,31 +5249,45 @@ static void MmForm_Action_LedgeClimb(Player* player, PlayState* play) {
 // =============================================================================
 
 static void MmForm_Action_WaterVoidOut(Player* player, PlayState* play) {
-    // actionTimer is auto-incremented (line 5245) before this handler runs.
+    // actionTimer is auto-incremented before this handler runs.
     // We use rollGroundPoundTimer as the phase tracker (set to 0 at start).
-    // Phases:
-    //   0 = Start: begin curl animation, set phase to 1
-    //   1 = Curl animation playing
-    //   2 = Ball form (curl done), sinking, count frames
-    //   3 = Void out triggered, waiting for fade
+    //
+    // Deku: INSTANT void out (from 2Ship z_player.c:7206 — immediate PLAYER_STATE2_80000).
+    //   In MM, Deku touching water with no hops is an immediate void, no sinking animation.
+    //
+    // Goron: curl → ball → sink → void out (visual sequence).
+    //   Phases: 0=start curl, 1=curl playing, 2=ball sinking, 100=void triggered.
 
     player->linearVelocity = 0.0f;
 
+    // Deku: immediate void out (no curl animation, no sinking)
+    if (gFormState.currentForm == MM_PLAYER_FORM_DEKU) {
+        if (gFormState.rollGroundPoundTimer == 0) {
+            player->actor.velocity.y = 0.0f;
+            player->actor.gravity = 0.0f;
+            player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+            Player_PlaySfx(&player->actor, NA_SE_OC_ABYSS);
+            Play_TriggerVoidOut(play);
+            gFormState.rollGroundPoundTimer = 100; // → waiting for fade
+        }
+        // Phase 100: Void out triggered, waiting for scene transition fade
+        return;
+    }
+
+    // Goron: curl → ball → sink → void out
     // Phase 0: First frame - start curl animation
     if (gFormState.rollGroundPoundTimer == 0) {
         player->actor.velocity.y = -2.0f; // Start sinking
         player->actor.gravity = -0.5f;    // Slow sink
 
-        if (gFormState.maruChange != NULL && gFormState.currentForm == MM_PLAYER_FORM_GORON) {
+        if (gFormState.maruChange != NULL) {
             LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.maruChange, 0.67f, 0.0f,
                                  Animation_GetLastFrame(gFormState.maruChange), ANIMMODE_ONCE, 4.0f);
         }
 
         // SFX: splash + Goron curl sound
         Player_PlaySfx(&player->actor, NA_SE_EV_DIVE_INTO_WATER);
-        if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
-            MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_TO_BALL, NA_SE_PL_BODY_HIT);
-        }
+        MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_TO_BALL, NA_SE_PL_BODY_HIT);
 
         gFormState.rollGroundPoundTimer = 1; // → Phase 1
         return;
@@ -5064,13 +5298,12 @@ static void MmForm_Action_WaterVoidOut(Player* player, PlayState* play) {
         LinkAnimation_Update(play, &gFormState.formSkelAnime);
 
         u8 curlDone = 0;
-        if (gFormState.maruChange != NULL && gFormState.currentForm == MM_PLAYER_FORM_GORON) {
+        if (gFormState.maruChange != NULL) {
             f32 endFrame = Animation_GetLastFrame(gFormState.maruChange);
             if (gFormState.formSkelAnime.curFrame >= endFrame - 0.5f) {
                 curlDone = 1;
             }
         } else {
-            // No curl anim (Deku form) - skip after short delay
             curlDone = (gFormState.actionTimer > 5);
         }
 
@@ -5095,7 +5328,7 @@ static void MmForm_Action_WaterVoidOut(Player* player, PlayState* play) {
         return;
     }
 
-    // Phase 3: Void out triggered, waiting for scene transition fade
+    // Phase 100: Void out triggered, waiting for scene transition fade
 }
 
 // ---------------------------------------------------------------------------
@@ -6005,6 +6238,15 @@ static void MmForm_Action_DekuSpin(Player* player, PlayState* play) {
         // Restore collider
         MmForm_ClearRollAttack(player);
 
+        // Deku over water with no hops left → void out (from 2Ship line 7206: PLAYER_STATE2_80000)
+        if (gFormState.currentForm == MM_PLAYER_FORM_DEKU && gFormState.dekuHopsRemaining == 0 &&
+            player->actor.yDistToWater > 0.0f) {
+            gFormState.goronAction = MMFORM_ACT_WATER_VOID;
+            gFormState.actionTimer = 0;
+            gFormState.rollGroundPoundTimer = 0;
+            return;
+        }
+
         if (player->linearVelocity > 1.0f) {
             MmForm_SetAction(GORON_ACT_RUN, play, gFormState.runAnim, 1.0f, ANIMMODE_LOOP);
         } else {
@@ -6133,6 +6375,11 @@ static void MmForm_DekuWaterHop(Player* player, PlayState* play) {
     // Voice SFX during water hops (from 2Ship z_player.c:7203-7204)
     // MM plays a voice grunt on each hop
     MmForm_PlayAttackVoice(player);
+
+    // Set hop animation (from 2Ship line 7198: jump anim during water hop)
+    if (gFormState.jumpAnim != NULL && gFormState.dekuHopsRemaining > 1) {
+        MmForm_SetAction(MMFORM_ACT_JUMP, play, gFormState.jumpAnim, 1.5f, ANIMMODE_ONCE);
+    }
 
     // Decrement counter (from 2Ship line 7204)
     gFormState.dekuHopsRemaining--;
@@ -6419,6 +6666,24 @@ static void MmForm_UpdateBubbleProjectile(Player* player, PlayState* play) {
     gFormState.bubble.pos.y += gFormState.bubble.velY;
     gFormState.bubble.pos.z += velZ;
 
+    // === FLOOR COLLISION: pop when touching ground (from 2Ship z_en_arrow.c) ===
+    {
+        CollisionPoly* floorPoly = NULL;
+        s32 floorBgId;
+        Vec3f floorCheckPos = gFormState.bubble.pos;
+        floorCheckPos.y += 20.0f; // Check from slightly above bubble center
+        f32 floorY = BgCheck_EntityRaycastFloor3(&play->colCtx, &floorPoly, &floorBgId, &floorCheckPos);
+        if (floorPoly != NULL && gFormState.bubble.pos.y <= floorY + 5.0f) {
+            // Hit floor → pop with effects
+            Vec3f popPos = gFormState.bubble.pos;
+            popPos.y = floorY;
+            EffectSsBubble_Spawn(play, &popPos, 0.0f, 5.0f, 10.0f, 0.13f);
+            MmSfx_PlayAtPos(MM_NA_SE_IT_DEKUNUTS_BUBLE_BROKEN, &player->actor.projectedPos);
+            MmForm_KillBubble(player, play);
+            return;
+        }
+    }
+
     // === WALL COLLISION (from 2Ship line 530-537: BgCheck_ProjectileLineTest) ===
     {
         CollisionPoly* wallPoly = NULL;
@@ -6462,6 +6727,17 @@ static void MmForm_UpdateBubbleProjectile(Player* player, PlayState* play) {
         // Only deal damage when not bounced (from 2Ship line 704: unk_149 >= 0)
         if (gFormState.bubble.state >= 0) {
             CollisionCheck_SetAT(play, &play->colChkCtx, &cyl->base);
+        }
+
+        // OC check: physical collision with actors (pop on contact)
+        CollisionCheck_SetOC(play, &play->colChkCtx, &cyl->base);
+
+        // Check if OC hit an actor this frame
+        if (cyl->base.ocFlags1 & OC1_HIT) {
+            MmForm_KillBubble(player, play);
+            EffectSsBubble_Spawn(play, &gFormState.bubble.pos, 0.0f, 5.0f, 15.0f, 0.15f);
+            MmSfx_PlayAtPos(MM_NA_SE_IT_DEKUNUTS_BUBLE_BROKEN, &player->actor.projectedPos);
+            return;
         }
 
         // Check if AT hit an actor this frame (from 2Ship line 397: atFlags & AT_HIT)
@@ -7333,11 +7609,11 @@ static void MmForm_UpdateBarrier(Player* player, PlayState* play) {
 
     // Magic + intensity logic (from 2Ship func_8082F1AC line 2947-2961)
     if ((gSaveContext.magic != 0) && gFormState.barrierActive) {
-        // Start magic drain if idle (from 2Ship: Magic_Consume(play, 0, MAGIC_CONSUME_GORON_ZORA))
-        // OOT doesn't have GORON_ZORA mode, so manual drain at ~1 per 10 frames
+        // Magic drain: 2 per frame (from 2Ship: MAGIC_CONSUME_GORON_ZORA)
         if (gSaveContext.magicState == MAGIC_STATE_IDLE) {
-            if ((play->gameplayFrames % 10) == 0) {
-                gSaveContext.magic--;
+            gSaveContext.magic -= 2;
+            if (gSaveContext.magic < 0) {
+                gSaveContext.magic = 0;
             }
         }
 
@@ -7727,9 +8003,11 @@ static void MmForm_TrackBoomerangsInFlight(Player* player, PlayState* play) {
         }
 
         // Play catch animation if available (from 2Ship Player_UpperAction_16: cuttercatch)
+        // Set catch timer so animation takes priority over current action's animation
         if (gFormState.cutterCatch != NULL) {
             LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterCatch, 1.0f, 0.0f,
                                  Animation_GetLastFrame(gFormState.cutterCatch), ANIMMODE_ONCE, -6.0f);
+            gFormState.boomerangCatchTimer = (s16)Animation_GetLastFrame(gFormState.cutterCatch);
         }
 
         MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_BOOMERANG_CATCH, NA_SE_PL_CATCH_BOOMERANG);
@@ -7841,9 +8119,13 @@ static void MmForm_SwimEffects(Player* player, PlayState* play) {
     }
 
     // Zora PLAYER_STATE2_DISABLE_DRAW_SHIELD_HAND (from 2Ship z_player.c:9095)
-    // During fast swim, disable shield/hand items display
+    // During fast swim, disable shield/hand items display.
+    // MUST clear when not fast-swimming, otherwise flag persists and makes Link invisible
+    // after detransform (OOT's Player_Draw checks this flag to skip entire skeleton draw).
     if (gFormState.fastSwimActive) {
         player->stateFlags2 |= PLAYER_STATE2_DISABLE_DRAW;
+    } else {
+        player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_DRAW;
     }
 }
 
@@ -8773,6 +9055,7 @@ static void MmForm_EnterGakki(Player* player, PlayState* play) {
     memset(&gFormState.gakkiScale0, 0, sizeof(Vec3f));
     memset(&gFormState.gakkiScale1, 0, sizeof(Vec3f));
     memset(gFormState.gakkiPieceScales, 0, sizeof(gFormState.gakkiPieceScales));
+    gFormState.gakkiLastNoteIdx = 0xFF; // No note playing yet
     MMFORM_LOG("[MmForm] Gakki enter: form=%d", gFormState.currentForm);
 }
 
@@ -8785,6 +9068,7 @@ static void MmForm_UpdateGakki(Player* player, PlayState* play) {
     switch (gFormState.gakkiActive) {
         case 1: { // Start animation playing
             MmForm_GakkiInterpScales(curFrame);
+            Audio_StopSfxById(NA_SE_OC_OCARINA); // Suppress OOT ocarina — MM forms use own instruments
             // Check if start anim finished (from MM Player_Action_63 line 17418)
             if (animDone) {
                 gFormState.gakkiActive = 2;
@@ -8805,9 +9089,25 @@ static void MmForm_UpdateGakki(Player* player, PlayState* play) {
             break;
         }
 
-        case 2: // Play loop active
+        case 2: { // Play loop active
             MmForm_GakkiInterpScales(curFrame);
+            Audio_StopSfxById(NA_SE_OC_OCARINA); // Suppress OOT ocarina — MM forms use own instruments
+
+            // Detect note from playStaff (confirmed working from logs).
+            // playStaff.state=254 when active, noteIdx=0-4 for buttons, 63 when released.
+            OcarinaStaff* playStaff = Audio_OcaGetPlayingStaff();
+            u8 curNote = (playStaff->state != 0 && playStaff->noteIdx < 5) ? playStaff->noteIdx : 0xFF;
+
+            if (curNote != 0xFF && curNote != gFormState.gakkiLastNoteIdx) {
+                // New note pressed — stop previous, play new instrument sound
+                MmGakki_PlayNote(gFormState.currentForm, curNote, &player->actor.projectedPos);
+            } else if (curNote == 0xFF && gFormState.gakkiLastNoteIdx != 0xFF) {
+                // Button released — stop the gakki note
+                MmSfx_Stop(0x5800);
+            }
+            gFormState.gakkiLastNoteIdx = curNote;
             break;
+        }
 
         case 3: { // Exit (reverse start animation)
             MmForm_GakkiInterpScales(curFrame);
@@ -8829,6 +9129,7 @@ static void MmForm_ExitGakki(Player* player, PlayState* play) {
         return;
     }
     gFormState.gakkiActive = 3;
+    MmSfx_Stop(0x5800); // Stop any playing gakki note
     f32 lastFrame = Animation_GetLastFrame(gFormState.gakkiStartAnim);
     // Play gakkistart in reverse: negative speed, from lastFrame to 0
     // From MM: Player_Anim_PlayOnceAdjustedReverse(D_8085D17C[transformation])
@@ -8848,6 +9149,13 @@ static void MmForm_ExitGakki(Player* player, PlayState* play) {
 // and from ANY air action to landing.
 // ---------------------------------------------------------------------------
 static void MmForm_UpdateActive(Player* player, PlayState* play) {
+    // Pikachu form has its own complete update system
+    if (gFormState.currentForm == MM_PLAYER_FORM_PIKACHU) {
+        player->modelAnimType = PLAYER_ANIMTYPE_0;
+        PikachuForm_Update(player, play);
+        return;
+    }
+
     // In MM, Goron/Zora/Deku always use PLAYER_ANIMTYPE_DEFAULT (type 0 = free hands).
     // OOT sets modelAnimType based on equipment (sword=1, shield=2, etc.) but MM forms
     // don't have equipped weapons. Without this, OOT selects sword-holding animations
@@ -8906,7 +9214,12 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
              gFormState.goronAction == MMFORM_ACT_SWIM_SURFACE_WALK ||
              gFormState.goronAction == MMFORM_ACT_SWIM_UNDERWATER_WALK ||
              gFormState.goronAction == MMFORM_ACT_DOLPHIN_JUMP);
-        if (!inSwimAction) {
+        // Ocarina/item CS with gakki-capable form: fall through to yield block for gakki handling.
+        // Without this, the IN_CUTSCENE early return prevents gakki enter from ever running.
+        u8 inOcarinaGakki = (player->stateFlags1 & PLAYER_STATE1_IN_ITEM_CS) &&
+                            (gFormState.currentForm >= MM_PLAYER_FORM_GORON) &&
+                            (gFormState.currentForm <= MM_PLAYER_FORM_DEKU) && (gFormState.gakkiStartAnim != NULL);
+        if (!inSwimAction && !inOcarinaGakki) {
             // Door handling: only HANDLE (knob) doors use form-specific push/pull animations.
             // SLIDING doors (boss doors), AJAR, and FAKE doors just need OOT's walk-through
             // pathing — OOT manages waypoints and movement for those via Player_Action_80845CA4.
@@ -9178,15 +9491,16 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 if (!(yieldFlags & PLAYER_STATE1_DAMAGED)) {
                     player->linearVelocity = 0.0f;
                 }
+            }
 
-                // Gakki: if this yield is for ocarina AND the form has instruments,
-                // start the gakki animation so instruments appear during the start anim.
-                // From MM z_player.c line 7926: entering Player_Action_63 plays gakkistart.
-                if ((yieldFlags & PLAYER_STATE1_IN_ITEM_CS) && (player->actionFunc == Player_Action_8084E3C4) &&
-                    (gFormState.currentForm >= MM_PLAYER_FORM_GORON) &&
-                    (gFormState.currentForm <= MM_PLAYER_FORM_DEKU) && (gFormState.gakkiStartAnim != NULL)) {
-                    MmForm_EnterGakki(player, play);
-                }
+            // Gakki: every frame during yield, try to enter gakki if not yet active.
+            // Must be OUTSIDE first-entry block because Player_Action_8084E3C4 may not be
+            // set on the first yield frame (OOT may still be in a transition action).
+            // From MM z_player.c line 7926: entering Player_Action_63 plays gakkistart.
+            if (!gFormState.gakkiActive && (yieldFlags & PLAYER_STATE1_IN_ITEM_CS) &&
+                (player->actionFunc == Player_Action_8084E3C4) && (gFormState.currentForm >= MM_PLAYER_FORM_GORON) &&
+                (gFormState.currentForm <= MM_PLAYER_FORM_DEKU) && (gFormState.gakkiStartAnim != NULL)) {
+                MmForm_EnterGakki(player, play);
             }
 
             // Gakki: update instrument animation each frame while yielded.
@@ -9265,6 +9579,10 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
              curAction == MMFORM_ACT_ZTARGET_WALK || curAction == MMFORM_ACT_ROLL || curAction == MMFORM_ACT_SHIELD);
 
         if (isGroundAction) {
+            // Block OOT's actionFunc during the fall so it can't call Player_SetupRoll
+            // on landing. MmForm handles the entire fall/land cycle itself.
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+
             // Walked off edge or was launched - enter jump or fall
             if (player->actor.velocity.y > 0.0f) {
                 LinkAnimationHeader* jumpAnim = gFormState.jumpAnim ? gFormState.jumpAnim : gFormState.idleAnim;
@@ -9635,6 +9953,13 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             Input* shieldInput = &play->state.input[0];
             player->linearVelocity = 0.0f;
 
+            // Re-set PLAYER_STATE1_SHIELDING every frame.
+            // Player_UpdateCommon (z_player.c:12474) clears this flag at the start of every frame.
+            // OOT's actionFunc (Player_Action_80843188) normally re-sets it, but we block it.
+            // External actors (Mir_Ray, Boss_Tw, etc.) and collision checks (shieldQuad)
+            // read this flag to detect when the player is shielding.
+            player->stateFlags1 |= PLAYER_STATE1_SHIELDING;
+
             if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
                 // === GORON SHIELD (curl pose with separate skeleton) ===
                 // SFX and SHIELDING flag set in MmForm_EnterShield at entry.
@@ -9651,9 +9976,20 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                     SkelAnime_Update(&gFormState.shieldSkelAnime);
                 }
 
+                // Goron curls immediately — no entry animation to wait for.
+                // Enable directional control (mirror shield light aiming) right away.
+                gFormState.shieldAv2 = 1;
+
                 // Register shield collider for damage protection (Goron only)
                 // From 2Ship z_player.c line 12773-12794: AC_ON | AC_HARD | AC_TYPE_ENEMY
                 if (gFormState.shieldColliderInitDone) {
+                    static const u8 sShieldColTypes[] = {
+                        COLTYPE_METAL, // PLAYER_SHIELD_NONE
+                        COLTYPE_WOOD,  // PLAYER_SHIELD_DEKU
+                        COLTYPE_METAL, // PLAYER_SHIELD_HYLIAN
+                        COLTYPE_METAL, // PLAYER_SHIELD_MIRROR
+                    };
+                    gFormState.shieldCollider.base.colType = sShieldColTypes[player->currentShield];
                     Collider_UpdateCylinder(&player->actor, &gFormState.shieldCollider);
                     CollisionCheck_SetAC(play, &play->colChkCtx, &gFormState.shieldCollider.base);
                     player->cylinder.dim.yShift = 0;
@@ -9686,6 +10022,19 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                     const MmFormProperties* props = &sFormProps[gFormState.currentForm];
                     player->cylinder.dim.height = (s16)(props->cylinderHeight * 0.8f);
                 }
+
+                // Register shield collider with equipped shield's collision type
+                if (gFormState.shieldColliderInitDone) {
+                    static const u8 sZoraShieldColTypes[] = {
+                        COLTYPE_METAL, // PLAYER_SHIELD_NONE
+                        COLTYPE_WOOD,  // PLAYER_SHIELD_DEKU
+                        COLTYPE_METAL, // PLAYER_SHIELD_HYLIAN
+                        COLTYPE_METAL, // PLAYER_SHIELD_MIRROR
+                    };
+                    gFormState.shieldCollider.base.colType = sZoraShieldColTypes[player->currentShield];
+                    Collider_UpdateCylinder(&player->actor, &gFormState.shieldCollider);
+                    CollisionCheck_SetAC(play, &play->colChkCtx, &gFormState.shieldCollider.base);
+                }
             } else if (gFormState.currentForm == MM_PLAYER_FORM_DEKU) {
                 // === DEKU SHIELD (crouch guard with pn_gurd + shield DL scaling) ===
                 // From 2Ship Player_Action_18 (line 14876-14980).
@@ -9709,16 +10058,34 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                     const MmFormProperties* props = &sFormProps[gFormState.currentForm];
                     player->cylinder.dim.height = (s16)(props->cylinderHeight * 0.8f);
                 }
+
+                // Register shield collider with equipped shield's collision type
+                if (gFormState.shieldColliderInitDone) {
+                    static const u8 sDekuShieldColTypes[] = {
+                        COLTYPE_METAL, // PLAYER_SHIELD_NONE
+                        COLTYPE_WOOD,  // PLAYER_SHIELD_DEKU
+                        COLTYPE_METAL, // PLAYER_SHIELD_HYLIAN
+                        COLTYPE_METAL, // PLAYER_SHIELD_MIRROR
+                    };
+                    gFormState.shieldCollider.base.colType = sDekuShieldColTypes[player->currentShield];
+                    Collider_UpdateCylinder(&player->actor, &gFormState.shieldCollider);
+                    CollisionCheck_SetAC(play, &play->colChkCtx, &gFormState.shieldCollider.base);
+                }
             }
 
-            // === Directional control (ALL non-Goron forms) ===
+            // Mirror Shield: set reflection flag (visual + light-beam reflection)
+            if (player->currentShield == PLAYER_SHIELD_MIRROR) {
+                player->stateFlags2 |= PLAYER_STATE2_REFLECTION;
+            }
+
+            // === Directional control (ALL forms, including Goron for mirror shield aiming) ===
             // From 2Ship Player_Action_18 (z_player.c line 14918-14940):
             //   Runs when av2 != 0 (animation finished at least once).
             //   var_a1 = (yStick * cos(relYaw)) + (sin(relYaw) * xStick)  → pitch
             //   temp_ft5 = (xStick * cos(relYaw)) - (sin(relYaw) * yStick) → yaw
             //   CLAMP_MAX(var_a1, 0xDAC)
             //   Adaptive step sizes: ABS(diff) * 0.25f, CLAMP_MIN 0x64 (pitch) / 0x32 (yaw)
-            if (gFormState.currentForm != MM_PLAYER_FORM_GORON && gFormState.shieldAv2 != 0) {
+            if (gFormState.shieldAv2 != 0) {
                 Input* input = &play->state.input[0];
                 f32 stickY = input->rel.stick_y * 180.0f;
                 f32 stickX = input->rel.stick_x * -120.0f;
@@ -9860,6 +10227,18 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // From MM Player_UpperAction_15: runs every frame, checks if boomerangs returned.
     // Player is NOT locked — can walk, run, jump attack, etc. during flight.
     MmForm_TrackBoomerangsInFlight(player, play);
+
+    // Boomerang catch animation priority (from 2Ship Player_UpperAction_16)
+    // While catchTimer > 0, the catch animation takes visual priority over the current action.
+    // Decrement each frame; when done, normal action animations resume.
+    if (gFormState.boomerangCatchTimer > 0) {
+        gFormState.boomerangCatchTimer--;
+        // Ensure catch animation stays active (action handlers may have overwritten it)
+        if (gFormState.cutterCatch != NULL && gFormState.formSkelAnime.animation != gFormState.cutterCatch) {
+            LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterCatch, 1.0f, 0.0f,
+                                 Animation_GetLastFrame(gFormState.cutterCatch), ANIMMODE_ONCE, -6.0f);
+        }
+    }
 
     // Always tick animation (separate from OOT's player->skelAnime)
     // Skip for actions that handle their own animation updates internally
@@ -10437,13 +10816,32 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
         Actor_SetFeetPos(&player->actor, limbIndex, PLAYER_LIMB_L_FOOT, &zeroVec, PLAYER_LIMB_R_FOOT, &zeroVec);
     }
 
-    // === 5. Update carried/held actor position at R_HAND ===
-    // OOT z_player_lib.c:2051-2064: computes held object position as average of
-    // bodyPartsPos[R_HAND] and leftHandPos, then copies to heldActor->world.pos.
-    // Without this, picked-up jars/rocks stay at their original position and
-    // get thrown from there instead of from Link's hands.
+    // === 5. Update shieldMf + carried/held actor position at R_HAND ===
+    // shieldMf: OOT z_player_lib.c:2027 stores the right-hand limb matrix when
+    // rightHandType == PLAYER_MODELTYPE_RH_SHIELD. External actors (ovl_Mir_Ray,
+    // ovl_Boss_Tw, etc.) read shieldMf to determine mirror shield position/normal.
+    // Without this, shieldMf stays frozen at the last OOT human-form draw position,
+    // causing the mirror shield light beam to stay stuck at the human form's hand.
+    // OOT carried/held actor: z_player_lib.c:2051-2064.
     if (limbIndex == PLAYER_LIMB_R_HAND) {
         if (player->actor.scale.y >= 0.0f) {
+            // Update shieldMf ONLY when actively shielding.
+            // MM forms must NOT reflect mirror shield light when not holding R.
+            // OOT human form reflects from back at all times, but MM forms disable it.
+            if (gFormState.goronAction == MMFORM_ACT_SHIELD) {
+                if (gFormState.currentForm == MM_PLAYER_FORM_DEKU) {
+                    // Deku: rotate 90° right and scale 2x for the mirror ray.
+                    Matrix_RotateZ(M_PI / 2.0f, MTXMODE_APPLY);
+                    Matrix_Scale(2.0f, 2.0f, 2.0f, MTXMODE_APPLY);
+                }
+                Matrix_Get(&player->shieldMf);
+            } else {
+                // Not shielding: move shieldMf far away so ovl_Mir_Ray's frustum
+                // check (MirRay_CheckInFrustum) never passes → no reflection.
+                player->shieldMf.xw = 0.0f;
+                player->shieldMf.yw = -32000.0f;
+                player->shieldMf.zw = 0.0f;
+            }
             Actor* heldActor = player->heldActor;
 
             if ((player->unk_862 != 0) || ((func_8002DD6C(player) == 0) && (heldActor != NULL))) {
@@ -10868,6 +11266,11 @@ void MmForm_Init(PlayState* play, Player* player) {
         sPendingReactivate = 0;
     }
 
+    // Pikachu-specific cleanup (colliders, projectile actors, etc.)
+    if (gFormState.currentForm == MM_PLAYER_FORM_PIKACHU) {
+        PikachuForm_Cleanup();
+    }
+
     // Zero everything — formSkelAnime, cached pointers, etc. are all stale after scene change
     memset(&gFormState, 0, sizeof(gFormState));
     gFormState.state = MMFORM_STATE_INACTIVE;
@@ -10940,8 +11343,12 @@ u8 MmForm_IsItemAllowed(s32 item) {
 
     // OOT masks (Keaton..Truth) always blocked when transformed.
     // They share SLOT_TRADE_CHILD so slot-based check alone would incorrectly allow them.
-    if (item >= ITEM_MASK_KEATON && item <= ITEM_MASK_TRUTH)
+    // EXCEPTION: Keaton mask is allowed as it triggers the Pikachu de-transform.
+    if (item >= ITEM_MASK_KEATON && item <= ITEM_MASK_TRUTH) {
+        if (item == ITEM_MASK_KEATON && PikachuForm_IsEnabled())
+            return 1; // Allow to de-transform from Pikachu
         return 0;
+    }
 
     // Look up slot for this item and check the slot-based array
     u8 slot = ExtInv_GetItemSlot((u16)item);
@@ -10955,6 +11362,36 @@ u8 MmForm_IsItemAllowed(s32 item) {
     }
 
     return 0; // Unknown item = blocked
+}
+
+// =============================================================================
+// Per-Form C-Button Item Use Interception (called from z_player.c)
+// =============================================================================
+
+extern "C" u8 TransformMasks_HandleFormItemUse(PlayState* play, Player* player, s32 item) {
+    // Only intercept when actively transformed
+    if (gFormState.state != MMFORM_STATE_ACTIVE)
+        return 0; // Not transformed → normal Player_UseItem
+
+    s32 form = gFormState.currentForm;
+    if (form < 0 || form >= MM_PLAYER_FORM_MAX)
+        return 0;
+
+    const FormItemEntry* table = sFormItemHandlers[form];
+    if (table == NULL)
+        return 0; // This form has no interception table → normal Player_UseItem
+
+    // Search for the item in the form's handler table
+    for (s32 i = 0; table[i].handler != NULL; i++) {
+        if (table[i].itemId == item) {
+            // Found: call handler. Returns 1 to block Player_UseItem, 0 to pass through.
+            return table[i].handler(play, player, item);
+        }
+    }
+
+    // Item is not in the form's handler table → pass through to vanilla OOT.
+    // Swords and shields that need blocking are listed explicitly in the table.
+    return 0;
 }
 
 u8 MmForm_HasSkeleton(void) {
@@ -11053,6 +11490,11 @@ TransformMaskId MmForm_GetMaskType(s32 item) {
         case ITEM_MM_MASK_FIERCE_DEITY:
             result = TRANSFORM_MASK_FIERCE_DEITY;
             break;
+        // Pikachu (Keaton mask — vanilla OOT and MM variants)
+        case ITEM_MASK_KEATON:
+        case ITEM_MM_MASK_KEATON:
+            result = TRANSFORM_MASK_KEATON;
+            break;
         // OOT mask items (backward compat)
         case ITEM_MASK_GORON:
             result = TRANSFORM_MASK_GORON;
@@ -11069,8 +11511,15 @@ TransformMaskId MmForm_GetMaskType(s32 item) {
 
 void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
 
-    if (!MmForm_IsEnabled())
-        return;
+    // Pikachu (Keaton Mask) does NOT require mm.o2r — check its own CVar first.
+    if (item == ITEM_MASK_KEATON || item == ITEM_MM_MASK_KEATON) {
+        if (!PikachuForm_IsEnabled())
+            return;
+        // Fall through to common transform logic below (maskId will be TRANSFORM_MASK_KEATON)
+    } else {
+        if (!MmForm_IsEnabled())
+            return;
+    }
 
     TransformMaskId maskId = MmForm_GetMaskType(item);
     if (maskId == TRANSFORM_MASK_NONE)
@@ -11089,6 +11538,17 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
         gFormState.rollSpikeActive = 0;
         gFormState.rollChargeLevel = 0;
         gFormState.rollSpinRate = 0;
+        // Clear internal swim state so swim logic doesn't re-activate during detransform.
+        // Player stateFlags are cleaned up later by MmForm_RestoreOotState at flash peak.
+        gFormState.swimState = 0;
+        gFormState.swimPitch = 0;
+        gFormState.swimRoll = 0;
+        gFormState.swimRollSmoothed = 0;
+        gFormState.zoraBoots = 0;
+        gFormState.fastSwimActive = 0;
+        gFormState.swimSpeedB48 = 0.0f;
+        gFormState.swimYawRate = 0;
+        gFormState.swimExitFlag = 0;
         return;
     }
 
@@ -11142,6 +11602,21 @@ static void MmForm_FDSkinSpeedBoost(Player* player, PlayState* play) {
     // Do NOT force heldItemAction here — it causes an infinite equip/unequip animation loop
     // because OOT detects the mismatch between heldItemAction and itemAction each frame,
     // triggering Player_UpperAction_ChangeHeldItem endlessly.
+
+    // Cylinder height: FD is tallest form (124.0 in MM vs 60 normal)
+    // From MM z_actor.c:1385: Player_GetHeight returns 124.0 for FIERCE_DEITY
+    // Scale proportionally: OOT cylinder height ~60 for Adult Link, FD = 60 * (124/60) ≈ 124
+    player->cylinder.dim.height = 100; // Taller collision cylinder
+    player->cylinder.dim.yShift = 0;
+
+    // Water wade depth: FD can wade deeper (80.0 vs 50.0 for normal forms)
+    // From MM z_player.c:6219: FD-specific depth limit
+    // OOT checks yDistToWater against ageProperties->unk_2C (which is ~50 for adult)
+    // We override by pulling player out of "too deep" state when depth is 50-80
+    if (player->actor.yDistToWater > 50.0f && player->actor.yDistToWater <= 80.0f) {
+        // Prevent OOT from triggering swim/void for depths FD can still wade through
+        player->actor.yDistToWater = 50.0f;
+    }
 
     // Don't apply speed boost during non-movement states (ledge grab, climbing, cutscene, etc.)
     // Without this, linearVelocity carries momentum through ledge grabs → clip through floor.
@@ -11251,6 +11726,20 @@ void MmForm_Update(PlayState* play, Player* player) {
 void MmForm_Draw(PlayState* play, Player* player) {
     if (gFormState.state == MMFORM_STATE_INACTIVE)
         return;
+
+    // In first-person aiming (bow, slingshot, hookshot): skip the MM skeleton entirely.
+    // OOT's draw path (reached because z_player.c doesn't early-return when unk_6AD != 0)
+    // applies Player_OverrideLimbDrawGameplayFirstPerson to hide obstructing limbs.
+    // Flash alpha is always 0 during normal gameplay so nothing is lost here.
+    if (player->unk_6AD != 0)
+        return;
+
+    // Pikachu form: completely custom draw (local skeleton, not mm.o2r).
+    // Must be handled before OPEN_DISPS to avoid mismatched block scopes.
+    if (gFormState.skeletonLoaded && gFormState.currentForm == MM_PLAYER_FORM_PIKACHU) {
+        PikachuForm_Draw(play, player);
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -11638,6 +12127,16 @@ void MmForm_Draw(PlayState* play, Player* player) {
             player->actor.focus.pos.x = player->actor.world.pos.x;
             player->actor.focus.pos.y = midY;
             player->actor.focus.pos.z = player->actor.world.pos.z;
+
+            // Update shieldMf for mirror shield light direction.
+            // No skeleton draw → no MmForm_PostLimbDraw → must update manually.
+            // Build a matrix at midY facing shape.rot.y so ovl_Mir_Ray gets the
+            // correct position (xw/yw/zw) and forward normal (xz/yz/zz).
+            Matrix_Push();
+            Matrix_SetTranslateRotateYXZ(player->actor.world.pos.x, midY, player->actor.world.pos.z,
+                                         &player->actor.shape.rot);
+            Matrix_Get(&player->shieldMf);
+            Matrix_Pop();
         }
     }
 
@@ -11768,6 +12267,7 @@ void MmForm_Reset(void) {
         memset(&gFormState.gakkiScale0, 0, sizeof(Vec3f));
         memset(&gFormState.gakkiScale1, 0, sizeof(Vec3f));
         memset(gFormState.gakkiPieceScales, 0, sizeof(gFormState.gakkiPieceScales));
+        gFormState.gakkiLastNoteIdx = 0xFF;
 
         // Cleanup hazard void state
         gFormState.hazardVoidType = 0;
@@ -11899,6 +12399,14 @@ s16 MmForm_GetRollSpikeActive(void) {
 
 s16 MmForm_GetRollChargeLevel(void) {
     return gFormState.rollChargeLevel;
+}
+
+Gfx* MmForm_GetFDSwordBeamDL(PlayState* play) {
+    if (!MmAssets_IsLoaded())
+        return NULL;
+    // MM's gameplay_keep contains gSwordBeamDL
+    static const char sSwordBeamPath[] = "__OTR__objects/gameplay_keep/gSwordBeamDL";
+    return (Gfx*)sSwordBeamPath;
 }
 
 } // extern "C"

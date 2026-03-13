@@ -177,6 +177,35 @@ int8_t ExtPlayer_GetItemAction(int32_t item) {
             return PLAYER_IA_MM_MASK_GIANT;
         case ITEM_MM_MASK_FIERCE_DEITY:
             return PLAYER_IA_MM_MASK_FIERCE_DEITY;
+
+        // SW97 Medallion spells (quest medallions → spell IAs)
+        case ITEM_MEDALLION_FOREST:
+            return PLAYER_IA_MAGIC_SPELL_15;
+        case ITEM_MEDALLION_SPIRIT:
+            return PLAYER_IA_MAGIC_SPELL_16;
+        case ITEM_MEDALLION_SHADOW:
+            return PLAYER_IA_MAGIC_SPELL_17;
+        case ITEM_MEDALLION_WATER:
+            return PLAYER_IA_FARORES_WIND;
+        case ITEM_MEDALLION_LIGHT:
+            return PLAYER_IA_NAYRUS_LOVE;
+        case ITEM_MEDALLION_FIRE:
+            return PLAYER_IA_DINS_FIRE;
+
+        // SW97 Arrow items: adult uses bow IAs, child uses slingshot IA
+        case ITEM_SW97_ARROW_FIRE:
+            return LINK_IS_ADULT ? PLAYER_IA_BOW_FIRE : PLAYER_IA_SLINGSHOT;
+        case ITEM_SW97_ARROW_ICE:
+            return LINK_IS_ADULT ? PLAYER_IA_BOW_ICE : PLAYER_IA_SLINGSHOT;
+        case ITEM_SW97_ARROW_LIGHT:
+            return LINK_IS_ADULT ? PLAYER_IA_BOW_LIGHT : PLAYER_IA_SLINGSHOT;
+        case ITEM_SW97_ARROW_DARK:
+            return LINK_IS_ADULT ? PLAYER_IA_BOW_0C : PLAYER_IA_SLINGSHOT;
+        case ITEM_SW97_ARROW_SOUL:
+            return LINK_IS_ADULT ? PLAYER_IA_BOW_0D : PLAYER_IA_SLINGSHOT;
+        case ITEM_SW97_ARROW_WIND:
+            return LINK_IS_ADULT ? PLAYER_IA_BOW_0E : PLAYER_IA_SLINGSHOT;
+
         default:
             break;
     }

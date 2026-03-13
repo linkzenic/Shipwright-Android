@@ -5,8 +5,84 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "mods/extended_inventory.h"
+#include "expansions/sw97/sw97_config.h"
 
 extern const char* digitTextures[];
+
+extern s32 Sw97_MedallionToArrowItem(s32 medallionItem);
+static s32 sSw97ArrowMode = 0;
+
+/**
+ * SW97 Medallion equipping: when CVar enabled and cursor is on a medallion
+ * the player has, pressing a C-button equips that medallion (or its arrow item)
+ * to that C-slot depending on sSw97ArrowMode.
+ * Returns true if a medallion was equipped (consume the input).
+ */
+static s32 Sw97_TryEquipMedallion(PlayState* play, Input* input) {
+    if (!SW97_MEDALLIONS_ENABLED()) {
+        return false;
+    }
+
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s16 cursorPoint = pauseCtx->cursorPoint[PAUSE_QUEST];
+
+    // Only medallions (cursor points 0-5)
+    if (cursorPoint < 0 || cursorPoint > 5) {
+        return false;
+    }
+
+    // Must have the medallion
+    if (!CHECK_QUEST_ITEM(cursorPoint)) {
+        return false;
+    }
+
+    // Detect C-button or DPad press
+    s32 targetCBtn = -1;
+    if (CHECK_BTN_ALL(input->press.button, BTN_CLEFT)) {
+        targetCBtn = 0;
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CDOWN)) {
+        targetCBtn = 1;
+    } else if (CHECK_BTN_ALL(input->press.button, BTN_CRIGHT)) {
+        targetCBtn = 2;
+    } else if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0)) {
+        if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
+            targetCBtn = 3;
+        } else if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
+            targetCBtn = 4;
+        } else if (CHECK_BTN_ALL(input->press.button, BTN_DLEFT)) {
+            targetCBtn = 5;
+        } else if (CHECK_BTN_ALL(input->press.button, BTN_DRIGHT)) {
+            targetCBtn = 6;
+        }
+    }
+
+    if (targetCBtn < 0) {
+        return false;
+    }
+
+    // Map cursor point (0-5) to medallion item ID
+    // 0=Forest(0x66), 1=Fire(0x67), 2=Water(0x68), 3=Spirit(0x69), 4=Shadow(0x6A), 5=Light(0x6B)
+    s32 medallionItem = cursorPoint + ITEM_MEDALLION_FOREST;
+
+    // In arrow mode, equip the SW97 arrow item instead of the medallion
+    s32 itemToEquip = medallionItem;
+    if (sSw97ArrowMode) {
+        s32 arrowItem = Sw97_MedallionToArrowItem(medallionItem);
+        if (arrowItem != ITEM_NONE) {
+            itemToEquip = arrowItem;
+        }
+    }
+
+    // Equip to the target button
+    s32 targetButtonIndex = targetCBtn + 1; // buttonItems[0] is B button
+    gSaveContext.equips.buttonItems[targetButtonIndex] = itemToEquip;
+    gSaveContext.equips.cButtonSlots[targetCBtn] = 0xFF; // Special marker: not from inventory
+    Interface_LoadItemIcon1(play, targetButtonIndex);
+
+    Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    return true;
+}
 
 void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
 
@@ -193,6 +269,16 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
 
             KaleidoScope_SetCursorVtx(pauseCtx, sp216 * 4, pauseCtx->questVtx);
 
+            // SW97: L toggles arrow/slingshot mode; C-button equips in current mode
+            if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->cursorSpecialPos == 0)) {
+                if (SW97_MEDALLIONS_ENABLED() && CHECK_BTN_ALL(input->press.button, BTN_L)) {
+                    sSw97ArrowMode ^= 1;
+                    Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                }
+                Sw97_TryEquipMedallion(play, input);
+            }
+
             if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->cursorSpecialPos == 0)) {
                 if ((sp216 >= QUEST_SONG_MINUET) && (sp216 < QUEST_KOKIRI_EMERALD)) {
                     if (CHECK_QUEST_ITEM(pauseCtx->cursorPoint[PAUSE_QUEST])) {
@@ -348,11 +434,40 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
 
         if (CHECK_QUEST_ITEM(sp218)) {
             gDPPipeSync(POLY_OPA_DISP++);
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
             gDPSetEnvColor(POLY_OPA_DISP++, D_8082A0D8[sp218], D_8082A0E4[sp218], D_8082A0F0[sp218], 0);
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[sp21A], 4, 0);
 
-            KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, ExtInv_GetItemIcon(ITEM_MEDALLION_FOREST + sp218), 24, 24, 0);
+            if (SW97_MEDALLIONS_ENABLED() && sSw97ArrowMode) {
+                // Arrow/slingshot mode: medallion at 50% alpha
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha >> 1);
+                KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, ExtInv_GetItemIcon(ITEM_MEDALLION_FOREST + sp218), 24, 24,
+                                                   0);
+                // Weapon overlay at full alpha. gSPVertex stores a POINTER — data is read
+                // at render time, so we must allocate a temp copy with S/T for 32x32.
+                void* weaponTex = LINK_IS_ADULT ? ExtInv_GetItemIcon(ITEM_BOW) : ExtInv_GetItemIcon(ITEM_SLINGSHOT);
+                Vtx* weaponVtx = (Vtx*)Graph_Alloc(gfxCtx, 4 * sizeof(Vtx));
+                for (s32 vi = 0; vi < 4; vi++) {
+                    weaponVtx[vi] = pauseCtx->questVtx[sp21A + vi];
+                }
+                // Map full 32x32 texture to the 24-pixel quad → weapon scaled to 75%
+                weaponVtx[0].v.tc[0] = 0;
+                weaponVtx[0].v.tc[1] = 0;
+                weaponVtx[1].v.tc[0] = 32 << 5;
+                weaponVtx[1].v.tc[1] = 0;
+                weaponVtx[2].v.tc[0] = 0;
+                weaponVtx[2].v.tc[1] = 32 << 5;
+                weaponVtx[3].v.tc[0] = 32 << 5;
+                weaponVtx[3].v.tc[1] = 32 << 5;
+                gDPPipeSync(POLY_OPA_DISP++);
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+                gDPSetEnvColor(POLY_OPA_DISP++, 0, 0, 0, 255);
+                gSPVertex(POLY_OPA_DISP++, weaponVtx, 4, 0);
+                KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, weaponTex, 32, 32, 0);
+            } else {
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+                KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, ExtInv_GetItemIcon(ITEM_MEDALLION_FOREST + sp218), 24, 24,
+                                                   0);
+            }
         }
     }
 

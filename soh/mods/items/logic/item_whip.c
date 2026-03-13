@@ -234,7 +234,7 @@ static void Whip_Start(Player* p, PlayState* play) {
         f32 hDist = sqrtf(dx * dx + dz * dz);
 
         whipExtendYaw = Math_Atan2S(dx, dz);
-        whipExtendPitch = Math_Atan2S(dy, hDist);
+        whipExtendPitch = 0; // Launch flat, per-frame homing adjusts pitch toward target
         whipTipPos = p->bodyPartsPos[PLAYER_BODYPART_R_HAND];
         whipTimer = WHIP_TIMER_MAX;
         whipState = WHIP_STATE_EXTENDING;
@@ -296,7 +296,7 @@ static void WhipStateEquip(Player* p, PlayState* play, ItemInputState* in) {
             f32 dz = p->focusActor->world.pos.z - p->actor.world.pos.z;
             f32 hDist = sqrtf(dx * dx + dz * dz);
             whipExtendYaw = Math_Atan2S(dx, dz);
-            whipExtendPitch = Math_Atan2S(dy, hDist);
+            whipExtendPitch = 0; // Launch flat, per-frame homing adjusts pitch
         } else {
             whipExtendYaw = p->actor.shape.rot.y;
             whipExtendPitch = 0;
@@ -337,27 +337,32 @@ static void WhipStateExtending(Player* p, PlayState* play) {
     // Save previous tip for line test
     prevTip = whipTipPos;
 
-    // Z-target homing: recalculate direction toward target each frame
+    // Z-target: move tip directly toward focus actor (like ball and chain)
     if (Player_IsZTargeting(p) && p->focusActor != NULL && p->focusActor->update != NULL) {
-        f32 targetY = p->focusActor->world.pos.y + (p->focusActor->shape.yOffset * p->focusActor->scale.y);
-        f32 hdx = p->focusActor->world.pos.x - whipTipPos.x;
-        f32 hdy = targetY - whipTipPos.y;
-        f32 hdz = p->focusActor->world.pos.z - whipTipPos.z;
-        s16 targetYaw = Math_Atan2S(hdx, hdz);
-        s16 targetPitch = Math_Atan2S(hdy, sqrtf(hdx * hdx + hdz * hdz));
-        Math_ScaledStepToS(&whipExtendYaw, targetYaw, 0x2000);
-        Math_ScaledStepToS(&whipExtendPitch, targetPitch, 0x1000);
+        Vec3f target = p->focusActor->focus.pos;
+        f32 dx2 = target.x - whipTipPos.x;
+        f32 dy2 = target.y - whipTipPos.y;
+        f32 dz2 = target.z - whipTipPos.z;
+        f32 dist = sqrtf(dx2 * dx2 + dy2 * dy2 + dz2 * dz2);
+
+        if (dist > 1.0f) {
+            f32 norm = WHIP_EXTEND_SPEED / dist;
+            whipTipPos.x += dx2 * norm;
+            whipTipPos.y += dy2 * norm;
+            whipTipPos.z += dz2 * norm;
+        }
+        whipExtendYaw = Math_Atan2S(dx2, dz2);
+    } else {
+        // Non-Z-target: use pitch/yaw angles (first-person or free aim)
+        cosP = Math_CosS(whipExtendPitch);
+        sinP = Math_SinS(whipExtendPitch);
+        cosY = Math_CosS(whipExtendYaw);
+        sinY = Math_SinS(whipExtendYaw);
+
+        whipTipPos.x += sinY * cosP * WHIP_EXTEND_SPEED;
+        whipTipPos.y -= sinP * WHIP_EXTEND_SPEED;
+        whipTipPos.z += cosY * cosP * WHIP_EXTEND_SPEED;
     }
-
-    // Advance tip along aim direction
-    cosP = Math_CosS(whipExtendPitch);
-    sinP = Math_SinS(whipExtendPitch);
-    cosY = Math_CosS(whipExtendYaw);
-    sinY = Math_SinS(whipExtendYaw);
-
-    whipTipPos.x += sinY * cosP * WHIP_EXTEND_SPEED;
-    whipTipPos.y -= sinP * WHIP_EXTEND_SPEED;
-    whipTipPos.z += cosY * cosP * WHIP_EXTEND_SPEED;
 
     // Update collider at new tip position
     Whip_UpdateCollider(play, &whipTipPos);
@@ -735,7 +740,7 @@ void Handle_Whip(Player* p, PlayState* play) {
 
     ItemInput_Update(&in, ITEM_WHIP, p, play);
 
-    if (!in.wasEquipped || ItemInput_IsBlocked(p, play) || ItemInput_CheckDamage(p, &whipPrevInvinc)) {
+    if (!in.wasEquipped || ItemInput_IsBlockedEx(p, play, 1) || ItemInput_CheckDamage(p, &whipPrevInvinc)) {
         if (whipActive)
             Whip_Stop(p, play);
         return;

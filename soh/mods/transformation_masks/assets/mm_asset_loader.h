@@ -166,6 +166,13 @@ const char* MmMasks_GetNamePath(uint16_t itemId);
 void* MmAssets_LoadFDSwordIcon(void);
 
 /**
+ * Load form-specific B-button icon (mask icon for each transformation)
+ * @param form MM_PLAYER_FORM_* enum (0=FD, 1=Goron, 2=Zora, 3=Deku)
+ * @return Pointer to 32x32 RGBA icon texture, or NULL if not found
+ */
+void* MmAssets_LoadFormBIcon(u8 form);
+
+/**
  * Get OTR path string for Chateau Romani icon texture.
  * @return __OTR__ path string, or NULL if not available
  */
@@ -325,6 +332,15 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples);
  * Stop all playing MM direct audio sounds
  */
 void MmDirectAudio_StopAll(void);
+
+/**
+ * Play an instrument note for gakki (MM form-specific instruments)
+ * Uses real MM soundfonts: Goron Drums (SF38), Zora Guitar (SF29), Deku Pipes (SF34)
+ * @param form MM_PLAYER_FORM_GORON(1), ZORA(2), DEKU(3)
+ * @param buttonIndex 0=A(D4), 1=CDown(F4), 2=CRight(A4), 3=CLeft(B4), 4=CUp(D5)
+ * @param pos World position for spatial audio (NULL for 2D)
+ */
+void MmGakki_PlayNote(s32 form, u8 buttonIndex, Vec3f* pos);
 
 #ifdef __cplusplus
 }

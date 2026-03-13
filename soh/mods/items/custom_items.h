@@ -299,6 +299,7 @@ typedef struct {
     s16 hyliasGraceTimer;
     s16 hyliasGraceCooldown;
     Actor* hyliasGraceFairy;
+    u8 hyliasGraceForcedBySpell;
 
     // Zonai Permafrost
     u8 zonaiPermafrostActive;

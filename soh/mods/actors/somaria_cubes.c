@@ -24,10 +24,7 @@ static void SomariaCube_Update(Actor* thisx, PlayState* play);
 static void SomariaCube_Draw(Actor* thisx, PlayState* play);
 static void SomariaCube_DestroyFunc(Actor* thisx, PlayState* play);
 
-// Forward declarations for transformation system
-extern u8 TransformMasks_IsTransformed(void);
-// MmPlayerTransformation: FD=0, Goron=1, Zora=2, Deku=3, Human=4
-extern int MmPlayer_GetForm(void);
+#include "transformation_masks/transformation_masks.h"
 
 static ActorFunc sOriginalDestroy = NULL;
 static ActorFunc sSomariaCubeUpdate = SomariaCube_Update;

@@ -66,14 +66,10 @@ void Harpoon::RegisterHooks() {
     });
 
     // Send SFX to other players
-    COND_HOOK(OnPlayerSfx, isConnected, [&](u16 sfxId) {
-        SendPacket_PlayerSfx(sfxId);
-    });
+    COND_HOOK(OnPlayerSfx, isConnected, [&](u16 sfxId) { SendPacket_PlayerSfx(sfxId); });
 
     // Load game → request team state (from Anchor)
-    COND_HOOK(OnLoadGame, isConnected, [&](s16 fileNum) {
-        justLoadedSave = true;
-    });
+    COND_HOOK(OnLoadGame, isConnected, [&](s16 fileNum) { justLoadedSave = true; });
 
     // Sync full save state on save
     COND_HOOK(OnSaveFile, isConnected, [&](s16 fileNum, int sectionID) {
@@ -94,9 +90,7 @@ void Harpoon::RegisterHooks() {
     });
 
     // Sync dungeon key usage (from Anchor)
-    COND_HOOK(OnDungeonKeyUsed, isConnected, [&](uint16_t mapIndex) {
-        SendPacket_UpdateDungeonItems();
-    });
+    COND_HOOK(OnDungeonKeyUsed, isConnected, [&](uint16_t mapIndex) { SendPacket_UpdateDungeonItems(); });
 
     // Flag sync hooks (from Anchor)
     COND_HOOK(OnFlagSet, isConnected,

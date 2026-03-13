@@ -342,6 +342,7 @@ extern void* MmAssets_LoadFDSwordIcon(void);
 extern const char* MmAssets_GetChateauIconPath(void);
 
 void* ExtInv_GetItemIcon(uint16_t itemId) {
+
     // FD skin mode: show FD sword icon for any equipped sword
     if (TransformMasks_IsFDSkinMode() && (itemId == ITEM_SWORD_KOKIRI || itemId == ITEM_SWORD_MASTER ||
                                           itemId == ITEM_SWORD_BGS || itemId == ITEM_SWORD_KNIFE)) {
@@ -416,6 +417,35 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return (void*)gItemIconPending2Tex;
         case ITEM_PENDING_3: // 0xB6
             return (void*)gItemIconPending3Tex;
+
+        // SW97 Medallion items (spell mode — show medallion quest icons)
+        case ITEM_MEDALLION_FOREST:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionForestTex";
+        case ITEM_MEDALLION_FIRE:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionFireTex";
+        case ITEM_MEDALLION_WATER:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionWaterTex";
+        case ITEM_MEDALLION_SPIRIT:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionSpiritTex";
+        case ITEM_MEDALLION_SHADOW:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionShadowTex";
+        case ITEM_MEDALLION_LIGHT:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionLightTex";
+
+        // SW97 Arrow items (arrow mode — SAME medallion icons)
+        case ITEM_SW97_ARROW_FIRE:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionFireTex";
+        case ITEM_SW97_ARROW_ICE:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionWaterTex";
+        case ITEM_SW97_ARROW_LIGHT:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionLightTex";
+        case ITEM_SW97_ARROW_DARK:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionShadowTex";
+        case ITEM_SW97_ARROW_SOUL:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionSpiritTex";
+        case ITEM_SW97_ARROW_WIND:
+            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionForestTex";
+
         case ITEM_CHATEAU_ROMANI: { // 0xB5
             const char* path = MmAssets_GetChateauIconPath();
             if (path)

@@ -1,6 +1,7 @@
 #include "z_en_m_thunder.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "overlays/effects/ovl_Effect_Ss_Blast/z_eff_ss_blast.h"
 
 #define FLAGS 0
 
@@ -81,6 +82,9 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
     //   unk_1B4 = scroll (texture animation counter)
     //   unk_1BC = scaleTarget (12.0 in MM, beam grows to this)
     if (this->actor.params & EN_M_THUNDER_SWORD_BEAM_FLAG) {
+        // MM EnMThunder_Init line 124: shape.rot.y = player.shape.rot.y + 0x8000.
+        // Without this, movement formula (-80 * sin(shape.rot.y)) fires beam backward.
+        this->actor.shape.rot.y = player->actor.shape.rot.y + 0x8000;
         this->unk_1C6 = 2; // Sword beam type
         this->unk_1CA = 0; // No magic tracking
         // MM: scale starts at 0, ramps to scaleTarget (12) via Math_SmoothStepToF
@@ -390,6 +394,18 @@ static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play) {
 
     CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
 
+    // Hit effect: white flash on enemy body when beam connects (uses gameplay_keep, always loaded)
+    if (this->collider.base.atFlags & AT_HIT) {
+        Actor* hitActor = this->collider.base.at;
+        if (hitActor != NULL) {
+            Vec3f vel = { 0.0f, 0.0f, 0.0f };
+            Vec3f accel = { 0.0f, 0.0f, 0.0f };
+            EffectSsBlast_SpawnWhiteCustomScale(play, &hitActor->focus.pos, &vel, &accel, 100, 250, 8);
+        }
+        Actor_Kill(&this->actor);
+        return;
+    }
+
     // Timer (MM line 437-439)
     if (this->unk_1C4 > 0) {
         this->unk_1C4--;
@@ -432,25 +448,33 @@ void EnMThunder_Draw(Actor* thisx, PlayState* play2) {
     // From MM EnMThunder_Draw (lines 480-535): uses Matrix_Scale(0.02f), segment 0x08 TwoTexScroll,
     // alphaFrac for fade, prim/env colors matching ENMTHUNDER_SUBTYPE_SWORDBEAM_REGULAR.
     if (this->unk_1C6 == 2) {
+        u16 alpha = (u16)(this->unk_1B0 * 255.0f); // alphaFrac
         Gfx* beamDL = TransformMasks_GetFDSwordBeamDL(play);
-        if (beamDL != NULL) {
-            u16 alpha = (u16)(this->unk_1B0 * 255.0f); // alphaFrac
 
-            OPEN_DISPS(play->state.gfxCtx);
-            Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-            // MM line 490: scale 0.02f applied to actor matrix (actor scale ramps to 12 → final 0.24f)
-            Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            // Segment 0x08: animated texture scroll (MM lines 504-506)
-            gSPSegment(POLY_XLU_DISP++, 0x08,
-                       Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 16, 64, 1, 0,
-                                        0x1FF - ((u16)(s32)(this->unk_1B4 * 10.0f) & 0x1FF), 32, 128));
-            // Colors: MM SWORDBEAM_REGULAR (lines 527-529)
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 170, 255, 255, alpha);
-            gDPSetEnvColor(POLY_XLU_DISP++, 0, 100, 255, 128);
+        OPEN_DISPS(play->state.gfxCtx);
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        // MM line 490: scale 0.02f applied to actor matrix (actor scale ramps to 12 → final 0.24f)
+        Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        // Segment 0x08: animated texture scroll (MM lines 504-506)
+        gSPSegment(POLY_XLU_DISP++, 0x08,
+                   Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0, 0, 16, 64, 1, 0,
+                                    0x1FF - ((u16)(s32)(this->unk_1B4 * 10.0f) & 0x1FF), 32, 128));
+        // Colors: MM SWORDBEAM_REGULAR (lines 527-529)
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 170, 255, 255, alpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 0, 100, 255, 128);
+        if (beamDL != NULL) {
+            // MM DL from mm.o2r
             gSPDisplayList(POLY_XLU_DISP++, beamDL);
-            CLOSE_DISPS(play->state.gfxCtx);
+        } else {
+            // Fallback: use OOT level-1 spin attack DL (same cyan color)
+            gSPSegment(POLY_XLU_DISP++, 0x08,
+                       Gfx_TwoTexScroll(play->state.gfxCtx, 0, 0xFF - ((u8)(s32)(this->unk_1B4 * 30) & 0xFF), 0, 0x40,
+                                        0x20, 1, 0xFF - ((u8)(s32)(this->unk_1B4 * 20) & 0xFF), 0, 8, 8));
+            gSPDisplayList(POLY_XLU_DISP++, gSpinAttack1DL);
+            gSPDisplayList(POLY_XLU_DISP++, gSpinAttack2DL);
         }
+        CLOSE_DISPS(play->state.gfxCtx);
         return;
     }
 

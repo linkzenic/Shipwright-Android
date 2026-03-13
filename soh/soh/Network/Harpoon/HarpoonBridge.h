@@ -17,15 +17,15 @@ extern "C" {
 
 // Custom damage types (match receiver-side switch in HandlePacket_CustomDamage)
 typedef enum {
-    HARPOON_CUSTOM_DMG_FIRE = 0,       // Fire Rod - burn
-    HARPOON_CUSTOM_DMG_ICE = 1,        // Ice Rod - freeze
-    HARPOON_CUSTOM_DMG_ELECTRIC = 2,   // Light Rod - shock
-    HARPOON_CUSTOM_DMG_HEAVY = 3,      // Ball and Chain - strong knockback
-    HARPOON_CUSTOM_DMG_BOMB = 4,       // Bomb Arrows - explosive
-    HARPOON_CUSTOM_DMG_AOE_STUN = 5,   // Demise's Destruction - AoE stun
-    HARPOON_CUSTOM_DMG_LAUNCH = 6,     // Deku Leaf - upward launch
-    HARPOON_CUSTOM_DMG_NORMAL = 7,     // Spinner/Kokiri sword equivalent
-    HARPOON_CUSTOM_DMG_BOOMERANG = 8,  // Beetle - boomerang stun
+    HARPOON_CUSTOM_DMG_FIRE = 0,      // Fire Rod - burn
+    HARPOON_CUSTOM_DMG_ICE = 1,       // Ice Rod - freeze
+    HARPOON_CUSTOM_DMG_ELECTRIC = 2,  // Light Rod - shock
+    HARPOON_CUSTOM_DMG_HEAVY = 3,     // Ball and Chain - strong knockback
+    HARPOON_CUSTOM_DMG_BOMB = 4,      // Bomb Arrows - explosive
+    HARPOON_CUSTOM_DMG_AOE_STUN = 5,  // Demise's Destruction - AoE stun
+    HARPOON_CUSTOM_DMG_LAUNCH = 6,    // Deku Leaf - upward launch
+    HARPOON_CUSTOM_DMG_NORMAL = 7,    // Spinner/Kokiri sword equivalent
+    HARPOON_CUSTOM_DMG_BOOMERANG = 8, // Beetle - boomerang stun
     HARPOON_CUSTOM_DMG_GORON_ROLL = 9,
     HARPOON_CUSTOM_DMG_GORON_PUNCH = 10,
     HARPOON_CUSTOM_DMG_ZORA_FINS = 11,
@@ -34,9 +34,9 @@ typedef enum {
 
 // Custom effect types for special interactions
 typedef enum {
-    HARPOON_CUSTOM_EFFECT_PULL = 0,    // Whip - pull target toward attacker
-    HARPOON_CUSTOM_EFFECT_SWAP = 1,    // Switch Hook - swap positions
-    HARPOON_CUSTOM_EFFECT_PUPPET = 2,  // Dominion Rod - puppet control
+    HARPOON_CUSTOM_EFFECT_PULL = 0,   // Whip - pull target toward attacker
+    HARPOON_CUSTOM_EFFECT_SWAP = 1,   // Switch Hook - swap positions
+    HARPOON_CUSTOM_EFFECT_PUPPET = 2, // Dominion Rod - puppet control
 } HarpoonCustomEffectType;
 
 // Returns 1 if the actor is a Harpoon dummy player, 0 otherwise

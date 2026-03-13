@@ -12,6 +12,7 @@
 #include "z64item.h"
 #include "macros.h"
 #include "functions.h"
+#include "soh/frame_interpolation.h"
 #include <exception>
 #include <libultraship/bridge.h>
 #include "soh/cvar_prefixes.h"
@@ -35,6 +36,16 @@ extern "C" {
 
 // For Kamaro's Mask → dance animation from MM (includes mm_anims.h for MmAnimId enum)
 #include "mods/anim_translator/mm_anim_loader.h"
+
+// For Great Fairy Mask map overlay (same textures as minish_kaleido)
+#include "textures/map_name_static/map_name_static.h"
+#include "textures/icon_item_static/icon_item_static.h"
+#include "textures/icon_item_field_static/icon_item_field_static.h"
+#include "textures/icon_item_nes_static/icon_item_nes_static.h"
+#include "textures/icon_item_ger_static/icon_item_ger_static.h"
+#include "textures/icon_item_fra_static/icon_item_fra_static.h"
+#include "textures/icon_item_jpn_static/icon_item_jpn_static.h"
+#include "textures/icon_item_24_static/icon_item_24_static.h"
 
 // =============================================================================
 // Worn Mask DL OTR Paths (from MM D_801C0B20[] - z_player_lib.c line 2853)
@@ -165,6 +176,512 @@ static s32 sDaruniaDanceTimer = 0; // Frames Darunia has been dancing with playe
 static s32 sGreatFairyMenuOpen = 0;
 static s32 sGreatFairyMenuCursor = 0;
 static s32 sGreatFairyInputSkip = 0; // Skip input on first frame (same-frame open/close guard)
+static s8 sFairyStickHeld = 0;       // Analog stick debounce for map navigation
+static s8 sFairyKaleidoInit = 0;     // Whether fairy kaleido has been initialized this session
+
+// =============================================================================
+// Fairy Kaleido: Pulse animation (same pattern as minish_kaleido)
+// =============================================================================
+
+static s16 sFairyPulsePrim[] = { 255, 150, 255 };
+static s16 sFairyPulseTarget[][3] = {
+    { 150, 255, 255 }, // Stage 0: Cyan
+    { 255, 150, 255 }, // Stage 1: Pink
+};
+static s16 sFairyPulseStage = 0;
+static s16 sFairyPulseTimer = 20;
+
+static void FairyKaleido_UpdatePulse(void) {
+    for (s32 c = 0; c < 3; c++) {
+        s16 diff = sFairyPulseTarget[sFairyPulseStage][c] - sFairyPulsePrim[c];
+        s16 step = diff / (sFairyPulseTimer > 0 ? sFairyPulseTimer : 1);
+        sFairyPulsePrim[c] += step;
+    }
+    sFairyPulseTimer--;
+    if (sFairyPulseTimer <= 0) {
+        for (s32 c = 0; c < 3; c++)
+            sFairyPulsePrim[c] = sFairyPulseTarget[sFairyPulseStage][c];
+        sFairyPulseStage ^= 1;
+        sFairyPulseTimer = 20;
+    }
+}
+
+// =============================================================================
+// Fairy Kaleido: Data tables for map overlay
+// =============================================================================
+
+// Stray Fairy textures from mm.o2r
+static const char* sStrayFairyHeadTex = "__OTR__objects/gameplay_keep/gStrayFairyRightFacingHeadTex"; // IA8 32x32
+static const char* sStrayFairyGlowTex = "__OTR__objects/gameplay_keep/gStrayFairyGlowTex";            // I4  16x16
+static const char* sStrayFairyBodyTex = "__OTR__objects/gameplay_keep/gStrayFairyBodyTex";            // IA8 16x32
+static const char* sStrayFairyWingTex = "__OTR__objects/gameplay_keep/gStrayFairyWingTex";            // IA8 16x16
+// Pre-rendered full fairy sprite (RGBA32 32x24) — parameter_static
+static const char* sStrayFairyFullTex = "__OTR__interface/parameter_static/gStrayFairyWoodfallIconTex"; // RGBA32 32x24
+static const char* sStrayFairyGlowCircleTex =
+    "__OTR__interface/parameter_static/gStrayFairyGlowingCircleIconTex"; // I4 32x24
+static s32 sStrayFairyFullTexAvailable = -1;                             // -1=unknown, 0=no, 1=yes
+
+// ---- Fairy warp animation state ----
+static s32 sFairyWarpPhase = 0; // 0=none, 1=void-out (fading), 2=void-in (fading)
+static s32 sFairyWarpTimer = 0;
+static s8 sFairyWarpDestIdx = -1;
+
+#define FAIRY_VOID_OUT_FRAMES 30 // ~1 second fade out
+#define FAIRY_VOID_IN_FRAMES 30  // ~1 second fade in
+
+// =============================================================================
+// Great Fairy Mask - Hair Strand Physics (from MM z_player_lib.c:3297-3601)
+// 3 strands × 3 chain links each. Segment 0x0B = 6 matrices (2 per strand).
+// =============================================================================
+
+// Chain link: position, velocity, orientation (from MM struct_801F58B0)
+typedef struct {
+    Vec3f pos;   // 0x00 - world position
+    Vec3f vel;   // 0x0C - velocity
+    s16 yaw;     // 0x18
+    s16 pitch;   // 0x1A
+} FairyHairLink; // size = 0x1C
+
+static FairyHairLink sFairyHairStrands[3][3]; // 3 strands × 3 links
+static s32 sFairyHairInited = 0;
+static s32 sFairyHairActivated = 0;             // 1 = in Great Fairy Fountain (strands float up + particles)
+static u32 sHairLastPhysicsFrame = 0xFFFFFFFFu; // Guard against double-draw per frame
+
+// Strand root positions in head model space (from MM D_801C0C0C)
+static Vec3f sHairRootPos[] = {
+    { 174.0f, -1269.0f, -1.0f },
+    { 401.0f, -729.0f, -701.0f },
+    { 401.0f, -729.0f, 699.0f },
+};
+
+// Strand gravity targets (from MM D_801C0C30)
+static Vec3f sHairTargetPos[] = {
+    { 74.0f, -1269.0f, -1.0f },
+    { 301.0f, -729.0f, -701.0f },
+    { 301.0f, -729.0f, 699.0f },
+};
+
+// Chain constraint params (from MM D_801C0C54)
+typedef struct {
+    f32 length;    // 0x00
+    s16 rotY;      // 0x04
+    s16 rotX;      // 0x06
+    Vec3f target;  // 0x08
+    f32 maxLength; // 0x14
+    s16 maxYaw;    // 0x18
+    s16 maxPitch;  // 0x1A
+} HairChainParam;  // size = 0x1C
+
+static HairChainParam sHairChainParams[] = {
+    { 0.0f, 0x0000, (s16)0x8000, { 0.0f, 0.0f, 0.0f }, 0.0f, 0x0000, 0x0000 },
+    { 16.8f, 0x0000, 0x0000, { 0.0f, 0.0f, 0.0f }, 20.0f, 0x1388, 0x1388 },
+    { 30.0f, 0x0000, 0x0000, { 0.0f, 0.0f, 0.0f }, 20.0f, 0x1F40, 0x2EE0 },
+};
+
+// D_801C0C00: offset for chain constraint target computation
+static Vec3f sHairTargetOffset = { 0.0f, 20.0f, 0.0f };
+
+// Initialize all strand links to a position (from MM func_80127B64)
+static void FairyHair_Init(Vec3f* headPos) {
+    for (s32 s = 0; s < 3; s++) {
+        for (s32 i = 0; i < 3; i++) {
+            Math_Vec3f_Copy(&sFairyHairStrands[s][i].pos, headPos);
+            sFairyHairStrands[s][i].vel.x = 0.0f;
+            sFairyHairStrands[s][i].vel.y = 0.0f;
+            sFairyHairStrands[s][i].vel.z = 0.0f;
+            sFairyHairStrands[s][i].yaw = 0;
+            sFairyHairStrands[s][i].pitch = 0;
+        }
+    }
+    sFairyHairInited = 1;
+}
+
+// Spawn sparkle particles when activated (from MM Player_DrawStrayFairyParticles)
+static void FairyHair_SpawnParticles(PlayState* play, Vec3f* pos) {
+    Vec3f sparkVel = { 0.0f, 0.3f, 0.0f };
+    Vec3f sparkAccel = { 0.0f, -0.025f, 0.0f };
+    Color_RGBA8 primColor = { 250, 100, 100, 0 };
+    Color_RGBA8 envColor = { 0, 0, 100, 0 };
+    Vec3f sparkPos;
+
+    sparkVel.y = Rand_ZeroFloat(0.07f) + -0.1f;
+    sparkAccel.y = Rand_ZeroFloat(0.1f) + 0.04f;
+
+    f32 sign = (Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f;
+    sparkVel.x = (Rand_ZeroFloat(0.2f) + 0.1f) * sign;
+    sparkAccel.x = 0.1f * sign;
+
+    sign = (Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f;
+    sparkVel.z = (Rand_ZeroFloat(0.2f) + 0.1f) * sign;
+    sparkAccel.z = 0.1f * sign;
+
+    sparkPos.x = pos->x;
+    sparkPos.y = Rand_ZeroFloat(15.0f) + pos->y;
+    sparkPos.z = pos->z;
+
+    EffectSsKiraKira_SpawnDispersed(play, &sparkPos, &sparkVel, &sparkAccel, &primColor, &envColor, -50, 11);
+}
+
+// VERBATIM port of MM func_80127DA4 (z_player_lib.c:3437-3542)
+// Only changes: struct field names, activation check, Atan2S_XY→Atan2S swap
+static void FairyHair_UpdateStrand(PlayState* play, FairyHairLink arg1[], HairChainParam arg2[], s32 arg3, Vec3f* arg4,
+                                   Vec3f* arg5, u32* arg6) {
+    FairyHairLink* phi_s1 = &arg1[1];
+    Vec3f spB0;
+    Vec3f spA4;
+    f32 f22;
+    f32 f28;
+    f32 f24;
+    f32 f20;
+    f32 f0;
+    f32 sp8C = -1.0f;
+    s32 i;
+    s16 s0;
+    s16 s2;
+
+    Math_Vec3f_Copy(&arg1->pos, arg4);
+    Math_Vec3f_Diff(arg5, arg4, &spB0);
+    // Math_Atan2S_XY(x,y) = Math_Atan2S(y,x)
+    arg1->yaw = Math_Atan2S(spB0.x, spB0.z);
+    arg1->pitch = Math_Atan2S(spB0.y, sqrtf(SQ(spB0.x) + SQ(spB0.z)));
+    i = 1;
+    arg2++;
+
+    while (i < arg3) {
+        // Save previous frame's angles for 1°/frame rotation limiter
+        s16 oldYaw = phi_s1->yaw;
+        s16 oldPitch = phi_s1->pitch;
+
+        if (sFairyHairActivated) {
+            if (*arg6 & 0x20) {
+                sp8C = -0.2f;
+            } else {
+                sp8C = 0.2f;
+            }
+
+            *arg6 += 0x16;
+            if (!(*arg6 & 1)) {
+                FairyHair_SpawnParticles(play, &phi_s1->pos);
+            }
+        }
+        Math_Vec3f_Sum(&phi_s1->pos, &phi_s1->vel, &phi_s1->pos);
+
+        f0 = Math_Vec3f_DistXYZAndStoreDiff(&arg1->pos, &phi_s1->pos, &spB0);
+        f28 = f0 - arg2->length;
+        if (f0 == 0.0f) {
+            spB0.x = 0.0f;
+            spB0.y = arg2->length;
+            spB0.z = 0.0f;
+        }
+        f20 = sqrtf(SQ(spB0.x) + SQ(spB0.z));
+
+        if (f20 > 4.0f) {
+            phi_s1->yaw = Math_Atan2S(spB0.x, spB0.z);
+            s2 = phi_s1->yaw - arg1->yaw;
+
+            if (ABS(s2) > 0x4000) {
+                phi_s1->yaw = (s16)(phi_s1->yaw + 0x8000);
+                f20 = -f20;
+            }
+        }
+
+        phi_s1->pitch = Math_Atan2S(spB0.y, f20);
+
+        s2 = phi_s1->yaw - arg1->yaw;
+        s2 = CLAMP(s2, -arg2->maxYaw, arg2->maxYaw);
+        phi_s1->yaw = arg1->yaw + s2;
+
+        s0 = phi_s1->pitch - arg1->pitch;
+        s0 = CLAMP(s0, -arg2->maxPitch, arg2->maxPitch);
+        phi_s1->pitch = arg1->pitch + s0;
+
+        // Hard 1°/frame rotation limiter (~182 binang units = 1°)
+        {
+            s16 deltaYaw = (s16)(phi_s1->yaw - oldYaw);
+            s16 deltaPitch = (s16)(phi_s1->pitch - oldPitch);
+            deltaYaw = CLAMP(deltaYaw, -0x00B6, 0x00B6);
+            deltaPitch = CLAMP(deltaPitch, -0x00B6, 0x00B6);
+            phi_s1->yaw = oldYaw + deltaYaw;
+            phi_s1->pitch = oldPitch + deltaPitch;
+            // Recompute relative angles so velocity uses clamped values
+            s2 = phi_s1->yaw - arg1->yaw;
+            s0 = phi_s1->pitch - arg1->pitch;
+        }
+
+        f20 = Math_CosS(phi_s1->pitch) * arg2->length;
+        spA4.x = Math_SinS(phi_s1->yaw) * f20;
+        spA4.z = Math_CosS(phi_s1->yaw) * f20;
+        spA4.y = Math_SinS(phi_s1->pitch) * arg2->length;
+        Math_Vec3f_Sum(&arg1->pos, &spA4, &phi_s1->pos);
+        phi_s1->vel.x *= 0.9f;
+        phi_s1->vel.z *= 0.9f;
+
+        f22 = Math_CosS(s0) * f28;
+        f24 = Math_SinS(s0) * f28;
+        phi_s1->vel.y += sp8C;
+
+        if (sFairyHairActivated) {
+            phi_s1->vel.y = CLAMP(phi_s1->vel.y, -0.8f, 0.8f);
+        } else {
+            f20 = Math_SinS(arg1->pitch);
+            phi_s1->vel.y += (((f22 * Math_CosS(arg1->pitch)) + (f24 * f20)) * 0.2f);
+            phi_s1->vel.y = CLAMP(phi_s1->vel.y, -2.0f, 4.0f);
+        }
+
+        f20 = (f24 * Math_CosS(arg1->pitch)) - (Math_SinS(arg1->pitch) * f22);
+        f22 = Math_CosS(s2) * f20;
+        f24 = Math_SinS(s2) * f20;
+
+        f20 = Math_SinS(arg1->yaw);
+
+        phi_s1->vel.x += (((f24 * Math_CosS(arg1->yaw)) - (f22 * f20)) * 0.1f);
+        phi_s1->vel.x = CLAMP(phi_s1->vel.x, -4.0f, 4.0f);
+
+        f20 = Math_SinS(arg1->yaw);
+
+        phi_s1->vel.z += (((f22 * Math_CosS(arg1->yaw)) + (f24 * f20)) * -0.1f);
+        phi_s1->vel.z = CLAMP(phi_s1->vel.z, -4.0f, 4.0f);
+
+        arg1++;
+        phi_s1++;
+        i++;
+        arg2++;
+    }
+}
+
+// Convert strand angles to Mtx for segment 0x0B (from MM func_80128388)
+// VERBATIM port of MM func_80128388 (z_player_lib.c:3545-3566)
+static void FairyHair_ComputeStrandMatrices(FairyHairLink arg0[], HairChainParam arg1[], s32 arg2, Mtx** arg3) {
+    FairyHairLink* phi_s1 = &arg0[1];
+    Vec3f sp58;
+    Vec3s sp50;
+    s32 i;
+
+    sp58.y = 0.0f;
+    sp58.z = 0.0f;
+    sp50.x = 0;
+
+    for (i = 1; i < arg2; i++) {
+        sp58.x = arg1->length * 100.0f;
+        sp50.z = arg1->rotX + (s16)(phi_s1->pitch - arg0->pitch);
+        sp50.y = arg1->rotY + (s16)(phi_s1->yaw - arg0->yaw);
+        Matrix_TranslateRotateZYX(&sp58, &sp50);
+        Matrix_ToMtx(*arg3, (char*)__FILE__, __LINE__);
+        (*arg3)++;
+        arg0++;
+        phi_s1++;
+        arg1++;
+    }
+}
+
+// Full draw: compute all 3 strands' matrices for segment 0x0B (from MM Player_DrawGreatFairysMask)
+static void FairyHair_ComputeMatrices(PlayState* play, Player* player, Mtx* mtxBuffer) {
+    Vec3f rootWorld, targetWorld;
+    // Use play->gameplayFrames directly, like MM does (sp6C = play->gameplayFrames)
+    u32 frame = play->gameplayFrames;
+
+    // Only run physics simulation ONCE per game frame.
+    // SoH may call player draw multiple times per frame (reflections, pause, etc.)
+    // which would cause double-speed physics if not guarded.
+    s32 doPhysics = (play->gameplayFrames != sHairLastPhysicsFrame);
+    if (doPhysics) {
+        sHairLastPhysicsFrame = play->gameplayFrames;
+    }
+
+    // Update constraint targets from model matrix
+    Matrix_MultVec3f(&sHairTargetOffset, &sHairChainParams[1].target);
+    {
+        Vec3f* head = &player->bodyPartsPos[PLAYER_BODYPART_HEAD];
+        Vec3f* waist = &player->bodyPartsPos[PLAYER_BODYPART_WAIST];
+        sHairChainParams[2].target.x = head->x + (waist->x - head->x) * 0.2f;
+        sHairChainParams[2].target.y = head->y + (waist->y - head->y) * 0.2f;
+        sHairChainParams[2].target.z = head->z + (waist->z - head->z) * 0.2f;
+    }
+
+    for (s32 i = 0; i < 3; i++) {
+        Matrix_MultVec3f(&sHairRootPos[i], &rootWorld);
+        Matrix_MultVec3f(&sHairTargetPos[i], &targetWorld);
+
+        if (doPhysics) {
+            FairyHair_UpdateStrand(play, sFairyHairStrands[i], sHairChainParams, 3, &rootWorld, &targetWorld, &frame);
+            frame += 11;
+        }
+
+        Matrix_Push();
+        Matrix_Translate(sHairRootPos[i].x, sHairRootPos[i].y, sHairRootPos[i].z, MTXMODE_APPLY);
+        FairyHair_ComputeStrandMatrices(sFairyHairStrands[i], sHairChainParams, 3, &mtxBuffer);
+        Matrix_Pop();
+    }
+}
+
+// Fountain positions on the OOT world map (kaleido coordinates)
+typedef struct {
+    s16 centerX;
+    s16 centerY;
+    const char* nameTex[4]; // [ENG, GER, FRA, JPN]
+} FairyKaleidoData;
+
+#define FAIRY_BOX_HW 12
+#define FAIRY_BOX_HH 8
+#define FAIRY_FOUNTAIN_COUNT 6
+
+static const FairyKaleidoData sFairyAreaData[FAIRY_FOUNTAIN_COUNT] = {
+    // #0 DMT - Magic
+    { 32,
+      42,
+      { gDeathMountainTrailPositionNameENGTex, gDeathMountainTrailPositionNameGERTex,
+        gDeathMountainTrailPositionNameFRATex, gDeathMountainTrailPositionNameJPNTex } },
+    // #1 DMC - Double Magic
+    { 42,
+      52,
+      { gDeathMountainCraterPositionNameENGTex, gDeathMountainCraterPositionNameGERTex,
+        gDeathMountainCraterPositionNameFRATex, gDeathMountainCraterPositionNameJPNTex } },
+    // #2 OGC - Defense
+    { 12,
+      24,
+      { gGanonsCastlePositionNameENGTex, gGanonsCastlePositionNameGERTex, gGanonsCastlePositionNameFRATex,
+        gGanonsCastlePositionNameJPNTex } },
+    // #3 ZF - Farore's Wind
+    { 82,
+      26,
+      { gZorasFountainPositionNameENGTex, gZorasFountainPositionNameGERTex, gZorasFountainPositionNameFRATex,
+        gZorasFountainPositionNameJPNTex } },
+    // #4 HC - Din's Fire
+    { -2,
+      14,
+      { gHyruleCastlePositionNameENGTex, gHyruleCastlePositionNameGERTex, gHyruleCastlePositionNameFRATex,
+        gHyruleCastlePositionNameJPNTex } },
+    // #5 Colossus - Nayru's Love
+    { -90,
+      28,
+      { gDesertColossusPositionNameENGTex, gDesertColossusPositionNameGERTex, gDesertColossusPositionNameFRATex,
+        gDesertColossusPositionNameJPNTex } },
+};
+
+// Pedestal positions per fountain (where Link plays Zelda's Lullaby)
+// daiyousei_izumi (magic upgrades: DMT/DMC/OGC): (-22, 10, -798)
+// yousei_izumi_yoko (spell upgrades: ZF/HC/Colossus): (-21, 10, -802)
+static const Vec3f sFairyPedestalPos[FAIRY_FOUNTAIN_COUNT] = {
+    { -22.0f, 10.0f, -798.0f }, // DMT
+    { -22.0f, 10.0f, -798.0f }, // DMC
+    { -22.0f, 10.0f, -798.0f }, // OGC
+    { -21.0f, 10.0f, -802.0f }, // ZF
+    { -21.0f, 10.0f, -802.0f }, // HC
+    { -21.0f, 10.0f, -802.0f }, // Colossus
+};
+
+// Coordinate conversion: kaleido coords → screen 10.2 fixed-point (1.2x scale, centered)
+#define FK_YSHIFT 96
+#define FKX(kx) (640 + (s32)(kx)*24 / 5)
+#define FKY(ky) (480 - FK_YSHIFT - (s32)(ky)*24 / 5)
+
+// Map frame textures (same as minish_kaleido / z_kaleido_scope_PAL.c)
+static const char* sFairyMapENGTexs[] = {
+    gPauseMap00Tex,    gPauseMap01Tex, gPauseMap02Tex, gPauseMap03Tex, gPauseMap04Tex,
+    gPauseMap10ENGTex, gPauseMap11Tex, gPauseMap12Tex, gPauseMap13Tex, gPauseMap14Tex,
+    gPauseMap20Tex,    gPauseMap21Tex, gPauseMap22Tex, gPauseMap23Tex, gPauseMap24Tex,
+};
+static const char* sFairyMapGERTexs[] = {
+    gPauseMap00Tex,    gPauseMap01Tex, gPauseMap02Tex, gPauseMap03Tex, gPauseMap04Tex,
+    gPauseMap10GERTex, gPauseMap11Tex, gPauseMap12Tex, gPauseMap13Tex, gPauseMap14Tex,
+    gPauseMap20Tex,    gPauseMap21Tex, gPauseMap22Tex, gPauseMap23Tex, gPauseMap24Tex,
+};
+static const char* sFairyMapFRATexs[] = {
+    gPauseMap00Tex,    gPauseMap01Tex, gPauseMap02Tex, gPauseMap03Tex, gPauseMap04Tex,
+    gPauseMap10FRATex, gPauseMap11Tex, gPauseMap12Tex, gPauseMap13Tex, gPauseMap14Tex,
+    gPauseMap20Tex,    gPauseMap21Tex, gPauseMap22Tex, gPauseMap23Tex, gPauseMap24Tex,
+};
+static const char* sFairyMapJPNTexs[] = {
+    gPauseMap00Tex,    gPauseMap01Tex, gPauseMap02Tex, gPauseMap03Tex, gPauseMap04Tex,
+    gPauseMap10JPNTex, gPauseMap11Tex, gPauseMap12Tex, gPauseMap13Tex, gPauseMap14Tex,
+    gPauseMap20Tex,    gPauseMap21Tex, gPauseMap22Tex, gPauseMap23Tex, gPauseMap24Tex,
+};
+static const char** sFairyMapTexs[] = { sFairyMapENGTexs, sFairyMapGERTexs, sFairyMapFRATexs, sFairyMapJPNTexs };
+
+// Cloud textures and flag numbers (from z_kaleido_map_PAL.c)
+static const char* sFairyCloudTexs[] = {
+    gWorldMapCloud16Tex, gWorldMapCloud15Tex, gWorldMapCloud14Tex, gWorldMapCloud13Tex,
+    gWorldMapCloud12Tex, gWorldMapCloud11Tex, gWorldMapCloud10Tex, gWorldMapCloud9Tex,
+    gWorldMapCloud8Tex,  gWorldMapCloud7Tex,  gWorldMapCloud6Tex,  gWorldMapCloud5Tex,
+    gWorldMapCloud4Tex,  gWorldMapCloud3Tex,  gWorldMapCloud2Tex,  gWorldMapCloud1Tex,
+};
+static u16 sFairyCloudFlagNums[] = {
+    0x05, 0x00, 0x13, 0x0E, 0x0F, 0x01, 0x02, 0x10, 0x12, 0x03, 0x07, 0x08, 0x09, 0x0C, 0x0B, 0x06,
+};
+static s16 sFairyCloudWidths[] = {
+    32, 112, 32, 48, 32, 32, 32, 48, 32, 64, 32, 48, 48, 48, 48, 64,
+};
+static s16 sFairyCloudHeights[] = {
+    24, 72, 13, 22, 19, 20, 19, 27, 14, 26, 22, 21, 49, 32, 45, 60,
+};
+static s16 sFairyCloudPosX[] = {
+    0x002F, 0xFFCF, 0xFFEF, 0xFFF1, 0xFFF7, 0x0018, 0x002B, 0x000E,
+    0x0009, 0x0026, 0x0052, 0x0047, 0xFFB4, 0xFFA9, 0xFF94, 0xFFCA,
+};
+static s16 sFairyCloudPosY[] = {
+    0x000F, 0x0028, 0x000B, 0x002D, 0x0034, 0x0025, 0x0024, 0x0039,
+    0x0036, 0x0021, 0x001F, 0x002D, 0x0020, 0x002A, 0x0031, 0xFFF6,
+};
+
+// "CURRENT POSITION" title textures per language
+static const char* sFairyCurrentPosTitleTexs[] = {
+    gPauseCurrentPositionENGTex,
+    gPauseCurrentPositionGERTex,
+    gPauseCurrentPositionFRATex,
+    gPauseCurrentPositionJPNTex,
+};
+
+// =============================================================================
+// Fairy Kaleido: Nearest-neighbor navigation (same algorithm as minish_kaleido)
+// =============================================================================
+
+static s8 FairyKaleido_FindNearest(s8 currentIdx, s16 stickX, s16 stickY) {
+    f32 stickMag = sqrtf((f32)(stickX * stickX + stickY * stickY));
+    if (stickMag < 30.0f)
+        return -1;
+
+    f32 stickAngle = atan2f((f32)stickX, (f32)stickY);
+    f32 curCX = sFairyAreaData[currentIdx].centerX;
+    f32 curCY = sFairyAreaData[currentIdx].centerY;
+
+    s8 bestIdx = -1;
+    f32 bestScore = -1.0f;
+
+    for (s32 i = 0; i < FAIRY_FOUNTAIN_COUNT; i++) {
+        if (i == currentIdx)
+            continue;
+
+        f32 dx = sFairyAreaData[i].centerX - curCX;
+        f32 dy = sFairyAreaData[i].centerY - curCY;
+        f32 dist = sqrtf(dx * dx + dy * dy);
+        if (dist < 1.0f)
+            continue;
+
+        f32 candidateAngle = atan2f(dx, dy);
+        f32 angleDiff = candidateAngle - stickAngle;
+
+        while (angleDiff > M_PI)
+            angleDiff -= 2.0f * M_PI;
+        while (angleDiff < -M_PI)
+            angleDiff += 2.0f * M_PI;
+        if (angleDiff < 0)
+            angleDiff = -angleDiff;
+
+        if (angleDiff > M_PI / 2.0f)
+            continue;
+
+        f32 score = cosf(angleDiff) / dist;
+        if (score > bestScore) {
+            bestScore = score;
+            bestIdx = i;
+        }
+    }
+
+    return bestIdx;
+}
+
+// Discovery check for a fountain (reuses sGreatFairyFountains table)
+static s32 FairyKaleido_IsDiscovered(s32 idx);
 
 // Great Fairy fountain teleport table
 static const struct {
@@ -180,6 +697,15 @@ static const struct {
     { "HC - Din", 0x0578, 1, ITEMGETINF_18 },
     { "Colossus - Nayru", 0x0588, 1, ITEMGETINF_1A },
 };
+
+// Implementation of FairyKaleido_IsDiscovered (forward-declared above, needs sGreatFairyFountains)
+static s32 FairyKaleido_IsDiscovered(s32 idx) {
+    if (idx < 0 || idx >= FAIRY_FOUNTAIN_COUNT)
+        return 0;
+    if (sGreatFairyFountains[idx].flagType == 0)
+        return gSaveContext.isMagicAcquired;
+    return Flags_GetItemGetInf(sGreatFairyFountains[idx].flagValue);
+}
 
 // Chateau Romani state (persists across scene transitions, cleared on death)
 static s32 sChateauRomaniActive = 0;
@@ -369,19 +895,20 @@ extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
             }
         } else if (idx == MM_MASK_IDX_GREAT_FAIRY) {
             // =================================================================
-            // Great Fairy Mask: DL references segment 0x0B for 6 leaf matrices
-            // (MM uses physics simulation for animated leaves; here static identity)
+            // Great Fairy Mask: DL references segment 0x0B for 6 hair strand matrices
+            // (3 strands × 2 joints each, computed by FairyHair_ComputeMatrices)
             // Also references 0x0D for head limb matrix (already set by player draw)
             // =================================================================
             Mtx* leafMtx = (Mtx*)Graph_Alloc(play->state.gfxCtx, 6 * sizeof(Mtx));
             if (leafMtx != NULL) {
-                // Rotate 180° on Y so leaves point backward (they extend in +Z in DL space)
-                Matrix_Push();
-                Matrix_RotateY(M_PI, MTXMODE_APPLY);
-                for (s32 i = 0; i < 6; i++) {
-                    Matrix_ToMtx(&leafMtx[i], (char*)__FILE__, __LINE__);
+                if (sFairyHairInited) {
+                    FairyHair_ComputeMatrices(play, player, leafMtx);
+                } else {
+                    // Fallback: identity matrices until physics initialized
+                    for (s32 i = 0; i < 6; i++) {
+                        Matrix_ToMtx(&leafMtx[i], (char*)__FILE__, __LINE__);
+                    }
                 }
-                Matrix_Pop();
                 gSPSegment(POLY_OPA_DISP++, 0x0B, (uintptr_t)leafMtx);
             }
             gSPDisplayList(POLY_OPA_DISP++, (Gfx*)dlPath);
@@ -471,8 +998,120 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
             }
             case 3: // Stone Mask - effect handled in z_actor.c via MmMaskWear_IsStoneMaskActive()
                 break;
-            case 4: // Great Fairy Mask — A to claim reward in fountain + B for teleport
+            case 4: // Great Fairy Mask — hair physics + A to claim reward in fountain + B for teleport
             {
+                // === Hair Physics: init on first frame, update every frame ===
+                sFairyHairActivated = (play->sceneNum == SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC ||
+                                       play->sceneNum == SCENE_GREAT_FAIRYS_FOUNTAIN_SPELLS);
+                if (!sFairyHairInited) {
+                    FairyHair_Init(&player->bodyPartsPos[PLAYER_BODYPART_HEAD]);
+                }
+
+                // === Fairy Warp Void-Out: fade Link transparent + sparkle particles ===
+                if (sFairyWarpPhase == 1) {
+                    sFairyWarpTimer++;
+                    f32 t = (f32)sFairyWarpTimer / (f32)FAIRY_VOID_OUT_FRAMES;
+                    if (t > 1.0f)
+                        t = 1.0f;
+
+                    // Fade Link's alpha from 255 → 0
+                    player->actor.shape.shadowAlpha = (u8)(255.0f * (1.0f - t));
+
+                    // Spawn orbiting sparkle particles (MM EnElforg_CirclePlayer pattern)
+                    {
+                        Vec3f sparkVel = { 0.0f, 0.3f, 0.0f };
+                        Vec3f sparkAccel = { 0.0f, -0.025f, 0.0f };
+                        Color_RGBA8 primColor = { 250, 100, 100, 0 };
+                        Color_RGBA8 envColor = { 0, 0, 100, 0 };
+
+                        for (s32 i = 0; i < 5; i++) {
+                            s16 angle = (s16)(sFairyWarpTimer * 0x1000 + i * (0x10000 / 5));
+                            f32 radius = 20.0f;
+                            Vec3f sparkPos;
+                            sparkPos.x = player->actor.world.pos.x + Math_SinS(angle) * radius;
+                            sparkPos.z = player->actor.world.pos.z + Math_CosS(angle) * radius;
+                            sparkPos.y = player->bodyPartsPos[PLAYER_BODYPART_WAIST].y +
+                                         8.0f * Math_SinS((s16)(sFairyWarpTimer * 0x200 + i * 0x2000));
+                            EffectSsKiraKira_SpawnDispersed(play, &sparkPos, &sparkVel, &sparkAccel, &primColor,
+                                                            &envColor, -50, 11);
+                        }
+                    }
+
+                    if (sFairyWarpTimer >= FAIRY_VOID_OUT_FRAMES) {
+                        // Fade done — trigger the scene transition
+                        sFairyWarpPhase = 2;
+                        sFairyWarpTimer = 0;
+
+                        s8 destIdx = sFairyWarpDestIdx;
+                        if (destIdx >= 0 && destIdx < FAIRY_FOUNTAIN_COUNT) {
+                            play->nextEntranceIndex = sGreatFairyFountains[destIdx].entrance;
+                            play->transitionTrigger = TRANS_TRIGGER_START;
+                            play->transitionType = TRANS_TYPE_FADE_WHITE;
+                            gSaveContext.nextTransitionType = TRANS_TYPE_FADE_WHITE_FAST;
+
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].entranceIndex =
+                                sGreatFairyFountains[destIdx].entrance;
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].pos.x = sFairyPedestalPos[destIdx].x;
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].pos.y = sFairyPedestalPos[destIdx].y;
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].pos.z = sFairyPedestalPos[destIdx].z;
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].yaw = 0;
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].playerParams = 0xDFF;
+                            gSaveContext.respawn[RESPAWN_MODE_TOP].roomIndex = 0;
+                            gSaveContext.respawnFlag = 3;
+                        }
+                    }
+                    break; // Skip all other case 4 logic during void-out
+                }
+
+                // === Fairy Warp Void-In: fade Link back in + sparkle particles ===
+                if (sFairyWarpPhase == 2) {
+                    sFairyWarpTimer++;
+
+                    // Play Great Fairy appear sound on first frame of void-in
+                    if (sFairyWarpTimer == 1) {
+                        player->actor.shape.shadowAlpha = 0;
+                        Audio_PlaySoundGeneral(NA_SE_EV_GREAT_FAIRY_APPEAR, &gSfxDefaultPos, 4,
+                                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                               &gSfxDefaultReverb);
+                    }
+
+                    f32 t = (f32)sFairyWarpTimer / (f32)FAIRY_VOID_IN_FRAMES;
+                    if (t > 1.0f)
+                        t = 1.0f;
+
+                    // Fade Link's alpha from 0 → 255
+                    player->actor.shape.shadowAlpha = (u8)(255.0f * t);
+
+                    // Spawn orbiting sparkle particles
+                    {
+                        Vec3f sparkVel = { 0.0f, 0.3f, 0.0f };
+                        Vec3f sparkAccel = { 0.0f, -0.025f, 0.0f };
+                        Color_RGBA8 primColor = { 250, 100, 100, 0 };
+                        Color_RGBA8 envColor = { 0, 0, 100, 0 };
+
+                        for (s32 i = 0; i < 5; i++) {
+                            s16 angle = (s16)(sFairyWarpTimer * 0x1000 + i * (0x10000 / 5));
+                            f32 radius = 20.0f;
+                            Vec3f sparkPos;
+                            sparkPos.x = player->actor.world.pos.x + Math_SinS(angle) * radius;
+                            sparkPos.z = player->actor.world.pos.z + Math_CosS(angle) * radius;
+                            sparkPos.y = player->bodyPartsPos[PLAYER_BODYPART_WAIST].y +
+                                         8.0f * Math_SinS((s16)(sFairyWarpTimer * 0x200 + i * 0x2000));
+                            EffectSsKiraKira_SpawnDispersed(play, &sparkPos, &sparkVel, &sparkAccel, &primColor,
+                                                            &envColor, -50, 11);
+                        }
+                    }
+
+                    if (sFairyWarpTimer >= FAIRY_VOID_IN_FRAMES) {
+                        // Fade in done — restore full alpha and end warp
+                        player->actor.shape.shadowAlpha = 255;
+                        sFairyWarpPhase = 0;
+                        sFairyWarpTimer = 0;
+                        sFairyWarpDestIdx = -1;
+                    }
+                    break; // Skip all other case 4 logic during void-in
+                }
+
                 if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE))
                     break;
 
@@ -482,10 +1121,10 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_A)) {
                         Flags_SetSwitch(play, 0x38);
                     }
-                    break;
+                    // Don't break — fall through to B check so teleport works from inside fountains
                 }
 
-                // B) Outside fountains: B press opens teleport menu (pause-based, like Minish Cap)
+                // B) B press opens teleport menu (works both inside and outside fountains)
                 // Menu navigation is handled by MmMaskWear_GreatFairyWarpUpdate called from z_play.c
                 if (!sGreatFairyMenuOpen && CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
                     // Don't open if pause menu is already open or transitioning
@@ -805,6 +1444,12 @@ extern "C" void MmMaskWear_Clear(void) {
     sGreatFairyMenuOpen = 0;
     sGreatFairyMenuCursor = 0;
     sGreatFairyInputSkip = 0;
+    sFairyKaleidoInit = 0;
+    sFairyStickHeld = 0;
+    sFairyHairInited = 0;
+    sHairLastPhysicsFrame = 0xFFFFFFFFu;
+    // NOTE: sFairyWarpPhase is NOT cleared here — it must persist through scene transitions
+    // so void-in animation plays after arriving at the fountain. It self-clears when done.
     // NOTE: sChateauRomaniActive is NOT cleared here (persists across scenes, cleared on death)
     // NOTE: sKamaroDanceAnim is NOT cleared (cached animation, reusable)
 }
@@ -851,19 +1496,184 @@ extern "C" void MmMaskWear_DeactivateChateauRomani(void) {
     }
 }
 
-// =============================================================================
-// Great Fairy Mask - Teleport Menu Overlay (GfxPrint)
-// =============================================================================
+// Draw orbiting full-body stray fairy sprites during warp animation
+// Uses pre-rendered RGBA32 32x24 sprite from parameter_static if available,
+// otherwise composites from gameplay_keep parts (glow + body + head + wings)
+#define FAIRY_ORBIT_COUNT 5
+
+static void FairyOrbit_Draw(PlayState* play) {
+    if (sFairyWarpPhase == 0 || !MmAssets_IsAvailable())
+        return;
+
+    // Check once if pre-rendered full fairy texture is available in mm.o2r
+    if (sStrayFairyFullTexAvailable < 0) {
+        sStrayFairyFullTexAvailable =
+            MmAssets_ResourceExists("interface/parameter_static/gStrayFairyWoodfallIconTex") ? 1 : 0;
+    }
+
+    GraphicsContext* gfxCtx = play->state.gfxCtx;
+    OPEN_DISPS(gfxCtx);
+
+    gDPPipeSync(OVERLAY_DISP++);
+    gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
+    gDPSetTextureFilter(OVERLAY_DISP++, G_TF_BILERP);
+    gDPSetTextureLUT(OVERLAY_DISP++, G_TT_NONE);
+    Gfx_SetupDL_39Overlay(gfxCtx);
+
+    // Screen center in 10.2 fixed-point (320x240 → 640,480)
+    s32 cx = 640;
+    s32 cy = 480;
+
+    // Orbit radius: expand during void-out, contract during void-in
+    f32 baseRadius;
+    if (sFairyWarpPhase == 1) {
+        f32 t = (f32)sFairyWarpTimer / (f32)FAIRY_VOID_OUT_FRAMES;
+        baseRadius = 80.0f + 120.0f * t;
+    } else {
+        f32 t = (f32)sFairyWarpTimer / (f32)FAIRY_VOID_IN_FRAMES;
+        baseRadius = 200.0f - 120.0f * t;
+    }
+
+    for (s32 i = 0; i < FAIRY_ORBIT_COUNT; i++) {
+        s16 angle = (s16)(sFairyWarpTimer * 0x800 + i * (0x10000 / FAIRY_ORBIT_COUNT));
+        f32 rx = baseRadius;
+        f32 ry = baseRadius * 0.65f;
+
+        s32 fx = cx + (s32)(Math_SinS(angle) * rx);
+        s32 fy = cy + (s32)(Math_CosS(angle) * ry);
+        fy += (s32)(8.0f * Math_SinS((s16)(sFairyWarpTimer * 0x200 + i * 0x2000)));
+
+        u8 alpha = (u8)(200 + 55 * Math_SinS((s16)(sFairyWarpTimer * 0x1000 + i * 0x3000)));
+
+        if (sStrayFairyFullTexAvailable == 1) {
+            // === Pre-rendered RGBA32 32x24 full fairy sprite (best quality) ===
+
+            // Glow circle behind (I4 32x24)
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0, TEXEL0,
+                              0, PRIMITIVE, 0);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 180, 255, (u8)(alpha * 2 / 3));
+            {
+                // Glow circle: 48x36 in 10.2 = ~12x9 pixels (slightly larger than fairy)
+                s32 gw = 48;
+                s32 gh = 36;
+                gDPLoadTextureBlock_4b(OVERLAY_DISP++, sStrayFairyGlowCircleTex, G_IM_FMT_I, 32, 24, 0,
+                                       G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                       G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, fx - gw, fy - gh, fx + gw, fy + gh, G_TX_RENDERTILE, 0, 0,
+                                        32 * 4096 / (gw * 2), 24 * 4096 / (gh * 2));
+            }
+
+            // Full fairy sprite on top (RGBA32 32x24)
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, alpha);
+            {
+                // Fairy sprite: 40x30 in 10.2 = ~10x7.5 pixels
+                s32 fw = 40;
+                s32 fh = 30;
+                gDPLoadTextureBlock(OVERLAY_DISP++, sStrayFairyFullTex, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 24, 0,
+                                    G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, fx - fw, fy - fh, fx + fw, fy + fh, G_TX_RENDERTILE, 0, 0,
+                                        32 * 4096 / (fw * 2), 24 * 4096 / (fh * 2));
+            }
+        } else {
+            // === Fallback: composite from gameplay_keep parts ===
+            // All coordinates relative to (fx, fy) = center of fairy
+
+            // Glow circle behind (I4 16x16)
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0, TEXEL0,
+                              0, PRIMITIVE, 0);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 180, 255, (u8)(alpha * 2 / 3));
+            {
+                s32 gs = 36;
+                gDPLoadTextureBlock_4b(OVERLAY_DISP++, sStrayFairyGlowTex, G_IM_FMT_I, 16, 16, 0,
+                                       G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                       G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, fx - gs, fy - gs, fx + gs, fy + gs, G_TX_RENDERTILE, 0, 0,
+                                        16 * 4096 / (gs * 2), 16 * 4096 / (gs * 2));
+            }
+
+            // Switch to IA modulate for body parts
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 210, 255, alpha);
+
+            // Body (IA8 16x32) at center
+            {
+                s32 bw = 10;
+                s32 bTop = -4;
+                s32 bBot = 32;
+                gDPLoadTextureBlock(OVERLAY_DISP++, sStrayFairyBodyTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 32, 0,
+                                    G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, fx - bw, fy + bTop, fx + bw, fy + bBot, G_TX_RENDERTILE, 0, 0,
+                                        16 * 4096 / (bw * 2), 32 * 4096 / (bBot - bTop));
+            }
+
+            // Head (IA8 32x32) on top
+            {
+                s32 hw = 14;
+                s32 hTop = -32;
+                s32 hBot = -4;
+                gDPLoadTextureBlock(OVERLAY_DISP++, sStrayFairyHeadTex, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 32, 0,
+                                    G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, fx - hw, fy + hTop, fx + hw, fy + hBot, G_TX_RENDERTILE, 0, 0,
+                                        32 * 4096 / (hw * 2), 32 * 4096 / (hBot - hTop));
+            }
+
+            // Left wing (IA8 16x16)
+            {
+                s32 wXL = fx - 24;
+                s32 wXR = fx - 6;
+                s32 wYT = fy - 16;
+                s32 wYB = fy + 4;
+                gDPLoadTextureBlock(OVERLAY_DISP++, sStrayFairyWingTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
+                                    G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, wXL, wYT, wXR, wYB, G_TX_RENDERTILE, 0, 0,
+                                        16 * 4096 / (wXR - wXL), 16 * 4096 / (wYB - wYT));
+            }
+
+            // Right wing (IA8 16x16)
+            {
+                s32 wXL = fx + 6;
+                s32 wXR = fx + 24;
+                s32 wYT = fy - 16;
+                s32 wYB = fy + 4;
+                gDPLoadTextureBlock(OVERLAY_DISP++, sStrayFairyWingTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
+                                    G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                    G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, wXL, wYT, wXR, wYB, G_TX_RENDERTILE, 0, 0,
+                                        16 * 4096 / (wXR - wXL), 16 * 4096 / (wYB - wYT));
+            }
+        }
+    }
+
+    gDPPipeSync(OVERLAY_DISP++);
+    CLOSE_DISPS(gfxCtx);
+}
 
 extern "C" void MmMaskWear_DrawOverlay(PlayState* play) {
+    // Draw orbiting fairy sprites during warp animation
+    FairyOrbit_Draw(play);
+
     if (!sGreatFairyMenuOpen)
         return;
 
     try {
         GraphicsContext* gfxCtx = play->state.gfxCtx;
+        s8 curIdx = sGreatFairyMenuCursor;
+        s16 lang = gSaveContext.language;
+        if (lang < 0 || lang > 3)
+            lang = 0;
+
         OPEN_DISPS(gfxCtx);
 
-        // 1. Dark semi-transparent background on OVERLAY_DISP
+        // ---- 1. Semi-transparent dark background (25% alpha) ----
         gDPPipeSync(OVERLAY_DISP++);
         gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
         gDPSetCombineMode(OVERLAY_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
@@ -871,57 +1681,245 @@ extern "C" void MmMaskWear_DrawOverlay(PlayState* play) {
                         G_AD_DISABLE | G_CD_DISABLE | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE |
                             G_TD_CLAMP | G_TP_NONE | G_CYC_1CYCLE | G_PM_NPRIMITIVE,
                         G_AC_NONE | G_ZS_PRIM | G_RM_CLD_SURF | G_RM_CLD_SURF2);
-        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 160);
+        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 64);
         gSPWideTextureRectangle(OVERLAY_DISP++, 0, 0, SCREEN_WIDTH << 2, SCREEN_HEIGHT << 2, G_TX_RENDERTILE, 0, 0, 0,
                                 0);
         gDPPipeSync(OVERLAY_DISP++);
 
-        // 2. GfxPrint text — write directly into OVERLAY_DISP buffer (large enough for all text).
-        //    Previous approach used Graph_Alloc(512 entries) which overflowed because
-        //    gSPTextureRectangle uses 3 Gfx entries per char (with shadow = ~8 entries/char).
-        GfxPrint printer;
-        GfxPrint_Init(&printer);
-        GfxPrint_Open(&printer, OVERLAY_DISP);
+        // ---- 2. Frame (IA8, 80x32 tiles, 3 columns x 5 rows) ----
+        {
+            Gfx_SetupDL_39Overlay(gfxCtx);
+            gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
 
-        // Title
-        GfxPrint_SetColor(&printer, 200, 255, 200, 255);
-        GfxPrint_SetPos(&printer, 8, 6);
-        GfxPrint_Printf(&printer, "Great Fairy Fountains");
+            static s16 sColX[] = { -120, -40, 40, 120 };
+            static s16 sRowY[] = { 80, 48, 16, -16, -48, -80 };
+            static u8 sColR[] = { 80, 110, 80 };
+            static u8 sColG[] = { 40, 60, 40 };
+            static u8 sColB[] = { 100, 130, 100 };
 
-        GfxPrint_SetColor(&printer, 150, 150, 150, 255);
-        GfxPrint_SetPos(&printer, 8, 8);
-        GfxPrint_Printf(&printer, "DPad:Select A:Warp B:Cancel");
+            for (s16 col = 0; col < 3; col++) {
+                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, sColR[col], sColG[col], sColB[col], 255);
+                s32 xl = FKX(sColX[col]);
+                s32 xh = FKX(sColX[col + 1]);
+                s32 dsdx = 80 * 4096 / (xh - xl);
 
-        // List fountains
-        for (s32 i = 0; i < 6; i++) {
-            s32 discovered = 0;
-            if (sGreatFairyFountains[i].flagType == 0) {
-                discovered = gSaveContext.isMagicAcquired;
-            } else {
-                discovered = Flags_GetItemGetInf(sGreatFairyFountains[i].flagValue);
-            }
+                for (s16 row = 0; row < 5; row++) {
+                    s32 yl = FKY(sRowY[row]);
+                    s32 yh = FKY(sRowY[row + 1]);
+                    s32 dtdy = 32 * 4096 / (yh - yl);
 
-            GfxPrint_SetPos(&printer, 10, 10 + i);
-
-            if (i == sGreatFairyMenuCursor) {
-                if (discovered) {
-                    GfxPrint_SetColor(&printer, 255, 255, 100, 255);
-                } else {
-                    GfxPrint_SetColor(&printer, 200, 100, 100, 255);
+                    gDPLoadTextureBlock(OVERLAY_DISP++, sFairyMapTexs[lang][col * 5 + row], G_IM_FMT_IA, G_IM_SIZ_8b,
+                                        80, 32, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK,
+                                        G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+                    gSPWideTextureRectangle(OVERLAY_DISP++, xl, yl, xh, yh, G_TX_RENDERTILE, 0, 0, dsdx, dtdy);
                 }
-                GfxPrint_Printf(&printer, "> %s", sGreatFairyFountains[i].name);
-            } else {
-                if (discovered) {
-                    GfxPrint_SetColor(&printer, 200, 200, 200, 255);
-                } else {
-                    GfxPrint_SetColor(&printer, 80, 80, 80, 255);
-                }
-                GfxPrint_Printf(&printer, "  %s", sGreatFairyFountains[i].name);
             }
         }
 
-        OVERLAY_DISP = GfxPrint_Close(&printer);
-        GfxPrint_Destroy(&printer);
+        // ---- 3. Map (CI8 216x128, 15 strips) ----
+        {
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetTextureFilter(OVERLAY_DISP++, G_TF_POINT);
+            gDPLoadTLUT_pal256(OVERLAY_DISP++, gWorldMapImageTLUT);
+            gDPSetTextureLUT(OVERLAY_DISP++, G_TT_RGBA16);
+            gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, 255);
+
+            s32 mapXL = FKX(-108);
+            s32 mapXH = FKX(108);
+            s32 mapDsdx = 216 * 4096 / (mapXH - mapXL);
+
+            for (s16 i = 0; i < 15; i++) {
+                s16 stripH = (i < 14) ? 9 : 2;
+                s16 ky0 = 58 - i * 9;
+                s16 ky1 = ky0 - stripH;
+                s32 syl = FKY(ky0);
+                s32 syh = FKY(ky1);
+                s32 mapDtdy = stripH * 4096 / (syh - syl);
+
+                gDPLoadMultiTile(OVERLAY_DISP++, gWorldMapImageTex, 0, G_TX_RENDERTILE, G_IM_FMT_CI, G_IM_SIZ_8b, 216,
+                                 128, 0, i * 9, 215, i * 9 + stripH - 1, 0, G_TX_WRAP | G_TX_NOMIRROR,
+                                 G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+                gDPSetTileSize(OVERLAY_DISP++, G_TX_RENDERTILE, 0, 0, (216 - 1) << G_TEXTURE_IMAGE_FRAC,
+                               (stripH - 1) << G_TEXTURE_IMAGE_FRAC);
+                gSPWideTextureRectangle(OVERLAY_DISP++, mapXL, syl, mapXH, syh, G_TX_RENDERTILE, 0, 0, mapDsdx,
+                                        mapDtdy);
+            }
+        }
+
+        // ---- 4. Clouds (I4 textures, hide undiscovered areas) ----
+        {
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetTextureFilter(OVERLAY_DISP++, G_TF_BILERP);
+            gDPSetTextureLUT(OVERLAY_DISP++, G_TT_NONE);
+            Gfx_SetupDL_39Overlay(gfxCtx);
+            gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0, TEXEL0,
+                              0, PRIMITIVE, 0);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 235, 235, 235, 255);
+
+            for (s16 i = 0; i < 16; i++) {
+                if (!(gSaveContext.worldMapAreaData & gBitFlags[sFairyCloudFlagNums[i]])) {
+                    s32 cxl = FKX(sFairyCloudPosX[i]);
+                    s32 cyl = FKY(sFairyCloudPosY[i]);
+                    s32 cxh = FKX(sFairyCloudPosX[i] + sFairyCloudWidths[i]);
+                    s32 cyh = FKY(sFairyCloudPosY[i] - sFairyCloudHeights[i]);
+                    s32 cDsdx = sFairyCloudWidths[i] * 4096 / (cxh - cxl);
+                    s32 cDtdy = sFairyCloudHeights[i] * 4096 / (cyh - cyl);
+
+                    gDPLoadTextureBlock_4b(OVERLAY_DISP++, sFairyCloudTexs[i], G_IM_FMT_I, sFairyCloudWidths[i],
+                                           sFairyCloudHeights[i], 0, G_TX_WRAP | G_TX_NOMIRROR,
+                                           G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+                    gSPWideTextureRectangle(OVERLAY_DISP++, cxl, cyl, cxh, cyh, G_TX_RENDERTILE, 0, 0, cDsdx, cDtdy);
+                }
+            }
+        }
+
+        // ---- 5. Area boxes for fountain locations (2px fill-rect outlines) ----
+        {
+            gDPPipeSync(OVERLAY_DISP++);
+            gDPSetCycleType(OVERLAY_DISP++, G_CYC_FILL);
+
+            for (s16 i = 0; i < FAIRY_FOUNTAIN_COUNT; i++) {
+                s32 discovered = FairyKaleido_IsDiscovered(i);
+                u8 r, g, b;
+
+                if (i == curIdx) {
+                    r = (u8)sFairyPulsePrim[0];
+                    g = (u8)sFairyPulsePrim[1];
+                    b = (u8)sFairyPulsePrim[2];
+                } else if (discovered) {
+                    r = 150;
+                    g = 255;
+                    b = 200;
+                } else {
+                    r = 100;
+                    g = 100;
+                    b = 100;
+                }
+
+                u32 packed =
+                    (GPACK_RGBA5551(r >> 3, g >> 3, b >> 3, 1) << 16) | GPACK_RGBA5551(r >> 3, g >> 3, b >> 3, 1);
+                gDPSetFillColor(OVERLAY_DISP++, packed);
+
+                s32 x1 = FKX(sFairyAreaData[i].centerX - FAIRY_BOX_HW) >> 2;
+                s32 y1 = FKY(sFairyAreaData[i].centerY + FAIRY_BOX_HH) >> 2;
+                s32 x2 = FKX(sFairyAreaData[i].centerX + FAIRY_BOX_HW) >> 2;
+                s32 y2 = FKY(sFairyAreaData[i].centerY - FAIRY_BOX_HH) >> 2;
+
+                gDPFillRectangle(OVERLAY_DISP++, x1, y1, x2, y1 + 2);
+                gDPFillRectangle(OVERLAY_DISP++, x1, y2 - 2, x2, y2);
+                gDPFillRectangle(OVERLAY_DISP++, x1, y1, x1 + 2, y2);
+                gDPFillRectangle(OVERLAY_DISP++, x2 - 2, y1, x2, y2);
+            }
+            gDPPipeSync(OVERLAY_DISP++);
+        }
+
+        // ---- 5b. Stray Fairy icon at selected box (glow + head, from mm.o2r) ----
+        if (curIdx >= 0 && curIdx < FAIRY_FOUNTAIN_COUNT && MmAssets_IsAvailable()) {
+            static s16 sFairyFlickerTimer = 0;
+            sFairyFlickerTimer++;
+
+            if ((sFairyFlickerTimer % 16) < 11) {
+                s32 pcX = sFairyAreaData[curIdx].centerX;
+                s32 pcY = sFairyAreaData[curIdx].centerY;
+
+                // -- Glow circle (I4 16x16) behind fairy --
+                gDPPipeSync(OVERLAY_DISP++);
+                gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
+                gDPSetTextureFilter(OVERLAY_DISP++, G_TF_BILERP);
+                gDPSetTextureLUT(OVERLAY_DISP++, G_TT_NONE);
+                Gfx_SetupDL_39Overlay(gfxCtx);
+                gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0,
+                                  TEXEL0, 0, PRIMITIVE, 0);
+                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 180, 255, 140);
+                {
+                    s32 gXL = FKX(pcX - 14);
+                    s32 gYL = FKY(pcY + 14);
+                    s32 gXH = FKX(pcX + 14);
+                    s32 gYH = FKY(pcY - 14);
+                    s32 gDsdx = 16 * 4096 / (gXH - gXL);
+                    s32 gDtdy = 16 * 4096 / (gYH - gYL);
+                    gDPLoadTextureBlock_4b(OVERLAY_DISP++, sStrayFairyGlowTex, G_IM_FMT_I, 16, 16, 0,
+                                           G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK,
+                                           G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+                    gSPWideTextureRectangle(OVERLAY_DISP++, gXL, gYL, gXH, gYH, G_TX_RENDERTILE, 0, 0, gDsdx, gDtdy);
+                }
+
+                // -- Head (IA8 32x32) centered, large --
+                gDPPipeSync(OVERLAY_DISP++);
+                gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 210, 255, 255);
+                {
+                    s32 hXL = FKX(pcX - 10);
+                    s32 hYL = FKY(pcY + 10);
+                    s32 hXH = FKX(pcX + 10);
+                    s32 hYH = FKY(pcY - 10);
+                    s32 hDsdx = 32 * 4096 / (hXH - hXL);
+                    s32 hDtdy = 32 * 4096 / (hYH - hYL);
+                    gDPLoadTextureBlock(OVERLAY_DISP++, sStrayFairyHeadTex, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 32, 0,
+                                        G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                        G_TX_NOLOD, G_TX_NOLOD);
+                    gSPWideTextureRectangle(OVERLAY_DISP++, hXL, hYL, hXH, hYH, G_TX_RENDERTILE, 0, 0, hDsdx, hDtdy);
+                }
+                gDPPipeSync(OVERLAY_DISP++);
+            }
+        }
+
+        // ---- 6. Text labels on parchment (bottom-right of map, vanilla position) ----
+        if (curIdx >= 0 && curIdx < FAIRY_FOUNTAIN_COUNT) {
+            s32 discovered = FairyKaleido_IsDiscovered(curIdx);
+
+            gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
+            gDPSetTextureFilter(OVERLAY_DISP++, G_TF_BILERP);
+            gDPSetTextureLUT(OVERLAY_DISP++, G_TT_NONE);
+            Gfx_SetupDL_39Overlay(gfxCtx);
+
+            // "CURRENT POSITION" title (I4, 64x8)
+            gDPSetCombineLERP(OVERLAY_DISP++, 1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, 1, 0, PRIMITIVE, 0, TEXEL0,
+                              0, PRIMITIVE, 0);
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 255);
+
+            {
+                s32 cpXL = FKX(20);
+                s32 cpYL = FKY(-26);
+                s32 cpXH = FKX(84);
+                s32 cpYH = FKY(-34);
+                s32 cpDsdx = 64 * 4096 / (cpXH - cpXL);
+                s32 cpDtdy = 8 * 4096 / (cpYH - cpYL);
+
+                gDPLoadTextureBlock_4b(OVERLAY_DISP++, sFairyCurrentPosTitleTexs[lang], G_IM_FMT_I, 64, 8, 0,
+                                       G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK, G_TX_NOMASK,
+                                       G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, cpXL, cpYL, cpXH, cpYH, G_TX_RENDERTILE, 0, 0, cpDsdx, cpDtdy);
+            }
+
+            gDPPipeSync(OVERLAY_DISP++);
+
+            // Area name (IA8, 80x32) below title
+            gDPSetCombineLERP(OVERLAY_DISP++, PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0,
+                              PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0);
+
+            if (discovered) {
+                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 200, 255, 220, 255); // Light green for fairy
+            } else {
+                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 120, 120, 120, 255);
+            }
+            gDPSetEnvColor(OVERLAY_DISP++, 0, 0, 0, 0);
+
+            {
+                s32 nXL = FKX(19);
+                s32 nYL = FKY(-36);
+                s32 nXH = FKX(99);
+                s32 nYH = FKY(-68);
+                s32 nDsdx = 80 * 4096 / (nXH - nXL);
+                s32 nDtdy = 32 * 4096 / (nYH - nYL);
+
+                gDPLoadTextureBlock(OVERLAY_DISP++, sFairyAreaData[curIdx].nameTex[lang], G_IM_FMT_IA, G_IM_SIZ_8b, 80,
+                                    32, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, G_TX_NOMASK,
+                                    G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
+                gSPWideTextureRectangle(OVERLAY_DISP++, nXL, nYL, nXH, nYH, G_TX_RENDERTILE, 0, 0, nDsdx, nDtdy);
+            }
+        }
 
         CLOSE_DISPS(gfxCtx);
     } catch (...) {}
@@ -948,56 +1946,84 @@ extern "C" void MmMaskWear_GreatFairyWarpUpdate(PlayState* play) {
         return;
 
     // Skip input on the first frame to prevent same-frame open/close.
-    // The B press that opened the menu is still active in this frame's input,
-    // so the cancel check below would immediately close the menu.
     if (sGreatFairyInputSkip) {
         sGreatFairyInputSkip = 0;
         return;
     }
 
-    Input* input = &play->state.input[0];
+    // Initialize kaleido state on first frame
+    if (!sFairyKaleidoInit) {
+        sFairyKaleidoInit = 1;
+        // Start cursor at first discovered fountain
+        for (s32 i = 0; i < FAIRY_FOUNTAIN_COUNT; i++) {
+            if (FairyKaleido_IsDiscovered(i)) {
+                sGreatFairyMenuCursor = i;
+                break;
+            }
+        }
+        sFairyPulsePrim[0] = 255;
+        sFairyPulsePrim[1] = 150;
+        sFairyPulsePrim[2] = 255;
+        sFairyPulseStage = 0;
+        sFairyPulseTimer = 20;
+        sFairyStickHeld = 0;
+    }
 
-    // D-pad navigation
-    if (CHECK_BTN_ALL(input->press.button, BTN_DUP)) {
-        sGreatFairyMenuCursor--;
-        if (sGreatFairyMenuCursor < 0)
-            sGreatFairyMenuCursor = 5;
-        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    FairyKaleido_UpdatePulse();
+
+    Input* input = &play->state.input[0];
+    s8 curIdx = sGreatFairyMenuCursor;
+
+    // Analog stick navigation (nearest-neighbor, same as minish_kaleido)
+    s16 stickX = input->rel.stick_x;
+    s16 stickY = input->rel.stick_y;
+    f32 stickMag = sqrtf((f32)(stickX * stickX + stickY * stickY));
+
+    if (stickMag > 30.0f) {
+        if (!sFairyStickHeld) {
+            s8 nextIdx = FairyKaleido_FindNearest(curIdx, stickX, stickY);
+            if (nextIdx >= 0) {
+                sGreatFairyMenuCursor = nextIdx;
+                Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+            sFairyStickHeld = 1;
+        }
+    } else {
+        sFairyStickHeld = 0;
     }
-    if (CHECK_BTN_ALL(input->press.button, BTN_DDOWN)) {
-        sGreatFairyMenuCursor++;
-        if (sGreatFairyMenuCursor > 5)
-            sGreatFairyMenuCursor = 0;
-        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-    }
+
+    curIdx = sGreatFairyMenuCursor;
 
     // B cancels
-    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+    if (CHECK_BTN_ALL(input->press.button, BTN_B) || CHECK_BTN_ALL(input->press.button, BTN_START)) {
         sGreatFairyMenuOpen = 0;
+        sFairyKaleidoInit = 0;
         play->pauseCtx.state = 0;
-        Audio_PlaySoundGeneral(NA_SE_SY_WIN_CLOSE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+        Audio_PlaySoundGeneral(NA_SE_SY_CANCEL, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
-    // A confirms warp
+    // A confirms warp — start void-out animation instead of immediate transition
     if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
         s32 sel = sGreatFairyMenuCursor;
-        s32 discovered = 0;
-        if (sGreatFairyFountains[sel].flagType == 0) {
-            discovered = gSaveContext.isMagicAcquired;
-        } else {
-            discovered = Flags_GetItemGetInf(sGreatFairyFountains[sel].flagValue);
-        }
+        s32 discovered = FairyKaleido_IsDiscovered(sel);
 
         if (discovered) {
+            // Close the kaleido overlay and unpause so world renders during void-out
             sGreatFairyMenuOpen = 0;
-            play->pauseCtx.state = 0; // Unpause so transition can process
-            play->nextEntranceIndex = sGreatFairyFountains[sel].entrance;
-            play->transitionTrigger = TRANS_TRIGGER_START;
-            play->transitionType = TRANS_TYPE_FADE_BLACK;
+            sFairyKaleidoInit = 0;
+            play->pauseCtx.state = 0;
+
+            // Start void-out animation (transition happens after shrink completes)
+            sFairyWarpPhase = 1;
+            sFairyWarpTimer = 0;
+            sFairyWarpDestIdx = (s8)sel;
+
+            // Play Great Fairy appear sound + confirm
+            Audio_PlaySoundGeneral(NA_SE_EV_GREAT_FAIRY_APPEAR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         } else {

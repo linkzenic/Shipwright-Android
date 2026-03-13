@@ -104,17 +104,39 @@ void Harpoon::HandlePacket_UnsetFlag(nlohmann::json payload) {
             (flag >= RAND_INF_ADULT_TRADES_HAS_POCKET_EGG && flag <= RAND_INF_ADULT_TRADES_HAS_CLAIM_CHECK)) {
             u16 itemToReplace = ITEM_POCKET_EGG;
             switch (flag) {
-                case RAND_INF_ADULT_TRADES_HAS_POCKET_EGG:     itemToReplace = ITEM_POCKET_EGG; break;
-                case RAND_INF_ADULT_TRADES_HAS_POCKET_CUCCO:   itemToReplace = ITEM_POCKET_CUCCO; break;
-                case RAND_INF_ADULT_TRADES_HAS_COJIRO:         itemToReplace = ITEM_COJIRO; break;
-                case RAND_INF_ADULT_TRADES_HAS_ODD_MUSHROOM:   itemToReplace = ITEM_ODD_MUSHROOM; break;
-                case RAND_INF_ADULT_TRADES_HAS_ODD_POTION:     itemToReplace = ITEM_ODD_POTION; break;
-                case RAND_INF_ADULT_TRADES_HAS_SAW:            itemToReplace = ITEM_SAW; break;
-                case RAND_INF_ADULT_TRADES_HAS_SWORD_BROKEN:   itemToReplace = ITEM_SWORD_BROKEN; break;
-                case RAND_INF_ADULT_TRADES_HAS_PRESCRIPTION:   itemToReplace = ITEM_PRESCRIPTION; break;
-                case RAND_INF_ADULT_TRADES_HAS_FROG:           itemToReplace = ITEM_FROG; break;
-                case RAND_INF_ADULT_TRADES_HAS_EYEDROPS:       itemToReplace = ITEM_EYEDROPS; break;
-                case RAND_INF_ADULT_TRADES_HAS_CLAIM_CHECK:    itemToReplace = ITEM_CLAIM_CHECK; break;
+                case RAND_INF_ADULT_TRADES_HAS_POCKET_EGG:
+                    itemToReplace = ITEM_POCKET_EGG;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_POCKET_CUCCO:
+                    itemToReplace = ITEM_POCKET_CUCCO;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_COJIRO:
+                    itemToReplace = ITEM_COJIRO;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_ODD_MUSHROOM:
+                    itemToReplace = ITEM_ODD_MUSHROOM;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_ODD_POTION:
+                    itemToReplace = ITEM_ODD_POTION;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_SAW:
+                    itemToReplace = ITEM_SAW;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_SWORD_BROKEN:
+                    itemToReplace = ITEM_SWORD_BROKEN;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_PRESCRIPTION:
+                    itemToReplace = ITEM_PRESCRIPTION;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_FROG:
+                    itemToReplace = ITEM_FROG;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_EYEDROPS:
+                    itemToReplace = ITEM_EYEDROPS;
+                    break;
+                case RAND_INF_ADULT_TRADES_HAS_CLAIM_CHECK:
+                    itemToReplace = ITEM_CLAIM_CHECK;
+                    break;
             }
             Inventory_ReplaceItem(gPlayState, itemToReplace, Randomizer_GetNextAdultTradeItem());
         }

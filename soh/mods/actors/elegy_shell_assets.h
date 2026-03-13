@@ -26,9 +26,9 @@ static const ALIGN_ASSET(2) char gElegyShellDekuDL[] = dgElegyShellDekuDL;
 // Form indices (matches MM's PlayerForm enum for shell selection)
 #define ELEGY_FORM_HUMAN 0
 #define ELEGY_FORM_GORON 1
-#define ELEGY_FORM_ZORA  2
-#define ELEGY_FORM_DEKU  3
-#define ELEGY_FORM_FD    4 // Fierce Deity uses human shell
-#define ELEGY_FORM_MAX   5
+#define ELEGY_FORM_ZORA 2
+#define ELEGY_FORM_DEKU 3
+#define ELEGY_FORM_FD 4 // Fierce Deity uses human shell
+#define ELEGY_FORM_MAX 5
 
 #endif // ELEGY_SHELL_ASSETS_H

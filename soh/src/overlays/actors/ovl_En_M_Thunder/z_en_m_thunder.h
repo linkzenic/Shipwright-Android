@@ -25,6 +25,7 @@ typedef struct EnMThunder {
     /* 0x01C8 */ u8 unk_1C8;
     /* 0x01C9 */ u8 unk_1C9;
     /* 0x01CA */ u8 unk_1CA;
-} EnMThunder; // size = 0x01CC
+    /* 0x01CC */ Actor* homingTarget; // NULL = fly straight; set to focusActor at spawn for FD beam homing
+} EnMThunder;                         // size = 0x01D0
 
 #endif

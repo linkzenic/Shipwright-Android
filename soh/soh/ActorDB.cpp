@@ -612,8 +612,14 @@ static ActorDBInit EnPartnerInit = {
 };
 extern "C" s16 gEnPartnerId;
 
+// SW97 actor registration and hooks (defined in sw97_init.cpp)
+extern void Sw97_RegisterActors();
+extern void Sw97_RegisterHooks();
+
 void ActorDB::AddBuiltInCustomActors() {
     gEnPartnerId = ActorDB::Instance->AddEntry(EnPartnerInit).entry.id;
+    Sw97_RegisterActors();
+    Sw97_RegisterHooks();
 }
 
 extern "C" ActorDBEntry* ActorDB_Retrieve(const int id) {

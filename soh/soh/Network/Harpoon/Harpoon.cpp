@@ -31,8 +31,7 @@ void Harpoon::Enable() {
         Anchor::Instance->Disable();
     }
 
-    Network::Enable(CVarGetString(CVAR_HARPOON("Host"), "localhost"),
-                    CVarGetInteger(CVAR_HARPOON("Port"), 43384));
+    Network::Enable(CVarGetString(CVAR_HARPOON("Host"), "localhost"), CVarGetInteger(CVAR_HARPOON("Port"), 43384));
     ownClientId = 0;
 }
 
@@ -177,9 +176,7 @@ void Harpoon::ProcessIncomingPacketQueue() {
                 HandlePacket_TeleportTo(payload);
             else if (packetType == HPN_UPDATE_BEANS_COUNT)
                 HandlePacket_UpdateBeansCount(payload);
-        } catch (const std::exception& e) {
-            SPDLOG_ERROR("[Harpoon] Exception processing packet: {}", e.what());
-        }
+        } catch (const std::exception& e) { SPDLOG_ERROR("[Harpoon] Exception processing packet: {}", e.what()); }
     }
 }
 
@@ -239,10 +236,14 @@ void Harpoon::RefreshClientActors() {
 }
 
 bool Harpoon::IsSaveLoaded() {
-    if (gPlayState == nullptr) return false;
-    if (GET_PLAYER(gPlayState) == nullptr) return false;
-    if (gSaveContext.fileNum > 2 && gSaveContext.fileNum < 0xFE) return false;
-    if (gSaveContext.gameMode != GAMEMODE_NORMAL) return false;
+    if (gPlayState == nullptr)
+        return false;
+    if (GET_PLAYER(gPlayState) == nullptr)
+        return false;
+    if (gSaveContext.fileNum > 2 && gSaveContext.fileNum < 0xFE)
+        return false;
+    if (gSaveContext.gameMode != GAMEMODE_NORMAL)
+        return false;
     return true;
 }
 
@@ -250,7 +251,7 @@ nlohmann::json Harpoon::PrepClientState() {
     nlohmann::json state;
     state["name"] = CVarGetString(CVAR_HARPOON("Name"), "Player");
     Color_RGBA8 color = CVarGetColor(CVAR_HARPOON("Color.Value"), { 100, 255, 100 });
-    state["color"] = { {"r", color.r}, {"g", color.g}, {"b", color.b} };
+    state["color"] = { { "r", color.r }, { "g", color.g }, { "b", color.b } };
     state["clientVersion"] = (char*)gGitCommitHash;
     state["isSaveLoaded"] = IsSaveLoaded();
     if (IsSaveLoaded()) {
@@ -271,7 +272,8 @@ void Harpoon::SendPacket_Handshake() {
 }
 
 void Harpoon::SendPacket_PlayerUpdate() {
-    if (!IsSaveLoaded()) return;
+    if (!IsSaveLoaded())
+        return;
 
     uint32_t currentPlayerCount = 0;
     for (auto& [clientId, client] : clients) {
@@ -279,7 +281,8 @@ void Harpoon::SendPacket_PlayerUpdate() {
             currentPlayerCount++;
         }
     }
-    if (currentPlayerCount == 0) return;
+    if (currentPlayerCount == 0)
+        return;
 
     Player* player = GET_PLAYER(gPlayState);
     nlohmann::json payload;
@@ -288,8 +291,12 @@ void Harpoon::SendPacket_PlayerUpdate() {
     payload["sceneNum"] = gPlayState->sceneNum;
     payload["entranceIndex"] = gSaveContext.entranceIndex;
     payload["linkAge"] = gSaveContext.linkAge;
-    payload["posRot"]["pos"] = { {"x", player->actor.world.pos.x}, {"y", player->actor.world.pos.y}, {"z", player->actor.world.pos.z} };
-    payload["posRot"]["rot"] = { {"x", player->actor.shape.rot.x}, {"y", player->actor.shape.rot.y}, {"z", player->actor.shape.rot.z} };
+    payload["posRot"]["pos"] = { { "x", player->actor.world.pos.x },
+                                 { "y", player->actor.world.pos.y },
+                                 { "z", player->actor.world.pos.z } };
+    payload["posRot"]["rot"] = { { "x", player->actor.shape.rot.x },
+                                 { "y", player->actor.shape.rot.y },
+                                 { "z", player->actor.shape.rot.z } };
 
     // Read joint table from MM form when transformed, OOT player otherwise
     std::vector<int> jointArray;
@@ -318,9 +325,13 @@ void Harpoon::SendPacket_PlayerUpdate() {
         }
     }
     payload["jointTable"] = jointArray;
-    payload["prevTransl"] = { {"x", player->skelAnime.prevTransl.x}, {"y", player->skelAnime.prevTransl.y}, {"z", player->skelAnime.prevTransl.z} };
+    payload["prevTransl"] = { { "x", player->skelAnime.prevTransl.x },
+                              { "y", player->skelAnime.prevTransl.y },
+                              { "z", player->skelAnime.prevTransl.z } };
     payload["movementFlags"] = player->skelAnime.movementFlags;
-    payload["upperLimbRot"] = { {"x", player->upperLimbRot.x}, {"y", player->upperLimbRot.y}, {"z", player->upperLimbRot.z} };
+    payload["upperLimbRot"] = { { "x", player->upperLimbRot.x },
+                                { "y", player->upperLimbRot.y },
+                                { "z", player->upperLimbRot.z } };
     payload["currentBoots"] = player->currentBoots;
     payload["currentShield"] = player->currentShield;
     payload["currentTunic"] = player->currentTunic;
@@ -364,21 +375,36 @@ void Harpoon::SendPacket_PlayerUpdate() {
     {
         u32 ciFlags = 0;
         CustomItemState* ci = &gCustomItemState;
-        if (ci->spinnerActive)       ciFlags |= CI_FLAG_SPINNER;
-        if (ci->gustJarMode > 0)     ciFlags |= CI_FLAG_GUSTJAR;
-        if (ci->ballAndChainThrown)  ciFlags |= CI_FLAG_BALLCHAIN;
-        if (ci->shovelAnimating)     ciFlags |= CI_FLAG_SHOVEL;
-        if (ci->beetleActive)        ciFlags |= CI_FLAG_BEETLE;
-        if (ci->dominionRodActive)   ciFlags |= CI_FLAG_DOMINION_ROD;
-        if (ci->somariaActive)       ciFlags |= CI_FLAG_SOMARIA;
-        if (ci->mogmaMittsActive)    ciFlags |= CI_FLAG_MOGMA_MITTS;
-        if (ci->whipActive)          ciFlags |= CI_FLAG_WHIP;
-        if (ci->timeGateActive)      ciFlags |= CI_FLAG_TIME_GATE;
-        if (ci->switchHookActive)    ciFlags |= CI_FLAG_SWITCH_HOOK;
-        if (ci->dekuLeafGliding || ci->dekuLeafBlowing) ciFlags |= CI_FLAG_DEKU_LEAF;
-        if (ci->fireRodActive)       ciFlags |= CI_FLAG_FIRE_ROD;
-        if (ci->iceRodActive)        ciFlags |= CI_FLAG_ICE_ROD;
-        if (ci->lightRodActive)      ciFlags |= CI_FLAG_LIGHT_ROD;
+        if (ci->spinnerActive)
+            ciFlags |= CI_FLAG_SPINNER;
+        if (ci->gustJarMode > 0)
+            ciFlags |= CI_FLAG_GUSTJAR;
+        if (ci->ballAndChainThrown)
+            ciFlags |= CI_FLAG_BALLCHAIN;
+        if (ci->shovelAnimating)
+            ciFlags |= CI_FLAG_SHOVEL;
+        if (ci->beetleActive)
+            ciFlags |= CI_FLAG_BEETLE;
+        if (ci->dominionRodActive)
+            ciFlags |= CI_FLAG_DOMINION_ROD;
+        if (ci->somariaActive)
+            ciFlags |= CI_FLAG_SOMARIA;
+        if (ci->mogmaMittsActive)
+            ciFlags |= CI_FLAG_MOGMA_MITTS;
+        if (ci->whipActive)
+            ciFlags |= CI_FLAG_WHIP;
+        if (ci->timeGateActive)
+            ciFlags |= CI_FLAG_TIME_GATE;
+        if (ci->switchHookActive)
+            ciFlags |= CI_FLAG_SWITCH_HOOK;
+        if (ci->dekuLeafGliding || ci->dekuLeafBlowing)
+            ciFlags |= CI_FLAG_DEKU_LEAF;
+        if (ci->fireRodActive)
+            ciFlags |= CI_FLAG_FIRE_ROD;
+        if (ci->iceRodActive)
+            ciFlags |= CI_FLAG_ICE_ROD;
+        if (ci->lightRodActive)
+            ciFlags |= CI_FLAG_LIGHT_ROD;
         payload["ciFlags"] = ciFlags;
 
         if (ciFlags & CI_FLAG_BEETLE) {
@@ -421,7 +447,8 @@ void Harpoon::SendPacket_PlayerUpdate() {
         if (ciFlags & CI_FLAG_BALLCHAIN) {
             payload["ciBallChainThrown"] = ci->ballAndChainThrown;
             payload["ciTimer2"] = ci->timer2;
-            payload["ciSharedProjPos"] = { ci->sharedProjectilePos.x, ci->sharedProjectilePos.y, ci->sharedProjectilePos.z };
+            payload["ciSharedProjPos"] = { ci->sharedProjectilePos.x, ci->sharedProjectilePos.y,
+                                           ci->sharedProjectilePos.z };
         }
         if (ciFlags & CI_FLAG_WHIP) {
             payload["ciWhipState"] = ci->whipState;
@@ -439,11 +466,13 @@ void Harpoon::SendPacket_PlayerUpdate() {
         }
         if (ciFlags & CI_FLAG_DOMINION_ROD) {
             payload["ciDominionRodState"] = ci->dominionRodState;
-            payload["ciDominionRodOrbPos"] = { ci->dominionRodOrbPos.x, ci->dominionRodOrbPos.y, ci->dominionRodOrbPos.z };
+            payload["ciDominionRodOrbPos"] = { ci->dominionRodOrbPos.x, ci->dominionRodOrbPos.y,
+                                               ci->dominionRodOrbPos.z };
         }
         if (ciFlags & CI_FLAG_SWITCH_HOOK) {
             payload["ciSwitchHookState"] = ci->switchHookState;
-            payload["ciSwitchHookProjPos"] = { ci->switchHookProjPos.x, ci->switchHookProjPos.y, ci->switchHookProjPos.z };
+            payload["ciSwitchHookProjPos"] = { ci->switchHookProjPos.x, ci->switchHookProjPos.y,
+                                               ci->switchHookProjPos.z };
         }
         if (ciFlags & CI_FLAG_TIME_GATE) {
             payload["ciTimeGateItemVisible"] = ci->timeGateItemVisible;
@@ -459,13 +488,11 @@ void Harpoon::SendPacket_PlayerUpdate() {
         for (int i = 0; i < SOMARIA_MAX_CUBES; i++) {
             Actor* cube = gCustomItemState.somariaBlocks[i];
             if (cube != NULL && cube->update != NULL) {
-                cubeArray.push_back({
-                    {"p", {cube->world.pos.x, cube->world.pos.y, cube->world.pos.z}},
-                    {"s", SOMARIA_GET_STATE(cube)},
-                    {"c", SOMARIA_GET_FORM(cube)},
-                    {"sc", cube->scale.x},
-                    {"r", cube->shape.rot.y}
-                });
+                cubeArray.push_back({ { "p", { cube->world.pos.x, cube->world.pos.y, cube->world.pos.z } },
+                                      { "s", SOMARIA_GET_STATE(cube) },
+                                      { "c", SOMARIA_GET_FORM(cube) },
+                                      { "sc", cube->scale.x },
+                                      { "r", cube->shape.rot.y } });
             }
         }
         if (!cubeArray.empty()) {
@@ -540,7 +567,8 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
 void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
     uint32_t clientId = payload["clientId"].get<uint32_t>();
 
-    if (!clients.contains(clientId)) return;
+    if (!clients.contains(clientId))
+        return;
     auto& client = clients[clientId];
 
     if (client.linkAge != payload.value("linkAge", (s32)LINK_AGE_ADULT)) {
@@ -626,15 +654,15 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
     client.customItemFlags = ciFlags;
 
     if (ciFlags & CI_FLAG_BEETLE) {
-        auto bp = payload.value("ciBeetlePos", std::vector<float>{0,0,0});
+        auto bp = payload.value("ciBeetlePos", std::vector<float>{ 0, 0, 0 });
         client.ciBeetlePos = { bp[0], bp[1], bp[2] };
-        auto br = payload.value("ciBeetleRot", std::vector<int>{0,0,0});
+        auto br = payload.value("ciBeetleRot", std::vector<int>{ 0, 0, 0 });
         client.ciBeetleRot = { (s16)br[0], (s16)br[1], (s16)br[2] };
         client.ciBeetleWingScale = payload.value("ciBeetleWingScale", 0.0f);
         client.ciBeetleState = payload.value("ciBeetleState", (u8)0);
     }
     if (ciFlags & CI_FLAG_GUSTJAR) {
-        auto gp = payload.value("ciGustJarProjPos", std::vector<float>{0,0,0});
+        auto gp = payload.value("ciGustJarProjPos", std::vector<float>{ 0, 0, 0 });
         client.ciGustJarProjPos = { gp[0], gp[1], gp[2] };
         client.ciGustJarProjActive = payload.value("ciGustJarProjActive", (u8)0);
         client.ciGustJarAmmoType = payload.value("ciGustJarAmmoType", (u8)0);
@@ -646,47 +674,47 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
         client.ciFireRodProjCount = payload.value("ciFireRodProjCount", (u8)0);
         client.ciFireRodProjType = payload.value("ciFireRodProjType", (u8)0);
         client.ciFireRodProjScale = payload.value("ciFireRodProjScale", 0.0f);
-        auto fp1 = payload.value("ciFireRodProjPos", std::vector<float>{0,0,0});
+        auto fp1 = payload.value("ciFireRodProjPos", std::vector<float>{ 0, 0, 0 });
         client.ciFireRodProjPos = { fp1[0], fp1[1], fp1[2] };
-        auto fp2 = payload.value("ciFireRodProjPos2", std::vector<float>{0,0,0});
+        auto fp2 = payload.value("ciFireRodProjPos2", std::vector<float>{ 0, 0, 0 });
         client.ciFireRodProjPos2 = { fp2[0], fp2[1], fp2[2] };
-        auto fp3 = payload.value("ciFireRodProjPos3", std::vector<float>{0,0,0});
+        auto fp3 = payload.value("ciFireRodProjPos3", std::vector<float>{ 0, 0, 0 });
         client.ciFireRodProjPos3 = { fp3[0], fp3[1], fp3[2] };
     }
     if (ciFlags & CI_FLAG_ICE_ROD) {
         client.ciIceRodProjActive = payload.value("ciIceRodProjActive", (u8)0);
         client.ciIceRodProjCount = payload.value("ciIceRodProjCount", (u8)0);
         client.ciIceRodProjScale = payload.value("ciIceRodProjScale", 0.0f);
-        auto ip1 = payload.value("ciIceRodProjPos", std::vector<float>{0,0,0});
+        auto ip1 = payload.value("ciIceRodProjPos", std::vector<float>{ 0, 0, 0 });
         client.ciIceRodProjPos = { ip1[0], ip1[1], ip1[2] };
-        auto ip2 = payload.value("ciIceRodProjPos2", std::vector<float>{0,0,0});
+        auto ip2 = payload.value("ciIceRodProjPos2", std::vector<float>{ 0, 0, 0 });
         client.ciIceRodProjPos2 = { ip2[0], ip2[1], ip2[2] };
-        auto ip3 = payload.value("ciIceRodProjPos3", std::vector<float>{0,0,0});
+        auto ip3 = payload.value("ciIceRodProjPos3", std::vector<float>{ 0, 0, 0 });
         client.ciIceRodProjPos3 = { ip3[0], ip3[1], ip3[2] };
     }
     if (ciFlags & CI_FLAG_LIGHT_ROD) {
         client.ciLightRodProjActive = payload.value("ciLightRodProjActive", (u8)0);
         client.ciLightRodProjCount = payload.value("ciLightRodProjCount", (u8)0);
-        auto lp1 = payload.value("ciLightRodProjPos", std::vector<float>{0,0,0});
+        auto lp1 = payload.value("ciLightRodProjPos", std::vector<float>{ 0, 0, 0 });
         client.ciLightRodProjPos = { lp1[0], lp1[1], lp1[2] };
-        auto lp2 = payload.value("ciLightRodProjPos2", std::vector<float>{0,0,0});
+        auto lp2 = payload.value("ciLightRodProjPos2", std::vector<float>{ 0, 0, 0 });
         client.ciLightRodProjPos2 = { lp2[0], lp2[1], lp2[2] };
-        auto lp3 = payload.value("ciLightRodProjPos3", std::vector<float>{0,0,0});
+        auto lp3 = payload.value("ciLightRodProjPos3", std::vector<float>{ 0, 0, 0 });
         client.ciLightRodProjPos3 = { lp3[0], lp3[1], lp3[2] };
     }
     if (ciFlags & CI_FLAG_BALLCHAIN) {
         client.ciBallChainThrown = payload.value("ciBallChainThrown", (u8)0);
         client.ciTimer2 = payload.value("ciTimer2", (s16)0);
-        auto sp = payload.value("ciSharedProjPos", std::vector<float>{0,0,0});
+        auto sp = payload.value("ciSharedProjPos", std::vector<float>{ 0, 0, 0 });
         client.ciSharedProjPos = { sp[0], sp[1], sp[2] };
     }
     if (ciFlags & CI_FLAG_WHIP) {
         client.ciWhipState = payload.value("ciWhipState", (u8)0);
-        auto wt = payload.value("ciWhipTipPos", std::vector<float>{0,0,0});
+        auto wt = payload.value("ciWhipTipPos", std::vector<float>{ 0, 0, 0 });
         client.ciWhipTipPos = { wt[0], wt[1], wt[2] };
-        auto wa = payload.value("ciWhipAttachPos", std::vector<float>{0,0,0});
+        auto wa = payload.value("ciWhipAttachPos", std::vector<float>{ 0, 0, 0 });
         client.ciWhipAttachPos = { wa[0], wa[1], wa[2] };
-        auto wn = payload.value("ciWhipAttachNormal", std::vector<float>{0,0,0});
+        auto wn = payload.value("ciWhipAttachNormal", std::vector<float>{ 0, 0, 0 });
         client.ciWhipAttachNormal = { wn[0], wn[1], wn[2] };
     }
     if (ciFlags & CI_FLAG_DEKU_LEAF) {
@@ -699,12 +727,12 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
     }
     if (ciFlags & CI_FLAG_DOMINION_ROD) {
         client.ciDominionRodState = payload.value("ciDominionRodState", (u8)0);
-        auto dp = payload.value("ciDominionRodOrbPos", std::vector<float>{0,0,0});
+        auto dp = payload.value("ciDominionRodOrbPos", std::vector<float>{ 0, 0, 0 });
         client.ciDominionRodOrbPos = { dp[0], dp[1], dp[2] };
     }
     if (ciFlags & CI_FLAG_SWITCH_HOOK) {
         client.ciSwitchHookState = payload.value("ciSwitchHookState", (u8)0);
-        auto shp = payload.value("ciSwitchHookProjPos", std::vector<float>{0,0,0});
+        auto shp = payload.value("ciSwitchHookProjPos", std::vector<float>{ 0, 0, 0 });
         client.ciSwitchHookProjPos = { shp[0], shp[1], shp[2] };
     }
     if (ciFlags & CI_FLAG_TIME_GATE) {
@@ -720,7 +748,7 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
         auto& cubes = payload["somCubes"];
         for (size_t i = 0; i < cubes.size() && i < 3; i++) {
             auto& c = cubes[i];
-            auto pos = c.value("p", std::vector<float>{0,0,0});
+            auto pos = c.value("p", std::vector<float>{ 0, 0, 0 });
             client.remoteCubes[i].pos = { pos[0], pos[1], pos[2] };
             client.remoteCubes[i].state = c.value("s", (u8)0);
             client.remoteCubes[i].form = c.value("c", (u8)0);
@@ -732,15 +760,18 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
 }
 
 void Harpoon::HandlePacket_Damage(nlohmann::json payload) {
-    if (!IsSaveLoaded()) return;
+    if (!IsSaveLoaded())
+        return;
 
     u8 damageEffect = payload.value("damageEffect", (u8)0);
     u8 damage = payload.value("damage", (u8)0);
 
     Player* self = GET_PLAYER(gPlayState);
 
-    if (Player_InBlockingCsMode(gPlayState, self)) return;
-    if (self->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE)) return;
+    if (Player_InBlockingCsMode(gPlayState, self))
+        return;
+    if (self->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE))
+        return;
 
     // PVP off: apply status effects only (stun/freeze), no damage or knockback
     if (!pvpEnabled) {
@@ -1020,10 +1051,13 @@ void Harpoon::HandlePacket_UpdateTeamState(nlohmann::json payload) {
 // MARK: - Scooter Handlers (Custom Damage, Effects, Game State, Rooms)
 
 void Harpoon::HandlePacket_CustomDamage(nlohmann::json payload) {
-    if (!IsSaveLoaded()) return;
+    if (!IsSaveLoaded())
+        return;
     Player* self = GET_PLAYER(gPlayState);
-    if (Player_InBlockingCsMode(gPlayState, self)) return;
-    if (self->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE)) return;
+    if (Player_InBlockingCsMode(gPlayState, self))
+        return;
+    if (self->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE))
+        return;
 
     s32 customType = payload.value("customDamageType", (s32)0);
     s32 damage = payload.value("damage", (s32)1);
@@ -1123,7 +1157,8 @@ void Harpoon::HandlePacket_CustomDamage(nlohmann::json payload) {
 }
 
 void Harpoon::HandlePacket_CustomEffect(nlohmann::json payload) {
-    if (!IsSaveLoaded()) return;
+    if (!IsSaveLoaded())
+        return;
     Player* self = GET_PLAYER(gPlayState);
 
     s32 effectType = payload.value("effectType", (s32)0);
@@ -1151,10 +1186,10 @@ void Harpoon::HandlePacket_CustomEffect(nlohmann::json payload) {
             self->actor.world.pos.y = attackerY;
             self->actor.world.pos.z = attackerZ;
             Vec3f zeroVec = { 0.0f, 0.0f, 0.0f };
-            EffectSsDeadDb_Spawn(gPlayState, &myPos, &zeroVec, &zeroVec,
-                                 100, 10, 255, 255, 255, 200, 150, 200, 255, 0, 14, 1);
-            EffectSsDeadDb_Spawn(gPlayState, &self->actor.world.pos, &zeroVec, &zeroVec,
-                                 100, 10, 255, 255, 255, 200, 150, 200, 255, 0, 14, 1);
+            EffectSsDeadDb_Spawn(gPlayState, &myPos, &zeroVec, &zeroVec, 100, 10, 255, 255, 255, 200, 150, 200, 255, 0,
+                                 14, 1);
+            EffectSsDeadDb_Spawn(gPlayState, &self->actor.world.pos, &zeroVec, &zeroVec, 100, 10, 255, 255, 255, 200,
+                                 150, 200, 255, 0, 14, 1);
             Audio_PlayActorSound2(&self->actor, NA_SE_EV_LINK_WARP);
             break;
         }
@@ -1169,21 +1204,24 @@ void Harpoon::HandlePacket_CustomEffect(nlohmann::json payload) {
 void Harpoon::HandlePacket_GameState(nlohmann::json payload) {
     std::string state = payload.value("state", "lobby");
 
-    if (state == "lobby") gameState = HARPOON_STATE_LOBBY;
+    if (state == "lobby")
+        gameState = HARPOON_STATE_LOBBY;
     else if (state == "map_select") {
         gameState = HARPOON_STATE_MAP_SELECT;
         for (auto& [cid, c] : clients) {
             c.hasVoted = false;
         }
-    }
-    else if (state == "map_select_confirmed") {
+    } else if (state == "map_select_confirmed") {
         selectedMapIndex = payload.value("mapIndex", (s32)0);
         gameState = HARPOON_STATE_COUNTDOWN;
-    }
-    else if (state == "countdown") gameState = HARPOON_STATE_COUNTDOWN;
-    else if (state == "hiding_phase") gameState = HARPOON_STATE_HIDING_PHASE;
-    else if (state == "playing") gameState = HARPOON_STATE_PLAYING;
-    else if (state == "finished") gameState = HARPOON_STATE_FINISHED;
+    } else if (state == "countdown")
+        gameState = HARPOON_STATE_COUNTDOWN;
+    else if (state == "hiding_phase")
+        gameState = HARPOON_STATE_HIDING_PHASE;
+    else if (state == "playing")
+        gameState = HARPOON_STATE_PLAYING;
+    else if (state == "finished")
+        gameState = HARPOON_STATE_FINISHED;
 
     countdownTimer = payload.value("timer", (s32)0);
     aliveCount = payload.value("aliveCount", (s32)0);
@@ -1311,16 +1349,18 @@ void Harpoon::HandlePacket_MapVote(nlohmann::json payload) {
 
 void Harpoon::HandlePacket_DecoyHit(nlohmann::json payload) {
     u8 slot = payload.value("decoySlot", (u8)0xFF);
-    if (slot >= 3) return;
+    if (slot >= 3)
+        return;
 
     CustomItemState* ci = &gCustomItemState;
-    if (!ci->somariaBlocks[slot]) return;
+    if (!ci->somariaBlocks[slot])
+        return;
 
     if (gPlayState != nullptr) {
         Vec3f pos = ci->somariaBlocks[slot]->world.pos;
         Vec3f zeroVec = { 0.0f, 0.0f, 0.0f };
-        EffectSsDeadDb_Spawn(gPlayState, &pos, &zeroVec, &zeroVec,
-                             100, 10, 150, 200, 255, 200, 100, 150, 255, 0, 14, 1);
+        EffectSsDeadDb_Spawn(gPlayState, &pos, &zeroVec, &zeroVec, 100, 10, 150, 200, 255, 200, 100, 150, 255, 0, 14,
+                             1);
     }
 }
 
@@ -1425,27 +1465,35 @@ void Harpoon::UpdateDecoys() {
 extern "C" {
 
 s32 Harpoon_IsDummyPlayer(Actor* actor) {
-    if (actor == NULL) return 0;
-    if (actor->id != ACTOR_EN_OE2) return 0;
-    if (actor->update != HarpoonDummyPlayer_Update) return 0;
+    if (actor == NULL)
+        return 0;
+    if (actor->id != ACTOR_EN_OE2)
+        return 0;
+    if (actor->update != HarpoonDummyPlayer_Update)
+        return 0;
     return 1;
 }
 
 s32 Harpoon_IsPvpActive(void) {
-    if (!Harpoon::Instance) return 0;
-    if (!Harpoon::Instance->isConnected) return 0;
+    if (!Harpoon::Instance)
+        return 0;
+    if (!Harpoon::Instance->isConnected)
+        return 0;
     HarpoonGameState state = Harpoon::Instance->gameState;
-    return (state != HARPOON_STATE_LOBBY && state != HARPOON_STATE_COUNTDOWN &&
-            state != HARPOON_STATE_DISCONNECTED);
+    return (state != HARPOON_STATE_LOBBY && state != HARPOON_STATE_COUNTDOWN && state != HARPOON_STATE_DISCONNECTED);
 }
 
 void Harpoon_SendCustomDamage(Actor* hitActor, s32 damageType, s32 damage) {
-    if (!Harpoon::Instance) return;
-    if (!Harpoon_IsPvpActive()) return;
-    if (!Harpoon_IsDummyPlayer(hitActor)) return;
+    if (!Harpoon::Instance)
+        return;
+    if (!Harpoon_IsPvpActive())
+        return;
+    if (!Harpoon_IsDummyPlayer(hitActor))
+        return;
 
     uint32_t clientId = Harpoon::Instance->GetDummyPlayerClientId(hitActor);
-    if (clientId == 0) return;
+    if (clientId == 0)
+        return;
 
     Player* localPlayer = GET_PLAYER(gPlayState);
 
@@ -1465,12 +1513,16 @@ void Harpoon_SendCustomDamage(Actor* hitActor, s32 damageType, s32 damage) {
 }
 
 void Harpoon_SendCustomEffect(Actor* hitActor, s32 effectType, Vec3f* attackerPos, s16 attackerYaw) {
-    if (!Harpoon::Instance) return;
-    if (!Harpoon_IsPvpActive()) return;
-    if (!Harpoon_IsDummyPlayer(hitActor)) return;
+    if (!Harpoon::Instance)
+        return;
+    if (!Harpoon_IsPvpActive())
+        return;
+    if (!Harpoon_IsDummyPlayer(hitActor))
+        return;
 
     uint32_t clientId = Harpoon::Instance->GetDummyPlayerClientId(hitActor);
-    if (clientId == 0) return;
+    if (clientId == 0)
+        return;
 
     nlohmann::json payload;
     payload["type"] = "PVP_CUSTOM_EFFECT";
@@ -1484,11 +1536,14 @@ void Harpoon_SendCustomEffect(Actor* hitActor, s32 effectType, Vec3f* attackerPo
 }
 
 s32 Harpoon_CheckAndSendDamage(ColliderCylinder* col, s32 damageType, s32 damage) {
-    if (!(col->base.atFlags & AT_HIT)) return 0;
+    if (!(col->base.atFlags & AT_HIT))
+        return 0;
 
     Actor* hitActor = col->base.at;
-    if (hitActor == NULL) return 0;
-    if (!Harpoon_IsDummyPlayer(hitActor)) return 0;
+    if (hitActor == NULL)
+        return 0;
+    if (!Harpoon_IsDummyPlayer(hitActor))
+        return 0;
 
     Harpoon_SendCustomDamage(hitActor, damageType, damage);
     col->base.atFlags &= ~AT_HIT;

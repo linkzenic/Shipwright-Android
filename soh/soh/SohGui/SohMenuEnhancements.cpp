@@ -1951,4 +1951,18 @@ void SohMenu::AddMenuEnhancements() {
     }
 }
 
+// ===================== SW97 Medallion Spells =====================
+
+void SohMenu::AddMenuSw97() {
+    WidgetPath path = { "Settings", "Skijer's NEI", SECTION_COLUMN_1 };
+    AddWidget(path, "SW97 Spells", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "SW97 Medallion Spells", WIDGET_CVAR_CHECKBOX)
+        .CVar("gEnhancements.SkijerNEI.SW97Medallions")
+        .Options(CheckboxOptions().Tooltip("Equip quest medallions to C-buttons from Quest Status.\n"
+                                           "C = cast elemental spell, L+C = set elemental arrow/slingshot.\n"
+                                           "Adult: elemental arrows. Child: elemental slingshot seeds.\n"
+                                           "Requires obtaining medallions from bosses.\n\n"
+                                           "Credit: z64proto/sw97 team (spell/arrow actors)"));
+}
+
 } // namespace SohGui

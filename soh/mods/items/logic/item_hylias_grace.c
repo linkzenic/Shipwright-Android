@@ -38,8 +38,12 @@ static s32 sHGPhaseEnd = 0; // Absolute hgTimer value when current animation pha
 // response (Actor_UpdateBgCheckInfo / OC) that runs after our code each frame.
 static Vec3f sFairyPos;
 static u8 sFairyPosValid = 0;
+static Vec3f sFairyVelocity = { 0.0f, 0.0f, 0.0f };
+static f32 sFairyDimLevel = 0.0f;
 
-// (sFairyCamYaw removed — now uses live camera yaw each frame)
+// Forward declarations (defined after HGrace_IsPassableBarrier, used in HGrace_Stop)
+static void HGrace_DimLighting(PlayState* play, f32 intensity);
+static void HGrace_ResetLighting(PlayState* play);
 
 // Halved from vanilla 0.83f to compensate for double LinkAnimation_Update
 // (vanilla's Player_Action_Idle calls it once, we call it again — Demise pattern).
@@ -52,8 +56,15 @@ static u8 sFairyPosValid = 0;
 
 static void HGrace_SpawnFairySparkles(Player* p, PlayState* play) {
     Vec3f accel = { 0.0f, 0.0f, 0.0f };
-    Color_RGBA8 primColor = { 150, 255, 150, 255 };
-    Color_RGBA8 envColor = { 50, 200, 50, 255 };
+    Color_RGBA8 primColor, envColor;
+
+    if (hgForcedBySpell) {
+        primColor = (Color_RGBA8){ 255, 220, 100, 255 };
+        envColor = (Color_RGBA8){ 200, 150, 30, 255 };
+    } else {
+        primColor = (Color_RGBA8){ 150, 255, 150, 255 };
+        envColor = (Color_RGBA8){ 50, 200, 50, 255 };
+    }
 
     for (u8 i = 0; i < 3; i++) {
         Vec3f pos;
@@ -104,9 +115,11 @@ static void HGrace_SpawnWarpSparkles(PlayState* play, Vec3f* center) {
 
 static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Player* p = (Player*)thisx;
+    u8 isSpirit = hgForcedBySpell;
+    s16 flickerStart = isSpirit ? HGRACE_SW97_FLICKER_START : HGRACE_FLICKER_START;
 
-    // Flicker: skip drawing during flicker-off frames (last 1.5 seconds)
-    if ((hgTimer <= HGRACE_FLICKER_START) && ((play->gameplayFrames % 6) < 3))
+    // Flicker: skip drawing during flicker-off frames
+    if ((hgTimer <= flickerStart) && ((play->gameplayFrames % 6) < 3))
         return;
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -118,6 +131,13 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     // Vanilla fairy pulsation: scale oscillates ±10% around 1.0
     f32 pulse = (Math_SinS(play->gameplayFrames * 4096) * 0.1f) + 1.0f;
 
+    // Color scheme: golden for Spirit Medallion, green for Hylia's Grace
+    // Spirit fairy = Navi (white core, blue glow); default = green for Hylia's Grace
+    u8 glowR = isSpirit ? 100 : 180, glowG = isSpirit ? 150 : 255, glowB = isSpirit ? 255 : 180;
+    u8 coreR = isSpirit ? 255 : 255, coreG = isSpirit ? 255 : 255, coreB = isSpirit ? 255 : 255;
+    u8 wingR = isSpirit ? 180 : 200, wingG = isSpirit ? 210 : 255, wingB = isSpirit ? 255 : 200;
+    u8 wenvR = isSpirit ? 64 : 100, wenvG = isSpirit ? 64 : 255, wenvB = isSpirit ? 255 : 100;
+
     // ===== BODY GLOW (single layer, SETUPDL_65 + CLD_SURF) =====
     POLY_XLU_DISP = func_800947AC(POLY_XLU_DISP++);
     gDPSetAlphaDither(POLY_XLU_DISP++, G_AD_NOISE);
@@ -125,23 +145,24 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     gSPDisplayList(POLY_XLU_DISP++, gGlowCircleTextureLoadDL);
 
     {
-        f32 s = 0.035f * pulse;
+        // Spirit fairy has a larger glow aura
+        f32 s = (isSpirit ? 0.045f : 0.035f) * pulse;
         Matrix_Translate(bx, by, bz, MTXMODE_NEW);
         Matrix_ReplaceRotation(&play->billboardMtxF);
         Matrix_Scale(s, s, s, MTXMODE_APPLY);
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 180, 255, 180, 120);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, glowR, glowG, glowB, isSpirit ? 140 : 120);
         gSPDisplayList(POLY_XLU_DISP++, gGlowCircleDL);
     }
 
-    // ===== INNER WHITE CORE (vanilla fairy inner glow) =====
+    // ===== INNER CORE =====
     {
         f32 si = 0.012f * pulse;
         Matrix_Translate(bx, by, bz, MTXMODE_NEW);
         Matrix_ReplaceRotation(&play->billboardMtxF);
         Matrix_Scale(si, si, si, MTXMODE_APPLY);
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 200);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, coreR, coreG, coreB, isSpirit ? 220 : 200);
         gSPDisplayList(POLY_XLU_DISP++, gGlowCircleDL);
     }
 
@@ -153,7 +174,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
         Gfx* seg = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
         gSPSegment(POLY_XLU_DISP++, 0x08, seg);
         gDPPipeSync(seg++);
-        gDPSetPrimColor(seg++, 0, 0x01, 200, 255, 200, 180);
+        gDPSetPrimColor(seg++, 0, 0x01, wingR, wingG, wingB, isSpirit ? 200 : 180);
         gDPSetRenderMode(seg++, G_RM_PASS, G_RM_ZB_CLD_SURF2);
         gSPEndDisplayList(seg++);
     }
@@ -161,7 +182,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     // Outer color with pulsating alpha (vanilla fairy breathing effect)
     s32 envAlpha = (play->gameplayFrames * 50) & 0x1FF;
     envAlpha = (envAlpha > 255) ? 511 - envAlpha : envAlpha;
-    gDPSetEnvColor(POLY_XLU_DISP++, 100, 255, 100, (u8)envAlpha);
+    gDPSetEnvColor(POLY_XLU_DISP++, wenvR, wenvG, wenvB, (u8)envAlpha);
 
     // Wing flap animation (sinusoidal, ~±40 degrees)
     f32 flapRad = Math_SinS(play->gameplayFrames * 5000) * 0.7f;
@@ -169,9 +190,15 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     f32 wsLower = ws * 0.8f;
     f32 yr = p->actor.shape.rot.y * (M_PI / 32768.0f);
 
+    // Forward tilt: lean into movement direction (max ±20 degrees)
+    f32 hSpeed = sqrtf(SQ(sFairyVelocity.x) + SQ(sFairyVelocity.z));
+    f32 maxSpd = hgForcedBySpell ? (HGRACE_SW97_SPEED * HGRACE_SW97_SPRINT_MULT) : (HGRACE_SPEED * HGRACE_SPRINT_MULT);
+    f32 tiltX = -(hSpeed / maxSpd) * 0.35f; // negative = lean forward (pitch down)
+
     // Right upper wing
     Matrix_Translate(bx, by + 2.0f, bz, MTXMODE_NEW);
     Matrix_RotateY(yr, MTXMODE_APPLY);
+    Matrix_RotateX(tiltX, MTXMODE_APPLY);
     Matrix_Translate(5.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(flapRad + 0.5f, MTXMODE_APPLY);
     Matrix_Scale(ws, ws, ws, MTXMODE_APPLY);
@@ -181,6 +208,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     // Right lower wing
     Matrix_Translate(bx, by - 1.0f, bz, MTXMODE_NEW);
     Matrix_RotateY(yr, MTXMODE_APPLY);
+    Matrix_RotateX(tiltX, MTXMODE_APPLY);
     Matrix_Translate(4.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(flapRad + 0.3f, MTXMODE_APPLY);
     Matrix_Scale(wsLower, wsLower, wsLower, MTXMODE_APPLY);
@@ -190,6 +218,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     // Left upper wing (mirrored X scale to flip geometry)
     Matrix_Translate(bx, by + 2.0f, bz, MTXMODE_NEW);
     Matrix_RotateY(yr, MTXMODE_APPLY);
+    Matrix_RotateX(tiltX, MTXMODE_APPLY);
     Matrix_Translate(-5.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(-flapRad - 0.5f, MTXMODE_APPLY);
     Matrix_Scale(-ws, ws, ws, MTXMODE_APPLY);
@@ -199,6 +228,7 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     // Left lower wing (mirrored X scale to flip geometry)
     Matrix_Translate(bx, by - 1.0f, bz, MTXMODE_NEW);
     Matrix_RotateY(yr, MTXMODE_APPLY);
+    Matrix_RotateX(tiltX, MTXMODE_APPLY);
     Matrix_Translate(-4.0f, 0.0f, 0.0f, MTXMODE_APPLY);
     Matrix_RotateZ(-flapRad - 0.3f, MTXMODE_APPLY);
     Matrix_Scale(-wsLower, wsLower, wsLower, MTXMODE_APPLY);
@@ -229,6 +259,16 @@ static void HGrace_Stop(Player* p, PlayState* play) {
     // Reset camera
     func_8005B1A4(Play_GetCamera(play, 0));
 
+    // Reset SW97 spirit mode effects
+    if (hgForcedBySpell) {
+        HGrace_ResetLighting(play);
+        sFairyDimLevel = 0.0f;
+        p->stateFlags2 &= ~0x100000; // restore Navi
+    }
+
+    // Reset smooth velocity
+    sFairyVelocity.x = sFairyVelocity.y = sFairyVelocity.z = 0.0f;
+
     // Only set cooldown if fairy mode was actually reached
     u8 wasFairy = (hgState == HGRACE_STATE_FAIRY || hgState == HGRACE_STATE_WARP_OUT);
 
@@ -237,6 +277,7 @@ static void HGrace_Stop(Player* p, PlayState* play) {
     hgSubPhase = 0;
     hgTimer = 0;
     hgFairy = NULL;
+    hgForcedBySpell = 0;
     sFairyPosValid = 0;
 
     // No cooldown - free to use again immediately
@@ -439,81 +480,155 @@ static s32 HGrace_IsPassableBarrier(PlayState* play, s32 bgId) {
 // L = sprint (2x speed, 2x timer drain)
 // =============================================================================
 
+static void HGrace_DimLighting(PlayState* play, f32 intensity) {
+    if (play->roomCtx.curRoom.behaviorType1 != ROOM_BEHAVIOR_TYPE1_5) {
+        intensity = CLAMP(intensity, 0.0f, 1.0f);
+        f32 fogFactor = (intensity > 0.2f) ? (intensity - 0.2f) : 0.0f;
+        play->envCtx.adjFogNear = (s16)((850.0f - play->envCtx.lightSettings.fogNear) * fogFactor);
+        f32 colorFactor = CLAMP_MAX(intensity * 5.0f, 1.0f);
+        for (s32 i = 0; i < ARRAY_COUNT(play->envCtx.adjFogColor); i++) {
+            play->envCtx.adjFogColor[i] = -(s16)(play->envCtx.lightSettings.fogColor[i] * colorFactor);
+        }
+    }
+}
+
+static void HGrace_ResetLighting(PlayState* play) {
+    play->envCtx.adjFogNear = 0;
+    for (s32 i = 0; i < ARRAY_COUNT(play->envCtx.adjFogColor); i++) {
+        play->envCtx.adjFogColor[i] = 0;
+    }
+}
+
+static void HGrace_SpawnTrailSparkles(Player* p, PlayState* play, f32 actualSpeed) {
+    // Spawn extra sparkles proportional to movement speed (0 at rest, up to 6 at full sprint)
+    f32 maxSpeed =
+        hgForcedBySpell ? (HGRACE_SW97_SPEED * HGRACE_SW97_SPRINT_MULT) : (HGRACE_SPEED * HGRACE_SPRINT_MULT);
+    s32 count = (s32)(actualSpeed / maxSpeed * 6.0f);
+    if (count < 1)
+        return;
+    if (count > 6)
+        count = 6;
+
+    Color_RGBA8 primColor, envColor;
+    if (hgForcedBySpell) {
+        primColor = (Color_RGBA8){ 255, 200, 80, 255 };
+        envColor = (Color_RGBA8){ 200, 120, 20, 255 };
+    } else {
+        primColor = (Color_RGBA8){ 120, 255, 120, 255 };
+        envColor = (Color_RGBA8){ 30, 180, 30, 255 };
+    }
+
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+    for (s32 i = 0; i < count; i++) {
+        Vec3f pos;
+        pos.x = p->actor.world.pos.x + Rand_CenteredFloat(10.0f);
+        pos.y = p->actor.world.pos.y + 20.0f + Rand_CenteredFloat(8.0f);
+        pos.z = p->actor.world.pos.z + Rand_CenteredFloat(10.0f);
+
+        // Trail behind: velocity opposite to movement direction
+        Vec3f vel;
+        vel.x = -sFairyVelocity.x * 0.3f + Rand_CenteredFloat(0.5f);
+        vel.y = -sFairyVelocity.y * 0.2f + Rand_ZeroFloat(0.5f);
+        vel.z = -sFairyVelocity.z * 0.3f + Rand_CenteredFloat(0.5f);
+
+        EffectSsKiraKira_SpawnFocused(play, &pos, &vel, &accel, &primColor, &envColor, 200, 10);
+    }
+}
+
 static void HGrace_StateFairy(Player* p, PlayState* play) {
-    // Restore position: the normal player update (Actor_UpdateBgCheckInfo)
-    // runs after our code and may push world.pos out of DynaPoly actors.
-    // By snapping back to the position we computed last frame, that
-    // displacement is undone and our BgCheck bypass stays authoritative.
+    u8 isSpirit = hgForcedBySpell;
+
+    // Restore position: undo displacement from Actor_UpdateBgCheckInfo
     if (sFairyPosValid) {
         p->actor.world.pos = sFairyPos;
     }
 
+    // First-frame setup: ensure camera is in smooth follow mode
+    if (!sFairyPosValid) {
+        Camera_ChangeSetting(Play_GetCamera(play, 0), CAM_SET_NORMAL0);
+    }
+
     // INPUT_DISABLED prevents normal player actions; IN_ITEM_CS is NOT set
-    // so the camera follows the fairy freely (stick-relative movement works).
+    // so the camera follows the fairy freely.
     p->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
     p->stateFlags1 &= ~PLAYER_STATE1_IN_ITEM_CS;
     p->actor.draw = HGrace_DrawFairy;
-    p->invincibilityTimer = -1;
 
-    // Zero ALL velocity — we move position directly
+    // SW97: stronger invincibility (matches original -100 style)
+    p->invincibilityTimer = isSpirit ? -20 : -1;
+
+    // Zero ALL engine velocity — we move position via smooth velocity
     p->linearVelocity = 0.0f;
     p->actor.speedXZ = 0.0f;
-    p->actor.velocity.x = 0.0f;
-    p->actor.velocity.y = 0.0f;
-    p->actor.velocity.z = 0.0f;
+    p->actor.velocity.x = p->actor.velocity.y = p->actor.velocity.z = 0.0f;
 
     // Disable colliders every frame
     p->cylinder.base.atFlags &= ~AT_ON;
     p->cylinder.base.acFlags &= ~AC_ON;
     p->cylinder.base.ocFlags1 &= ~OC1_ON;
 
-    // Read input (A/B for vertical, stick for horizontal, L for sprint)
+    // SW97 spirit mode: gradual dim + hide Navi
+    if (isSpirit) {
+        Math_SmoothStepToF(&sFairyDimLevel, 0.4f, 0.05f, 0.02f, 0.001f);
+        HGrace_DimLighting(play, sFairyDimLevel);
+        p->stateFlags2 |= 0x100000;
+    }
+
+    // Read input
     u8 aBtn = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_A);
     u8 bBtn = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B);
     u8 lBtn = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_L);
     s8 stickX = play->state.input[0].cur.stick_x;
     s8 stickY = play->state.input[0].cur.stick_y;
 
-    // Base speed
-    f32 speed = HGRACE_SPEED;
+    // Speed: SW97 spirit fairy is faster
+    f32 speed = isSpirit ? HGRACE_SW97_SPEED : HGRACE_SPEED;
+    f32 sprintMult = isSpirit ? HGRACE_SW97_SPRINT_MULT : HGRACE_SPRINT_MULT;
     if (lBtn)
-        speed *= HGRACE_SPRINT_MULT;
+        speed *= sprintMult;
 
-    // Vertical: A = ascend, B = descend
-    f32 velY = 0.0f;
+    // Target velocity from input
+    f32 targetVY = 0.0f;
     if (aBtn)
-        velY = speed;
+        targetVY = speed;
     if (bBtn)
-        velY = -speed;
+        targetVY = -speed;
 
-    // Horizontal: joystick camera-relative
-    f32 velX = 0.0f, velZ = 0.0f;
+    f32 targetVX = 0.0f, targetVZ = 0.0f;
     f32 stickMag = sqrtf(SQ((f32)stickX) + SQ((f32)stickY));
 
     if (stickMag > 10.0f) {
-        // Live camera-relative movement: read current camera yaw each frame
         Camera* cam = Play_GetCamera(play, 0);
         s16 camYaw = Math_Atan2S(cam->at.x - cam->eye.x, cam->at.z - cam->eye.z);
         s16 stickAngle = Math_Atan2S((f32)stickX, (f32)stickY);
         s16 moveYaw = camYaw + stickAngle;
 
-        f32 normMag = stickMag / 127.0f;
-        if (normMag > 1.0f)
-            normMag = 1.0f;
+        f32 normMag = CLAMP_MAX(stickMag / 127.0f, 1.0f);
 
-        velX = Math_SinS(moveYaw) * speed * normMag;
-        velZ = Math_CosS(moveYaw) * speed * normMag;
+        targetVX = Math_SinS(moveYaw) * speed * normMag;
+        targetVZ = Math_CosS(moveYaw) * speed * normMag;
     }
 
-    // Move position directly with geometry collision
+    // Smooth velocity interpolation (acceleration / deceleration)
+    f32 maxStep = speed * 0.5f;
+    Math_SmoothStepToF(&sFairyVelocity.x, targetVX, 0.3f, maxStep, 0.01f);
+    Math_SmoothStepToF(&sFairyVelocity.y, targetVY, 0.3f, maxStep, 0.01f);
+    Math_SmoothStepToF(&sFairyVelocity.z, targetVZ, 0.3f, maxStep, 0.01f);
+
+    // Smooth rotation: fairy faces movement direction
+    if (fabsf(sFairyVelocity.x) > 0.5f || fabsf(sFairyVelocity.z) > 0.5f) {
+        s16 moveYaw = Math_Atan2S(sFairyVelocity.x, sFairyVelocity.z);
+        Math_SmoothStepToS(&p->actor.shape.rot.y, moveYaw, 5, 0x1000, 0x100);
+    }
+
+    // Apply smooth velocity
     Vec3f prevPos = p->actor.world.pos;
     Vec3f desiredPos;
-    desiredPos.x = prevPos.x + velX;
-    desiredPos.y = prevPos.y + velY;
-    desiredPos.z = prevPos.z + velZ;
+    desiredPos.x = prevPos.x + sFairyVelocity.x;
+    desiredPos.y = prevPos.y + sFairyVelocity.y;
+    desiredPos.z = prevPos.z + sFairyVelocity.z;
 
     // Line test: prevent passing through walls/floors/ceilings
-    // (passable barriers like iron bars and bombable walls are ignored)
     CollisionPoly* hitPoly = NULL;
     s32 hitBgId = 0;
     Vec3f hitPoint;
@@ -521,33 +636,48 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
                                 &hitBgId)) {
         if (!HGrace_IsPassableBarrier(play, hitBgId)) {
             desiredPos = hitPoint;
+            // Kill velocity on collision
+            sFairyVelocity.x *= 0.2f;
+            sFairyVelocity.z *= 0.2f;
         }
     }
 
-    // Floor constraint: don't go below ground
-    // (passable barriers are ignored so fairy can fly through grates/floors)
+    // Floor constraint
     CollisionPoly* floorPoly = NULL;
     s32 floorBgId;
     f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &floorBgId, &p->actor, &desiredPos);
     if (floor > BGCHECK_Y_MIN && desiredPos.y < floor + HGRACE_FAIRY_HOVER) {
         if (!HGrace_IsPassableBarrier(play, floorBgId)) {
             desiredPos.y = floor + HGRACE_FAIRY_HOVER;
+            if (sFairyVelocity.y < 0.0f)
+                sFairyVelocity.y = 0.0f;
         }
     }
 
     p->actor.world.pos = desiredPos;
 
-    // Save authoritative position — next frame we restore it before computing
-    // new movement, undoing any displacement the normal collision system applied.
+    // Save authoritative position
     sFairyPos = desiredPos;
     sFairyPosValid = 1;
 
-    // Fairy sparkles (trailing particles in addition to the glow DL)
-    u8 flickering = (hgTimer <= HGRACE_FLICKER_START);
+    // Fairy sparkles + speed-proportional trail
+    s16 flickerStart = isSpirit ? HGRACE_SW97_FLICKER_START : HGRACE_FLICKER_START;
+    u8 flickering = (hgTimer <= flickerStart);
     u8 flickerVisible = !flickering || ((play->gameplayFrames % 6) >= 3);
+
+    f32 actualSpeed = sqrtf(SQ(sFairyVelocity.x) + SQ(sFairyVelocity.y) + SQ(sFairyVelocity.z));
 
     if (flickerVisible) {
         HGrace_SpawnFairySparkles(p, play);
+        // Trail sparkles when moving
+        if (actualSpeed > 1.0f) {
+            HGrace_SpawnTrailSparkles(p, play, actualSpeed);
+        }
+    }
+
+    // SW97 spirit: looping soul sound
+    if (isSpirit) {
+        func_8002F974(&p->actor, NA_SE_PL_MAGIC_SOUL_NORMAL - SFX_FLAG);
     }
 
     // Timer countdown (2x drain when ascending or sprinting)
@@ -560,8 +690,17 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
 
     // Timer expired: end fairy mode
     if (hgTimer <= 0) {
+        // SW97: flash at end, restore lighting and Navi
+        if (isSpirit) {
+            HGrace_ResetLighting(play);
+            sFairyDimLevel = 0.0f;
+            p->stateFlags2 &= ~0x100000;
+            func_800AA000(200.0f, 150, 20, 80);
+            Audio_PlayActorSound2(&p->actor, NA_SE_EV_TRIFORCE_FLASH);
+        }
         hgState = HGRACE_STATE_WARP_OUT;
         hgTimer = 0;
+        sFairyVelocity.x = sFairyVelocity.y = sFairyVelocity.z = 0.0f;
     }
 }
 
@@ -614,8 +753,17 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
         p->invincibilityTimer = 20;
         func_8005B1A4(Play_GetCamera(play, 0));
 
+        // Reset SW97 spirit mode effects
+        if (hgForcedBySpell) {
+            HGrace_ResetLighting(play);
+            sFairyDimLevel = 0.0f;
+            p->stateFlags2 &= ~0x100000; // restore Navi
+        }
+
         hgActive = 0;
         hgState = HGRACE_STATE_IDLE;
+        hgForcedBySpell = 0;
+        sFairyVelocity.x = sFairyVelocity.y = sFairyVelocity.z = 0.0f;
         // No cooldown
     }
 }
@@ -625,34 +773,47 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
 // =============================================================================
 
 void Handle_HyliasGrace(Player* p, PlayState* play) {
-    ItemInputState in;
-    ItemInput_Update(&in, ITEM_HYLIAS_GRACE, p, play);
+    if (!hgForcedBySpell) {
+        // Normal path: item-based activation (Hylia's Grace on C-button)
+        ItemInputState in;
+        ItemInput_Update(&in, ITEM_HYLIAS_GRACE, p, play);
 
-    if (!in.wasEquipped) {
-        if (hgActive)
+        if (!in.wasEquipped) {
+            if (hgActive)
+                HGrace_Stop(p, play);
+            return;
+        }
+        if (ItemInput_CheckDamage(p, &sHGracePrevInvinc)) {
             HGrace_Stop(p, play);
-        return;
-    }
-    if (ItemInput_CheckDamage(p, &sHGracePrevInvinc)) {
-        HGrace_Stop(p, play);
-        return;
-    }
-
-    // Cannot use in water
-    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
-        return;
-
-    if (!hgActive) {
-        // Only block on otherButtonPressed when NOT active.
-        // During fairy mode, A/B are used for ascend/descend — must not cancel spell.
-        if (in.otherButtonPressed)
             return;
-        if (ItemInput_IsBlocked(p, play))
+        }
+
+        // Cannot use in water
+        if (p->stateFlags1 & PLAYER_STATE1_IN_WATER)
             return;
-        // No cooldown - can use immediately after previous use
-        if (in.isPressed)
-            HGrace_Start(p, play);
-        return;
+
+        if (!hgActive) {
+            // Only block on otherButtonPressed when NOT active.
+            // During fairy mode, A/B are used for ascend/descend — must not cancel spell.
+            if (in.otherButtonPressed)
+                return;
+            if (ItemInput_IsBlocked(p, play))
+                return;
+            // No cooldown - can use immediately after previous use
+            if (in.isPressed)
+                HGrace_Start(p, play);
+            return;
+        }
+    } else {
+        // Forced by spell (Spirit Medallion) — skip item-equip checks, still check damage/water
+        if (ItemInput_CheckDamage(p, &sHGracePrevInvinc)) {
+            HGrace_Stop(p, play);
+            return;
+        }
+        if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) {
+            HGrace_Stop(p, play);
+            return;
+        }
     }
 
     switch (hgState) {

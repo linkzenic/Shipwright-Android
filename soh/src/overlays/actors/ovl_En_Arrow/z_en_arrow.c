@@ -7,8 +7,10 @@
 #include "z_en_arrow.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/object_gi_nuts/object_gi_nuts.h"
+#include "expansions/sw97/sw97_config.h"
 
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -80,6 +82,18 @@ void EnArrow_Init(Actor* thisx, PlayState* play) {
         0, 4, 0, { 0, 255, 200, 255 },   { 0, 255, 255, 255 }, { 0, 255, 200, 0 }, { 0, 255, 255, 0 }, 16,
         0, 1, 0, { 255, 255, 170, 255 }, { 255, 255, 0, 0 },   TRAIL_TYPE_REST,
     };
+    static EffectBlureInit2 blureSw97Dark = {
+        0, 4, 0, { 0, 255, 200, 255 }, { 0, 255, 255, 255 }, { 0, 255, 200, 0 }, { 0, 255, 255, 0 }, 16,
+        0, 1, 0, { 80, 0, 80, 255 },   { 30, 0, 30, 0 },     TRAIL_TYPE_REST,
+    };
+    static EffectBlureInit2 blureSw97Soul = {
+        0, 4, 0, { 0, 255, 200, 255 },   { 0, 255, 255, 255 }, { 0, 255, 200, 0 }, { 0, 255, 255, 0 }, 16,
+        0, 1, 0, { 255, 255, 170, 255 }, { 200, 200, 0, 0 },   TRAIL_TYPE_REST,
+    };
+    static EffectBlureInit2 blureSw97Wind = {
+        0, 4, 0, { 0, 255, 200, 255 },   { 0, 255, 255, 255 }, { 0, 255, 200, 0 }, { 0, 255, 255, 0 }, 16,
+        0, 1, 0, { 170, 255, 170, 255 }, { 0, 180, 0, 0 },     TRAIL_TYPE_REST,
+    };
     static u32 dmgFlags[] = {
         0x00000800, 0x00000020, 0x00000020, 0x00000800, 0x00001000,
         0x00002000, 0x00010000, 0x00004000, 0x00008000, 0x00000004,
@@ -144,7 +158,7 @@ void EnArrow_Init(Actor* thisx, PlayState* play) {
         this->actor.params = ARROW_NUT;
     }
 
-    if (this->actor.params <= ARROW_SEED) {
+    if (this->actor.params <= ARROW_SEED_0E) {
 
         if (this->actor.params <= ARROW_0E) {
             SkelAnime_Init(play, &this->skelAnime, &gArrowSkel, &gArrow2Anim, NULL, NULL, 0);
@@ -185,7 +199,45 @@ void EnArrow_Init(Actor* thisx, PlayState* play) {
         } else if (this->actor.params <= ARROW_SEED) {
             this->collider.info.toucher.dmgFlags = dmgFlags[this->actor.params];
             LOG_HEX("this->at_info.cl_elem.at_btl_info.at_type", this->collider.info.toucher.dmgFlags);
+        } else if (this->actor.params >= ARROW_SEED_FIRE && this->actor.params <= ARROW_SEED_0E) {
+            // Elemental seeds: use elemental damage flags
+            static u32 seedElemDmg[] = { DMG_ARROW_FIRE, DMG_ARROW_ICE,  DMG_ARROW_LIGHT,
+                                         DMG_ARROW_UNK1, DMG_ARROW_UNK2, DMG_ARROW_UNK3 };
+            this->collider.info.toucher.dmgFlags = seedElemDmg[this->actor.params - ARROW_SEED_FIRE];
         }
+    }
+
+    // SW97 medallion arrows (params 17-22): initialize like elemental bow arrows
+    if (this->actor.params >= ARROW_SW97_FIRE && this->actor.params <= ARROW_SW97_0E) {
+        SkelAnime_Init(play, &this->skelAnime, &gArrowSkel, &gArrow2Anim, NULL, NULL, 0);
+
+        // Blure trail: reuse vanilla structs for fire/ice/light so VFX matches exactly
+        if (this->actor.params == ARROW_SW97_FIRE) {
+            Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &blureFire);
+        } else if (this->actor.params == ARROW_SW97_ICE) {
+            Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &blureIce);
+        } else if (this->actor.params == ARROW_SW97_LIGHT) {
+            Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &blureLight);
+        } else if (this->actor.params == ARROW_SW97_0C) { // Dark (Shadow)
+            Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &blureSw97Dark);
+        } else if (this->actor.params == ARROW_SW97_0D) { // Soul (Spirit)
+            Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &blureSw97Soul);
+        } else { // Wind (Forest)
+            Effect_Add(play, &this->effectIndex, EFFECT_BLURE2, 0, 0, &blureSw97Wind);
+        }
+
+        Collider_InitQuad(play, &this->collider);
+        Collider_SetQuad(play, &this->collider, &this->actor, &sColliderInit);
+
+        static u32 sw97DmgFlags[] = {
+            0x00000800, // SW97_FIRE  = fire arrow damage
+            0x00001000, // SW97_ICE   = ice arrow damage
+            0x00002000, // SW97_LIGHT = light arrow damage (paralyzes Ganon)
+            0x00010000, // SW97_0C    = dark damage
+            0x00004000, // SW97_0D    = soul damage
+            0x00008000, // SW97_0E    = wind damage
+        };
+        this->collider.info.toucher.dmgFlags = sw97DmgFlags[this->actor.params - ARROW_SW97_FIRE];
     }
 
     EnArrow_SetupAction(this, EnArrow_Shoot);
@@ -194,7 +246,8 @@ void EnArrow_Init(Actor* thisx, PlayState* play) {
 void EnArrow_Destroy(Actor* thisx, PlayState* play) {
     EnArrow* this = (EnArrow*)thisx;
 
-    if (this->actor.params <= ARROW_LIGHT) {
+    if (this->actor.params <= ARROW_LIGHT ||
+        (this->actor.params >= ARROW_SW97_FIRE && this->actor.params <= ARROW_SW97_0E)) {
         Effect_Delete(play, this->effectIndex);
     }
 
@@ -215,33 +268,49 @@ void EnArrow_Shoot(EnArrow* this, PlayState* play) {
             return;
         }
 
-        switch (this->actor.params) {
-            case ARROW_SEED:
-                Player_PlaySfx(&player->actor, NA_SE_IT_SLING_SHOT);
-                break;
+        if (this->actor.params >= ARROW_SW97_FIRE && this->actor.params <= ARROW_SW97_0E) {
+            // SW97 medallion arrows: magic arrow SFX (not slingshot)
+            GameInteractor_Should(VB_EN_ARROW_MAGIC_CONSUMPTION, true, this);
+            Player_PlaySfx(&player->actor, NA_SE_IT_MAGIC_ARROW_SHOT);
+        } else if (this->actor.params >= ARROW_SEED) {
+            // Normal seed or elemental seed
+            Player_PlaySfx(&player->actor, NA_SE_IT_SLING_SHOT);
+        } else {
+            switch (this->actor.params) {
+                case ARROW_NORMAL_LIT:
+                case ARROW_NORMAL_HORSE:
+                case ARROW_NORMAL:
+                    Player_PlaySfx(&player->actor, NA_SE_IT_ARROW_SHOT);
+                    break;
 
-            case ARROW_NORMAL_LIT:
-            case ARROW_NORMAL_HORSE:
-            case ARROW_NORMAL:
-                Player_PlaySfx(&player->actor, NA_SE_IT_ARROW_SHOT);
-                break;
-
-            case ARROW_FIRE:
-            case ARROW_ICE:
-            case ARROW_LIGHT:
-                GameInteractor_Should(VB_EN_ARROW_MAGIC_CONSUMPTION, true, this);
-                Player_PlaySfx(&player->actor, NA_SE_IT_MAGIC_ARROW_SHOT);
-                break;
+                case ARROW_FIRE:
+                case ARROW_ICE:
+                case ARROW_LIGHT:
+                    GameInteractor_Should(VB_EN_ARROW_MAGIC_CONSUMPTION, true, this);
+                    Player_PlaySfx(&player->actor, NA_SE_IT_MAGIC_ARROW_SHOT);
+                    break;
+            }
         }
 
         EnArrow_SetupAction(this, EnArrow_Fly);
         Math_Vec3f_Copy(&this->unk_210, &this->actor.world.pos);
 
-        if (this->actor.params >= ARROW_SEED) {
+        // When transformed, the form's rotation management can decouple player->shape.rot.y
+        // from the actual camera aim direction, causing arrows to fire in the wrong direction.
+        // Force world.rot.y to match the camera's horizontal aim so the arrow goes where the
+        // crosshair points. Seeds also benefit: their rot is zeroed below so yaw is carried
+        // through world.rot.y into Actor_SetProjectileSpeed.
+        if (TransformMasks_IsTransformed()) {
+            this->actor.world.rot.y = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play));
+        }
+
+        if (this->actor.params >= ARROW_SEED && this->actor.params < ARROW_SW97_FIRE) {
+            // Seeds/nuts: slow projectile
             Actor_SetProjectileSpeed(&this->actor, 80.0f);
             this->timer = 15;
             this->actor.shape.rot.x = this->actor.shape.rot.y = this->actor.shape.rot.z = 0;
         } else {
+            // Arrows (including SW97 medallion arrows): fast projectile
             Actor_SetProjectileSpeed(&this->actor, 150.0f);
             this->timer = 12;
         }
@@ -313,11 +382,12 @@ void EnArrow_Fly(EnArrow* this, PlayState* play) {
         this->actor.gravity = -0.4f;
     }
 
-    atTouched = (this->actor.params != ARROW_NORMAL_LIT) && (this->actor.params <= ARROW_SEED) &&
+    atTouched = (this->actor.params != ARROW_NORMAL_LIT) &&
+                (this->actor.params <= ARROW_SEED_0E || this->actor.params >= ARROW_SW97_FIRE) &&
                 (this->collider.base.atFlags & AT_HIT);
 
     if (atTouched || this->touchedPoly) {
-        if (this->actor.params >= ARROW_SEED) {
+        if (this->actor.params >= ARROW_SEED && this->actor.params < ARROW_SW97_FIRE) {
             if (atTouched) {
                 this->actor.world.pos.x = (this->actor.world.pos.x + this->actor.prevPos.x) * 0.5f;
                 this->actor.world.pos.y = (this->actor.world.pos.y + this->actor.prevPos.y) * 0.5f;
@@ -450,6 +520,7 @@ void EnArrow_Update(Actor* thisx, PlayState* play) {
     }
 
     if ((this->actor.params >= ARROW_FIRE) && (this->actor.params <= ARROW_0E)) {
+        // Vanilla elemental arrows — always use vanilla actors regardless of SW97 CVar
         s16 elementalActorIds[] = { ACTOR_ARROW_FIRE, ACTOR_ARROW_ICE,  ACTOR_ARROW_LIGHT,
                                     ACTOR_ARROW_FIRE, ACTOR_ARROW_FIRE, ACTOR_ARROW_FIRE };
 
@@ -457,7 +528,45 @@ void EnArrow_Update(Actor* thisx, PlayState* play) {
             Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, elementalActorIds[this->actor.params - 3],
                                this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0);
         }
-    } else if (this->actor.params == ARROW_NORMAL_LIT) {
+    }
+
+    // SW97 medallion arrows — always use SW97 actors (params 17-22 are SW97-exclusive)
+    if ((this->actor.params >= ARROW_SW97_FIRE) && (this->actor.params <= ARROW_SW97_0E)) {
+        extern s16 gSw97ActorId_ArrowFire, gSw97ActorId_ArrowIce, gSw97ActorId_ArrowLight;
+        extern s16 gSw97ActorId_ArrowDark, gSw97ActorId_ArrowSoul, gSw97ActorId_ArrowWind;
+        s16 sw97ActorIds[] = { gSw97ActorId_ArrowFire, gSw97ActorId_ArrowIce,  gSw97ActorId_ArrowLight,
+                               gSw97ActorId_ArrowDark, gSw97ActorId_ArrowSoul, gSw97ActorId_ArrowWind };
+
+        if (this->actor.child == NULL) {
+            Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, sw97ActorIds[this->actor.params - ARROW_SW97_FIRE],
+                               this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0);
+        }
+    }
+
+    // Elemental seed dispatch — spawn SW97 VFX child actor on elemental seeds
+    if ((this->actor.params >= ARROW_SEED_FIRE) && (this->actor.params <= ARROW_SEED_0E)) {
+        s16 seedElementalActorIds[] = { ACTOR_ARROW_FIRE, ACTOR_ARROW_ICE,  ACTOR_ARROW_LIGHT,
+                                        ACTOR_ARROW_FIRE, ACTOR_ARROW_FIRE, ACTOR_ARROW_FIRE };
+
+        if (SW97_MEDALLIONS_ENABLED()) {
+            extern s16 gSw97ActorId_ArrowFire, gSw97ActorId_ArrowIce, gSw97ActorId_ArrowLight;
+            extern s16 gSw97ActorId_ArrowDark, gSw97ActorId_ArrowSoul, gSw97ActorId_ArrowWind;
+            seedElementalActorIds[0] = gSw97ActorId_ArrowFire;
+            seedElementalActorIds[1] = gSw97ActorId_ArrowIce;
+            seedElementalActorIds[2] = gSw97ActorId_ArrowLight;
+            seedElementalActorIds[3] = gSw97ActorId_ArrowDark;
+            seedElementalActorIds[4] = gSw97ActorId_ArrowSoul;
+            seedElementalActorIds[5] = gSw97ActorId_ArrowWind;
+        }
+
+        if (this->actor.child == NULL) {
+            Actor_SpawnAsChild(&play->actorCtx, &this->actor, play,
+                               seedElementalActorIds[this->actor.params - ARROW_SEED_FIRE], this->actor.world.pos.x,
+                               this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0);
+        }
+    }
+
+    if (this->actor.params == ARROW_NORMAL_LIT) {
         static Vec3f velocity = { 0.0f, 0.5f, 0.0f };
         static Vec3f accel = { 0.0f, 0.5f, 0.0f };
         static Color_RGBA8 primColor = { 255, 255, 100, 255 };
@@ -481,8 +590,9 @@ void func_809B4800(EnArrow* this, PlayState* play) {
         Matrix_MultVec3f(&D_809B4E88, &sp44);
         Matrix_MultVec3f(&D_809B4E94, &sp38);
 
-        if (this->actor.params <= ARROW_SEED) {
-            addBlureVertex = this->actor.params <= ARROW_LIGHT;
+        if (this->actor.params <= ARROW_SEED_0E || this->actor.params >= ARROW_SW97_FIRE) {
+            addBlureVertex = this->actor.params <= ARROW_LIGHT ||
+                             (this->actor.params >= ARROW_SW97_FIRE && this->actor.params <= ARROW_SW97_0E);
 
             if (this->hitActor == NULL) {
                 addBlureVertex &= func_80090480(play, &this->collider, &this->weaponInfo, &sp44, &sp38);
@@ -509,7 +619,8 @@ void EnArrow_Draw(Actor* thisx, PlayState* play) {
     u8 alpha;
     f32 scale;
 
-    if (this->actor.params <= ARROW_0E) {
+    if (this->actor.params <= ARROW_0E ||
+        (this->actor.params >= ARROW_SW97_FIRE && this->actor.params <= ARROW_SW97_0E)) {
         Gfx_SetupDL_25Opa(play->state.gfxCtx);
         SkelAnime_DrawLod(play, this->skelAnime.skeleton, this->skelAnime.jointTable, NULL, NULL, this,
                           (this->actor.projectedPos.z < MREG(95)) ? 0 : 1);
@@ -520,7 +631,7 @@ void EnArrow_Draw(Actor* thisx, PlayState* play) {
 
         Gfx_SetupDL_25Xlu2(play->state.gfxCtx);
 
-        if (this->actor.params == ARROW_SEED) {
+        if (this->actor.params >= ARROW_SEED && this->actor.params != ARROW_NUT) {
             gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 255);
             gDPSetEnvColor(POLY_XLU_DISP++, 0, 255, 255, alpha);
             scale = 50.0f;

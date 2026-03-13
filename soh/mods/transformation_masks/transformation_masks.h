@@ -26,7 +26,8 @@ typedef enum MmPlayerTransformation {
     MM_PLAYER_FORM_ZORA = 2,
     MM_PLAYER_FORM_DEKU = 3,
     MM_PLAYER_FORM_HUMAN = 4,
-    MM_PLAYER_FORM_MAX = 5
+    MM_PLAYER_FORM_PIKACHU = 5,
+    MM_PLAYER_FORM_MAX = 6
 } MmPlayerTransformation;
 
 // OOT mask type enum (for transformation mask identification)
@@ -35,7 +36,8 @@ typedef enum TransformMaskId {
     TRANSFORM_MASK_GORON,
     TRANSFORM_MASK_ZORA,
     TRANSFORM_MASK_DEKU,
-    TRANSFORM_MASK_FIERCE_DEITY
+    TRANSFORM_MASK_FIERCE_DEITY,
+    TRANSFORM_MASK_KEATON
 } TransformMaskId;
 
 // =============================================================================
@@ -193,6 +195,12 @@ u8 TransformMasks_IsItemAllowed(s32 item);
 
 // Slot restriction: returns true if inventory slot (0-71) is allowed for current form
 u8 TransformMasks_IsSlotAllowed(u8 slot);
+
+// Per-form C-button item use interception (called in z_player.c before Player_UseItem).
+// If the current form has a handler for this item, calls it and returns 1 (skip Player_UseItem).
+// If the current form is active but has NO handler for the item, also returns 1 (block use).
+// Returns 0 when not transformed (fall through to normal Player_UseItem).
+u8 TransformMasks_HandleFormItemUse(PlayState* play, Player* player, s32 item);
 
 TransformMaskId TransformMasks_GetMaskType(s32 item);
 void TransformMasks_HandleMaskUse(PlayState* play, Player* player, s32 item);

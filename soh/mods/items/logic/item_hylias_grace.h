@@ -40,6 +40,12 @@
 #define HGRACE_WARP_IN_DURATION 40
 #define HGRACE_WARP_OUT_DURATION 30
 
+// SW97 Spirit fairy overrides (when activated via Spirit Medallion)
+#define HGRACE_SW97_DURATION 1200 // 20 seconds (matches SW97)
+#define HGRACE_SW97_SPEED 7.0f
+#define HGRACE_SW97_SPRINT_MULT 1.8f
+#define HGRACE_SW97_FLICKER_START 150 // Last 2.5 seconds = flicker
+
 // Collision
 #define HGRACE_FAIRY_HOVER 5.0f // Minimum hover height above floor
 
@@ -67,5 +73,6 @@ static const u16 sHGraceDoorActors[] = {
 #define hgTimer gCustomItemState.hyliasGraceTimer
 #define hgCooldown gCustomItemState.hyliasGraceCooldown
 #define hgFairy gCustomItemState.hyliasGraceFairy
+#define hgForcedBySpell gCustomItemState.hyliasGraceForcedBySpell
 
 #endif // ITEM_HYLIAS_GRACE_H

@@ -35,10 +35,10 @@ static struct {
 } sRemoteMmSkel[4];
 
 static const char* sRemoteMmSkelPaths[4] = {
-    gLinkFierceDeitySkel,  // [0] = FD
-    gLinkGoronSkel,        // [1] = Goron
-    gLinkZoraSkel,         // [2] = Zora
-    gLinkDekuSkel,         // [3] = Deku
+    gLinkFierceDeitySkel, // [0] = FD
+    gLinkGoronSkel,       // [1] = Goron
+    gLinkZoraSkel,        // [2] = Zora
+    gLinkDekuSkel,        // [3] = Deku
 };
 
 static const s32 sRemoteMmLimbCount[4] = { 22, 22, 22, 22 };
@@ -46,10 +46,10 @@ static const s32 sRemoteMmLimbCount[4] = { 22, 22, 22, 22 };
 // Idle animation paths per form (from mm_player_form.cpp sFormProps lines 186-214)
 // Required by SkelAnime_InitLink which calls LinkAnimation_Change internally
 static const char* sRemoteMmIdleAnimPaths[4] = {
-    "misc/link_animetion/gPlayerAnim_link_fighter_wait_long_Data",  // [0] FD - 32 frames
-    "misc/link_animetion/gPlayerAnim_pg_wait_Data",                 // [1] Goron - 79 frames
-    "misc/link_animetion/gPlayerAnim_pz_wait_Data",                 // [2] Zora - 80 frames
-    "misc/link_animetion/gPlayerAnim_link_normal_wait_free_Data",   // [3] Deku - 72 frames
+    "misc/link_animetion/gPlayerAnim_link_fighter_wait_long_Data", // [0] FD - 32 frames
+    "misc/link_animetion/gPlayerAnim_pg_wait_Data",                // [1] Goron - 79 frames
+    "misc/link_animetion/gPlayerAnim_pz_wait_Data",                // [2] Zora - 80 frames
+    "misc/link_animetion/gPlayerAnim_link_normal_wait_free_Data",  // [3] Deku - 72 frames
 };
 static const s16 sRemoteMmIdleAnimFrames[4] = { 32, 79, 80, 72 };
 
@@ -62,8 +62,8 @@ static const f32 sRemoteMmRootAnimScale[4] = { 1.5f, 0.74f, 1.0f, 0.3f };
 // (from MmForm_OverrideLimbDraw in mm_player_form.cpp line 9662)
 static s32 sRemoteMmCurrentCacheIdx = 0; // Set before SkelAnime_DrawFlexOpa call
 
-static s32 RemoteMmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList,
-                                          Vec3f* pos, Vec3s* rot, void* thisx) {
+static s32 RemoteMmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
+                                         void* thisx) {
     if (limbIndex == 1) { // Root limb (1-based index)
         s32 idx = sRemoteMmCurrentCacheIdx;
         // FD (cacheIdx 0) is excluded from rootAnimScale (scale=1.5 but handled via actor.scale)
@@ -78,31 +78,38 @@ static s32 RemoteMmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** d
 }
 
 static void EnsureRemoteMmSkelLoaded(PlayState* play, u8 modelType) {
-    if (modelType == 0 || modelType > 4) return;
+    if (modelType == 0 || modelType > 4)
+        return;
 
     // Remap: modelType 1=Goron→[1], 2=Zora→[2], 3=Deku→[3], 4=FD→[0]
     s32 cacheIdx = (modelType == 4) ? 0 : modelType;
-    if (cacheIdx < 0 || cacheIdx > 3) return;
+    if (cacheIdx < 0 || cacheIdx > 3)
+        return;
 
-    if (sRemoteMmSkel[cacheIdx].loaded || sRemoteMmSkel[cacheIdx].attempted) return;
+    if (sRemoteMmSkel[cacheIdx].loaded || sRemoteMmSkel[cacheIdx].attempted)
+        return;
     sRemoteMmSkel[cacheIdx].attempted = true;
 
-    if (!MmAssets_IsAvailable()) return;
+    if (!MmAssets_IsAvailable())
+        return;
 
     const char* skelPath = sRemoteMmSkelPaths[cacheIdx];
-    if (skelPath == NULL) return;
+    if (skelPath == NULL)
+        return;
 
     FlexSkeletonHeader* skelHeader = (FlexSkeletonHeader*)MmAssets_LoadResource(skelPath);
-    if (skelHeader == NULL) return;
+    if (skelHeader == NULL)
+        return;
 
     // Load idle animation from mm.o2r (SkelAnime_InitLink REQUIRES a valid animation;
     // passing NULL crashes in LinkAnimation_Change → AnimationContext_SetLoadFrame)
-    LinkAnimationHeader* idleAnim = MmAnim_LoadByPath(
-        sRemoteMmIdleAnimPaths[cacheIdx], sRemoteMmIdleAnimFrames[cacheIdx], 22);
-    if (idleAnim == NULL) return;
+    LinkAnimationHeader* idleAnim =
+        MmAnim_LoadByPath(sRemoteMmIdleAnimPaths[cacheIdx], sRemoteMmIdleAnimFrames[cacheIdx], 22);
+    if (idleAnim == NULL)
+        return;
 
-    SkelAnime_InitLink(play, &sRemoteMmSkel[cacheIdx].skelAnime, skelHeader, idleAnim, 9,
-                       NULL, NULL, sRemoteMmLimbCount[cacheIdx]);
+    SkelAnime_InitLink(play, &sRemoteMmSkel[cacheIdx].skelAnime, skelHeader, idleAnim, 9, NULL, NULL,
+                       sRemoteMmLimbCount[cacheIdx]);
     sRemoteMmSkel[cacheIdx].dListCount = sRemoteMmSkel[cacheIdx].skelAnime.dListCount;
     sRemoteMmSkel[cacheIdx].loaded = true;
 }
@@ -127,11 +134,13 @@ static void HarpoonDummyPlayer_DrawMmForm(Actor* actor, PlayState* play, Harpoon
 
     // Remap modelType to cache index
     s32 cacheIdx = (client.transformation == 4) ? 0 : client.transformation;
-    if (cacheIdx < 0 || cacheIdx > 3) return;
+    if (cacheIdx < 0 || cacheIdx > 3)
+        return;
 
     // Ensure skeleton loaded from mm.o2r
     EnsureRemoteMmSkelLoaded(play, client.transformation);
-    if (!sRemoteMmSkel[cacheIdx].loaded) return;
+    if (!sRemoteMmSkel[cacheIdx].loaded)
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
@@ -158,14 +167,12 @@ static void HarpoonDummyPlayer_DrawMmForm(Actor* actor, PlayState* play, Harpoon
         // Build matrix from scratch (from MmForm_Draw ball draw path)
         f32 yOffset = 1200.0f * actor->scale.y;
 
-        Matrix_Translate(actor->world.pos.x, actor->world.pos.y + yOffset,
-                         actor->world.pos.z, MTXMODE_NEW);
+        Matrix_Translate(actor->world.pos.x, actor->world.pos.y + yOffset, actor->world.pos.z, MTXMODE_NEW);
         Matrix_RotateY(actor->shape.rot.y * ((f32)(M_PI / 0x8000)), MTXMODE_APPLY);
         Matrix_RotateZ(actor->shape.rot.z * ((f32)(M_PI / 0x8000)), MTXMODE_APPLY);
 
         f32 sq = client.rollSquash;
-        Matrix_Scale(actor->scale.x * 1.15f * (1.0f + sq),
-                     actor->scale.y * 1.15f * (1.0f - sq),
+        Matrix_Scale(actor->scale.x * 1.15f * (1.0f + sq), actor->scale.y * 1.15f * (1.0f - sq),
                      actor->scale.z * 1.15f * (1.0f + sq), MTXMODE_APPLY);
 
         Matrix_RotateX(actor->shape.rot.x * ((f32)(M_PI / 0x8000)), MTXMODE_APPLY);
@@ -179,7 +186,8 @@ static void HarpoonDummyPlayer_DrawMmForm(Actor* actor, PlayState* play, Harpoon
         // === SKELETON FORM ===
         // Set eye texture on segment 0x08
         u8 eyeIdx = client.eyeIndex;
-        if (eyeIdx > 2) eyeIdx = 0;
+        if (eyeIdx > 2)
+            eyeIdx = 0;
 
         const char* eyeTex = sRemoteFormEyeTextures[cacheIdx][eyeIdx];
         if (eyeTex != NULL) {
@@ -194,13 +202,13 @@ static void HarpoonDummyPlayer_DrawMmForm(Actor* actor, PlayState* play, Harpoon
         // Copy client jointTable into the cached skeleton's jointTable
         SkelAnime* skel = &sRemoteMmSkel[cacheIdx].skelAnime;
         s32 copyCount = skel->limbCount + 2; // LIMB_BUF_COUNT
-        if (copyCount > 24) copyCount = 24;
+        if (copyCount > 24)
+            copyCount = 24;
         memcpy(skel->jointTable, client.jointTable, sizeof(Vec3s) * copyCount);
 
         // Draw MM skeleton with rootAnimScale callback (positions form on the ground)
         sRemoteMmCurrentCacheIdx = cacheIdx;
-        SkelAnime_DrawFlexOpa(play, skel->skeleton, skel->jointTable,
-                              sRemoteMmSkel[cacheIdx].dListCount,
+        SkelAnime_DrawFlexOpa(play, skel->skeleton, skel->jointTable, sRemoteMmSkel[cacheIdx].dListCount,
                               RemoteMmForm_OverrideLimbDraw, NULL, actor);
     }
 
@@ -275,7 +283,8 @@ static void HarpoonRemoteCubes_Sync(PlayState* play, HarpoonClient& client) {
     // Spawn or update cubes
     for (int i = 0; i < (int)client.remoteCubeCount && i < 3; i++) {
         auto& cube = client.remoteCubes[i];
-        if (cube.state == 0) continue;
+        if (cube.state == 0)
+            continue;
 
         // Held cubes: hide (they're attached to the remote player's hands visually)
         if (cube.state == 3) { // SOMARIA_STATE_HELD
@@ -287,13 +296,11 @@ static void HarpoonRemoteCubes_Sync(PlayState* play, HarpoonClient& client) {
 
         if (client.remoteCubeActors[i] == NULL) {
             // Spawn new remote cube
-            client.remoteCubeActors[i] = SomariaCube_SpawnRemote(
-                play, &cube.pos, cube.rotY, cube.form);
+            client.remoteCubeActors[i] = SomariaCube_SpawnRemote(play, &cube.pos, cube.rotY, cube.form);
         }
 
         if (client.remoteCubeActors[i] != NULL) {
-            SomariaCube_UpdateRemotePos(client.remoteCubeActors[i],
-                                         &cube.pos, cube.scale, cube.rotY);
+            SomariaCube_UpdateRemotePos(client.remoteCubeActors[i], &cube.pos, cube.scale, cube.rotY);
         }
     }
 }
@@ -431,7 +438,7 @@ void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
 
     if (player->cylinder.base.acFlags & AC_HIT && player->invincibilityTimer == 0) {
         Harpoon::Instance->SendPacket_Damage(client.clientId, player->actor.colChkInfo.damageEffect,
-                                              player->actor.colChkInfo.damage);
+                                             player->actor.colChkInfo.damage);
         if (player->actor.colChkInfo.damageEffect == HARPOON_HIT_RESPONSE_STUN) {
             Actor_SetColorFilter(&player->actor, 0, 0xFF, 0, 24);
         } else {

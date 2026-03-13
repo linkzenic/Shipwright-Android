@@ -87,6 +87,7 @@ SohMenu::SohMenu(const std::string& consoleVariable, const std::string& name)
 void SohMenu::AddMenuElements() {
     AddMenuSettings();
     AddMenuEnhancements();
+    AddMenuSw97();
     AddMenuRandomizer();
     AddMenuNetwork();
     AddMenuDevTools();

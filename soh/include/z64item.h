@@ -385,6 +385,13 @@ typedef enum {
     /* 0xCC */ ITEM_MM_MASK_CAPTAIN,
     /* 0xCD */ ITEM_MM_MASK_GIANT,
     /* 0xCE */ ITEM_MM_MASK_FIERCE_DEITY,
+    // SW97 Medallion arrow items (arrow mode on C-buttons)
+    /* 0xCF */ ITEM_SW97_ARROW_FIRE,
+    /* 0xD0 */ ITEM_SW97_ARROW_ICE,
+    /* 0xD1 */ ITEM_SW97_ARROW_LIGHT,
+    /* 0xD2 */ ITEM_SW97_ARROW_DARK,
+    /* 0xD3 */ ITEM_SW97_ARROW_SOUL,
+    /* 0xD4 */ ITEM_SW97_ARROW_WIND,
     /* 0xFC */ ITEM_LAST_USED = 0xFC,
     /* 0xFE */ ITEM_NONE_FE = 0xFE,
     /* 0xFF */ ITEM_NONE = 0xFF

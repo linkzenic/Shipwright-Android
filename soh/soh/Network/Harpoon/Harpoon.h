@@ -83,32 +83,32 @@ typedef struct {
     s8 actionVar1;
 
     // Transformation data
-    u8 transformation;     // MM_PLAYER_FORM_GORON, etc. (0 = human/no transform)
-    s16 cylRadius;         // Form-specific collider radius
-    s16 cylHeight;         // Form-specific collider height
-    s16 cylYShift;         // Form-specific collider Y offset
-    u32 mmStateFlags3;     // MM stateFlags3 (spike mode, roll active, etc.)
-    f32 mmSpeedXZ;         // MM horizontal speed
+    u8 transformation; // MM_PLAYER_FORM_GORON, etc. (0 = human/no transform)
+    s16 cylRadius;     // Form-specific collider radius
+    s16 cylHeight;     // Form-specific collider height
+    s16 cylYShift;     // Form-specific collider Y offset
+    u32 mmStateFlags3; // MM stateFlags3 (spike mode, roll active, etc.)
+    f32 mmSpeedXZ;     // MM horizontal speed
 
     // Model type for rendering (transformation masks, prop hunt)
-    u8 modelType;          // 0=Link, 1=Goron, 2=Zora, 3=Deku, 4=FierceDeity, 5+=props
-    u16 propObjectId;      // Object ID for prop hunt (0 = no prop)
+    u8 modelType;     // 0=Link, 1=Goron, 2=Zora, 3=Deku, 4=FierceDeity, 5+=props
+    u16 propObjectId; // Object ID for prop hunt (0 = no prop)
 
     // OOT visual state
-    u8 currentMask;        // PlayerMask enum (0=none, 1-8=masks)
-    s32 wornMask;          // MM worn mask item ID (ITEM_NONE=no mask, from MmMaskWear system)
-    s16 face;              // actor.shape.face (eye/mouth texture index)
+    u8 currentMask;             // PlayerMask enum (0=none, 1-8=masks)
+    s32 wornMask;               // MM worn mask item ID (ITEM_NONE=no mask, from MmMaskWear system)
+    s16 face;                   // actor.shape.face (eye/mouth texture index)
     f32 scaleX, scaleY, scaleZ; // actor.scale
 
     // MM form visual state (for remote rendering)
-    s32 goronAction;       // GoronActionId - determines ball vs standing draw
-    u8 eyeIndex;           // Blink state (0=open, 1=half, 2=closed)
-    f32 rollSquash;        // Ball deformation factor
-    s16 rollSpikeActive;   // Spike mode counter (0=off, >0=active)
-    s16 rollChargeLevel;   // Charge level for energy effects
+    s32 goronAction;     // GoronActionId - determines ball vs standing draw
+    u8 eyeIndex;         // Blink state (0=open, 1=half, 2=closed)
+    f32 rollSquash;      // Ball deformation factor
+    s16 rollSpikeActive; // Spike mode counter (0=off, >0=active)
+    s16 rollChargeLevel; // Charge level for energy effects
 
     // Custom item visual state (for remote rendering)
-    u32 customItemFlags;   // CI_FLAG_* bitfield
+    u32 customItemFlags; // CI_FLAG_* bitfield
     // Beetle
     Vec3f ciBeetlePos;
     Vec3s ciBeetleRot;
@@ -171,19 +171,19 @@ typedef struct {
     f32 ciTimeGatePortalScale;
 
     // Prop Hunt state (from Scooter)
-    std::string role;      // "seeker" or "hider" (empty = no game)
-    s32 propCategory;      // 0=env, 1=enemies, 2=npcs
-    s32 propIndex;         // 0-9 within category (-1 = no prop / Link)
-    s32 propState;         // Current state/variant within prop
+    std::string role; // "seeker" or "hider" (empty = no game)
+    s32 propCategory; // 0=env, 1=enemies, 2=npcs
+    s32 propIndex;    // 0-9 within category (-1 = no prop / Link)
+    s32 propState;    // Current state/variant within prop
 
     // Somaria Decoy state (Prop Hunt, from Scooter)
     Vec3f somariaDecoyPos[3];
-    s16   somariaDecoyRotY[3];
-    s32   somariaDecoyPropIdx[3];
-    s32   somariaDecoyPropCat[3];
-    s32   somariaDecoyPropState[3];
-    u8    somariaDecoyActive[3];
-    u8    somariaDecoyCount;
+    s16 somariaDecoyRotY[3];
+    s32 somariaDecoyPropIdx[3];
+    s32 somariaDecoyPropCat[3];
+    s32 somariaDecoyPropState[3];
+    u8 somariaDecoyActive[3];
+    u8 somariaDecoyCount;
 
     // Map selection state (from Scooter)
     s32 mapSelectIndex;
@@ -199,8 +199,8 @@ typedef struct {
     // Remote somaria cubes
     struct {
         Vec3f pos;
-        u8 state;   // 0=none, 1=spawn, 2=idle, 3=held, 4=thrown
-        u8 form;    // Elegy form (ELEGY_FORM_*)
+        u8 state; // 0=none, 1=spawn, 2=idle, 3=held, 4=thrown
+        u8 form;  // Elegy form (ELEGY_FORM_*)
         f32 scale;
         s16 rotY;
     } remoteCubes[3];
@@ -298,7 +298,7 @@ class Harpoon : public Network {
 
     // Item sync state
     bool syncItems = false;
-    bool pvpEnabled = true;  // When false: no damage/knockback from other players, status effects still apply
+    bool pvpEnabled = true; // When false: no damage/knockback from other players, status effects still apply
     bool isProcessingIncomingPacket = false;
     bool isHandlingUpdateTeamState = false;
     bool justLoadedSave = false;

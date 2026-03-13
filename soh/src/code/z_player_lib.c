@@ -17,6 +17,8 @@
 
 #include <stdlib.h>
 
+// SW97: Forward declaration - defined in sw97_player_hooks.c (compiled in z_player.c TU)
+
 typedef struct {
     /* 0x00 */ u8 flag;
     /* 0x02 */ u16 textId;
@@ -2116,6 +2118,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
 
             // Draw worn MM mask on Link's head (matrix is in head limb space)
             TransformMasks_WearDraw(play, this);
+
         } else {
             Vec3f* vec = &sLeftRightFootLimbModelFootPos[(gSaveContext.linkAge)];
 
