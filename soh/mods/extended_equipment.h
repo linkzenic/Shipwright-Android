@@ -25,6 +25,9 @@ extern "C" {
 #define CVAR_EXT_EQUIP_SHIELD "gCheats.ExtEquip.Shield"
 #define CVAR_EXT_EQUIP_TUNIC "gCheats.ExtEquip.Tunic"
 #define CVAR_EXT_EQUIP_BOOTS "gCheats.ExtEquip.Boots"
+// Extended equipment ownership bits in upper 16 of inventory.equipment
+// Bit = 16 + equipType*3 + (index-1)
+#define EXT_EQUIP_OWNED_SHIFT 16
 
 // ---------------------------------------------------------------------------
 // Extended equipment item IDs (for icon/name lookup, NOT stored in inventory)
@@ -108,6 +111,19 @@ void ExtEquip_Unequip(s16 equipType);
 u8 ExtEquip_GetCurrent(s16 equipType);
 
 // ---------------------------------------------------------------------------
+// Ownership
+// ---------------------------------------------------------------------------
+
+/** @return true if the player owns this extended equipment piece */
+u8 ExtEquip_HasItem(s16 equipType, u8 index);
+
+/** Give the player an extended equipment piece */
+void ExtEquip_GiveItem(s16 equipType, u8 index);
+
+/** Remove an extended equipment piece from the player */
+void ExtEquip_RemoveItem(s16 equipType, u8 index);
+
+// ---------------------------------------------------------------------------
 // Icons / Names
 // ---------------------------------------------------------------------------
 
@@ -128,6 +144,14 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index);
 u16 ExtEquip_GetItemId(s16 equipType, u8 index);
 
 /**
+ * Toggle an extended equipment item from a C button press.
+ * If the item's equipment type is already equipped with this index, unequip it.
+ * Otherwise, equip it.
+ * @param itemId ITEM_EXT_xxx constant (0xD0-0xDB)
+ */
+void ExtEquip_ToggleFromCButton(u16 itemId);
+
+/**
  * Get name texture for an extended equipment item.
  * @param itemId ITEM_EXT_xxx constant
  * @param language Language index
@@ -136,7 +160,41 @@ u16 ExtEquip_GetItemId(s16 equipType, u8 index);
 void* ExtEquip_GetNameTex(u16 itemId, u8 language);
 
 // ---------------------------------------------------------------------------
-// Behavior (stubs for now)
+// Behavior state
+// ---------------------------------------------------------------------------
+
+typedef enum {
+    PEGASUS_IDLE,
+    PEGASUS_WINDUP,
+    PEGASUS_RUNNING,
+    PEGASUS_BONK,
+} PegasusState;
+
+typedef enum {
+    DSCALE_INACTIVE,
+    DSCALE_SWIMMING,
+} DragonScaleState;
+
+typedef struct {
+    // Pegasus Anklet
+    u8 pegasusState;
+    s16 pegasusTimer;
+    s16 pegasusMagicTick;
+    u8 pegasusColInit;
+    f32 pegasusWingAngle; // Pendulum angle for wing charm (radians)
+    f32 pegasusWingVel;   // Pendulum angular velocity
+
+    // Water Dragon Scale
+    u8 dragonScaleState;
+    s16 dragonScalePitch; // swim pitch angle
+    s16 dragonScaleMagicTick;
+    u8 dragonScaleColInit;
+} ExtEquipBehaviorState;
+
+extern ExtEquipBehaviorState gExtEquipBehavior;
+
+// ---------------------------------------------------------------------------
+// Behavior
 // ---------------------------------------------------------------------------
 
 /**
@@ -144,6 +202,74 @@ void* ExtEquip_GetNameTex(u16 itemId, u8 language);
  * Dispatches to individual behavior handlers.
  */
 void ExtEquip_UpdateBehavior(void* player, void* play);
+
+/**
+ * Called from z_player.c when melee weapon quads register a hit (AT_HIT).
+ * Used by Cane of Byrna for MP recovery.
+ */
+void ExtEquip_OnMeleeHit(void* player, void* play);
+
+/**
+ * Called from z_player.c draw section for equipment-specific visuals
+ * (barriers, auras, etc.).
+ */
+void ExtEquip_DrawBehavior(void* player, void* play);
+
+/**
+ * Returns 1 if the vanilla sword DL should be hidden (replaced by ext equipment draw).
+ * Called from z_player_lib.c in the limb draw callback.
+ */
+u8 ExtEquip_ShouldHideSwordDL(void);
+
+/**
+ * Returns the MM Mirror Shield OTR path if Shield of Ikana is equipped, NULL otherwise.
+ * Called from z_player_lib.c to override shield DL.
+ */
+const char* ExtEquip_GetShieldDLOverride(void);
+
+/**
+ * Draw the ext shield DL in the current matrix context (called from PostLimbDraw).
+ * For Shield of Ikana: draws GI Mirror Shield model.
+ */
+void ExtEquip_DrawShieldDL(void* play);
+void ExtEquip_DrawShieldBackDL(void* play);
+
+/**
+ * Draw Dragon Scale pendant at waist. Called from PostLimbDraw for PLAYER_LIMB_WAIST.
+ */
+void ExtEquip_DrawWaistScale(void* play);
+
+/**
+ * Draw the ext sword DL in the current matrix context (called from PostLimbDraw).
+ * For Byrna: draws blue Somaria cane.
+ */
+void ExtEquip_DrawSwordDL(void* play);
+
+/**
+ * Draw anklet decoration on foot limbs (torus + fairy wings with pendulum).
+ * Called from PostLimbDraw for PLAYER_LIMB_L_FOOT and PLAYER_LIMB_R_FOOT.
+ * @param play PlayState
+ * @param isRightFoot 1 for right foot, 0 for left foot
+ */
+void ExtEquip_DrawAnklet(void* play, s32 isRightFoot);
+
+/**
+ * Update pendulum physics for anklet wings. Called from Pegasus_Behavior.
+ */
+void ExtEquip_UpdateAnkletPhysics(void* player);
+
+/**
+ * Capture shoulder world positions for cloth physics (Magic Cape + Champion's Scarf).
+ * Called from PostLimbDraw for PLAYER_LIMB_L_SHOULDER and PLAYER_LIMB_R_SHOULDER.
+ * @param limbIndex The limb being drawn
+ */
+void ExtEquip_CaptureCapeShoulderPos(s32 limbIndex);
+
+/**
+ * Suppress icon override for ext equipment (used by kaleido equipment screen).
+ * When set to 1, ExtInv_GetItemIcon won't replace sword/shield icons.
+ */
+extern u8 gExtEquipSuppressIconOverride;
 
 #ifdef __cplusplus
 }

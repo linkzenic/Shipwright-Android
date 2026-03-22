@@ -38,13 +38,26 @@ static void GustJarPot_Draw(Player* player, PlayState* play) {
     // 4. Draw body (gray/base)
     gSPDisplayList(POLY_OPA_DISP++, jar_body_dl);
 
-    // 5. Draw decoration (recolorable) - set PrimColor before DL
-    if (gCustomItemState.gustJarProjectileActive || gCustomItemState.gustJarMode == 3) {
-        // ACTIVE STATE: Bright red
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 50, 50, 255);
-    } else {
-        // IDLE/SUCTION STATE: Original blue
-        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 86, 169, 255, 255);
+    // 5. Draw decoration (recolorable) - heat gradient: blue→yellow→red
+    {
+        f32 heat = (f32)gCustomItemState.gustJarHeatTimer / 300.0f;
+        if (heat > 1.0f)
+            heat = 1.0f;
+        if (heat < 0.0f)
+            heat = 0.0f;
+        u8 r, g, b;
+        if (heat < 0.5f) {
+            f32 t = heat * 2.0f; // Blue → Yellow
+            r = (u8)(86 + (255 - 86) * t);
+            g = (u8)(169 + (255 - 169) * t);
+            b = (u8)(255 * (1.0f - t) + 100 * t);
+        } else {
+            f32 t = (heat - 0.5f) * 2.0f; // Yellow → Red
+            r = 255;
+            g = (u8)(255 * (1.0f - t));
+            b = (u8)(100 * (1.0f - t));
+        }
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, 255);
     }
 
     gSPDisplayList(POLY_OPA_DISP++, jar_decoration_dl);

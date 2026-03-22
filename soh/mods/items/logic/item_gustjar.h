@@ -1,6 +1,6 @@
 /**
  * Gust Jar Item Header
- * Suction/projectile item with ammo types
+ * Absorb mode (pull + damage) + Blow mode (elemental cone push)
  */
 
 #ifndef ITEM_GUSTJAR_H
@@ -11,23 +11,32 @@
 
 // Range
 #define GUST_RANGE_MAX 220.0f
-#define GUST_RANGE_CAPTURE 50.0f
-#define GUST_RANGE_SHRINK 120.0f
+#define GUST_RANGE_BLOW 200.0f
+#define GUST_BLOW_CONE_HALF_ANGLE 0x2000 // ~45 degrees in s16
 #define LINK_HEIGHT_HITBOX 80.0f
 
-// Ammo types
-#define GUST_AMMO_NONE 0
-#define GUST_AMMO_PHYSICAL 1
-#define GUST_AMMO_FIRE 2
-#define GUST_AMMO_ICE 3
-#define GUST_AMMO_SHOCK 4
-#define GUST_AMMO_BREAK 5
+// Timers
+#define GUST_HEAT_MAX 300      // 10 seconds to overheat (absorb → blow)
+#define GUST_BLOW_DURATION 300 // 10 seconds of blow
+#define GUST_COOLDOWN 120      // 2 seconds after blow ends
 
-// Damage flags
-#define DMG_GU_PHYSICAL (1 << 0x09)
-#define DMG_GU_FIRE (1 << 0x0B)
-#define DMG_GU_ICE (1 << 0x0C)
-#define DMG_GU_SHOCK (1 << 0x0D)
+// Modes
+#define GUST_MODE_OFF 0
+#define GUST_MODE_IDLE 1
+#define GUST_MODE_ABSORB 2
+#define GUST_MODE_BLOW 3
+#define GUST_MODE_ELEMENT_SELECT 4
+
+// Element types (selected from medallions)
+typedef enum {
+    GUST_ELEMENT_WIND = 0,   // Default (no medallion needed, Forest)
+    GUST_ELEMENT_FIRE = 1,   // Fire Medallion
+    GUST_ELEMENT_ICE = 2,    // Water Medallion
+    GUST_ELEMENT_SHADOW = 3, // Shadow Medallion
+    GUST_ELEMENT_SPIRIT = 4, // Spirit Medallion
+    GUST_ELEMENT_LIGHT = 5,  // Light Medallion
+    GUST_ELEMENT_COUNT = 6,
+} GustJarElement;
 
 // Actor IDs
 #ifndef ACTOR_EN_SW
@@ -40,81 +49,86 @@
 // State aliases
 #define gjEquipped gCustomItemState.gustJarEquipped
 #define gjMode gCustomItemState.gustJarMode
-#define gjAmmoType gCustomItemState.gustJarAmmoType
-#define gjProjectileActive gCustomItemState.gustJarProjectileActive
-#define gjProjPos gCustomItemState.gustJarProjPos
-#define gjProjYaw gCustomItemState.gustJarProjYaw
-#define gjProjPitch gCustomItemState.gustJarProjPitch
+#define gjElement gCustomItemState.gustJarElement
+#define gjBlowActive gCustomItemState.gustJarBlowActive
+#define gjHeatTimer gCustomItemState.gustJarHeatTimer
+#define gjBlowTimer gCustomItemState.gustJarBlowTimer
+#define gjCooldownTimer gCustomItemState.gustJarCooldownTimer
 #define gjTimer gCustomItemState.gustJarTimer
 #define gjCollider gCustomItemState.gustJarCollider
 #define gjFirstPerson gCustomItemState.gustJarFirstPersonActive
 #define gjAimMode gCustomItemState.gustJarAimMode
 #define gjButtonMask gCustomItemState.gustJarButtonMask
-#define gjScaleCache gCustomItemState.gustJarScaleCache
-#define gjScaleCacheCount gCustomItemState.gustJarScaleCacheCount
 
-// Collider init
+// Collider init — DMG_HAMMER_SWING (bit 6) | DMG_EXPLOSIVE (bit 3) = 0x48
+// This triggers AC_HIT on pots, rocks, grass, crates via their own break handlers
 static ColliderCylinderInit sGustJarColliderInit = { { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE, OC1_NONE,
                                                        OC2_TYPE_PLAYER, COLSHAPE_CYLINDER },
                                                      { ELEMTYPE_UNK0,
-                                                       { 0x00000000, 0x00, 0x00 },
+                                                       { 0x00000048, 0x00, 0x08 },
                                                        { 0x00000000, 0x00, 0x00 },
                                                        TOUCH_ON | TOUCH_SFX_NONE,
                                                        BUMP_NONE,
                                                        OCELEM_NONE },
                                                      { 30, 30, 0, { 0, 0, 0 } } };
 
-// Ammo definition
-typedef struct {
-    s16 actorId;
-    s16 params;
-    u8 ammoType;
-} GustJarDefinition;
-
-/**
- * Gust Jar Ammo Table
- * Defines which actors can be sucked up and what ammo type they provide.
- * Format: { actorId, params (-1 = any), ammoType }
- *
- * GUST_AMMO_BREAK    - Actor is destroyed on suction (pots, bushes)
- * GUST_AMMO_PHYSICAL - Normal projectile ammo
- * GUST_AMMO_FIRE     - Fire element projectile
- * GUST_AMMO_ICE      - Ice element projectile
- * GUST_AMMO_SHOCK    - Electric element projectile
- */
-static const GustJarDefinition sGustJarTable[] = {
-    // Breakable props
-    { ACTOR_EN_KUSA, -1, GUST_AMMO_BREAK },    // Grass/bushes
-    { ACTOR_OBJ_TSUBO, -1, GUST_AMMO_BREAK },  // Pots
-    { ACTOR_OBJ_KIBAKO, -1, GUST_AMMO_BREAK }, // Crates
-    { 0x01A0, -1, GUST_AMMO_BREAK },           // Other breakable
-
-    // Physical ammo enemies
-    { ACTOR_EN_FIREFLY, 0, GUST_AMMO_PHYSICAL },   // Keese (normal)
-    { ACTOR_EN_TITE, -1, GUST_AMMO_PHYSICAL },     // Tektite
-    { ACTOR_EN_GOMA, -1, GUST_AMMO_PHYSICAL },     // Gohma Larva
-    { ACTOR_EN_BUBBLE, 2, GUST_AMMO_PHYSICAL },    // Bubble (green)
-    { ACTOR_EN_BUBBLE, 3, GUST_AMMO_PHYSICAL },    // Bubble (white)
-    { ACTOR_EN_DEKUNUTS, -1, GUST_AMMO_PHYSICAL }, // Deku Scrub
-    { 0x001D, -1, GUST_AMMO_PHYSICAL },            // Skulltula
-    { 0x002D, -1, GUST_AMMO_PHYSICAL },            // Gold Skulltula
-
-    // Fire ammo enemies
-    { ACTOR_EN_FIREFLY, 2, GUST_AMMO_FIRE }, // Fire Keese
-    { ACTOR_EN_BUBBLE, 0, GUST_AMMO_FIRE },  // Red Bubble
-    { ACTOR_EN_TORCH2, -1, GUST_AMMO_FIRE }, // Dark Link (fire)
-    { 0x002F, -1, GUST_AMMO_FIRE },          // Fire enemy
-
-    // Ice ammo enemies
-    { ACTOR_EN_FIREFLY, 4, GUST_AMMO_ICE }, // Ice Keese
-    { ACTOR_EN_BUBBLE, 1, GUST_AMMO_ICE },  // Blue Bubble
-    { ACTOR_EN_FZ, 1, GUST_AMMO_ICE },      // Freezard
-
-    // Shock ammo enemies
-    { ACTOR_EN_BILI, -1, GUST_AMMO_SHOCK }, // Biri (jellyfish)
-    { 0x0043, -1, GUST_AMMO_SHOCK },        // Electric enemy
-    { ACTOR_EN_SW, -1, GUST_AMMO_SHOCK },   // Walltula
+// Suckable prop actor IDs (for attraction loop)
+static const s16 sGustSuckableProps[] = {
+    ACTOR_OBJ_TSUBO,  // Pots
+    ACTOR_OBJ_KIBAKO, // Small crates
+    ACTOR_EN_KUSA,    // Grass/bushes
+    ACTOR_EN_ISHI,    // Rocks (small only)
 };
-#define GUSTJAR_TABLE_COUNT (sizeof(sGustJarTable) / sizeof(sGustJarTable[0]))
+#define GUST_SUCKABLE_PROP_COUNT (sizeof(sGustSuckableProps) / sizeof(sGustSuckableProps[0]))
+
+// Suckable enemy actor IDs (small/medium enemies that get pulled in by absorb)
+static const s16 sGustSuckableEnemies[] = {
+    0x0013, // Keese (all types: normal, fire, ice)
+    0x001B, // Tektite
+    0x0037, // Skulltula
+    0x0095, // Skullwalltula
+    0x0034, // Biri (small jellyfish)
+    0x002D, // Bubble/Shabom
+    0x0069, // Fire/Ice Skull (En_Bb)
+    0x002B, // Gohma Larva
+    0x002F, // Baby Dodongo
+    0x0055, // Deku Baba
+    0x0060, // Mad Scrub / Deku Scrub
+    0x0038, // Torch Slug
+    0x003A, // Stinger
+    0x00C5, // Shell Blade
+    0x006B, // Flying Floor Tile
+    0x001C, // Leever
+    0x01C0, // Guay (crow)
+    0x01B0, // Stalchild
+    0x00EC, // Spike (En_Ny)
+    0x000D, // Poe
+};
+#define GUST_SUCKABLE_ENEMY_COUNT (sizeof(sGustSuckableEnemies) / sizeof(sGustSuckableEnemies[0]))
+
+// Element colors for blow cone VFX
+typedef struct {
+    Color_RGBA8 prim;
+    Color_RGBA8 env;
+} GustElementColor;
+
+static const GustElementColor sGustElementColors[GUST_ELEMENT_COUNT] = {
+    [GUST_ELEMENT_WIND] = { { 200, 200, 200, 255 }, { 255, 255, 255, 200 } },
+    [GUST_ELEMENT_FIRE] = { { 255, 80, 0, 255 }, { 255, 200, 0, 200 } },
+    [GUST_ELEMENT_ICE] = { { 80, 180, 255, 255 }, { 150, 220, 255, 200 } },
+    [GUST_ELEMENT_SHADOW] = { { 130, 50, 180, 255 }, { 80, 0, 130, 200 } },
+    [GUST_ELEMENT_SPIRIT] = { { 255, 150, 50, 255 }, { 255, 200, 100, 200 } },
+    [GUST_ELEMENT_LIGHT] = { { 255, 255, 100, 255 }, { 255, 255, 200, 200 } },
+};
+
+// Medallion quest items mapped to elements
+static const struct {
+    s32 questItem;
+    u8 element;
+} sGustMedallionMap[GUST_ELEMENT_COUNT] = {
+    { QUEST_MEDALLION_FOREST, GUST_ELEMENT_WIND },   { QUEST_MEDALLION_FIRE, GUST_ELEMENT_FIRE },
+    { QUEST_MEDALLION_WATER, GUST_ELEMENT_ICE },     { QUEST_MEDALLION_SHADOW, GUST_ELEMENT_SHADOW },
+    { QUEST_MEDALLION_SPIRIT, GUST_ELEMENT_SPIRIT }, { QUEST_MEDALLION_LIGHT, GUST_ELEMENT_LIGHT },
+};
 
 #endif // ITEM_GUSTJAR_H

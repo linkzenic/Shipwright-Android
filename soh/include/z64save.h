@@ -51,8 +51,13 @@ typedef struct {
 typedef struct {
     /* 0x00 */ u8 items[72]; // Page 1: 0-23 (vanilla), Page 2: 24-47 (custom), Page 3: 48-71 (MM masks)
     /* 0x18 */ s8 ammo[16];
-    /* 0x28 */ u16 equipment; // a mask where each nibble corresponds to a type of equipment `EquipmentType`, and each
-                              // bit to an owned piece `EquipInv*`
+    /* 0x28 */ u32 equipment; // Lower 16 bits: vanilla (nibble per EquipmentType, bit per EquipInv*)
+                              // Upper 16 bits: extended equipment (3 bits per type, bit = owned)
+                              // Bits 16-18: Ext Swords 1-3
+                              // Bits 19-21: Ext Shields 1-3
+                              // Bits 22-24: Ext Tunics 1-3
+                              // Bits 25-27: Ext Boots 1-3
+                              // Bits 28-31: reserved
     /* 0x2C */ u32 upgrades;
     /* 0x30 */ u32 questItems;
     /* 0x34 */ u8 dungeonItems[20];

@@ -27,7 +27,6 @@
 #include "mods/extended_inventory.h"
 #include "mods/extended_equipment.h"
 #include "mods/transformation_masks/transformation_masks.h"
-#include "mods/items/custom_names.c"
 
 static void* sEquipmentFRATexs[] = {
     gPauseEquipment00FRATex, gPauseEquipment01Tex, gPauseEquipment02Tex, gPauseEquipment03Tex, gPauseEquipment04Tex,
@@ -2131,20 +2130,19 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
             } else {
 
                 const char* textureName;
-                bool isCustomItem = false;
 
                 // Save original item ID before any modulo/offset operations
                 u16 originalItemId = sp2A;
 
-                // Custom items (0x9C-0xB5): embedded raw texture data → memcpy 0x400 bytes
-                // MM masks (0xB7-0xCE): OTR path string → handle like vanilla (memcpy strlen+1)
-                if (originalItemId >= 0x9C && originalItemId <= 0xB5) {
+                // Custom items (0x9D-0xB6): use OTR name textures like vanilla
+                if (originalItemId >= 0x9D && originalItemId <= 0xB6) {
                     textureName = (const char*)ExtInv_GetCustomItemNameTex(originalItemId, gSaveContext.language);
                     if (textureName == NULL) {
                         textureName = iconNameTextures[0];
-                    } else {
-                        isCustomItem = true; // Raw texture data, not a string path
                     }
+                } else if (originalItemId >= 0x9C && originalItemId <= 0x9C) {
+                    // 0x9C placeholder
+                    textureName = iconNameTextures[0];
                 } else if (originalItemId >= ITEM_MM_MASK_POSTMAN && originalItemId <= ITEM_MM_MASK_FIERCE_DEITY) {
                     textureName = (const char*)ExtInv_GetCustomItemNameTex(originalItemId, gSaveContext.language);
                     if (textureName == NULL) {
@@ -2152,8 +2150,11 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                     }
                     // isCustomItem stays false: OTR path string handled like vanilla via strlen copy
                 } else if (originalItemId >= 0xD0 && originalItemId <= 0xDB) {
-                    // Extended equipment items: no name texture yet, use fallback
-                    textureName = iconNameTextures[0];
+                    // Extended equipment items: use name texture from ext_equip_names.c
+                    textureName = (const char*)ExtEquip_GetNameTex(originalItemId, gSaveContext.language);
+                    if (textureName == NULL) {
+                        textureName = iconNameTextures[0];
+                    }
                 } else {
                     // Vanilla items: modulo 123 and add language offset
                     sp2A %= 123;
@@ -2172,10 +2173,7 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                     textureName = iconNameTextures[sp2A];
                 }
 
-                // Custom items have direct texture data (0x400 bytes), vanilla items have string paths
-                if (isCustomItem) {
-                    memcpy(pauseCtx->nameSegment, textureName, 0x400);
-                } else if (!GameInteractor_Should(VB_DRAW_CUSTOM_ITEM_NAME, false, pauseCtx->namedItem)) {
+                if (!GameInteractor_Should(VB_DRAW_CUSTOM_ITEM_NAME, false, pauseCtx->namedItem)) {
                     memcpy(pauseCtx->nameSegment, textureName, strlen(textureName) + 1);
                 }
             }

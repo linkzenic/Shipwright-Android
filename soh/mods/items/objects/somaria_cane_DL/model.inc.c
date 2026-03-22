@@ -271,7 +271,7 @@ static Vtx v_somaria_cane_vtx_1[32] = {
     { { { 18, -50, -16 }, 0, { -16, -16 }, { 166, 0, 166, 255 } } },
 };
 
-static Gfx gfx_somaria_cane_tri_0[] = {
+Gfx gfx_somaria_cane_tri_0[] = {
     gsSPVertex(v_somaria_cane_vtx_0 + 0, 30, 0),
     gsSP2Triangles(0, 1, 2, 0, 3, 4, 5, 0),
     gsSP2Triangles(6, 7, 8, 0, 9, 10, 11, 0),
@@ -338,7 +338,7 @@ static Gfx gfx_somaria_cane_tri_0[] = {
     gsSPEndDisplayList(),
 };
 
-static Gfx gfx_somaria_cane_tri_1[] = {
+Gfx gfx_somaria_cane_tri_1[] = {
     gsSPVertex(v_somaria_cane_vtx_1 + 0, 32, 0),  gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
     gsSP2Triangles(4, 5, 6, 0, 4, 6, 7, 0),       gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),
     gsSP2Triangles(12, 13, 14, 0, 12, 14, 15, 0), gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),
@@ -656,7 +656,7 @@ static Vtx v_somaria_cane_vtx_give_1[32] = {
     { { { 18, -14, -37 }, 0, { -16, -16 }, { 166, 0, 166, 255 } } },
 };
 
-static Gfx gfx_somaria_cane_tri_give_0[] = {
+Gfx gfx_somaria_cane_tri_give_0[] = {
     gsSPVertex(v_somaria_cane_vtx_give_0 + 0, 30, 0),
     gsSP2Triangles(0, 1, 2, 0, 3, 4, 5, 0),
     gsSP2Triangles(6, 7, 8, 0, 9, 10, 11, 0),
@@ -723,7 +723,7 @@ static Gfx gfx_somaria_cane_tri_give_0[] = {
     gsSPEndDisplayList(),
 };
 
-static Gfx gfx_somaria_cane_tri_give_1[] = {
+Gfx gfx_somaria_cane_tri_give_1[] = {
     gsSPVertex(v_somaria_cane_vtx_give_1 + 0, 32, 0), gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
     gsSP2Triangles(4, 5, 6, 0, 4, 6, 7, 0),           gsSP2Triangles(8, 9, 10, 0, 8, 10, 11, 0),
     gsSP2Triangles(12, 13, 14, 0, 12, 14, 15, 0),     gsSP2Triangles(16, 17, 18, 0, 16, 18, 19, 0),

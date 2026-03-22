@@ -1,34 +1,39 @@
 /**
  * ext_equip_behavior.c - Behavior handlers for extended equipment
  *
- * Each equipment piece will eventually have its own behavior handler.
- * For now, all are no-op stubs.
+ * Unity build hub: includes individual behavior files and dispatches
+ * update/draw/hit callbacks to active equipment.
  *
  * Included by extended_equipment.c (unity build).
  */
 
-#include "z64player.h"
-#include "z64.h"
+// No extra includes — inherits all from extended_equipment.c (unity build root)
+// Somaria cane DL header included by extended_equipment.c (unity root)
 
 // ---------------------------------------------------------------------------
-// Sword behaviors (stubs)
+// Include behavior implementations
+// ---------------------------------------------------------------------------
+#include "behaviors/equip_byrna.c"
+#include "behaviors/equip_pegasus.c"
+#include "behaviors/equip_dragonscale.c"
+#include "behaviors/equip_ikana.c"
+#include "behaviors/equip_magiccape.c"
+
+// ---------------------------------------------------------------------------
+// Sword behaviors
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Sword1(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
-    // TODO: Implement Ext Sword 1 behavior
+    Byrna_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Sword2(Player* player, PlayState* play) {
     (void)player;
     (void)play;
-    // TODO: Implement Ext Sword 2 behavior
 }
 
 static void ExtEquip_Behavior_Sword3(Player* player, PlayState* play) {
     (void)player;
     (void)play;
-    // TODO: Implement Ext Sword 3 behavior
 }
 
 // ---------------------------------------------------------------------------
@@ -45,16 +50,14 @@ static void ExtEquip_Behavior_Shield2(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Shield3(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    Ikana_Behavior(player, play);
 }
 
 // ---------------------------------------------------------------------------
 // Tunic behaviors (stubs)
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Tunic1(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    MagicCape_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Tunic2(Player* player, PlayState* play) {
@@ -68,11 +71,10 @@ static void ExtEquip_Behavior_Tunic3(Player* player, PlayState* play) {
 }
 
 // ---------------------------------------------------------------------------
-// Boots behaviors (stubs)
+// Boots behaviors
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Boots1(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    Pegasus_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Boots2(Player* player, PlayState* play) {
@@ -81,8 +83,7 @@ static void ExtEquip_Behavior_Boots2(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Boots3(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    DragonScale_Behavior(player, play);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,9 @@ static const ExtEquipBehaviorFunc sExtBootsBehaviors[3] = {
 };
 
 static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
+    // Always run cleanup for behaviors that need it (cape boost removal, etc.)
+    MagicCape_Cleanup();
+
     if (gExtEquipState.currentExtSword > 0 && gExtEquipState.currentExtSword <= 3) {
         sExtSwordBehaviors[gExtEquipState.currentExtSword - 1](player, play);
     }
@@ -126,5 +130,34 @@ static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
     }
     if (gExtEquipState.currentExtBoots > 0 && gExtEquipState.currentExtBoots <= 3) {
         sExtBootsBehaviors[gExtEquipState.currentExtBoots - 1](player, play);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Melee hit dispatch (called from z_player.c)
+// ---------------------------------------------------------------------------
+static void ExtEquip_OnMeleeHitDispatch(Player* player, PlayState* play) {
+    // Cane of Byrna: MP recovery on sword hit
+    if (gExtEquipState.currentExtSword == 1) {
+        Byrna_OnMeleeHit(player, play);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Draw dispatch (called from z_player.c draw section)
+// ---------------------------------------------------------------------------
+static void ExtEquip_DrawDispatch(Player* player, PlayState* play) {
+    // Cane of Byrna: drawn from PostLimbDraw via ExtEquip_DrawSwordDL (follows limb matrix)
+    // Pegasus Anklet: wind barrier
+    if (gExtEquipState.currentExtBoots == 1) {
+        Pegasus_Draw(player, play);
+    }
+    // Water Dragon Scale: water barrier
+    if (gExtEquipState.currentExtBoots == 3) {
+        DScale_Draw(player, play);
+    }
+    // Magic Cape: Ganondorf cloth physics cape
+    if (gExtEquipState.currentExtTunic == 1) {
+        MagicCape_Draw(player, play);
     }
 }

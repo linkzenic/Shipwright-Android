@@ -4740,6 +4740,20 @@ typedef enum {
     RG_DOMINION_ROD,
     RG_DESIRE_SENSOR,
 
+    // Extended Equipment (12 items for equipment page 2)
+    RG_EXT_CANE_OF_BYRNA,
+    RG_EXT_FOUR_SWORD,
+    RG_EXT_DRILLSHAFT,
+    RG_EXT_DIVINE_SHIELD,
+    RG_EXT_GERUDO_SCIMITAR,
+    RG_EXT_SHIELD_OF_IKANA,
+    RG_EXT_MAGIC_CAPE,
+    RG_EXT_PENDING_TUNIC,
+    RG_EXT_CHAMPIONS_TUNIC,
+    RG_EXT_PEGASUS_ANKLET,
+    RG_EXT_PENDANT_OF_MEMORIES,
+    RG_EXT_WATER_DRAGON_SCALE,
+
     // MM Masks (24 masks for third inventory page)
     RG_MM_MASK_POSTMAN,
     RG_MM_MASK_ALL_NIGHT,

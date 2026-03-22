@@ -12,6 +12,7 @@
 #include "soh/Enhancements/cosmetics/cosmeticsTypes.h"
 #include "soh/Enhancements/enhancementTypes.h"
 #include "soh/ShipUtils.h"
+#include "mods/extended_equipment.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -961,8 +962,10 @@ void func_80083108(PlayState* play) {
                 gSaveContext.buttonStatus[0] = BTN_DISABLED;
 
                 for (i = 1; i < ARRAY_COUNT(gSaveContext.equips.buttonItems); i++) {
-                    if ((gSaveContext.equips.buttonItems[i] >= ITEM_SHIELD_DEKU) &&
-                        (gSaveContext.equips.buttonItems[i] <= ITEM_BOOTS_HOVER)) {
+                    if (((gSaveContext.equips.buttonItems[i] >= ITEM_SHIELD_DEKU) &&
+                         (gSaveContext.equips.buttonItems[i] <= ITEM_BOOTS_HOVER)) ||
+                        ((gSaveContext.equips.buttonItems[i] >= ITEM_EXT_SWORD_1) &&
+                         (gSaveContext.equips.buttonItems[i] <= ITEM_EXT_BOOTS_3))) {
                         // Equipment on c-buttons is always enabled
                         if (gSaveContext.buttonStatus[BUTTON_STATUS_INDEX(i)] == BTN_DISABLED) {
                             sp28 = 1;
@@ -1124,8 +1127,10 @@ void func_80083108(PlayState* play) {
                 }
 
                 for (i = 1; i < ARRAY_COUNT(gSaveContext.equips.buttonItems); i++) {
-                    if ((gSaveContext.equips.buttonItems[i] >= ITEM_SHIELD_DEKU) &&
-                        (gSaveContext.equips.buttonItems[i] <= ITEM_BOOTS_HOVER)) {
+                    if (((gSaveContext.equips.buttonItems[i] >= ITEM_SHIELD_DEKU) &&
+                         (gSaveContext.equips.buttonItems[i] <= ITEM_BOOTS_HOVER)) ||
+                        ((gSaveContext.equips.buttonItems[i] >= ITEM_EXT_SWORD_1) &&
+                         (gSaveContext.equips.buttonItems[i] <= ITEM_EXT_BOOTS_3))) {
                         // Equipment on c-buttons is always enabled
                         if (gSaveContext.buttonStatus[BUTTON_STATUS_INDEX(i)] == BTN_DISABLED) {
                             sp28 = 1;
@@ -1291,7 +1296,9 @@ void func_80083108(PlayState* play) {
                               (gSaveContext.equips.buttonItems[i] <= ITEM_POE)) &&
                             !((gSaveContext.equips.buttonItems[i] >= ITEM_SHIELD_DEKU) && // Never disable equipment
                               (gSaveContext.equips.buttonItems[i] <=
-                               ITEM_BOOTS_HOVER)) && // (tunics/boots) on C-buttons
+                               ITEM_BOOTS_HOVER)) &&                                      // (tunics/boots) on C-buttons
+                            !((gSaveContext.equips.buttonItems[i] >= ITEM_EXT_SWORD_1) && // Never disable ext equipment
+                              (gSaveContext.equips.buttonItems[i] <= ITEM_EXT_BOOTS_3)) &&
                             !((gSaveContext.equips.buttonItems[i] >= ITEM_WEIRD_EGG) &&
                               (gSaveContext.equips.buttonItems[i] <= ITEM_CLAIM_CHECK))) {
                             if ((play->sceneNum != SCENE_TREASURE_BOX_SHOP) ||
@@ -1752,6 +1759,19 @@ void Interface_LoadItemIcon1(PlayState* play, u16 button) {
 void Interface_LoadItemIcon2(PlayState* play, u16 button) {
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
     u8 item = gSaveContext.equips.buttonItems[button];
+
+    // Extended equipment items: load icon from ext system (OTR path)
+    if (item >= ITEM_EXT_SWORD_1 && item <= ITEM_EXT_BOOTS_3) {
+        u16 offset = item - ITEM_EXT_SWORD_1;
+        s16 equipType = offset / 3;
+        u8 index = (offset % 3) + 1;
+        void* icon = ExtEquip_GetIcon(equipType, index);
+        if (icon != NULL) {
+            // icon is an OTR path string — the HUD renderer will resolve it
+            interfaceCtx->iconItemSegment[button * 0x1000] = 0; // Clear (OTR handles it)
+        }
+        return;
+    }
 
     if (item >= 0x80) {
         return;

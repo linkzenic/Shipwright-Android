@@ -2248,11 +2248,35 @@ void func_8002F7A0(PlayState* play, Actor* actor, f32 arg2, s16 arg3, f32 arg4) 
 }
 
 void Player_PlaySfx(Actor* actor, u16 sfxId) {
-    // Suppress OOT Link SFX when MM transformation form is active.
-    // The MM form plays its own SFX via MmSfx_PlayAtPos.
+    // Suppress OOT SFX when in MM transformation form.
+    // MM forms play their own sounds via MmSfx_PlayAtPos / MmForm_PlaySfx.
+    // Keep: floor/surface SFX (WALK, JUMP, LAND, SLIP), environmental, water, status effects.
     extern u8 TransformMasks_IsTransformed(void);
     if (actor->id == ACTOR_PLAYER && TransformMasks_IsTransformed()) {
-        return;
+        // Block ALL item/weapon SFX (NA_SE_IT_* = 0x1800-0x18FF)
+        if ((sfxId & 0xF800) == 0x1800) {
+            return;
+        }
+        // Block ALL voice SFX (NA_SE_VO_LI_*)
+        if (sfxId >= NA_SE_VO_LI_SWORD_N && sfxId <= NA_SE_VO_LI_ELECTRIC_SHOCK_LV_KID) {
+            return;
+        }
+        // Block specific combat/body PL SFX that MM handles itself
+        switch (sfxId) {
+            case NA_SE_PL_DAMAGE:
+            case NA_SE_PL_BODY_HIT:
+            case NA_SE_PL_BODY_BOUND:
+            case NA_SE_PL_ROLL:
+            case NA_SE_PL_SKIP:
+            case NA_SE_PL_THROW:
+            case NA_SE_PL_CHANGE_ARMS:
+            case NA_SE_PL_CATCH_BOOMERANG:
+            case NA_SE_PL_KNOCK:
+            case NA_SE_PL_SPARK:
+            case NA_SE_PL_SWIM:
+            case NA_SE_PL_DIVE_BUBBLE:
+                return;
+        }
     }
 
     if (actor->id != ACTOR_PLAYER || sfxId < NA_SE_VO_LI_SWORD_N || sfxId > NA_SE_VO_LI_ELECTRIC_SHOCK_LV_KID) {
@@ -3094,7 +3118,12 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
 
             if ((HREG(64) != 1) || ((HREG(65) != -1) && (HREG(65) != HREG(66))) || (HREG(69) == 0)) {
                 if (actor->sfx != 0) {
-                    func_80030ED8(actor);
+                    // Suppress continuous item SFX on player when in MM form
+                    extern u8 TransformMasks_IsTransformed(void);
+                    if (!(actor->id == ACTOR_PLAYER && TransformMasks_IsTransformed() &&
+                          (actor->sfx & 0xF800) == 0x1800)) {
+                        func_80030ED8(actor);
+                    }
                 }
             }
 

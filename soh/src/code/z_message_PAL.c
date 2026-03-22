@@ -1657,17 +1657,14 @@ void Message_LoadItemIcon(PlayState* play, u16 itemId, s16 y) {
         R_TEXTBOX_ICON_XPOS = R_TEXT_INIT_XPOS - sIconItem24XOffsets[language];
         R_TEXTBOX_ICON_YPOS = y + 10;
         R_TEXTBOX_ICON_SIZE = 24;
-        memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, ExtInv_GetItemIcon(itemId), 32 * 32 * 4);
-        // "Item 24"
-        osSyncPrintf("アイテム24＝%d (%d) {%d}\n", itemId, itemId - ITEM_KOKIRI_EMERALD, 84);
     } else {
         R_TEXTBOX_ICON_XPOS = R_TEXT_INIT_XPOS - sIconItem32XOffsets[language];
         R_TEXTBOX_ICON_YPOS = y + 6;
         R_TEXTBOX_ICON_SIZE = 32;
-        memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, ExtInv_GetItemIcon(itemId), 32 * 32 * 4);
-        // "Item 32-0"
-        osSyncPrintf("アイテム32-0\n");
     }
+    // Copy OTR path string into textbox segment (gDPLoadTextureBlock resolves it at draw time)
+    void* iconPtr = ExtInv_GetItemIcon(itemId);
+    memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, iconPtr, strlen((const char*)iconPtr) + 1);
     msgCtx->msgBufPos++;
     msgCtx->choiceNum = 1;
 }

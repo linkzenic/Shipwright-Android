@@ -25,7 +25,7 @@
 #include "textures/map_name_static/map_name_static.h"
 #include "textures/icon_item_24_static/icon_item_24_static.h"
 
-extern const unsigned char gItemIconPecoriTex[];
+#include "assets/soh_assets.h"
 
 // ============================================================
 // Data tables for 9 pod soils

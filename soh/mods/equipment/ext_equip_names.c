@@ -1,34 +1,52 @@
 /**
- * ext_equip_names.c - Placeholder name textures for extended equipment
+ * ext_equip_names.c - Name textures for extended equipment
  *
- * For now, returns NULL for all extended equipment names.
- * The kaleido code handles NULL by not drawing a name.
- * Real name textures (IA4, 128x16) will be added later.
+ * Returns OTR path pointers for each equipment item's name texture.
+ * Textures are 128x16 IA4 PNGs in soh/assets/custom/textures/item_name_custom/.
  *
  * Included by extended_equipment.c (unity build).
  */
 
-// Placeholder: no name textures yet.
-// When real names are added, define them here as:
-// static u8 gExtSword1NameTex[128 * 16 / 2] = { ... }; // IA4 format
+#include "assets/soh_assets.h"
 
 static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
     (void)language;
 
     switch (itemId) {
+        // Swords
         case ITEM_EXT_SWORD_1:
+            return (void*)gCaneOfByrnaNameTex;
         case ITEM_EXT_SWORD_2:
+            return (void*)gFourSwordNameTex;
         case ITEM_EXT_SWORD_3:
+            return (void*)gDrillshaftNameTex;
+
+        // Shields
         case ITEM_EXT_SHIELD_1:
+            return (void*)gDivineShieldNameTex;
         case ITEM_EXT_SHIELD_2:
+            return (void*)gGerudoScimitarNameTex;
         case ITEM_EXT_SHIELD_3:
+            return (void*)gShieldOfIkanaNameTex;
+
+        // Tunics
         case ITEM_EXT_TUNIC_1:
+            return (void*)gMagicCapeNameTex;
         case ITEM_EXT_TUNIC_2:
+            return (void*)gPending4NameTex;
         case ITEM_EXT_TUNIC_3:
+            return (void*)gChampionsTunicNameTex;
+
+        // Boots
         case ITEM_EXT_BOOTS_1:
+            return (void*)gPegasusAnkletNameTex;
         case ITEM_EXT_BOOTS_2:
+            // Load from mm.o2r (MM's actual Pendant of Memories name texture)
+            return (void*)"__OTR__item_name_static/gItemNamePendantOfMemoriesENGTex";
         case ITEM_EXT_BOOTS_3:
+            return (void*)gWaterDragonScaleNameTex;
+
         default:
-            return NULL; // No name texture yet
+            return NULL;
     }
 }

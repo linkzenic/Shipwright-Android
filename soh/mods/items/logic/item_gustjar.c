@@ -1,16 +1,15 @@
 /**
- * item_gustjar.c - Gust Jar from Minish Cap
+ * item_gustjar.c - Gust Jar (Minish Cap style)
  *
- * Controls:
- *   Hold C Button:  Suction mode - pulls in items, enemies, projectiles
- *   Release C:      Fire sucked object as projectile
- *   Tap C Button:   Quick wind gust push
+ * Two modes:
+ *   ABSORB (hold C): Pull enemies/props toward nozzle, AT collider damages them.
+ *                     Props break via their own AC_HIT handlers (proper drops).
+ *                     Heat builds over 10s (blue→yellow→red ring).
+ *   BLOW (auto after 10s absorb): Elemental cone pushes all non-boss enemies.
+ *                     Element effects based on medallion selection.
  *
- * Features:
- *   - First-person aiming mode (toggles with Z-targeting)
- *   - Suction pulls collectibles and small enemies
- *   - Captured objects become ammo for projectile attack
- *   - Visual feedback: jar decoration changes color when active
+ * Long-press C (20 frames, while idle): Radial element picker overlay.
+ * Tap C: Use with last selected element.
  */
 
 #include "z64.h"
@@ -23,521 +22,572 @@
 #include "functions.h"
 #include "variables.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+
 void Player_InitGustJarIA(PlayState* play, Player* this) {
     Collider_InitCylinder(play, &gCustomItemState.gustJarCollider);
     Collider_SetCylinder(play, &gCustomItemState.gustJarCollider, &this->actor, &sGustJarColliderInit);
 }
-extern void Item_DropCollectibleRandom(PlayState* play, Actor* fromActor, Vec3f* spawnPos, s16 params);
-extern Actor* Actor_SpawnAsChild(ActorContext* actorCtx, Actor* parent, PlayState* play, s16 actorId, f32 x, f32 y,
-                                 f32 z, s16 rotX, s16 rotY, s16 rotZ, s16 params);
-static Color_RGBA8 sGustDustColor = { 170, 170, 170, 255 };
-static Color_RGBA8 sShockColor = { 255, 255, 100, 255 };
-static Color_RGBA8 sShockEnvColor = { 255, 255, 255, 255 };
 
-// Note: sGustJarTable is defined in item_gustjar.h for easy editing
+static void GustJar_ClearScaleCache(void); // Forward declaration
 
-static void GustJar_ClearScaleCache(void);
+// =============================================================================
+// Equip / Unequip
+// =============================================================================
+
 static void GustJar_Equip(PlayState* play, Player* player) {
-    if (gCustomItemState.gustJarEquipped)
+    if (gjEquipped)
         return;
-    gCustomItemState.gustJarEquipped = 1;
-    gCustomItemState.gustJarMode = 1;
+    gjEquipped = 1;
+    gjMode = GUST_MODE_IDLE;
+    gjHeatTimer = 0;
+    gjBlowActive = 0;
+    gjBlowTimer = 0;
+    gjCooldownTimer = 0;
+
     if (Player_IsZTargeting(player)) {
-        gCustomItemState.gustJarAimMode = 1;
-        gCustomItemState.gustJarFirstPersonActive = 0;
+        gjAimMode = 1;
+        gjFirstPerson = 0;
     } else {
-        gCustomItemState.gustJarAimMode = 0;
+        gjAimMode = 0;
         FirstPerson_Init(player, play);
-        gCustomItemState.gustJarFirstPersonActive = 1;
+        gjFirstPerson = 1;
     }
     ItemEquip_PlayEquipSFX(play, player);
 }
+
 static void GustJar_Unequip(PlayState* play, Player* player) {
-    if (!gCustomItemState.gustJarEquipped)
+    if (!gjEquipped)
         return;
-    if (gCustomItemState.gustJarFirstPersonActive) {
+    if (gjFirstPerson) {
         FirstPerson_Exit(player, play);
-        gCustomItemState.gustJarFirstPersonActive = 0;
+        gjFirstPerson = 0;
     }
     GustJar_ClearScaleCache();
-    gCustomItemState.gustJarEquipped = 0;
-    gCustomItemState.gustJarMode = 0;
-    gCustomItemState.gustJarAimMode = 0;
-    gCustomItemState.gustJarProjectileActive = 0;
-    gCustomItemState.gustJarAmmoType = 0;
-    gCustomItemState.gustJarButtonMask = 0;
-    // Stop looping wind sound
+    gjEquipped = 0;
+    gjMode = GUST_MODE_OFF;
+    gjBlowActive = 0;
+    gjHeatTimer = 0;
+    gjBlowTimer = 0;
+    gjCooldownTimer = 0;
+    gjButtonMask = 0;
     Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
     ItemEquip_PlayUnequipSFX(play, player);
 }
-static s16 GustJar_GetAimAngle(PlayState* play, Player* player) {
-    switch (gCustomItemState.gustJarAimMode) {
-        case 0:
-            if (gCustomItemState.gustJarFirstPersonActive) {
-                return FirstPerson_GetAimYaw(player);
-            }
-            return player->actor.shape.rot.y;
-        case 1:
-            if (Player_IsZTargeting(player) && player->focusActor != NULL) {
-                return Math_Vec3f_Yaw(&player->actor.world.pos, &player->focusActor->focus.pos);
-            }
-            return player->actor.shape.rot.y;
-        case 2:
-        default:
-            return player->actor.shape.rot.y;
+
+// =============================================================================
+// Aiming
+// =============================================================================
+
+static s16 GustJar_GetAimYaw(PlayState* play, Player* player) {
+    // Z-targeting ALWAYS overrides — aim at focus actor regardless of aim mode
+    if (Player_IsZTargeting(player) && player->focusActor != NULL) {
+        return Math_Vec3f_Yaw(&player->actor.world.pos, &player->focusActor->focus.pos);
+    }
+    // Otherwise use aim mode
+    if (gjAimMode == 0 && gjFirstPerson) {
+        return FirstPerson_GetAimYaw(player);
+    }
+    return player->actor.shape.rot.y;
+}
+
+// =============================================================================
+// Absorb Mode — pull actors + AT collider damage
+// =============================================================================
+
+static s32 GustJar_IsSuckable(Actor* actor) {
+    // Props: check against suckable prop list
+    if (actor->category == ACTORCAT_PROP) {
+        for (s32 i = 0; i < GUST_SUCKABLE_PROP_COUNT; i++) {
+            if (actor->id == sGustSuckableProps[i])
+                return 1;
+        }
+        return 0;
+    }
+    // Enemies: check against suckable enemy list (small/medium only)
+    if (actor->category == ACTORCAT_ENEMY) {
+        for (s32 i = 0; i < GUST_SUCKABLE_ENEMY_COUNT; i++) {
+            if (actor->id == sGustSuckableEnemies[i])
+                return 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+// =============================================================================
+// Scale Cache (shrink actors as they get sucked in)
+// =============================================================================
+
+#define GUST_MAX_SCALED 16
+
+static struct {
+    Actor* actor;
+    Vec3f originalScale;
+} sScaleCache[GUST_MAX_SCALED];
+static u8 sScaleCacheCount = 0;
+
+static void GustJar_SaveScale(Actor* actor) {
+    for (u8 i = 0; i < sScaleCacheCount; i++) {
+        if (sScaleCache[i].actor == actor)
+            return;
+    }
+    if (sScaleCacheCount < GUST_MAX_SCALED) {
+        sScaleCache[sScaleCacheCount].actor = actor;
+        sScaleCache[sScaleCacheCount].originalScale = actor->scale;
+        sScaleCacheCount++;
     }
 }
-static void GustJar_SaveOriginalScale(Actor* actor) {
-    for (u8 i = 0; i < gCustomItemState.gustJarScaleCacheCount; i++) {
-        if (gCustomItemState.gustJarScaleCache[i].actor == actor) {
+
+static void GustJar_ShrinkActor(Actor* actor, f32 factor) {
+    GustJar_SaveScale(actor);
+    for (u8 i = 0; i < sScaleCacheCount; i++) {
+        if (sScaleCache[i].actor == actor) {
+            actor->scale.x = sScaleCache[i].originalScale.x * factor;
+            actor->scale.y = sScaleCache[i].originalScale.y * factor;
+            actor->scale.z = sScaleCache[i].originalScale.z * factor;
             return;
         }
     }
-    if (gCustomItemState.gustJarScaleCacheCount < 16) {
-        u8 idx = gCustomItemState.gustJarScaleCacheCount;
-        gCustomItemState.gustJarScaleCache[idx].actor = actor;
-        gCustomItemState.gustJarScaleCache[idx].originalScale = actor->scale;
-        gCustomItemState.gustJarScaleCacheCount++;
-    }
 }
-static Vec3f* GustJar_GetOriginalScale(Actor* actor) {
-    for (u8 i = 0; i < gCustomItemState.gustJarScaleCacheCount; i++) {
-        if (gCustomItemState.gustJarScaleCache[i].actor == actor) {
-            return &gCustomItemState.gustJarScaleCache[i].originalScale;
-        }
-    }
-    return NULL;
-}
-static void GustJar_RestoreAndRemoveScale(Actor* actor) {
-    for (u8 i = 0; i < gCustomItemState.gustJarScaleCacheCount; i++) {
-        if (gCustomItemState.gustJarScaleCache[i].actor == actor) {
-            actor->scale = gCustomItemState.gustJarScaleCache[i].originalScale;
-            for (u8 j = i; j < gCustomItemState.gustJarScaleCacheCount - 1; j++) {
-                gCustomItemState.gustJarScaleCache[j] = gCustomItemState.gustJarScaleCache[j + 1];
-            }
-            gCustomItemState.gustJarScaleCacheCount--;
-            return;
-        }
-    }
-}
+
 static void GustJar_ClearScaleCache(void) {
-    for (u8 i = 0; i < gCustomItemState.gustJarScaleCacheCount; i++) {
-        Actor* actor = gCustomItemState.gustJarScaleCache[i].actor;
-        if (actor != NULL && actor->update != NULL) {
-            actor->scale = gCustomItemState.gustJarScaleCache[i].originalScale;
+    for (u8 i = 0; i < sScaleCacheCount; i++) {
+        if (sScaleCache[i].actor != NULL && sScaleCache[i].actor->update != NULL) {
+            sScaleCache[i].actor->scale = sScaleCache[i].originalScale;
         }
     }
-    gCustomItemState.gustJarScaleCacheCount = 0;
+    sScaleCacheCount = 0;
 }
-static u8 GustJar_GetAmmoType(Actor* actor) {
-    for (size_t i = 0; i < GUSTJAR_TABLE_COUNT; i++) {
-        if (actor->id == sGustJarTable[i].actorId) {
-            if (sGustJarTable[i].params == -1 || sGustJarTable[i].params == actor->params) {
-                return sGustJarTable[i].ammoType;
-            }
-        }
-    }
-    // Fallback: small enemies can be sucked as physical ammo
-    if (actor->category == ACTORCAT_ENEMY && actor->colChkInfo.health > 0 && actor->colChkInfo.health <= 4) {
-        return GUST_AMMO_PHYSICAL;
-    }
-    return GUST_AMMO_NONE;
-}
-static void GustJar_HandleCaptureDrop(PlayState* play, Player* link, Actor* enemy) {
-    Vec3f* originalScale = GustJar_GetOriginalScale(enemy);
-    if (originalScale != NULL) {
-        enemy->scale = *originalScale;
-    }
-    Vec3f dropPos = enemy->world.pos;
-    dropPos.y = enemy->floorHeight + 10.0f;
-    if (enemy->id == ACTOR_EN_SW) {
-        Actor_SpawnAsChild(&play->actorCtx, enemy, play, ACTOR_EN_SI, dropPos.x, dropPos.y, dropPos.z, 0, 0, 0,
-                           enemy->params);
-        Audio_PlaySoundGeneral(NA_SE_SY_KINSTA_MARK_APPEAR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-    } else if (enemy->category == ACTORCAT_ENEMY || enemy->category == ACTORCAT_PROP) {
-        s16 dropTable = 0x40;
-        switch (enemy->id) {
-            case 0x0002:
-                dropTable = 0x00;
-                break;
-            case 0x001B:
-                dropTable = 0x40;
-                break;
-            case 0x0027:
-                dropTable = 0x10;
-                break;
-            case 0x0043:
-                dropTable = 0x40;
-                break;
-            case 0x0095:
-                break;
-            case 0x0003:
-                dropTable = 0x20;
-                break;
-            default:
-                dropTable = 0x40;
-                break;
-        }
-        Item_DropCollectibleRandom(play, enemy, &dropPos, dropTable);
-    }
-    GustJar_RestoreAndRemoveScale(enemy);
-}
-static void GustJar_SpawnSuctionFX(PlayState* play, Vec3f* origin, s16 yaw, s16 pitch) {
-    if (play->gameplayFrames % 2 != 0)
-        return;
-    FX_SpawnSuction(play, origin, yaw, pitch);
-}
-void CustomItems_DrawGustJar(Player* this, PlayState* play) {
-    GustJarPot_Draw(this, play);
-    if (!gCustomItemState.gustJarProjectileActive)
-        return;
-    u8 type = gCustomItemState.gustJarAmmoType;
-    Vec3f* pos = &gCustomItemState.gustJarProjPos;
-    OPEN_DISPS(play->state.gfxCtx);
-    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-    if (type == GUST_AMMO_FIRE) {
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 50, 50, 230);
-        gDPSetEnvColor(POLY_XLU_DISP++, 255, 100, 0, 200);
-    } else if (type == GUST_AMMO_ICE) {
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 80, 180, 255, 230);
-        gDPSetEnvColor(POLY_XLU_DISP++, 150, 220, 255, 200);
-    } else if (type == GUST_AMMO_SHOCK) {
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 100, 230);
-        gDPSetEnvColor(POLY_XLU_DISP++, 255, 255, 150, 200);
-    } else {
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 160, 160, 160, 200);
-        gDPSetEnvColor(POLY_XLU_DISP++, 200, 200, 200, 160);
-    }
-    Matrix_Translate(pos->x, pos->y, pos->z, MTXMODE_NEW);
-    Matrix_Scale(1.5f, 1.5f, 1.5f, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, gEffBubbleDL);
-    CLOSE_DISPS(play->state.gfxCtx);
-}
-void Handle_GustJar(Player* this, PlayState* play) {
-    if (gCustomItemState.gustJarCollider.base.shape != COLSHAPE_CYLINDER) {
-        Player_InitGustJarIA(play, this);
-    }
-    ItemInputState input;
-    static s8 prevInvincibility = 0;
-    ItemInput_Update(&input, ITEM_GUST_JAR, this, play);
-    if (!input.wasEquipped) {
-        if (gCustomItemState.gustJarEquipped)
-            GustJar_Unequip(play, this);
-        return;
-    }
-    if (ItemInput_IsBlocked(this, play)) {
-        if (gCustomItemState.gustJarEquipped)
-            GustJar_Unequip(play, this);
-        return;
-    }
-    gCustomItemState.gustJarButtonMask = input.equippedButton;
-    if (ItemInput_CheckDamage(this, &prevInvincibility)) {
-        GustJar_Unequip(play, this);
-        return;
-    }
-    u8 btnPressed = input.isPressed;
-    u8 btnHeld = input.isHeld;
-    if (!gCustomItemState.gustJarEquipped) {
-        if (btnPressed) {
-            GustJar_Equip(play, this);
-            // Continue processing if first person was activated, so FirstPerson_Update
-            // gets called on the same frame as FirstPerson_Init (prevents visual glitch)
-            if (!gCustomItemState.gustJarFirstPersonActive) {
-                return;
-            }
-        } else {
-            return;
-        }
-    }
-    if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_CUP)) {
-        if (gCustomItemState.gustJarAimMode == 2) {
-            if (Player_IsZTargeting(this)) {
-                gCustomItemState.gustJarAimMode = 1;
-            } else {
-                gCustomItemState.gustJarAimMode = 0;
-                FirstPerson_Init(this, play);
-                gCustomItemState.gustJarFirstPersonActive = 1;
-            }
-        } else {
-            if (gCustomItemState.gustJarFirstPersonActive) {
-                FirstPerson_Exit(this, play);
-                gCustomItemState.gustJarFirstPersonActive = 0;
-            }
-            gCustomItemState.gustJarAimMode = 2;
-        }
-        ItemEquip_PlayEquipSFX(play, this);
-        return;
-    }
-    if (input.otherButtonPressed) {
-        GustJar_Unequip(play, this);
-        return;
-    }
-    u8 isZTargeting = Player_IsZTargeting(this);
-    if (gCustomItemState.gustJarAimMode == 0 && isZTargeting) {
-        FirstPerson_Exit(this, play);
-        gCustomItemState.gustJarFirstPersonActive = 0;
-        gCustomItemState.gustJarAimMode = 1;
-    } else if (gCustomItemState.gustJarAimMode == 1 && !isZTargeting) {
-        FirstPerson_Init(this, play);
-        gCustomItemState.gustJarFirstPersonActive = 1;
-        gCustomItemState.gustJarAimMode = 0;
-    }
-    if (gCustomItemState.gustJarAimMode == 0 && gCustomItemState.gustJarFirstPersonActive) {
-        FirstPerson_Update(this, play);
-    }
-    s16 aimYaw = GustJar_GetAimAngle(play, this);
-    s16 aimPitch = gCustomItemState.gustJarFirstPersonActive ? FirstPerson_GetAimPitch(this) : 0;
-    Vec3f nozzle = this->actor.world.pos;
-    nozzle.y += 25.0f;
-    f32 horizontalDist = 35.0f * Math_CosS(aimPitch);
-    nozzle.x += Math_SinS(aimYaw) * horizontalDist;
-    nozzle.z += Math_CosS(aimYaw) * horizontalDist;
-    nozzle.y -= Math_SinS(aimPitch) * 35.0f;
-    if (!gCustomItemState.gustJarProjectileActive) {
-        gCustomItemState.gustJarProjPos = nozzle;
-    }
-    if (gCustomItemState.gustJarProjectileActive) {
-        gCustomItemState.gustJarTimer--;
-        f32 speed = 30.0f;
 
-        // Homing: if Z-targeting an actor, track it dynamically
-        if (Player_IsZTargeting(this) && this->focusActor != NULL && this->focusActor->update != NULL) {
-            Vec3f* targetPos = &this->focusActor->focus.pos;
-            s16 targetYaw = Math_Vec3f_Yaw(&gCustomItemState.gustJarProjPos, targetPos);
-            f32 dx = targetPos->x - gCustomItemState.gustJarProjPos.x;
-            f32 dy = targetPos->y - gCustomItemState.gustJarProjPos.y;
-            f32 dz = targetPos->z - gCustomItemState.gustJarProjPos.z;
-            f32 distXZ = sqrtf(SQ(dx) + SQ(dz));
-            s16 targetPitch = Math_Atan2S(dy, distXZ);
+// =============================================================================
+// Freezard-style cone VFX (smoke particles in cone shape)
+// =============================================================================
 
-            // Smooth homing - turn towards target
-            Math_SmoothStepToS(&gCustomItemState.gustJarProjYaw, targetYaw, 3, 0x1500, 0x100);
-            Math_SmoothStepToS(&gCustomItemState.gustJarProjPitch, targetPitch, 3, 0x800, 0x100);
-        }
+// Spawn smoke balls flowing TOWARD nozzle (suction cone)
+static void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw) {
+    // 6 particles per frame spread in a cone, moving toward nozzle
+    for (s32 i = 0; i < 6; i++) {
+        f32 dist = 80.0f + Rand_ZeroFloat(140.0f);
+        s16 spreadAngle = aimYaw + (s16)Rand_CenteredFloat(0x2000); // ~45° spread
+        f32 spreadY = Rand_CenteredFloat(30.0f);
 
-        f32 speedXZ = Math_CosS(gCustomItemState.gustJarProjPitch) * speed;
-        gCustomItemState.gustJarProjPos.x += Math_SinS(gCustomItemState.gustJarProjYaw) * speedXZ;
-        gCustomItemState.gustJarProjPos.z += Math_CosS(gCustomItemState.gustJarProjYaw) * speedXZ;
-        gCustomItemState.gustJarProjPos.y -= Math_SinS(gCustomItemState.gustJarProjPitch) * speed;
-        u8 type = gCustomItemState.gustJarAmmoType;
-        // Spawn trail effects using FX helper
-        FX_Type fxType = FX_DUST;
-        if (type == GUST_AMMO_FIRE)
-            fxType = FX_FIRE;
-        else if (type == GUST_AMMO_ICE)
-            fxType = FX_ICE;
-        else if (type == GUST_AMMO_SHOCK)
-            fxType = FX_SHOCK;
-        FX_SpawnProjectileTrail(play, &gCustomItemState.gustJarProjPos, fxType);
-        ColliderCylinder* collider = &gCustomItemState.gustJarCollider;
-        collider->dim.pos.x = (s16)gCustomItemState.gustJarProjPos.x;
-        collider->dim.pos.y = (s16)gCustomItemState.gustJarProjPos.y;
-        collider->dim.pos.z = (s16)gCustomItemState.gustJarProjPos.z;
-        u32 dmgFlags = 0;
-        u8 damage = 2;
-        u8 effect = 0;
-        if (type == GUST_AMMO_FIRE) {
-            dmgFlags = DMG_GU_FIRE;
-            effect = 1;
-        } else if (type == GUST_AMMO_ICE) {
-            dmgFlags = DMG_GU_ICE;
-            effect = 3;
-        } else if (type == GUST_AMMO_SHOCK) {
-            dmgFlags = DMG_GU_SHOCK;
-            effect = 2;
-        } else {
-            dmgFlags = DMG_GU_PHYSICAL;
-            effect = 0;
-        }
-        collider->info.toucher.dmgFlags = dmgFlags;
-        collider->info.toucher.damage = damage;
-        collider->info.toucher.effect = effect;
-        collider->base.atFlags |= AT_ON | AT_TYPE_PLAYER;
-        CollisionCheck_SetAT(play, &play->colChkCtx, &collider->base);
-        if (collider->base.atFlags & AT_HIT) {
-            Audio_PlaySoundGeneral(NA_SE_IT_EXPLOSION_FRAME, &gCustomItemState.gustJarProjPos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-            if (type == GUST_AMMO_SHOCK && collider->base.at != NULL && collider->base.at->update != NULL) {
-                Actor* hitActor = collider->base.at;
-                if (hitActor->category == ACTORCAT_ENEMY) {
-                    hitActor->freezeTimer = 40;
-                    Actor_SetColorFilter(hitActor, 0, 255, 0x2000, 40);
-                    Audio_PlayActorSound2(hitActor, NA_SE_EN_GOMA_JR_FREEZE);
-                }
-            }
-            gCustomItemState.gustJarProjectileActive = 0;
-            gCustomItemState.gustJarAmmoType = 0;
-            gCustomItemState.gustJarMode = 0;
-        }
-        if (gCustomItemState.gustJarTimer <= 0) {
-            gCustomItemState.gustJarProjectileActive = 0;
-            gCustomItemState.gustJarAmmoType = 0;
-            gCustomItemState.gustJarMode = 0;
-        }
-        return;
+        Vec3f pos = {
+            nozzle->x + Math_SinS(spreadAngle) * dist,
+            nozzle->y + spreadY,
+            nozzle->z + Math_CosS(spreadAngle) * dist,
+        };
+        // Velocity: toward nozzle (negative of outward direction)
+        f32 speed = 8.0f + Rand_ZeroFloat(4.0f);
+        Vec3f vel = {
+            -Math_SinS(spreadAngle) * speed,
+            Rand_CenteredFloat(1.0f),
+            -Math_CosS(spreadAngle) * speed,
+        };
+        Vec3f accel = { 0, 0.6f, 0 }; // Slight upward buoyancy (like Freezard)
+
+        Color_RGBA8 prim = { 195, 225, 235, 150 }; // Pale cyan (Freezard style)
+        Color_RGBA8 env = { 150, 200, 220, 100 };
+        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 12);
     }
-    if (gCustomItemState.gustJarMode == 3 && gCustomItemState.gustJarAmmoType != GUST_AMMO_NONE) {
-        if (play->gameplayFrames % 5 == 0) {
-            Vec3f sPos = nozzle;
-            sPos.x += Rand_CenteredFloat(6.0f);
-            sPos.z += Rand_CenteredFloat(6.0f);
-            Vec3f sVel = { 0, 1.5f, 0 };
-            Vec3f sAcc = { 0, 0.1f, 0 };
-            Color_RGBA8 col = { 150, 150, 150, 255 };
-            if (gCustomItemState.gustJarAmmoType == GUST_AMMO_FIRE) {
-                col.r = 255;
-                col.g = 50;
-                col.b = 0;
-            } else if (gCustomItemState.gustJarAmmoType == GUST_AMMO_ICE) {
-                col.r = 0;
-                col.g = 200;
-                col.b = 255;
-            } else if (gCustomItemState.gustJarAmmoType == GUST_AMMO_SHOCK) {
-                col.r = 255;
-                col.g = 255;
-                col.b = 0;
-            }
-            func_8002836C(play, &sPos, &sVel, &sAcc, &col, &col, 40, 10, 8);
-        }
-        if (btnPressed) {
-            gCustomItemState.gustJarProjectileActive = 1;
-            gCustomItemState.gustJarProjPos = nozzle;
-            gCustomItemState.gustJarProjYaw = aimYaw;
-            gCustomItemState.gustJarProjPitch = aimPitch;
-            gCustomItemState.gustJarTimer = 50;
-            gCustomItemState.gustJarMode = 1;
-            Player_PlaySfx(this, NA_SE_PL_MAGIC_WIND_NORMAL);
-            if (!gCustomItemState.gustJarFirstPersonActive) {
-                FirstPerson_Init(this, play);
-                gCustomItemState.gustJarFirstPersonActive = 1;
-            }
-        }
-        return;
+}
+
+// Spawn smoke balls flowing AWAY from nozzle (blow cone), colored by element
+static void GustJar_SpawnBlowVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw, u8 element) {
+    const GustElementColor* col = &sGustElementColors[element];
+
+    for (s32 i = 0; i < 6; i++) {
+        s16 spreadAngle = aimYaw + (s16)Rand_CenteredFloat(0x2000);
+        f32 startDist = 10.0f + Rand_ZeroFloat(20.0f);
+
+        Vec3f pos = {
+            nozzle->x + Math_SinS(spreadAngle) * startDist,
+            nozzle->y + Rand_CenteredFloat(10.0f),
+            nozzle->z + Math_CosS(spreadAngle) * startDist,
+        };
+        // Velocity: away from nozzle (Freezard blow direction)
+        f32 speed = 15.0f + Rand_ZeroFloat(5.0f);
+        Vec3f vel = {
+            Math_SinS(spreadAngle) * speed,
+            Rand_CenteredFloat(2.0f) - 1.0f,
+            Math_CosS(spreadAngle) * speed,
+        };
+        Vec3f accel = { 0, 0.6f, 0 };
+
+        func_8002836C(play, &pos, &vel, &accel, (Color_RGBA8*)&col->prim, (Color_RGBA8*)&col->env, 200, 25, 15);
     }
-    static u8 wasSuctionActive = 0;
-    u8 isSuctionActive = btnHeld && !btnPressed;
-    if (wasSuctionActive && !btnHeld) {
-        GustJar_ClearScaleCache();
-        if (gCustomItemState.gustJarMode == 2) {
-            gCustomItemState.gustJarMode = 1;
-        }
-        wasSuctionActive = 0;
-        return;
+}
+
+// =============================================================================
+// Absorb Mode — pull actors + AT collider damage + shrink + Freezard suction VFX
+// =============================================================================
+
+static void GustJar_Absorb(Player* player, PlayState* play, Vec3f* nozzle, s16 aimYaw) {
+    gjHeatTimer++;
+
+    // Looping wind sound
+    func_8002F974(&player->actor, NA_SE_EV_WIND_TRAP - SFX_FLAG);
+
+    // Freezard-style suction VFX (cone of particles toward nozzle)
+    GustJar_SpawnSuckVFX(play, nozzle, aimYaw);
+
+    // Position AT collider at nozzle for damage
+    ColliderCylinder* col = &gjCollider;
+    col->dim.pos.x = (s16)nozzle->x;
+    col->dim.pos.y = (s16)nozzle->y;
+    col->dim.pos.z = (s16)nozzle->z;
+    col->base.atFlags |= AT_ON | AT_TYPE_PLAYER;
+    CollisionCheck_SetAT(play, &play->colChkCtx, &col->base);
+    if (col->base.atFlags & AT_HIT) {
+        col->base.atFlags &= ~AT_HIT;
     }
-    if (isSuctionActive) {
-        if (gCustomItemState.gustJarMode == 1) {
-            gCustomItemState.gustJarMode = 2;
-        }
-        // Free use - no magic cost
-        func_8002F974(&this->actor, NA_SE_EV_WIND_TRAP - SFX_FLAG);
-        GustJar_SpawnSuctionFX(play, &nozzle, aimYaw, aimPitch);
-        wasSuctionActive = 1;
-        // Use squared distance for initial check to avoid sqrtf
-        f32 rangeSq = SQ(GUST_RANGE_MAX);
-        ActorCategory categories[] = { ACTORCAT_ENEMY, ACTORCAT_PROP };
-        for (int c = 0; c < 2; c++) {
-            Actor* actor = play->actorCtx.actorLists[categories[c]].head;
-            while (actor != NULL) {
-                if (actor->update != NULL) {
-                    // Quick squared distance check first
-                    f32 dx = nozzle.x - actor->world.pos.x;
-                    f32 dz = nozzle.z - actor->world.pos.z;
-                    f32 distXZSq = SQ(dx) + SQ(dz);
-                    if (distXZSq > rangeSq) {
-                        actor = actor->next;
-                        continue;
-                    }
-                    // Calculate full distance only if passed initial check
-                    f32 dist = sqrtf(distXZSq + SQ(nozzle.y - actor->world.pos.y));
-                    f32 dy = fabsf(nozzle.y - actor->world.pos.y);
-                    if (dist < GUST_RANGE_MAX && dy < LINK_HEIGHT_HITBOX) {
-                        u8 ammo = GustJar_GetAmmoType(actor);
-                        if (ammo != GUST_AMMO_NONE) {
-                            if (ammo == GUST_AMMO_BREAK && dist < GUST_RANGE_SHRINK) {
-                                Vec3f breakPos = actor->world.pos;
-                                Vec3f dustVel = { 0, 2.0f, 0 };
-                                Vec3f dustAccel = { 0, -0.5f, 0 };
-                                Color_RGBA8 dustCol = { 180, 150, 120, 255 };
-                                // Spawn 4 dust particles
-                                for (int i = 0; i < 4; i++) {
-                                    Vec3f particlePos = breakPos;
-                                    particlePos.x += Rand_CenteredFloat(15.0f);
-                                    particlePos.y += Rand_CenteredFloat(10.0f);
-                                    particlePos.z += Rand_CenteredFloat(15.0f);
-                                    Vec3f particleVel = dustVel;
-                                    particleVel.x += Rand_CenteredFloat(8.0f);
-                                    particleVel.y += Rand_ZeroOne() * 4.0f;
-                                    particleVel.z += Rand_CenteredFloat(8.0f);
-                                    func_8002836C(play, &particlePos, &particleVel, &dustAccel, &dustCol, &dustCol, 200,
-                                                  40, 15);
-                                }
-                                Audio_PlaySoundGeneral(NA_SE_EV_POT_BROKEN, &breakPos, 4, &gSfxDefaultFreqAndVolScale,
-                                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-                                if (actor->id == ACTOR_OBJ_TSUBO) {
-                                    if (Rand_ZeroOne() > 0.5f) {
-                                        Vec3f dropPos = breakPos;
-                                        dropPos.y = actor->floorHeight + 10.0f;
-                                        s16 dropType = (Rand_ZeroOne() > 0.5f) ? ITEM00_RUPEE_GREEN : ITEM00_HEART;
-                                        Item_DropCollectible(play, &dropPos, dropType);
-                                    }
-                                } else if (actor->id == ACTOR_EN_KUSA) {
-                                    if (Rand_ZeroOne() > 0.7f) {
-                                        Vec3f dropPos = breakPos;
-                                        dropPos.y = actor->floorHeight + 10.0f;
-                                        Item_DropCollectible(play, &dropPos, ITEM00_RUPEE_GREEN);
-                                    }
-                                }
-                                Actor_Kill(actor);
-                                actor = actor->next;
-                                continue;
-                            }
-                            if (dist < GUST_RANGE_CAPTURE) {
-                                gCustomItemState.gustJarMode = 3;
-                                gCustomItemState.gustJarAmmoType = ammo;
-                                Audio_PlaySoundGeneral(NA_SE_SY_METRONOME, &nozzle, 4, &gSfxDefaultFreqAndVolScale,
-                                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-                                GustJar_HandleCaptureDrop(play, this, actor);
-                                Actor_Kill(actor);
-                                if (!gCustomItemState.gustJarFirstPersonActive) {
-                                    FirstPerson_Init(this, play);
-                                    gCustomItemState.gustJarFirstPersonActive = 1;
-                                }
-                                return;
-                            }
-                            // Reuse dx/dz already calculated for suction force
+
+    // Pull + shrink actors toward nozzle
+    f32 rangeSq = SQ(GUST_RANGE_MAX);
+    f32 shrinkStart = 120.0f; // Start shrinking at this distance
+    ActorCategory categories[] = { ACTORCAT_ENEMY, ACTORCAT_PROP };
+    for (s32 c = 0; c < 2; c++) {
+        Actor* actor = play->actorCtx.actorLists[categories[c]].head;
+        while (actor != NULL) {
+            Actor* next = actor->next;
+            if (actor->update != NULL && GustJar_IsSuckable(actor)) {
+                f32 dx = nozzle->x - actor->world.pos.x;
+                f32 dz = nozzle->z - actor->world.pos.z;
+                f32 distXZSq = SQ(dx) + SQ(dz);
+
+                if (distXZSq < rangeSq) {
+                    f32 dy = fabsf(nozzle->y - actor->world.pos.y);
+                    if (dy < LINK_HEIGHT_HITBOX) {
+                        f32 norm = sqrtf(distXZSq);
+                        if (norm > 1.0f) {
+                            // Pull toward nozzle
                             f32 strength = 8.0f;
-                            f32 norm = sqrtf(distXZSq);
-                            if (norm > 0.1f) {
-                                f32 invNorm = strength / norm;
-                                actor->world.pos.x += dx * invNorm;
-                                actor->world.pos.z += dz * invNorm;
-                                // Lift actor slightly if on ground
-                                if (actor->bgCheckFlags & BGCHECKFLAG_GROUND)
-                                    actor->world.pos.y += 2.0f;
-                            }
-                            if (dist < GUST_RANGE_SHRINK) {
-                                GustJar_SaveOriginalScale(actor);
-                                Vec3f* origScale = GustJar_GetOriginalScale(actor);
-                                if (origScale != NULL) {
-                                    f32 scaleFactor =
-                                        (dist - GUST_RANGE_CAPTURE) / (GUST_RANGE_SHRINK - GUST_RANGE_CAPTURE);
-                                    if (scaleFactor < 0.2f)
-                                        scaleFactor = 0.2f;
-                                    if (scaleFactor > 1.0f)
-                                        scaleFactor = 1.0f;
-                                    actor->scale.x = origScale->x * scaleFactor;
-                                    actor->scale.y = origScale->y * scaleFactor;
-                                    actor->scale.z = origScale->z * scaleFactor;
-                                }
+                            f32 invNorm = strength / norm;
+                            actor->world.pos.x += dx * invNorm;
+                            actor->world.pos.z += dz * invNorm;
+                            if (actor->bgCheckFlags & BGCHECKFLAG_GROUND)
+                                actor->world.pos.y += 2.0f;
+
+                            // Shrink as they get closer
+                            if (norm < shrinkStart) {
+                                f32 factor = norm / shrinkStart;
+                                if (factor < 0.15f)
+                                    factor = 0.15f;
+                                GustJar_ShrinkActor(actor, factor);
                             }
                         }
                     }
                 }
-                actor = actor->next;
+            }
+            actor = next;
+        }
+    }
+
+    // Check overheat → transition to blow
+    if (gjHeatTimer >= GUST_HEAT_MAX) {
+        GustJar_ClearScaleCache();
+        gjMode = GUST_MODE_BLOW;
+        gjBlowActive = 1;
+        gjBlowTimer = GUST_BLOW_DURATION;
+        Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
+        Player_PlaySfx(player, NA_SE_PL_MAGIC_WIND_NORMAL);
+    }
+}
+
+// =============================================================================
+// Blow Mode — elemental cone VFX + strong push + collider sweep for env effects
+// =============================================================================
+
+// Element → AT collider dmgFlags mapping (for triggering torches, sun switches, etc.)
+static u32 GustJar_GetElementDmgFlags(u8 element) {
+    switch (element) {
+        case GUST_ELEMENT_FIRE:
+            return 0x00020800; // DMG_ARROW_FIRE | DMG_MAGIC_FIRE → lights torches
+        case GUST_ELEMENT_ICE:
+            return 0x00041000; // DMG_ARROW_ICE | DMG_MAGIC_ICE
+        case GUST_ELEMENT_LIGHT:
+            return 0x00282000; // DMG_ARROW_LIGHT | DMG_MAGIC_LIGHT | DMG_MIR_RAY → sun switches
+        case GUST_ELEMENT_SHADOW:
+            return 0x00020000; // DMG_MAGIC_FIRE (shadow burns)
+        case GUST_ELEMENT_SPIRIT:
+            return 0x00080000; // DMG_MAGIC_LIGHT
+        case GUST_ELEMENT_WIND:
+        default:
+            return 0x00000048; // DMG_HAMMER_SWING | DMG_EXPLOSIVE (base push)
+    }
+}
+
+// Element effects on regular enemies (NOT bosses — bosses use AT collider dmgFlags natively).
+// Twinrova/Ganon stuns happen via the AT collider sweep with correct dmgFlags,
+// not through freezeTimer (which they ignore).
+static void GustJar_ApplyElementEffect(Actor* actor, PlayState* play, u8 element) {
+    // Only affect regular enemies, not bosses
+    if (actor->category != ACTORCAT_ENEMY)
+        return;
+
+    switch (element) {
+        case GUST_ELEMENT_SHADOW:
+            // Paralyze all small/medium enemies
+            if (actor->colChkInfo.health <= 12) {
+                actor->freezeTimer = 60;
+                Actor_SetColorFilter(actor, 0x8000, 255, 0x2000, 60);
+            }
+            break;
+        case GUST_ELEMENT_FIRE:
+            // Burn enemies
+            actor->freezeTimer = 30;
+            Actor_SetColorFilter(actor, 0x4000, 255, 0x2000, 30);
+            break;
+        case GUST_ELEMENT_ICE:
+            // Freeze enemies
+            actor->freezeTimer = 80;
+            Actor_SetColorFilter(actor, 0, 255, 0x2000, 80);
+            break;
+        case GUST_ELEMENT_LIGHT:
+            // Stun enemies with light
+            actor->freezeTimer = 50;
+            Actor_SetColorFilter(actor, 0, 255, 0x2000, 50);
+            break;
+        case GUST_ELEMENT_SPIRIT:
+            // Spirit stun (orange tint)
+            actor->freezeTimer = 60;
+            Actor_SetColorFilter(actor, 0x4000, 200, 0x2000, 60);
+            break;
+        default:
+            break;
+    }
+}
+
+static void GustJar_Blow(Player* player, PlayState* play, Vec3f* nozzle, s16 aimYaw) {
+    gjBlowTimer--;
+
+    // Freezard-style blow VFX
+    GustJar_SpawnBlowVFX(play, nozzle, aimYaw, gjElement);
+
+    // Wind sound
+    func_8002F974(&player->actor, NA_SE_EV_WIND_TRAP - SFX_FLAG);
+
+    // === AT COLLIDER SWEEP along cone for environmental effects ===
+    // Place collider at 3 positions along the cone so torches/sun switches get hit
+    ColliderCylinder* col = &gjCollider;
+    u32 elemDmgFlags = GustJar_GetElementDmgFlags(gjElement);
+    col->info.toucher.dmgFlags = elemDmgFlags;
+    col->info.toucher.damage = 0; // VFX only, no HP damage
+    col->info.toucher.effect = 0;
+    col->base.atFlags |= AT_ON | AT_TYPE_PLAYER;
+
+    // Sweep 3 positions: near(40), mid(100), far(160) along aim direction
+    static const f32 sweepDists[] = { 40.0f, 100.0f, 160.0f };
+    for (s32 s = 0; s < 3; s++) {
+        col->dim.pos.x = (s16)(nozzle->x + Math_SinS(aimYaw) * sweepDists[s]);
+        col->dim.pos.y = (s16)(nozzle->y);
+        col->dim.pos.z = (s16)(nozzle->z + Math_CosS(aimYaw) * sweepDists[s]);
+        col->dim.radius = 40; // Wider than default
+        CollisionCheck_SetAT(play, &play->colChkCtx, &col->base);
+    }
+    if (col->base.atFlags & AT_HIT) {
+        col->base.atFlags &= ~AT_HIT;
+    }
+
+    // === STRONG PUSH on all ACTORCAT_ENEMY in cone (NOT bosses) ===
+    f32 pushForce = (gjElement == GUST_ELEMENT_WIND) ? 40.0f : 20.0f;
+    f32 rangeSq = SQ(GUST_RANGE_BLOW);
+
+    Actor* actor = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
+    while (actor != NULL) {
+        Actor* next = actor->next;
+        if (actor->update != NULL) {
+            f32 dx = actor->world.pos.x - nozzle->x;
+            f32 dz = actor->world.pos.z - nozzle->z;
+            f32 distSq = SQ(dx) + SQ(dz);
+
+            if (distSq < rangeSq && distSq > 1.0f) {
+                s16 angleToActor = Math_Atan2S(dx, dz);
+                s16 angleDiff = angleToActor - aimYaw;
+                if (angleDiff < 0)
+                    angleDiff = -angleDiff;
+                if (angleDiff > 0x7FFF)
+                    angleDiff = (s16)(0xFFFF - angleDiff);
+
+                if (angleDiff < GUST_BLOW_CONE_HALF_ANGLE) {
+                    f32 dist = sqrtf(distSq);
+
+                    // Strong push — direct position displacement + velocity
+                    f32 force = pushForce * (1.0f - dist / GUST_RANGE_BLOW);
+                    if (force < 2.0f)
+                        force = 2.0f;
+                    actor->world.pos.x += (dx / dist) * force;
+                    actor->world.pos.z += (dz / dist) * force;
+                    actor->velocity.x += (dx / dist) * force * 0.5f;
+                    actor->velocity.z += (dz / dist) * force * 0.5f;
+                    actor->velocity.y += 5.0f;
+                    actor->bgCheckFlags &= ~BGCHECKFLAG_GROUND; // Lift off ground
+
+                    // Element-specific stun/freeze
+                    GustJar_ApplyElementEffect(actor, play, gjElement);
+                }
             }
         }
+        actor = next;
+    }
+
+    // Blow timer expired
+    if (gjBlowTimer <= 0) {
+        gjMode = GUST_MODE_IDLE;
+        gjBlowActive = 0;
+        gjHeatTimer = 0;
+        gjCooldownTimer = GUST_COOLDOWN;
+        Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
+    }
+}
+
+// Element selection is handled in Kaleido (z_kaleido_item.c), not during gameplay.
+
+// =============================================================================
+// Draw
+// =============================================================================
+
+void CustomItems_DrawGustJar(Player* this, PlayState* play) {
+    GustJarPot_Draw(this, play);
+}
+
+// =============================================================================
+// Main Handler
+// =============================================================================
+
+void Handle_GustJar(Player* this, PlayState* play) {
+    // Ensure collider is initialized
+    if (gjCollider.base.shape != COLSHAPE_CYLINDER) {
+        Player_InitGustJarIA(play, this);
+    }
+
+    ItemInputState input;
+    static s8 prevInvincibility = 0;
+    ItemInput_Update(&input, ITEM_GUST_JAR, this, play);
+
+    if (!input.wasEquipped) {
+        if (gjEquipped)
+            GustJar_Unequip(play, this);
+        return;
+    }
+    if (ItemInput_IsBlocked(this, play)) {
+        if (gjEquipped)
+            GustJar_Unequip(play, this);
+        return;
+    }
+
+    gjButtonMask = input.equippedButton;
+
+    if (ItemInput_CheckDamage(this, &prevInvincibility)) {
+        GustJar_Unequip(play, this);
+        return;
+    }
+
+    u8 btnPressed = input.isPressed;
+    u8 btnHeld = input.isHeld;
+
+    if (!gjEquipped) {
+        if (btnPressed) {
+            GustJar_Equip(play, this);
+            if (!gjFirstPerson)
+                return;
+        } else {
+            return;
+        }
+    }
+
+    // C-Up toggles aim mode
+    if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_CUP)) {
+        if (gjAimMode == 2) {
+            if (Player_IsZTargeting(this)) {
+                gjAimMode = 1;
+            } else {
+                gjAimMode = 0;
+                FirstPerson_Init(this, play);
+                gjFirstPerson = 1;
+            }
+        } else {
+            if (gjFirstPerson) {
+                FirstPerson_Exit(this, play);
+                gjFirstPerson = 0;
+            }
+            gjAimMode = 2;
+        }
+        ItemEquip_PlayEquipSFX(play, this);
+        return;
+    }
+
+    // Other button pressed → unequip
+    if (input.otherButtonPressed) {
+        GustJar_Unequip(play, this);
+        return;
+    }
+
+    // Auto-switch aim modes based on Z-targeting
+    u8 isZTargeting = Player_IsZTargeting(this);
+    if (gjAimMode == 0 && isZTargeting) {
+        FirstPerson_Exit(this, play);
+        gjFirstPerson = 0;
+        gjAimMode = 1;
+    } else if (gjAimMode == 1 && !isZTargeting) {
+        FirstPerson_Init(this, play);
+        gjFirstPerson = 1;
+        gjAimMode = 0;
+    }
+
+    // First-person update
+    if (gjAimMode == 0 && gjFirstPerson) {
+        FirstPerson_Update(this, play);
+    }
+
+    // Calculate nozzle position
+    s16 aimYaw = GustJar_GetAimYaw(play, this);
+    s16 aimPitch = gjFirstPerson ? FirstPerson_GetAimPitch(this) : 0;
+    Vec3f nozzle = this->actor.world.pos;
+    nozzle.y += 25.0f;
+    f32 hDist = 35.0f * Math_CosS(aimPitch);
+    nozzle.x += Math_SinS(aimYaw) * hDist;
+    nozzle.z += Math_CosS(aimYaw) * hDist;
+    nozzle.y -= Math_SinS(aimPitch) * 35.0f;
+
+    // Cooldown tick
+    if (gjCooldownTimer > 0) {
+        gjCooldownTimer--;
+    }
+
+    // Heat decay when idle (not absorbing)
+    if (gjMode == GUST_MODE_IDLE && gjHeatTimer > 0) {
+        gjHeatTimer -= 2;
+        if (gjHeatTimer < 0)
+            gjHeatTimer = 0;
+    }
+
+    // ===== BLOW MODE (automatic, runs until timer expires) =====
+    if (gjMode == GUST_MODE_BLOW) {
+        GustJar_Blow(this, play, &nozzle, aimYaw);
+        return;
+    }
+
+    // ===== ABSORB MODE (hold C-button) =====
+    static u8 wasHeld = 0;
+    u8 isHeld = btnHeld && !btnPressed;
+
+    if (wasHeld && !btnHeld) {
+        // Released button → back to idle
+        if (gjMode == GUST_MODE_ABSORB) {
+            GustJar_ClearScaleCache();
+            gjMode = GUST_MODE_IDLE;
+        }
+        wasHeld = 0;
+        return;
+    }
+
+    if (isHeld && gjCooldownTimer <= 0) {
+        if (gjMode == GUST_MODE_IDLE) {
+            gjMode = GUST_MODE_ABSORB;
+        }
+        if (gjMode == GUST_MODE_ABSORB) {
+            GustJar_Absorb(this, play, &nozzle, aimYaw);
+        }
+        wasHeld = 1;
     }
 }

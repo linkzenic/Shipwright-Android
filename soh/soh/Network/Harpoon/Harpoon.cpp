@@ -414,11 +414,10 @@ void Harpoon::SendPacket_PlayerUpdate() {
             payload["ciBeetleState"] = ci->beetleState;
         }
         if (ciFlags & CI_FLAG_GUSTJAR) {
-            payload["ciGustJarProjPos"] = { ci->gustJarProjPos.x, ci->gustJarProjPos.y, ci->gustJarProjPos.z };
-            payload["ciGustJarProjActive"] = ci->gustJarProjectileActive;
-            payload["ciGustJarAmmoType"] = ci->gustJarAmmoType;
             payload["ciGustJarMode"] = ci->gustJarMode;
-            payload["ciGustJarProjYaw"] = ci->gustJarProjYaw;
+            payload["ciGustJarElement"] = ci->gustJarElement;
+            payload["ciGustJarBlowActive"] = ci->gustJarBlowActive;
+            payload["ciGustJarHeatTimer"] = ci->gustJarHeatTimer;
         }
         if (ciFlags & CI_FLAG_FIRE_ROD) {
             payload["ciFireRodProjActive"] = ci->fireRodProjActive;
@@ -662,12 +661,10 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
         client.ciBeetleState = payload.value("ciBeetleState", (u8)0);
     }
     if (ciFlags & CI_FLAG_GUSTJAR) {
-        auto gp = payload.value("ciGustJarProjPos", std::vector<float>{ 0, 0, 0 });
-        client.ciGustJarProjPos = { gp[0], gp[1], gp[2] };
-        client.ciGustJarProjActive = payload.value("ciGustJarProjActive", (u8)0);
-        client.ciGustJarAmmoType = payload.value("ciGustJarAmmoType", (u8)0);
         client.ciGustJarMode = payload.value("ciGustJarMode", (u8)0);
-        client.ciGustJarProjYaw = payload.value("ciGustJarProjYaw", (s16)0);
+        client.ciGustJarElement = payload.value("ciGustJarElement", (u8)0);
+        client.ciGustJarBlowActive = payload.value("ciGustJarBlowActive", (u8)0);
+        client.ciGustJarHeatTimer = payload.value("ciGustJarHeatTimer", (s16)0);
     }
     if (ciFlags & CI_FLAG_FIRE_ROD) {
         client.ciFireRodProjActive = payload.value("ciFireRodProjActive", (u8)0);

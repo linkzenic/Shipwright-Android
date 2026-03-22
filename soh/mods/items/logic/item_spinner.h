@@ -55,7 +55,7 @@
 #define sAngle gCustomItemState.spinnerWallBumpTimer
 #define sTimer gCustomItemState.globalCooldownTimer
 #define sAtkTimer gCustomItemState.spinnerSpinAttackTimer
-#define sTarget gCustomItemState.gustJarTarget
+#define sTarget gCustomItemState.sharedTargetActor
 #define sHomingTime gCustomItemState.sharedProjectilePos.y
 
 // Breakable rock actor IDs - add/remove as needed

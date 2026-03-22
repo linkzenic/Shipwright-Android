@@ -123,10 +123,10 @@ void MagicSoul_DiamondUpdate(Actor* thisx, PlayState* play) {
     func_800AA000(400.0f, 200, 30, 100);
     Audio_PlayActorSound2(thisx, NA_SE_EV_TRIFORCE_FLASH);
 
-    // Activate fairy mode directly (skip casting/warp-in phases)
+    // Activate Ivan possess mode (skip casting/warp — spawn real EnPartner)
     gCustomItemState.hyliasGraceActive = 1;
-    gCustomItemState.hyliasGraceState = 3;    // HGRACE_STATE_FAIRY
-    gCustomItemState.hyliasGraceTimer = 1200; // HGRACE_SW97_DURATION (20 seconds)
+    gCustomItemState.hyliasGraceState = 5; // HGRACE_STATE_IVAN (possess real Ivan)
+    gCustomItemState.hyliasGraceTimer = 0; // Toggle mode — no timer
     gCustomItemState.hyliasGraceForcedBySpell = 1;
     gCustomItemState.hyliasGraceSubPhase = 0;
     gCustomItemState.hyliasGraceFairy = NULL;

@@ -37,6 +37,7 @@ extern "C" {
 #include "objects/object_tw/object_tw.h"
 #include "objects/object_ganon2/object_ganon2.h"
 #include "objects/object_gi_shield_1/object_gi_shield_1.h"
+#include "objects/object_gi_shield_3/object_gi_shield_3.h"
 #include "objects/object_gi_hookshot/object_gi_hookshot.h"
 #include "objects/object_tk/object_tk.h"
 
@@ -1552,6 +1553,42 @@ Gfx gRandoSomariaCaneDL[] = {
     gsSPDisplayList(g_somaria_cane_give_dl),
     gsSPEndDisplayList(),
 };
+
+// Blue Byrna cane materials for GI draw
+static Gfx gfx_byrna_gi_mat_body[] = {
+    gsSPLoadGeometryMode(G_SHADE | G_FOG | G_CULL_BACK | G_ZBUFFER | G_SHADING_SMOOTH | G_LIGHTING),
+    gsDPPipeSync(),
+    gsDPSetCombineLERP(0, 0, 0, SHADE, 0, 0, 0, 1, COMBINED, 0, PRIMITIVE, 0, 0, 0, 0, COMBINED),
+    gsSPSetOtherMode(G_SETOTHERMODE_H, 4, 20,
+                     G_TD_CLAMP | G_CYC_2CYCLE | G_AD_NOISE | G_CD_MAGICSQ | G_TP_PERSP | G_TL_TILE | G_TF_BILERP |
+                         G_CK_NONE | G_PM_NPRIMITIVE | G_TT_NONE | G_TC_FILT),
+    gsSPSetOtherMode(G_SETOTHERMODE_L, 0, 32, G_RM_FOG_SHADE_A | G_AC_NONE | G_ZS_PIXEL | G_RM_AA_ZB_OPA_SURF2),
+    gsSPTexture(65535, 65535, 0, 0, 1),
+    gsDPSetPrimColor(0, 0, 41, 80, 200, 255),
+    gsSPEndDisplayList(),
+};
+static Gfx gfx_byrna_gi_mat_color[] = {
+    gsSPLoadGeometryMode(G_SHADE | G_FOG | G_CULL_BACK | G_ZBUFFER | G_SHADING_SMOOTH | G_LIGHTING),
+    gsDPPipeSync(),
+    gsDPSetCombineLERP(0, 0, 0, SHADE, 0, 0, 0, 1, COMBINED, 0, PRIMITIVE, 0, 0, 0, 0, COMBINED),
+    gsSPSetOtherMode(G_SETOTHERMODE_H, 4, 20,
+                     G_TD_CLAMP | G_CYC_2CYCLE | G_AD_NOISE | G_CD_MAGICSQ | G_TP_PERSP | G_TL_TILE | G_TF_BILERP |
+                         G_CK_NONE | G_PM_NPRIMITIVE | G_TT_NONE | G_TC_FILT),
+    gsSPSetOtherMode(G_SETOTHERMODE_L, 0, 32, G_RM_FOG_SHADE_A | G_AC_NONE | G_ZS_PIXEL | G_RM_AA_ZB_OPA_SURF2),
+    gsSPTexture(65535, 65535, 0, 0, 1),
+    gsDPSetPrimColor(0, 0, 80, 140, 255, 255),
+    gsSPEndDisplayList(),
+};
+Gfx gRandoByrnaCaneGiveDL[] = {
+    gsDPPipeSync(),
+    gsSPClearGeometryMode(G_CULL_BACK | G_FOG | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR),
+    gsSPSetGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH | G_LIGHTING),
+    gsSPDisplayList(gfx_byrna_gi_mat_body),
+    gsSPDisplayList(gfx_somaria_cane_tri_give_0),
+    gsSPDisplayList(gfx_byrna_gi_mat_color),
+    gsSPDisplayList(gfx_somaria_cane_tri_give_1),
+    gsSPEndDisplayList(),
+};
 Gfx gRandoMogmamittsDL[] = {
     gsSPDisplayList(gMogmaMittsGiveDL),
     gsSPEndDisplayList(),
@@ -1735,6 +1772,77 @@ void Randomizer_DrawStasis(PlayState* play, GetItemEntry* getItemEntry) {
 
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoCryonisDL, 2.5f);
+}
+
+// =============================================================================
+// Extended Equipment Get-Item Draw
+// =============================================================================
+
+void Randomizer_DrawExtCaneOfByrna(PlayState* play, GetItemEntry* getItemEntry) {
+    // Blue Byrna cane (same mesh as Somaria, blue materials baked in DL)
+    DrawCustomItemDiamond(play, gRandoByrnaCaneGiveDL, 0.25f);
+}
+
+void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtDrillshaft(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtDivineShield(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtGerudoScimitar(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtShieldOfIkana(PlayState* play, GetItemEntry* getItemEntry) {
+    // MM Mirror Shield GI model (from OOT's object_gi_shield_3)
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    s16 rotation = play->gameplayFrames * 0x2;
+    Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gGiMirrorShieldDL);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+void Randomizer_DrawExtMagicCape(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtPendingTunic(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtChampionsTunic(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtPegasusAnklet(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
+}
+
+void Randomizer_DrawExtPendantOfMemories(PlayState* play, GetItemEntry* getItemEntry) {
+    // MM Pendant of Memories GI model (from mm.o2r)
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    s16 rotation = play->gameplayFrames * 0x2;
+    Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)"__OTR__objects/object_gi_reserve_c_01/gGiPendantOfMemoriesDL");
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+void Randomizer_DrawExtWaterDragonScale(PlayState* play, GetItemEntry* getItemEntry) {
+    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 
 // =============================================================================

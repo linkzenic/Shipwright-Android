@@ -89,8 +89,8 @@
 #define bcCharge gCustomItemState.timer1                 // s16: Charge frames (0 to CHARGE_MAX)
 #define bcSpinAngle gCustomItemState.somariaCooldown     // s16: Current spin angle (binary angle)
 #define bcThrowDist gCustomItemState.globalCooldownTimer // s32: Remaining throw distance
-#define bcThrowYaw gCustomItemState.gustJarProjYaw       // s16: Throw direction yaw
-#define bcThrowPitch gCustomItemState.gustJarProjPitch   // s16: Throw direction pitch
+#define bcThrowYaw gCustomItemState.sharedYaw            // s16: Throw direction yaw
+#define bcThrowPitch gCustomItemState.sharedPitch        // s16: Throw direction pitch
 #define bcBallPos gCustomItemState.sharedProjectilePos   // Vec3f: Ball world position
 #define bcCollider gCustomItemState.ballAndChainCollider // ColliderCylinder: Damage collider
 #define bcFirstPerson gCustomItemState.ballAndChainFirstPersonActive // u8: First person aim mode

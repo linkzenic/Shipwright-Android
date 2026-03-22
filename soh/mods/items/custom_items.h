@@ -1,7 +1,7 @@
 /**
  * custom_items.h - Custom items system for OOT
  *
- * Item IDs: 0x9C - 0xB5
+ * Item IDs: 0x9C - 0xB6
  * Global state: CustomItemState tracks all item behavior
  */
 
@@ -19,7 +19,7 @@ extern "C" {
 #define CUSTOM_BLOCKING_STATE1_FLAGS \
     (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS)
 
-#define GUSTJAR_MAX_TRACKED 16
+// (GUSTJAR_MAX_TRACKED removed — no scale cache system)
 
 // Item IDs (custom items start at 0x9D, develop's ITEM_ROCS_FEATHER is at 0x9C)
 #define ITEM_ROCS_FEATHER_SKIJER 0x9D
@@ -46,6 +46,7 @@ extern "C" {
 #define ITEM_SHOVEL 0xB2
 #define ITEM_MINISH_CAP 0xB3
 #define ITEM_PENDING_2 0xB4
+#define ITEM_CHATEAU_ROMANI 0xB5
 #define ITEM_PENDING_3 0xB6
 
 /**
@@ -81,28 +82,21 @@ typedef struct {
     s16 spinnerWallBumpTimer;
 
     // Gust Jar
-    s32 gustJarState;
-    Actor* gustJarTarget;
-    u8 gustJarMode;
-    u8 gustJarAmmoType;
-    u8 gustJarProjectileActive;
-    Vec3f gustJarProjPos;
-    s16 gustJarProjYaw;
-    s16 gustJarProjPitch;
-    s16 gustJarTimer;
+    u8 gustJarEquipped;
+    u8 gustJarMode;           // 0=off, 1=idle, 2=absorb, 3=blow, 4=element_select
+    u8 gustJarElement;        // GustJarElement enum (0-5)
+    u8 gustJarBlowActive;     // Blow mode active flag
+    s16 gustJarHeatTimer;     // Absorb heat (0→GUST_HEAT_MAX)
+    s16 gustJarBlowTimer;     // Blow duration countdown (GUST_BLOW_DURATION→0)
+    s16 gustJarCooldownTimer; // Post-overheat cooldown
+    s16 gustJarTimer;         // General-purpose timer
     ColliderCylinder gustJarCollider;
     u8 gustJarFirstPersonActive;
     u8 gustJarAimMode;
     s16 gustJarPrevCameraMode;
-    u8 gustJarEquipped;
     u16 gustJarButtonMask;
     s8 gustJarPrevInvincibility;
     Actor* gustJarPotActor;
-    struct {
-        Actor* actor;
-        Vec3f originalScale;
-    } gustJarScaleCache[GUSTJAR_MAX_TRACKED];
-    u8 gustJarScaleCacheCount;
 
     // Shovel
     u8 shovelActive;
@@ -375,8 +369,11 @@ typedef struct {
     u8 minishCapShrinking; // 1 = shrinking player during departure fade
     u8 minishCapGrowing;   // 1 = snap to start scale, 2 = growing to normal
 
-    // Shared
+    // Shared (reused by items that never run simultaneously)
     Vec3f sharedProjectilePos;
+    Actor* sharedTargetActor; // Used by spinner, etc.
+    s16 sharedYaw;            // Used by ball & chain throw, etc.
+    s16 sharedPitch;          // Used by ball & chain throw, etc.
 } CustomItemState;
 
 extern CustomItemState gCustomItemState;
@@ -414,10 +411,9 @@ typedef struct {
 
     // Gust Jar
     u8 gustJarMode;
-    u8 gustJarAmmoType;
-    u8 gustJarProjectileActive;
-    Vec3f gustJarProjPos;
-    s16 gustJarProjYaw;
+    u8 gustJarElement;
+    u8 gustJarBlowActive;
+    s16 gustJarHeatTimer;
 
     // Ball and Chain
     u8 ballAndChainThrown;

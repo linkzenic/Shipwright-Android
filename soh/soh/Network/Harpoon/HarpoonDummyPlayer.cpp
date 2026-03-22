@@ -522,10 +522,9 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
         remoteCustomItems.beetleState = client.ciBeetleState;
         // Gust Jar
         remoteCustomItems.gustJarMode = client.ciGustJarMode;
-        remoteCustomItems.gustJarAmmoType = client.ciGustJarAmmoType;
-        remoteCustomItems.gustJarProjectileActive = client.ciGustJarProjActive;
-        remoteCustomItems.gustJarProjPos = client.ciGustJarProjPos;
-        remoteCustomItems.gustJarProjYaw = client.ciGustJarProjYaw;
+        remoteCustomItems.gustJarElement = client.ciGustJarElement;
+        remoteCustomItems.gustJarBlowActive = client.ciGustJarBlowActive;
+        remoteCustomItems.gustJarHeatTimer = client.ciGustJarHeatTimer;
         // Fire Rod
         remoteCustomItems.fireRodProjActive = client.ciFireRodProjActive;
         remoteCustomItems.fireRodProjCount = client.ciFireRodProjCount;

@@ -698,10 +698,24 @@ static const struct {
     { "Colossus - Nayru", 0x0588, 1, ITEMGETINF_1A },
 };
 
+// Randomizer inf flags for each fountain (same order as sGreatFairyFountains)
+static const RandomizerInf sFairyFountainRandoInf[] = {
+    RAND_INF_DMT_GREAT_FAIRY_REWARD,     // 0: DMT - Magic
+    RAND_INF_DMC_GREAT_FAIRY_REWARD,     // 1: DMC - Double Magic
+    RAND_INF_OGC_GREAT_FAIRY_REWARD,     // 2: OGC - Defense
+    RAND_INF_ZF_GREAT_FAIRY_REWARD,      // 3: ZF - Farore
+    RAND_INF_HC_GREAT_FAIRY_REWARD,      // 4: HC - Din
+    RAND_INF_COLOSSUS_GREAT_FAIRY_REWARD // 5: Colossus - Nayru
+};
+
 // Implementation of FairyKaleido_IsDiscovered (forward-declared above, needs sGreatFairyFountains)
 static s32 FairyKaleido_IsDiscovered(s32 idx) {
     if (idx < 0 || idx >= FAIRY_FOUNTAIN_COUNT)
         return 0;
+    // In randomizer, check the rando inf flag (vanilla flags may not be set)
+    if (IS_RANDO)
+        return Flags_GetRandomizerInf(sFairyFountainRandoInf[idx]);
+    // Vanilla: check original flags
     if (sGreatFairyFountains[idx].flagType == 0)
         return gSaveContext.isMagicAcquired;
     return Flags_GetItemGetInf(sGreatFairyFountains[idx].flagValue);

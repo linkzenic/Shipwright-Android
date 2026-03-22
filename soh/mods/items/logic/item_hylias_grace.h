@@ -20,6 +20,7 @@
 #define HGRACE_STATE_WARP_IN 2  // Blue warp transition
 #define HGRACE_STATE_FAIRY 3    // Fairy flight mode
 #define HGRACE_STATE_WARP_OUT 4 // Reverse warp, Link reappears
+#define HGRACE_STATE_IVAN 5     // Ivan possession mode (Spirit Medallion)
 
 // Casting sub-phases (Farore's Wind 3-part animation)
 #define HGRACE_CAST_KAZE1 0
@@ -29,22 +30,17 @@
 // Magic
 #define HGRACE_MAGIC_COST 24
 
-// Fairy mode
-#define HGRACE_FAIRY_DURATION 600 // 10 seconds at 20fps
-#define HGRACE_FLICKER_START 90   // Last 1.5 seconds = flicker
+// Fairy mode (toggle — no timer, no flicker)
 #define HGRACE_SPEED 5.0f
 #define HGRACE_SPRINT_MULT 2.0f
-// No cooldown - removed
 
 // Warp timing
 #define HGRACE_WARP_IN_DURATION 40
 #define HGRACE_WARP_OUT_DURATION 30
 
-// SW97 Spirit fairy overrides (when activated via Spirit Medallion)
-#define HGRACE_SW97_DURATION 1200 // 20 seconds (matches SW97)
+// SW97 Spirit fairy overrides (Ivan possess mode — no timer)
 #define HGRACE_SW97_SPEED 7.0f
 #define HGRACE_SW97_SPRINT_MULT 1.8f
-#define HGRACE_SW97_FLICKER_START 150 // Last 2.5 seconds = flicker
 
 // Collision
 #define HGRACE_FAIRY_HOVER 5.0f // Minimum hover height above floor

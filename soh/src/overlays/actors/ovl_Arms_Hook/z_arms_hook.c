@@ -1,6 +1,8 @@
 #include "z_arms_hook.h"
 #include "objects/object_link_boy/object_link_boy.h"
 
+extern u8 TransformMasks_IsTransformed(void);
+
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
 void ArmsHook_Init(Actor* thisx, PlayState* play);
@@ -311,6 +313,14 @@ void ArmsHook_Draw(Actor* thisx, PlayState* play) {
     f32 sp58;
 
     if ((player->actor.draw != NULL) && (player->rightHandType == PLAYER_MODELTYPE_RH_HOOKSHOT)) {
+        // Transformed: OOT's right-hand limb matrix isn't set up (MM form draws instead),
+        // so Matrix_MultVec3f would use stale data → chain/tip draw at wrong position.
+        // Only draw when the hookshot is actively shooting (matrices set during first-person).
+        // In Wait state, the hookshot is invisible (held in hand) anyway in vanilla.
+        if (TransformMasks_IsTransformed() && (ArmsHook_Shoot != this->actionFunc)) {
+            return;
+        }
+
         OPEN_DISPS(play->state.gfxCtx);
 
         if ((ArmsHook_Shoot != this->actionFunc) || (this->timer <= 0)) {

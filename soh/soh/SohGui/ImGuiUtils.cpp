@@ -5,35 +5,6 @@
 #include "soh/Enhancements/randomizer/rando_hash.h"
 #include "soh/Enhancements/randomizer/randomizerTypes.h"
 
-// Custom item icon textures (defined in soh/mods/items/icons/*.c)
-extern "C" {
-extern const unsigned char gItemIconRocsFeatherTex[];
-extern const unsigned char gItemIconRocsCapeTex[];
-extern const unsigned char gItemIconDesireSensorTex[];
-extern const unsigned char gItemIconHyliaGraceTex[];
-extern const unsigned char gItemIconZonaiPermafrostTex[];
-extern const unsigned char gItemIconDemiseDestructionTex[];
-extern const unsigned char gItemIconDekuLeafTex[];
-extern const unsigned char gItemIconSwitchHookTex[];
-extern const unsigned char gItemIconMogmaMittsTex[];
-extern const unsigned char gItemIconGustJarTex[];
-extern const unsigned char gItemIconBallAndChainTex[];
-extern const unsigned char gItemIconWhipTex[];
-extern const unsigned char gItemIconSpinnerTex[];
-extern const unsigned char gItemIconCaneOfSomariaTex[];
-extern const unsigned char gItemIconDominionRodTex[];
-extern const unsigned char gItemIconTimeGateTex[];
-extern const unsigned char gItemIconBombArrowsTex[];
-extern const unsigned char gItemIconFireRodTex[];
-extern const unsigned char gItemIconIceRodTex[];
-extern const unsigned char gItemIconLightRodTex[];
-extern const unsigned char gItemIconBeetleTex[];
-extern const unsigned char gItemIconShovelTex[];
-extern const unsigned char gItemIconMinishCapTex[];
-extern const unsigned char gItemIconPending2Tex[];
-extern const unsigned char gItemIconPending3Tex[];
-}
-
 std::map<uint32_t, ItemMapEntry> itemMapping = {
     ITEM_MAP_ENTRY(ITEM_STICK),
     ITEM_MAP_ENTRY(ITEM_NUT),
@@ -200,6 +171,8 @@ std::map<uint32_t, ItemMapEntry> customItemMapping = {
     { ITEM_SHOVEL, { ITEM_SHOVEL, "ITEM_SHOVEL", "ITEM_SHOVEL_Faded", (char*)gItemIconShovelTex } },
     { ITEM_MINISH_CAP, { ITEM_MINISH_CAP, "ITEM_MINISH_CAP", "ITEM_MINISH_CAP_Faded", (char*)gItemIconMinishCapTex } },
     { ITEM_PENDING_2, { ITEM_PENDING_2, "ITEM_PENDING_2", "ITEM_PENDING_2_Faded", (char*)gItemIconPending2Tex } },
+    { ITEM_CHATEAU_ROMANI,
+      { ITEM_CHATEAU_ROMANI, "ITEM_CHATEAU_ROMANI", "ITEM_CHATEAU_ROMANI_Faded", (char*)gItemIconChateauRomaniTex } },
     { ITEM_PENDING_3, { ITEM_PENDING_3, "ITEM_PENDING_3", "ITEM_PENDING_3_Faded", (char*)gItemIconPending3Tex } },
 };
 
@@ -294,9 +267,16 @@ void RegisterImGuiItemIcons() {
             entry.second.nameFaded, entry.second.texturePath, ImVec4(1, 1, 1, 0.3f));
     }
 
-    // NOTE: Custom items (customItemMapping) use raw texture data arrays, not OTR paths.
-    // LoadGuiTexture expects file paths, so we skip registering custom items here.
-    // The debug save editor uses a different approach for custom item icons.
+    for (const auto& entry : customItemMapping) {
+        // Custom item icons are in soh.o2r — skip if resource not found (OTR not regenerated yet)
+        auto res = Ship::Context::GetInstance()->GetResourceManager()->LoadResource(entry.second.texturePath, true);
+        if (res) {
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->LoadGuiTexture(
+                entry.second.name, entry.second.texturePath, ImVec4(1, 1, 1, 1));
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->LoadGuiTexture(
+                entry.second.nameFaded, entry.second.texturePath, ImVec4(1, 1, 1, 0.3f));
+        }
+    }
 
     for (const auto& entry : gregMapping) {
         ImVec4 gregGreen = ImVec4(42.0f / 255.0f, 169.0f / 255.0f, 40.0f / 255.0f, 1.0f);

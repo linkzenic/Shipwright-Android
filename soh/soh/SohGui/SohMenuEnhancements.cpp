@@ -1956,6 +1956,11 @@ void SohMenu::AddMenuEnhancements() {
 void SohMenu::AddMenuSw97() {
     WidgetPath path = { "Settings", "Skijer's NEI", SECTION_COLUMN_1 };
     AddWidget(path, "SW97 Spells", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Mute MM Audio", WIDGET_CVAR_CHECKBOX)
+        .CVar("gEnhancements.SkijerNEI.MuteMmAudio")
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip("Mute all sounds from MM (mm.o2r).\n"
+                                                              "Transformation mask SFX, voices, and instruments\n"
+                                                              "will be silenced. OOT sounds play instead."));
     AddWidget(path, "SW97 Medallion Spells", WIDGET_CVAR_CHECKBOX)
         .CVar("gEnhancements.SkijerNEI.SW97Medallions")
         .Options(CheckboxOptions().Tooltip("Equip quest medallions to C-buttons from Quest Status.\n"

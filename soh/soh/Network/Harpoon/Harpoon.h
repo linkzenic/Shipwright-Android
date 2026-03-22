@@ -115,11 +115,10 @@ typedef struct {
     f32 ciBeetleWingScale;
     u8 ciBeetleState;
     // Gust Jar
-    Vec3f ciGustJarProjPos;
-    u8 ciGustJarProjActive;
-    u8 ciGustJarAmmoType;
     u8 ciGustJarMode;
-    s16 ciGustJarProjYaw;
+    u8 ciGustJarElement;
+    u8 ciGustJarBlowActive;
+    s16 ciGustJarHeatTimer;
     // Fire Rod
     Vec3f ciFireRodProjPos;
     Vec3f ciFireRodProjPos2;

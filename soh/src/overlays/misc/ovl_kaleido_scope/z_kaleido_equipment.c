@@ -169,6 +169,9 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
 }
 
 void KaleidoScope_DrawEquipment(PlayState* play) {
+    // Suppress ext equipment icon overrides so vanilla sword/shield icons show on equip screen
+    gExtEquipSuppressIconOverride = 1;
+
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
     u16 i;
@@ -589,10 +592,32 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
             (pauseCtx->unk_1E4 == 0) && CHECK_BTN_ANY(input->press.button, buttonsToCheck) &&
             (pauseCtx->cursorX[PAUSE_EQUIP] != 0)) {
 
-            // Extended equipment page: only A button equips, ignore C-buttons
+            // Extended equipment page: A = equip on body, C buttons = assign to C button for toggle
             if (extEquipPage) {
                 if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
                     ExtEquip_Equip(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP]);
+                    Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    pauseCtx->unk_1E4 = 7;
+                    sEquipTimer = 10;
+                } else if (CHECK_BTN_ANY(input->press.button, BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT)) {
+                    // Assign ext equipment to C button for toggle on/off during gameplay
+                    u16 extItemId = ExtEquip_GetItemId(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP]);
+                    // Determine which C button was pressed (1=CLeft, 2=CDown, 3=CRight)
+                    s32 cBtn = CHECK_BTN_ALL(input->press.button, BTN_CLEFT)   ? 0
+                               : CHECK_BTN_ALL(input->press.button, BTN_CDOWN) ? 1
+                                                                               : 2;
+                    s32 buttonIndex = cBtn + 1; // buttonItems[1]=CLeft, [2]=CDown, [3]=CRight
+
+                    // Toggle: if same item already on this button, remove it
+                    if (gSaveContext.equips.buttonItems[buttonIndex] == extItemId) {
+                        gSaveContext.equips.buttonItems[buttonIndex] = ITEM_NONE;
+                        gSaveContext.equips.cButtonSlots[cBtn] = SLOT_NONE;
+                    } else {
+                        gSaveContext.equips.buttonItems[buttonIndex] = extItemId;
+                        gSaveContext.equips.cButtonSlots[cBtn] = SLOT_NONE; // No inventory slot
+                    }
+                    Interface_LoadItemIcon2(play, buttonIndex);
                     Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                     pauseCtx->unk_1E4 = 7;
@@ -668,7 +693,10 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                     if (CHECK_OWNED_EQUIP(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP] - 1)) {
                         Inventory_ChangeEquipment(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP]);
                         // Clear extended equipment when vanilla is equipped
-                        ExtEquip_Unequip(pauseCtx->cursorY[PAUSE_EQUIP]);
+                        // Boots are jewelry (anklets) — don't unequip when changing vanilla boots
+                        if (pauseCtx->cursorY[PAUSE_EQUIP] != EQUIP_TYPE_BOOTS) {
+                            ExtEquip_Unequip(pauseCtx->cursorY[PAUSE_EQUIP]);
+                        }
                     } else {
                         goto EQUIP_FAIL;
                     }
@@ -881,10 +909,12 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
         for (k = 0, bit = rowStart, point = 4; k < 3; k++, point += 4, temp++, bit++) {
 
             if (extEquipPage) {
-                // Extended equipment page: draw all 3 items per row from ext icons
-                void* extIcon = ExtEquip_GetIcon(i, k + 1); // i=row(0-3), k+1=col(1-3)
-                if (extIcon) {
-                    KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, extIcon, 32, 32, point);
+                // Extended equipment page: only draw owned items
+                if (ExtEquip_HasItem(i, k + 1)) {
+                    void* extIcon = ExtEquip_GetIcon(i, k + 1); // i=row(0-3), k+1=col(1-3)
+                    if (extIcon) {
+                        KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, extIcon, 32, 32, point);
+                    }
                 }
             } else {
                 int itemId = ITEM_SWORD_KOKIRI + temp;
@@ -950,4 +980,7 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
     if (gUpgradeMasks[0]) {}
 
     CLOSE_DISPS(play->state.gfxCtx);
+
+    // Restore ext equipment icon overrides
+    gExtEquipSuppressIconOverride = 0;
 }

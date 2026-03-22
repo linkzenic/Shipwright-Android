@@ -65,11 +65,18 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 #include "mods/transformation_masks/mm_router.c" // All MM code in one router
 
 // ============================================================================
-// PIKACHU ACTOR - Fast3D exported model with SkelAnime
+// PAK LOADER - ModLoader64 .pak custom player model support
 // ============================================================================
-#include "mods/actors/pikachu/pikachu.c"
-#include "mods/actors/pikachu/pikachu_behavior.h"
-#include "mods/actors/pikachu/pikachu_behavior.c"
+#include "mods/pak_loader/pak_loader.h"
+
+// ============================================================================
+// SSBB EXPANSION - Smash Bros Brawl characters (SkelAnime-based)
+// ============================================================================
+#include "expansions/ssbb/ssbb_anim.h"
+#include "expansions/ssbb/ssbb_character.h"
+#include "expansions/ssbb/ssbb_global.c"
+#include "expansions/ssbb/ssbb_spawn.h"
+#include "expansions/ssbb/ssbb_spawn.c"
 
 // ============================================================================
 // SW97 SPACEWORLD '97 EXPANSION - Hat Physics, Spells, Arrows
@@ -387,8 +394,10 @@ void Player_Action_CsAction(Player* this, PlayState* play);
 u8 gWalkSpeedToggle1;
 u8 gWalkSpeedToggle2;
 
+extern u8 gIvanPossessActive;
+
 s32 spawn_boomerang_ivan(EnPartner* this, PlayState* play) {
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0)) {
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && !gIvanPossessActive) {
         return 0;
     }
 
@@ -1890,12 +1899,16 @@ void Player_ProcessAnimSfxList(Player* this, AnimSfxEntry* entry) {
 
         if (LinkAnimation_OnFrame(&this->skelAnime, fabsf(ANIMSFX_GET_FRAME(absData)))) {
             if (type == ANIMSFX_SHIFT_TYPE(ANIMSFX_TYPE_GENERAL)) {
-                Player_PlaySfx(this, entry->sfxId);
+                // Suppress OOT weapon/item SFX when in MM form (MM handles its own)
+                if (!TransformMasks_IsTransformed()) {
+                    Player_PlaySfx(this, entry->sfxId);
+                }
             } else if (type == ANIMSFX_SHIFT_TYPE(ANIMSFX_TYPE_FLOOR)) {
                 Player_PlayFloorSfx(this, entry->sfxId);
             } else if (type == ANIMSFX_SHIFT_TYPE(ANIMSFX_TYPE_FLOOR_BY_AGE)) {
                 Player_PlayFloorSfxByAge(this, entry->sfxId);
             } else if (type == ANIMSFX_SHIFT_TYPE(ANIMSFX_TYPE_VOICE)) {
+                // Player_PlayVoiceSfx already has its own TransformMasks_IsTransformed() guard
                 Player_PlayVoiceSfx(this, entry->sfxId);
             } else if (type == ANIMSFX_SHIFT_TYPE(ANIMSFX_TYPE_LANDING)) {
                 Player_PlayLandingSfx(this);
@@ -2632,10 +2645,15 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             }
         } else if (GameInteractor_Should(VB_CHANGE_HELD_ITEM_AND_USE_ITEM, true, item)) {
             this->heldItemButton = i;
+
+            // Extended equipment on C button: toggle equip on/off
+            if (item >= ITEM_EXT_SWORD_1 && item <= ITEM_EXT_BOOTS_3) {
+                ExtEquip_ToggleFromCButton(item);
+            }
             // Per-form item interception: if transformed, check the form's item list first.
             // Returns 1 if the form handled or blocked the item (skip Player_UseItem).
             // Returns 0 to fall through to normal OOT item use.
-            if (!TransformMasks_HandleFormItemUse(play, this, item)) {
+            else if (!TransformMasks_HandleFormItemUse(play, this, item)) {
                 Player_UseItem(play, this, item);
             }
         }
@@ -4179,6 +4197,19 @@ s32 Player_GetMovementSpeedAndYaw(Player* this, f32* outSpeedTarget, s16* outYaw
         return false;
     } else {
         *outYawTarget += Camera_GetInputDirYaw(GET_ACTIVE_CAM(play));
+
+        // Fierce Deity and Pikachu: 1.5x speed target (from MM z_player.c:5116-5118)
+        // Applied here (inside Player_GetMovementSpeedAndYaw) so it affects ALL actions:
+        // walking, running, swimming, midair — same as MM's Player_CalcSpeedAndYawFromControlStick.
+        // Use IsTransformedAny() because FD skin mode returns false for IsTransformed().
+        if (TransformMasks_IsTransformedAny()) {
+            extern s32 MmForm_GetCurrentForm(void);
+            s32 form = MmForm_GetCurrentForm();
+            if (form == 0 /* FIERCE_DEITY */ || form == 5 /* PIKACHU */) {
+                *outSpeedTarget *= 1.5f;
+            }
+        }
+
         return true;
     }
 }
@@ -5194,9 +5225,11 @@ void func_80838E70(PlayState* play, Player* this, f32 arg2, s16 arg3) {
 }
 
 void func_80838F18(PlayState* play, Player* this) {
-    // Transformation masks: MM form handles all water actions
-    if (TransformMasks_IsTransformed())
-        return;
+    // Note: do NOT block this for TransformMasks_IsTransformed().
+    // This is called after water knockback (Player_Action_8084E30C) finishes.
+    // Blocking it prevents OOT's water damage recovery from completing,
+    // leaving the player stuck in the knockback action forever → softlock.
+    // Our yield system detects the transition and re-enters MM swim.
     Player_SetupAction(play, this, Player_Action_8084D610, 0);
     Player_AnimChangeLoopSlowMorph(play, this, &gPlayerAnim_link_swimer_swim_wait);
 }
@@ -6997,8 +7030,16 @@ void func_8083D0A8(PlayState* play, Player* this, f32 arg2) {
 }
 
 s32 func_8083D12C(PlayState* play, Player* this, Input* arg2) {
-    // Transformation masks: MM form handles diving
-    if (TransformMasks_IsTransformed())
+    // Transformation masks: block diving for Goron/Deku/Zora.
+    // Goron/Deku void out in water. Zora uses custom fast swim instead of vanilla dive.
+    // Fierce Deity and Pikachu use vanilla dive.
+    if (TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode()) {
+        extern s32 MmForm_GetCurrentForm(void);
+        if (MmForm_GetCurrentForm() != 5 /* MM_PLAYER_FORM_PIKACHU */)
+            return 0;
+    }
+    // Dragon Scale: block OOT dive — A button is used for fast swim instead
+    if (TransformMasks_IsZoraSwimEnabled())
         return 0;
     if (!(this->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) && !(this->stateFlags2 & PLAYER_STATE2_UNDERWATER)) {
         if ((arg2 == NULL) || (CHECK_BTN_ALL(arg2->press.button, BTN_A) && (ABS(this->unk_6C2) < 12000) &&
@@ -7129,21 +7170,29 @@ void func_8083D53C(PlayState* play, Player* this) {
     }
 
     if ((Player_Action_80845668 != this->actionFunc) && (Player_Action_8084BDFC != this->actionFunc)) {
-        // Transformation masks: skip ALL OOT water action transitions.
-        // MM form system handles water for each form (swim, void-out, etc.)
+        // Transformation masks: Goron/Deku skip OOT water transitions (they void out).
+        // Zora and Fierce Deity use OOT's full swim system (buoyancy, ladders, ledges).
         if (TransformMasks_IsTransformed()) {
-            // Zora form: can breathe underwater (like Zora tunic) — prevent drowning timer
+            // Zora: can breathe underwater (like Zora tunic) — prevent drowning timer
             if (this->currentTunic == PLAYER_TUNIC_ZORA) {
                 this->underwaterTimer = 0;
             }
-            // Just track IN_WATER flag for other OOT systems (damage, camera, etc.)
-            if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
-                this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
-            } else if ((this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
-                       (this->actor.yDistToWater < this->ageProperties->unk_24)) {
-                this->stateFlags1 &= ~PLAYER_STATE1_IN_WATER;
+
+            extern s32 MmForm_GetCurrentForm(void);
+            s32 form = MmForm_GetCurrentForm();
+            // Zora (2), Fierce Deity (4), Pikachu (5): fall through to OOT's normal water handling
+            if (form != 2 /* MM_PLAYER_FORM_ZORA */ && form != 4 /* MM_PLAYER_FORM_FIERCE_DEITY */ &&
+                form != 5 /* MM_PLAYER_FORM_PIKACHU */) {
+                // Goron/Deku: just track IN_WATER flag, don't enter OOT swim
+                if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
+                    this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
+                } else if ((this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
+                           (this->actor.yDistToWater < this->ageProperties->unk_24)) {
+                    this->stateFlags1 &= ~PLAYER_STATE1_IN_WATER;
+                }
+                return;
             }
-            return;
+            // Zora/FD: continue to OOT's water handling below (func_8083D36C etc.)
         }
 
         if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
@@ -7352,6 +7401,15 @@ void func_8083DFE0(Player* this, f32* arg1, s16* arg2) {
         if (CVarGetInteger(CVAR_ENHANCEMENT("MMBunnyHood"), BUNNY_HOOD_VANILLA) == BUNNY_HOOD_FAST_AND_JUMP &&
             this->currentMask == PLAYER_MASK_BUNNY) {
             maxSpeed *= 1.5f;
+        }
+
+        // Fierce Deity and Pikachu: 1.5x jump velocity (matches MM FD speed boost)
+        if (TransformMasks_IsTransformedAny()) {
+            extern s32 MmForm_GetCurrentForm(void);
+            s32 form = MmForm_GetCurrentForm();
+            if (form == 0 /* FIERCE_DEITY */ || form == 5 /* PIKACHU */) {
+                maxSpeed *= 1.5f;
+            }
         }
 
         if (CVarGetInteger(CVAR_SETTING("WalkModifier.Enabled"), 0) &&
@@ -8309,10 +8367,10 @@ void func_8084029C(Player* this, f32 arg1) {
     }
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER ||
-         (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
         !(this->actor.bgCheckFlags & 1) &&
         (this->hoverBootsTimer != 0 ||
-         (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && this->ivanFloating))) {
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating))) {
         func_8002F8F0(&this->actor, NA_SE_PL_HOBBERBOOTS_LV - SFX_FLAG);
     } else if (func_8084021C(this->unk_868, arg1, 29.0f, 10.0f) || func_8084021C(this->unk_868, arg1, 29.0f, 24.0f)) {
         Player_PlaySteppingSfx(this, this->linearVelocity);
@@ -9465,6 +9523,9 @@ s32 func_80842DF4(PlayState* play, Player* this) {
         temp1 = (this->meleeWeaponQuads[0].base.atFlags & AT_HIT) || (this->meleeWeaponQuads[1].base.atFlags & AT_HIT);
 
         if (temp1) {
+            // EXTENDED EQUIPMENT: Notify melee hit (Cane of Byrna MP recovery, etc.)
+            ExtEquip_OnMeleeHit(this, play);
+
             if (this->meleeWeaponAnimation < PLAYER_MWA_SPIN_ATTACK_1H) {
                 Actor* at = this->meleeWeaponQuads[temp1 ? 1 : 0].base.at;
 
@@ -11389,7 +11450,7 @@ s32 Player_UpdateHoverBoots(Player* this) {
     s32 canHoverOnGround;
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER ||
-         (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
         (this->hoverBootsTimer != 0)) {
         this->hoverBootsTimer--;
     } else {
@@ -11398,7 +11459,7 @@ s32 Player_UpdateHoverBoots(Player* this) {
 
     canHoverOnGround =
         (this->currentBoots == PLAYER_BOOTS_HOVER ||
-         (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
         ((this->actor.yDistToWater >= 0.0f) || (func_80838144(sFloorType) >= 0) || func_8083816C(sFloorType));
 
     if (canHoverOnGround && (this->actor.bgCheckFlags & 1) && (this->hoverBootsTimer != 0)) {
@@ -12715,8 +12776,11 @@ void Player_Update(Actor* thisx, PlayState* play) {
         // MM MASK WEARING: Per-mask effects update
         TransformMasks_WearUpdate(play, this);
 
-        // PIKACHU: CVAR-based spawn
-        PikachuBehavior_Update(play, this);
+        // OLD PIKACHU: Disabled, replaced by SSBB transformation system
+        // PikachuBehavior_Update(play, this);
+
+        // SSBB: Update Brawl characters
+        SSBBSpawn_Update(play, this);
     }
 
     MREG(52) = this->actor.world.pos.x;
@@ -12856,7 +12920,7 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
     }
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER ||
-         (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
         !(this->actor.bgCheckFlags & 1) && !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE) &&
         (this->hoverBootsTimer != 0)) {
         s32 sp5C;
@@ -12904,17 +12968,41 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     Vec3s rot;
     f32 scale;
 
+    // PAK Loader: Swap skeleton before vanilla draw, restore after.
+    // This lets the ENTIRE vanilla draw pipeline run (equipment, eyes, boots, gauntlets)
+    // but with the custom model's body DLs. Only the skelAnime.skeleton pointer is swapped.
+    u8 pakActive = 0;
+    if (thisx == &GET_PLAYER(play2)->actor && PakLoader_HasActiveModel() && !TransformMasks_IsTransformed() &&
+        !TransformMasks_IsFDSkinMode()) {
+        PakLoader_SwapSkeleton(this);
+        pakActive = 1;
+    }
+
     // Transformation Masks: If transformed, draw MM form instead of OOT Link.
     // MmForm_Draw handles both skeleton draw (when loaded) and flash overlay (always).
     // When skeleton isn't loaded yet (pre-flash phase), MmForm_Draw only draws the flash
     // overlay and falls through to let OOT draw Link normally underneath.
     // Guard: only apply to the REAL player actor — dummy/remote Player actors must draw
     // their own OOT skeleton normally, not the local player's MM form.
+    // Dragon Scale swim: draw barrier, then fall through to OOT Link draw
+    if (thisx == &GET_PLAYER(play2)->actor && TransformMasks_IsZoraSwimEnabled()) {
+        TransformMasks_Draw(play, this); // Draws barrier only (state=INACTIVE + zoraSwimEnabled)
+    }
+
     if (thisx == &GET_PLAYER(play2)->actor && (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode())) {
         if (TransformMasks_HasSkeleton()) {
             if (this->unk_6AD == 0) {
                 // Normal gameplay: draw MM form, skip OOT Link skeleton.
                 TransformMasks_Draw(play, this);
+
+                // Update hookshot anchor position (unk_3C8) since Player_PostLimbDrawGameplay
+                // won't run. Arms_Hook uses this to calculate distance for pull termination.
+                // Without this, hookshot pull never ends because unk_3C8 stays stale.
+                if ((this->heldItemAction == PLAYER_IA_HOOKSHOT) || (this->heldItemAction == PLAYER_IA_LONGSHOT)) {
+                    this->unk_3C8.x = this->actor.world.pos.x;
+                    this->unk_3C8.y = this->actor.world.pos.y + 40.0f; // Approximate hand height
+                    this->unk_3C8.z = this->actor.world.pos.z;
+                }
 
                 // Still draw get-item animations and custom items on MM forms.
                 OPEN_DISPS(play->state.gfxCtx);
@@ -12923,12 +13011,14 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
                         Player_DrawGetItem(play, this);
                     }
                     CustomItems_OverrideDraw(this, play);
+                    ExtEquip_DrawBehavior(this, play);
                 }
                 CLOSE_DISPS(play->state.gfxCtx);
                 return;
             }
-            // First-person aim (unk_6AD != 0): skip MM body so OOT's
-            // Player_OverrideLimbDrawGameplayFirstPerson can draw the bow arm.
+            // First-person aim (unk_6AD != 0): fall through to OOT draw but all limbs
+            // will be hidden (see transform check at overrideLimbDraw selection below).
+            // Skeleton still processes for body part positions (hookshot chain, arrow spawn).
         } else {
             // Skeleton not loaded: draw flash overlay only, then fall through to OOT Link draw
             TransformMasks_Draw(play, this);
@@ -12985,11 +13075,19 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         func_8002ED80(&this->actor, play, 0);
 
         if (this->unk_6AD != 0) {
-            Vec3f projectedHeadPos;
-
-            SkinMatrix_Vec3fMtxFMultXYZ(&play->viewProjectionMtxF, &this->actor.focus.pos, &projectedHeadPos);
-            if (projectedHeadPos.z < -4.0f) {
+            if (TransformMasks_IsTransformed()) {
+                // Transformed: ALWAYS use first-person override (hide Link's body).
+                // Normal code checks camera position (projectedHeadPos.z < -4.0f) which
+                // fails on the first frame → full Link body flashes for one frame.
+                // Skeleton is still traversed for body part positions (hookshot chain, etc).
                 overrideLimbDraw = Player_OverrideLimbDrawGameplayFirstPerson;
+            } else {
+                Vec3f projectedHeadPos;
+
+                SkinMatrix_Vec3fMtxFMultXYZ(&play->viewProjectionMtxF, &this->actor.focus.pos, &projectedHeadPos);
+                if (projectedHeadPos.z < -4.0f) {
+                    overrideLimbDraw = Player_OverrideLimbDrawGameplayFirstPerson;
+                }
             }
         } else if (this->stateFlags2 & PLAYER_STATE2_CRAWLING) {
             if (this->actor.projectedPos.z < 0.0f) {
@@ -13047,6 +13145,17 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
 
         // CUSTOM ITEMS: Draw all
         CustomItems_OverrideDraw(this, play);
+
+        // EXTENDED EQUIPMENT: Draw barriers, auras, etc.
+        ExtEquip_DrawBehavior(this, play);
+
+        // SSBB: Draw Brawl characters
+        SSBBSpawn_Draw(play, this);
+    }
+
+    // PAK Loader: Restore original skeleton after draw
+    if (pakActive) {
+        PakLoader_RestoreSkeleton(this);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);

@@ -62,6 +62,20 @@ void Randomizer_DrawStasis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawDesireSensor(PlayState* play, GetItemEntry* getItemEntry);
 
+// Extended Equipment Get-Item 3D Models
+void Randomizer_DrawExtCaneOfByrna(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtDrillshaft(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtDivineShield(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtGerudoScimitar(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtShieldOfIkana(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtMagicCape(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtPendingTunic(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtChampionsTunic(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtPegasusAnklet(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtPendantOfMemories(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtWaterDragonScale(PlayState* play, GetItemEntry* getItemEntry);
+
 // MM Mask Get-Item 3D Models (all 24, from mm.o2r)
 void Randomizer_DrawMmMask(PlayState* play, GetItemEntry* getItemEntry);
 

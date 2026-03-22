@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+set gExpansions.SSBB.Pikachu 2
+gExpansions.SSBB.SkinScale
+set gExpansions.SSBB.SkinDebug 1 
+<title>Smash Bros Brawl Asset Viewer</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#1a1a2e; color:#e0e0e0; font-family:'Segoe UI',sans-serif; display:flex; height:100vh; overflow:hidden; }
+#sidebar { width:360px; background:#16213e; padding:12px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; border-right:2px solid #0f3460; }
+#sidebar h2 { color:#e94560; font-size:16px; margin-bottom:4px; }
+#sidebar label { font-size:12px; color:#aaa; display:block; margin:2px 0; }
+#sidebar input[type=file] { font-size:11px; margin-bottom:4px; }
+#sidebar button { background:#0f3460; color:#fff; border:none; padding:6px 12px; cursor:pointer; border-radius:4px; font-size:12px; }
+#sidebar button:hover { background:#e94560; }
+#sidebar select { background:#111; color:#fff; border:1px solid #333; padding:3px; font-size:12px; }
+.section { background:#1a1a2e; padding:8px; border-radius:6px; margin-bottom:4px; }
+.section h3 { font-size:13px; color:#e94560; margin-bottom:4px; }
+#boneList { max-height:250px; overflow-y:auto; font-size:11px; font-family:monospace; }
+.bone-item { padding:2px 4px; cursor:pointer; border-radius:3px; }
+.bone-item:hover { background:#0f3460; }
+.bone-item.selected { background:#e94560; color:#fff; }
+.bone-item.mapped { color:#53d769; }
+#controls { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+#frameSlider { flex:1; min-width:100px; }
+#frameDisplay { font-family:monospace; font-size:13px; min-width:80px; }
+#canvas-container { flex:1; position:relative; }
+canvas { width:100%!important; height:100%!important; display:block; }
+#info { position:absolute; bottom:10px; left:10px; font-size:11px; color:#888; background:rgba(0,0,0,0.5); padding:4px 8px; border-radius:4px; }
+#status { color:#53d769; font-size:12px; min-height:18px; word-break:break-all; }
+#diagnostics { font-family:monospace; font-size:10px; background:#111; color:#0f0; padding:6px; border-radius:4px; max-height:200px; overflow-y:auto; white-space:pre-wrap; }
+#boneInfo { font-family:monospace; font-size:11px; white-space:pre; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Smash Bros Brawl Asset Viewer</h2>
+  <div id="status">Ready — load .dae and .anim files</div>
+
+  <div class="section">
+    <h3>Load Files</h3>
+    <label>COLLADA Model (.dae):</label>
+    <input type="file" id="daeFile" accept=".dae">
+    <label>Maya Animation (.anim):</label>
+    <input type="file" id="animFile" accept=".anim">
+  </div>
+
+  <div class="section">
+    <h3>Playback</h3>
+    <div id="controls">
+      <button id="btnPlay">Play</button>
+      <button id="btnStop">Stop</button>
+      <button id="btnPrev">&lt;</button>
+      <button id="btnNext">&gt;</button>
+      <input type="range" id="frameSlider" min="0" max="100" value="0">
+      <span id="frameDisplay">0 / 0</span>
+    </div>
+    <label>Speed: <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1"> <span id="speedDisplay">1.0x</span></label>
+    <label>Rotation Order:
+      <select id="rotOrder">
+        <option value="XYZ" selected>XYZ (Maya default)</option>
+        <option value="YXZ">YXZ</option>
+        <option value="ZXY">ZXY</option>
+        <option value="ZYX">ZYX</option>
+        <option value="YZX">YZX</option>
+        <option value="XZY">XZY</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="showSkeleton" checked> Show Skeleton</label>
+    <label><input type="checkbox" id="showMesh" checked> Show Mesh</label>
+    <label><input type="checkbox" id="wireframe"> Wireframe</label>
+    <label><input type="checkbox" id="showBindPose"> Show Bind Pose (no anim)</label>
+    <label><input type="checkbox" id="showBoneAxes"> Show Bone Axes</label>
+    <label><input type="checkbox" id="useHermite" checked> Hermite Interpolation</label>
+    <label><input type="checkbox" id="composeRot" checked> Compose with Bind Pose</label>
+  </div>
+
+  <div class="section">
+    <h3>Diagnostics</h3>
+    <div id="diagnostics">No data loaded yet.</div>
+  </div>
+
+  <div class="section">
+    <h3>Bone Hierarchy <span style="font-size:10px;color:#888;">(click bone for details)</span></h3>
+    <div id="boneList"></div>
+  </div>
+
+  <div class="section" id="boneInfoSection" style="display:none;">
+    <h3>Selected Bone</h3>
+    <div id="boneInfo"></div>
+  </div>
+</div>
+
+<div id="canvas-container">
+  <div id="info">Scroll to zoom, drag to orbit, right-drag to pan</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
+
+// ── Globals ──────────────────────────────────────────────────────────────────
+let scene, camera, renderer, controls;
+let colladaModel = null;
+let skeletonHelper = null;
+let bones = {};
+let boneList = [];
+let allNodes = {};        // ALL nodes (not just bones)
+let animData = null;
+let playing = false;
+let currentFrame = 0;
+let totalFrames = 0;
+let playSpeed = 1.0;
+let lastTime = 0;
+let frameAccum = 0;
+let selectedBoneName = null;
+let boneAxesHelper = null;
+
+function log(msg) {
+  const el = document.getElementById('diagnostics');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+  console.log('[viewer]', msg);
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function getRotOrder() {
+  return document.getElementById('rotOrder').value;
+}
+
+// ── Three.js Setup ───────────────────────────────────────────────────────────
+function initScene() {
+  const container = document.getElementById('canvas-container');
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+
+  camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+  camera.position.set(0, 8, 20);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 4, 0);
+  controls.update();
+
+  scene.add(new THREE.AmbientLight(0x666666));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(5, 10, 7);
+  scene.add(dir);
+  const dir2 = new THREE.DirectionalLight(0x4444ff, 0.4);
+  dir2.position.set(-5, 5, -5);
+  scene.add(dir2);
+
+  scene.add(new THREE.GridHelper(30, 30, 0x333355, 0x222244));
+  scene.add(new THREE.AxesHelper(5));
+
+  window.addEventListener('resize', () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const now = performance.now();
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  const bindPoseMode = document.getElementById('showBindPose').checked;
+  if (playing && animData && totalFrames > 0 && !bindPoseMode) {
+    frameAccum += dt * 30 * playSpeed;
+    while (frameAccum >= 1) {
+      frameAccum -= 1;
+      currentFrame = (currentFrame + 1) % totalFrames;
+    }
+    applyAnimFrame(currentFrame);
+    document.getElementById('frameSlider').value = currentFrame;
+    document.getElementById('frameDisplay').textContent = `${currentFrame} / ${totalFrames - 1}`;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ── COLLADA Loader ───────────────────────────────────────────────────────────
+function loadDAE(file) {
+  document.getElementById('diagnostics').textContent = '';
+  log('Loading ' + file.name + ' (' + (file.size/1024).toFixed(1) + ' KB)...');
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const text = e.target.result;
+    const loader = new ColladaLoader();
+    const blob = new Blob([text], { type: 'text/xml' });
+    const url = URL.createObjectURL(blob);
+
+    loader.load(url, (collada) => {
+      if (colladaModel) scene.remove(colladaModel);
+      if (skeletonHelper) scene.remove(skeletonHelper);
+
+      colladaModel = collada.scene;
+      scene.add(colladaModel);
+
+      // Diagnostic: traverse entire scene graph
+      bones = {};
+      boneList = [];
+      allNodes = {};
+      let meshCount = 0, skinnedMeshCount = 0, boneCount = 0, otherCount = 0;
+
+      colladaModel.traverse((node) => {
+        allNodes[node.name] = node;
+        if (node.isBone) {
+          bones[node.name] = node;
+          boneList.push(node.name);
+          boneCount++;
+        } else if (node.isSkinnedMesh) {
+          skinnedMeshCount++;
+          log(`SkinnedMesh: "${node.name}" verts=${node.geometry.attributes.position?.count || '?'} skeleton=${node.skeleton?.bones?.length || 'none'}`);
+        } else if (node.isMesh) {
+          meshCount++;
+          log(`Mesh (NOT skinned): "${node.name}" verts=${node.geometry.attributes.position?.count || '?'}`);
+        } else if (node.name && node.type !== 'Group' && node.type !== 'Scene') {
+          otherCount++;
+        }
+      });
+
+      log(`\nScene summary:`);
+      log(`  Bones: ${boneCount}`);
+      log(`  SkinnedMesh: ${skinnedMeshCount}`);
+      log(`  Regular Mesh: ${meshCount}`);
+      log(`  Other: ${otherCount}`);
+
+      if (skinnedMeshCount === 0 && meshCount > 0) {
+        log('\n*** WARNING: No SkinnedMesh found! ***');
+        log('Meshes are static — bone animation will NOT deform geometry.');
+        log('This may be a ColladaLoader compatibility issue with BrawlCrate exports.');
+      }
+
+      // Log first few bones with their bind transforms
+      log(`\nBone hierarchy (first 10):`);
+      for (let i = 0; i < Math.min(10, boneList.length); i++) {
+        const b = bones[boneList[i]];
+        const RAD = 180 / Math.PI;
+        log(`  ${boneList[i]}: pos=(${b.position.x.toFixed(2)}, ${b.position.y.toFixed(2)}, ${b.position.z.toFixed(2)}) rot=(${(b.rotation.x*RAD).toFixed(1)}, ${(b.rotation.y*RAD).toFixed(1)}, ${(b.rotation.z*RAD).toFixed(1)}) order=${b.rotation.order}`);
+      }
+
+      // Create skeleton helper
+      skeletonHelper = new THREE.SkeletonHelper(colladaModel);
+      skeletonHelper.material.linewidth = 2;
+      scene.add(skeletonHelper);
+
+      // Store bind poses for ALL nodes (not just bones)
+      colladaModel.traverse((node) => {
+        if (node.name) {
+          node.userData.bindPos = node.position.clone();
+          node.userData.bindQuat = node.quaternion.clone();
+          node.userData.bindScale = node.scale.clone();
+          // Force XYZ order on all bones for consistency with Maya
+          if (node.isBone) {
+            node.rotation.order = 'XYZ';
+          }
+        }
+      });
+
+      updateBoneListUI();
+      setStatus(`Loaded: ${boneCount} bones, ${skinnedMeshCount} skinned + ${meshCount} static meshes`);
+      URL.revokeObjectURL(url);
+
+      // Auto-frame camera
+      const box = new THREE.Box3().setFromObject(colladaModel);
+      if (!box.isEmpty()) {
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        camera.position.set(center.x, center.y + size.y * 0.3, center.z + Math.max(size.x, size.y, size.z) * 2);
+        controls.target.copy(center);
+        controls.update();
+      }
+    }, undefined, (err) => {
+      log('ERROR loading .dae: ' + (err.message || err));
+      setStatus('Error loading .dae — check diagnostics');
+    });
+  };
+  reader.readAsText(file);
+}
+
+// ── Maya .anim Parser ────────────────────────────────────────────────────────
+function parseAnimFile(text) {
+  const result = { startTime: 0, endTime: 0, channels: {} };
+  const lines = text.split('\n');
+  let i = 0;
+  let weighted = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (line.startsWith('startTime')) result.startTime = parseInt(line.split(/\s+/)[1]);
+    else if (line.startsWith('endTime')) result.endTime = parseInt(line.split(/\s+/)[1]);
+    else if (line.startsWith('anim ')) break;
+    i++;
+  }
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+    if (!line.startsWith('anim ')) { i++; continue; }
+
+    const parts = line.replace(';', '').split(/\s+/);
+    if (parts.length < 4) { i++; continue; }
+
+    const attr = parts[2];
+    const boneName = parts[3];
+
+    if (!result.channels[boneName]) result.channels[boneName] = {};
+
+    i++;
+    while (i < lines.length && !lines[i].trim().startsWith('animData')) i++;
+    if (i >= lines.length) break;
+
+    // Parse animData block header for weighted flag
+    i++;
+    weighted = 0;
+    while (i < lines.length && !lines[i].trim().startsWith('keys')) {
+      const hdr = lines[i].trim();
+      if (hdr.startsWith('weighted')) weighted = parseInt(hdr.split(/\s+/)[1]) || 0;
+      i++;
+    }
+    if (i >= lines.length) break;
+
+    i++; // skip 'keys {'
+    const keyframes = [];
+    while (i < lines.length) {
+      const kl = lines[i].trim();
+      if (kl === '}') { i++; break; }
+      const kparts = kl.replace(';', '').split(/\s+/);
+      if (kparts.length >= 7) {
+        // Maya .anim key format:
+        // time value inType outType tanLocked weightLocked breakdown [inAngle inWeight] [outAngle outWeight]
+        const t = parseFloat(kparts[0]);
+        const v = parseFloat(kparts[1]);
+        const inType = kparts[2];
+        const outType = kparts[3];
+
+        let inAngle = 0, inWeight = 1, outAngle = 0, outWeight = 1;
+        let idx = 7; // after breakdown
+
+        if (inType === 'fixed' && kparts.length > idx + 1) {
+          inAngle = parseFloat(kparts[idx]) || 0;
+          inWeight = parseFloat(kparts[idx + 1]) || 1;
+          idx += 2;
+        }
+        if (outType === 'fixed' && kparts.length > idx + 1) {
+          outAngle = parseFloat(kparts[idx]) || 0;
+          outWeight = parseFloat(kparts[idx + 1]) || 1;
+        }
+
+        keyframes.push({ t, v, inType, outType, inAngle, inWeight, outAngle, outWeight });
+      } else if (kparts.length >= 2) {
+        keyframes.push({ t: parseFloat(kparts[0]), v: parseFloat(kparts[1]),
+          inType: 'linear', outType: 'linear', inAngle: 0, inWeight: 1, outAngle: 0, outWeight: 1 });
+      }
+      i++;
+    }
+
+    result.channels[boneName][attr] = keyframes;
+    while (i < lines.length && lines[i].trim() === '}') i++;
+  }
+
+  result.totalFrames = result.endTime - result.startTime + 1;
+  return result;
+}
+
+function loadAnim(file) {
+  log(`\nLoading anim: ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    animData = parseAnimFile(e.target.result);
+    totalFrames = animData.totalFrames;
+    currentFrame = 0;
+
+    document.getElementById('frameSlider').max = totalFrames - 1;
+    document.getElementById('frameSlider').value = 0;
+    document.getElementById('frameDisplay').textContent = `0 / ${totalFrames - 1}`;
+
+    const animBones = Object.keys(animData.channels);
+    let channelCount = 0;
+    for (const b of animBones) channelCount += Object.keys(animData.channels[b]).length;
+
+    log(`Parsed: ${animBones.length} bones, ${channelCount} channels, ${totalFrames} frames`);
+
+    // Check which anim bones match DAE bones
+    const matchedBones = [];
+    const matchedNodes = [];
+    const unmatched = [];
+    for (const name of animBones) {
+      if (bones[name]) matchedBones.push(name);
+      else if (allNodes[name]) matchedNodes.push(name);
+      else unmatched.push(name);
+    }
+    log(`Matched as BONE: ${matchedBones.length}/${animBones.length}`);
+    if (matchedNodes.length > 0) {
+      log(`Matched as NODE (not bone): ${matchedNodes.join(', ')}`);
+    }
+    if (unmatched.length > 0) {
+      log(`*** UNMATCHED (no DAE match): ${unmatched.join(', ')}`);
+    }
+
+    // Check DAE bones that have NO anim data
+    const unanimated = boneList.filter(n => !animData.channels[n]);
+    if (unanimated.length > 0) {
+      log(`DAE bones without anim: ${unanimated.join(', ')}`);
+    }
+
+    // Show sample values — pick bones that have varying rotation
+    log('\nSample frame-0 rotations:');
+    for (const name of animBones.slice(0, 10)) {
+      const ch = animData.channels[name];
+      const rx0 = ch.rotateX ? ch.rotateX[0].v.toFixed(2) : '-';
+      const ry0 = ch.rotateY ? ch.rotateY[0].v.toFixed(2) : '-';
+      const rz0 = ch.rotateZ ? ch.rotateZ[0].v.toFixed(2) : '-';
+      const found = bones[name] ? 'BONE' : allNodes[name] ? 'node' : 'MISS';
+      log(`  [${found}] ${name}: rot=(${rx0}, ${ry0}, ${rz0})°`);
+    }
+
+    setStatus(`Anim: ${animBones.length} bones, ${channelCount} ch, ${totalFrames} frames`);
+
+    if (colladaModel) {
+      applyAnimFrame(0);
+      updateBoneListUI();
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ── Apply Animation Frame ────────────────────────────────────────────────────
+
+// Hermite interpolation using Maya tangent angles/weights
+// Maya tangents: angle is slope in degrees, weight controls handle length
+function hermiteInterp(k0, k1, frac) {
+  const dt = k1.t - k0.t;
+  if (dt === 0) return k0.v;
+
+  // Convert tangent angles to slopes (tan of angle in radians)
+  const outSlope = Math.tan(k0.outAngle * Math.PI / 180);
+  const inSlope = Math.tan(k1.inAngle * Math.PI / 180);
+
+  // Maya weighted tangent handle lengths
+  const outLen = dt * (k0.outWeight || 1/3);
+  const inLen = dt * (k1.inWeight || 1/3);
+
+  // Hermite basis functions
+  const t = frac;
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 = 2*t3 - 3*t2 + 1;
+  const h10 = t3 - 2*t2 + t;
+  const h01 = -2*t3 + 3*t2;
+  const h11 = t3 - t2;
+
+  // Tangent values (slope * time span for proper scaling)
+  const m0 = outSlope * dt;
+  const m1 = inSlope * dt;
+
+  return h00 * k0.v + h10 * m0 + h01 * k1.v + h11 * m1;
+}
+
+function getChannelValue(keyframes, frame) {
+  if (!keyframes || keyframes.length === 0) return null;
+  if (keyframes.length === 1) return keyframes[0].v;
+  if (frame <= keyframes[0].t) return keyframes[0].v;
+  if (frame >= keyframes[keyframes.length - 1].t) return keyframes[keyframes.length - 1].v;
+
+  for (let i = 0; i < keyframes.length - 1; i++) {
+    if (frame >= keyframes[i].t && frame <= keyframes[i + 1].t) {
+      const k0 = keyframes[i], k1 = keyframes[i + 1];
+      if (k1.t === k0.t) return k0.v;
+      const frac = (frame - k0.t) / (k1.t - k0.t);
+
+      // Use hermite if enabled and tangent data available
+      const useH = document.getElementById('useHermite')?.checked;
+      if (useH && (k0.outType === 'fixed' || k1.inType === 'fixed')) {
+        return hermiteInterp(k0, k1, frac);
+      }
+
+      // Linear fallback
+      return k0.v + (k1.v - k0.v) * frac;
+    }
+  }
+  return keyframes[keyframes.length - 1].v;
+}
+
+function applyAnimFrame(frame) {
+  if (!animData || !colladaModel) return;
+
+  const DEG = Math.PI / 180;
+  const order = getRotOrder();
+
+  for (const boneName in animData.channels) {
+    // Try bone first, then any node
+    const bone = bones[boneName] || allNodes[boneName];
+    if (!bone) continue;
+
+    const ch = animData.channels[boneName];
+    const bind = bone.userData;
+
+    // Translation: .anim overrides if channel exists, else keep bind pose
+    const tx = ch.translateX ? getChannelValue(ch.translateX, frame) : null;
+    const ty = ch.translateY ? getChannelValue(ch.translateY, frame) : null;
+    const tz = ch.translateZ ? getChannelValue(ch.translateZ, frame) : null;
+
+    if (tx !== null) bone.position.x = tx;
+    else if (bind.bindPos) bone.position.x = bind.bindPos.x;
+
+    if (ty !== null) bone.position.y = ty;
+    else if (bind.bindPos) bone.position.y = bind.bindPos.y;
+
+    if (tz !== null) bone.position.z = tz;
+    else if (bind.bindPos) bone.position.z = bind.bindPos.z;
+
+    // Rotation: .anim values are pose-space Euler degrees, composed with bind pose
+    // In Blender/Maya: final_rotation = bind_rotation * anim_rotation
+    const rx = ch.rotateX ? getChannelValue(ch.rotateX, frame) : null;
+    const ry = ch.rotateY ? getChannelValue(ch.rotateY, frame) : null;
+    const rz = ch.rotateZ ? getChannelValue(ch.rotateZ, frame) : null;
+
+    if (rx !== null || ry !== null || rz !== null) {
+      const animEuler = new THREE.Euler(
+        (rx !== null ? rx : 0) * DEG,
+        (ry !== null ? ry : 0) * DEG,
+        (rz !== null ? rz : 0) * DEG,
+        order
+      );
+      const animQuat = new THREE.Quaternion().setFromEuler(animEuler);
+      const compose = document.getElementById('composeRot')?.checked;
+
+      if (compose && bind.bindQuat) {
+        // Compose: final = bindRotation * animRotation
+        // This matches Blender's: bone.matrix_local @ matrix_basis
+        bone.quaternion.copy(bind.bindQuat).multiply(animQuat);
+      } else {
+        // Replace: rotation = anim values directly (Maya absolute)
+        bone.quaternion.copy(animQuat);
+      }
+    }
+
+    // Scale
+    const sx = ch.scaleX ? getChannelValue(ch.scaleX, frame) : null;
+    const sy = ch.scaleY ? getChannelValue(ch.scaleY, frame) : null;
+    const sz = ch.scaleZ ? getChannelValue(ch.scaleZ, frame) : null;
+
+    if (sx !== null) bone.scale.x = sx;
+    else bone.scale.x = 1;
+    if (sy !== null) bone.scale.y = sy;
+    else bone.scale.y = 1;
+    if (sz !== null) bone.scale.z = sz;
+    else bone.scale.z = 1;
+  }
+
+  updateSelectedBoneInfo(frame);
+}
+
+function updateSelectedBoneInfo(frame) {
+  if (!selectedBoneName) return;
+  const bone = bones[selectedBoneName] || allNodes[selectedBoneName];
+  if (!bone) return;
+
+  const RAD = 180 / Math.PI;
+  const ch = animData ? animData.channels[selectedBoneName] : null;
+
+  let info = `Bone: ${selectedBoneName}\n`;
+  info += `Type: ${bone.type} (isBone=${bone.isBone||false})\n`;
+  info += `Pos: ${bone.position.x.toFixed(4)}, ${bone.position.y.toFixed(4)}, ${bone.position.z.toFixed(4)}\n`;
+  info += `Rot: ${(bone.rotation.x*RAD).toFixed(2)}, ${(bone.rotation.y*RAD).toFixed(2)}, ${(bone.rotation.z*RAD).toFixed(2)} (${bone.rotation.order})\n`;
+  info += `Scl: ${bone.scale.x.toFixed(3)}, ${bone.scale.y.toFixed(3)}, ${bone.scale.z.toFixed(3)}\n`;
+  info += `Parent: ${bone.parent?.name || 'none'}\n`;
+  info += `Children: ${bone.children.filter(c => c.isBone).map(c => c.name).join(', ') || 'none'}\n`;
+
+  if (bone.userData.bindPos) {
+    const bp = bone.userData.bindPos;
+    // Decompose bind quat to euler for display
+    const be = new THREE.Euler().setFromQuaternion(bone.userData.bindQuat, getRotOrder());
+    info += `\nBind pose:\n`;
+    info += `  Pos: ${bp.x.toFixed(4)}, ${bp.y.toFixed(4)}, ${bp.z.toFixed(4)}\n`;
+    info += `  Rot: ${(be.x*RAD).toFixed(2)}, ${(be.y*RAD).toFixed(2)}, ${(be.z*RAD).toFixed(2)}\n`;
+  }
+
+  if (ch && frame !== undefined) {
+    info += `\n.anim frame ${frame}:\n`;
+    for (const attr of ['rotateX','rotateY','rotateZ','translateX','translateY','translateZ','scaleX','scaleY','scaleZ']) {
+      if (ch[attr]) {
+        const v = getChannelValue(ch[attr], frame);
+        if (v !== null) info += `  ${attr}: ${v.toFixed(4)}\n`;
+      }
+    }
+  }
+
+  document.getElementById('boneInfo').textContent = info;
+  document.getElementById('boneInfoSection').style.display = 'block';
+
+  // Update bone axes helper
+  if (document.getElementById('showBoneAxes').checked) {
+    showAxesOnBone(bone);
+  }
+}
+
+function showAxesOnBone(bone) {
+  if (boneAxesHelper) {
+    boneAxesHelper.parent?.remove(boneAxesHelper);
+    boneAxesHelper = null;
+  }
+  if (!bone) return;
+  boneAxesHelper = new THREE.AxesHelper(2);
+  bone.add(boneAxesHelper);
+}
+
+// ── UI ───────────────────────────────────────────────────────────────────────
+function updateBoneListUI() {
+  const el = document.getElementById('boneList');
+  el.innerHTML = '';
+
+  function addBone(name, depth) {
+    const bone = bones[name];
+    if (!bone) return;
+    const div = document.createElement('div');
+    const hasAnim = animData && animData.channels[name];
+    div.className = 'bone-item' + (hasAnim ? ' mapped' : '');
+    const indent = '\u00A0\u00A0'.repeat(depth);
+    const animIcon = hasAnim ? ' \u25B6' : '';
+    div.textContent = `${indent}${name}${animIcon}`;
+    div.onclick = () => {
+      document.querySelectorAll('.bone-item').forEach(d => d.classList.remove('selected'));
+      div.classList.add('selected');
+      selectedBoneName = name;
+      updateSelectedBoneInfo(currentFrame);
+    };
+    el.appendChild(div);
+  }
+
+  function traverse(bone, depth) {
+    addBone(bone.name, depth);
+    for (const child of bone.children) {
+      if (child.isBone) traverse(child, depth + 1);
+    }
+  }
+
+  for (const name of boneList) {
+    const bone = bones[name];
+    if (!bone.parent || !bone.parent.isBone) {
+      traverse(bone, 0);
+    }
+  }
+}
+
+// ── Event Handlers ───────────────────────────────────────────────────────────
+document.getElementById('daeFile').addEventListener('change', (e) => {
+  if (e.target.files[0]) loadDAE(e.target.files[0]);
+});
+
+document.getElementById('animFile').addEventListener('change', (e) => {
+  if (e.target.files[0]) loadAnim(e.target.files[0]);
+});
+
+document.getElementById('btnPlay').addEventListener('click', () => {
+  playing = !playing;
+  document.getElementById('btnPlay').textContent = playing ? 'Pause' : 'Play';
+  lastTime = performance.now();
+  frameAccum = 0;
+});
+
+document.getElementById('btnStop').addEventListener('click', () => {
+  playing = false;
+  currentFrame = 0;
+  document.getElementById('btnPlay').textContent = 'Play';
+  document.getElementById('frameSlider').value = 0;
+  document.getElementById('frameDisplay').textContent = `0 / ${totalFrames - 1}`;
+  if (animData) applyAnimFrame(0);
+});
+
+document.getElementById('btnPrev').addEventListener('click', () => {
+  if (totalFrames > 0) {
+    currentFrame = (currentFrame - 1 + totalFrames) % totalFrames;
+    applyAnimFrame(currentFrame);
+    document.getElementById('frameSlider').value = currentFrame;
+    document.getElementById('frameDisplay').textContent = `${currentFrame} / ${totalFrames - 1}`;
+  }
+});
+
+document.getElementById('btnNext').addEventListener('click', () => {
+  if (totalFrames > 0) {
+    currentFrame = (currentFrame + 1) % totalFrames;
+    applyAnimFrame(currentFrame);
+    document.getElementById('frameSlider').value = currentFrame;
+    document.getElementById('frameDisplay').textContent = `${currentFrame} / ${totalFrames - 1}`;
+  }
+});
+
+document.getElementById('frameSlider').addEventListener('input', (e) => {
+  currentFrame = parseInt(e.target.value);
+  document.getElementById('frameDisplay').textContent = `${currentFrame} / ${totalFrames - 1}`;
+  if (animData) applyAnimFrame(currentFrame);
+});
+
+document.getElementById('speedSlider').addEventListener('input', (e) => {
+  playSpeed = parseFloat(e.target.value);
+  document.getElementById('speedDisplay').textContent = playSpeed.toFixed(1) + 'x';
+});
+
+document.getElementById('rotOrder').addEventListener('change', () => {
+  if (animData && colladaModel) {
+    log(`Rotation order changed to: ${getRotOrder()}`);
+    applyAnimFrame(currentFrame);
+  }
+});
+
+document.getElementById('showSkeleton').addEventListener('change', (e) => {
+  if (skeletonHelper) skeletonHelper.visible = e.target.checked;
+});
+
+document.getElementById('showMesh').addEventListener('change', (e) => {
+  if (colladaModel) {
+    colladaModel.traverse(n => {
+      if (n.isMesh || n.isSkinnedMesh) n.visible = e.target.checked;
+    });
+  }
+});
+
+document.getElementById('showBindPose').addEventListener('change', (e) => {
+  if (!colladaModel) return;
+  if (e.target.checked) {
+    // Restore bind pose on all nodes that have it stored
+    colladaModel.traverse((node) => {
+      if (node.userData.bindQuat) {
+        node.quaternion.copy(node.userData.bindQuat);
+        node.position.copy(node.userData.bindPos);
+        node.scale.copy(node.userData.bindScale);
+      }
+    });
+    log('Showing bind pose');
+  } else if (animData) {
+    applyAnimFrame(currentFrame);
+    log('Showing animation frame ' + currentFrame);
+  }
+});
+
+document.getElementById('composeRot').addEventListener('change', () => {
+  if (animData && colladaModel) {
+    log(`Compose mode: ${document.getElementById('composeRot').checked ? 'ON (bind*anim)' : 'OFF (replace)'}`);
+    applyAnimFrame(currentFrame);
+  }
+});
+
+document.getElementById('useHermite').addEventListener('change', () => {
+  if (animData && colladaModel) {
+    applyAnimFrame(currentFrame);
+  }
+});
+
+document.getElementById('showBoneAxes').addEventListener('change', (e) => {
+  if (!e.target.checked && boneAxesHelper) {
+    boneAxesHelper.parent?.remove(boneAxesHelper);
+    boneAxesHelper = null;
+  } else if (e.target.checked && selectedBoneName) {
+    const bone = bones[selectedBoneName] || allNodes[selectedBoneName];
+    if (bone) showAxesOnBone(bone);
+  }
+});
+
+document.getElementById('wireframe').addEventListener('change', (e) => {
+  if (colladaModel) {
+    colladaModel.traverse(n => {
+      if ((n.isMesh || n.isSkinnedMesh) && n.material) {
+        const mats = Array.isArray(n.material) ? n.material : [n.material];
+        mats.forEach(m => m.wireframe = e.target.checked);
+      }
+    });
+  }
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+initScene();
+
+</script>
+</body>
+</html>

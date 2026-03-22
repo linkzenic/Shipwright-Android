@@ -12,6 +12,7 @@ extern "C" {
 #include "include/z64audio.h"
 #include "variables.h"
 #include "transformation_masks/assets/mm_asset_loader.h"
+#include "mods/pak_loader/pak_loader.h"
 }
 
 namespace SohGui {
@@ -657,13 +658,95 @@ void SohMenu::AddMenuSettings() {
         .CVar("gMods.Pikachu.FormEnabled")
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Equipping the Keaton Mask transforms Link into Pikachu.\n"
-                                           "Pikachu has a Smash Bros-inspired combat system:\n"
-                                           "  A = Jab / Fwd Tilt / Fwd Smash / Air attacks\n"
-                                           "  B = Thunder (ground) / Electric Ball (air)\n"
-                                           "  R = Smash shield (parry in 3 frames to reflect)\n"
-                                           "  Hookshot/Whip = Grab, Hammer/B&C = Up Tilt\n"
-                                           "  Spell items = Mega Thunder (hits all bosses)\n\n"
-                                           "Does NOT require mm.o2r."));
+                                           "Full SSBB Brawl moveset with 322 animations.\n\n"
+                                           "Controls:\n"
+                                           "  A = Attack combo (Jab > Up Tilt > Up Smash)\n"
+                                           "  A + Stick = Forward Tilt\n"
+                                           "  Flick + A = Forward Smash\n"
+                                           "  L + A = Down Tilt / Down Smash\n"
+                                           "  A in air = Aerial attacks (Fair/Bair/Nair/Dair)\n"
+                                           "  B still = Thunder Jolt\n"
+                                           "  B + Stick = Skull Bash\n"
+                                           "  R = Bubble Shield (mash to escape stun)\n"
+                                           "  R + dir = Roll Dodge\n\n"
+                                           "C-Button Items:\n"
+                                           "  Roc's Feather = Jump (required!)\n"
+                                           "  Boomerang/Beetle = Quick Attack (2-phase dash)\n"
+                                           "  Din's Fire/Demise = Thunder (lightning column)\n"
+                                           "  Hookshot/Whip = Grab + Pummel + Throw\n"
+                                           "  Hammer = Brawl Hammer attacks\n"
+                                           "  Elemental Rods = Auto-aim projectiles\n\n"
+                                           "Can complete the entire game!"));
+
+    AddWidget(path, "SSBB Pikachu Companion", WIDGET_CVAR_COMBOBOX)
+        .CVar("gExpansions.SSBB.Pikachu")
+        .RaceDisable(false)
+        .Options(ComboboxOptions()
+                     .ComboMap({ { 0, "Off" }, { 1, "Static Model" }, { 2, "Animated (Skinned)" } })
+                     .Tooltip("Spawns a Pikachu companion next to Link.\n"
+                              "Mode 2 uses SSBB weighted skinning with Brawl animations."));
+
+    AddWidget(path, "Custom Models (.pak)", WIDGET_SEPARATOR_TEXT);
+
+    // Build the model combobox map (triggers lazy init of PakLoader)
+    {
+        std::map<int32_t, const char*> pakModelMap;
+        s32 pakCount = PakLoader_GetModelCount();
+        if (pakCount == 0) {
+            pakModelMap[0] = "No models found";
+        } else {
+            for (s32 i = 0; i < pakCount; i++) {
+                pakModelMap[i] = PakLoader_GetModelName(i);
+            }
+        }
+
+        AddWidget(path, "Enable Custom Player Model", WIDGET_CVAR_CHECKBOX)
+            .CVar("gMods.PakLoader.Enabled")
+            .RaceDisable(false)
+            .PreFunc([](WidgetInfo& info) {
+                if (PakLoader_GetModelCount() == 0) {
+                    CVarSetInteger("gMods.PakLoader.Enabled", 0);
+                    info.options->disabled = true;
+                    info.options->disabledTooltip = "No .pak files found.\n"
+                                                    "Place ModLoader64 .pak model files in the mods/ folder.";
+                }
+            })
+            .PostFunc([](WidgetInfo& info) {
+                if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                    s32 savedIdx = CVarGetInteger("gMods.PakLoader.SelectedModel", 0);
+                    if (savedIdx >= 0 && savedIdx < PakLoader_GetModelCount()) {
+                        PakLoader_SelectModel(savedIdx);
+                    }
+                } else {
+                    PakLoader_SelectModel(-1);
+                }
+            })
+            .Options(CheckboxOptions().Tooltip("Replaces Link's model with a custom model from a .pak file.\n"
+                                               "Place ModLoader64 zzplayas .pak files in the mods/ folder.\n"
+                                               "Compatible with OOT animations (same 21-limb skeleton)."));
+
+        AddWidget(path, "Select Model", WIDGET_CVAR_COMBOBOX)
+            .CVar("gMods.PakLoader.SelectedModel")
+            .RaceDisable(false)
+            .PreFunc([](WidgetInfo& info) {
+                if (PakLoader_GetModelCount() == 0 || !CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                    info.options->disabled = true;
+                    info.options->disabledTooltip = PakLoader_GetModelCount() == 0
+                                                        ? "No .pak files found in mods/ folder."
+                                                        : "Enable 'Custom Player Model' first.";
+                }
+            })
+            .PostFunc([](WidgetInfo& info) {
+                if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                    s32 selectedIdx = CVarGetInteger("gMods.PakLoader.SelectedModel", 0);
+                    PakLoader_SelectModel(selectedIdx);
+                }
+            })
+            .Options(ComboboxOptions()
+                         .ComboMap(pakModelMap)
+                         .DefaultIndex(0)
+                         .Tooltip("Choose which .pak model to use as Link's replacement."));
+    }
 
     // ===================== COLUMN 3: Randomizer =====================
     path.column = SECTION_COLUMN_3;

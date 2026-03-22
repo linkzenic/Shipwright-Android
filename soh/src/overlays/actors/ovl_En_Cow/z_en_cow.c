@@ -299,7 +299,10 @@ void func_809DF96C(EnCow* this, PlayState* play) {
     // Romani mask: cow responds to direct talk without Epona's Song
     if (MmMaskWear_GetCurrent() == ITEM_MM_MASK_ROMANI) {
         if (Actor_ProcessTalkRequest(&this->actor, play)) {
-            this->actionFunc = func_809DF870;
+            // Respect cow sanity: let randomizer intercept if shuffling cows
+            if (GameInteractor_Should(VB_GIVE_ITEM_FROM_COW, true, this)) {
+                this->actionFunc = func_809DF870;
+            }
             return;
         }
         func_8002F2CC(&this->actor, play, 170.0f);

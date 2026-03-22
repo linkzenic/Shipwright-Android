@@ -13,6 +13,7 @@
 #include "mods/extended_inventory.h"
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/extended_inventory.c"
+#include "mods/items/custom_items.h"
 
 u8 gAmmoItems[] = {
     ITEM_STICK,   ITEM_NUT,  ITEM_BOMB, ITEM_BOW,  ITEM_NONE, ITEM_NONE, ITEM_SLINGSHOT, ITEM_NONE,
@@ -343,6 +344,194 @@ bool CanMaskSelect() {
            Flags_GetInfTable(INFTABLE_SHOWED_ZELDAS_LETTER_TO_GATE_GUARD);
 }
 
+// =============================================================================
+// Gust Jar Element Cycle (in Kaleido item page)
+// =============================================================================
+
+extern void* ExtInv_GetItemIcon(uint16_t itemId);
+
+// Available elements based on owned medallions
+static u8 sGustAvailElems[6];
+static u8 sGustAvailCount = 0;
+static u8 sGustElemCursor = 0;
+
+static void GustJar_BuildKaleidoElements(void) {
+    sGustAvailCount = 0;
+    // Wind always available
+    sGustAvailElems[sGustAvailCount++] = 0; // GUST_ELEMENT_WIND
+    // Medallion order: Forest(Wind already), Fire, Water, Shadow, Spirit, Light
+    static const s32 questItems[] = { QUEST_MEDALLION_FIRE, QUEST_MEDALLION_WATER, QUEST_MEDALLION_SHADOW,
+                                      QUEST_MEDALLION_SPIRIT, QUEST_MEDALLION_LIGHT };
+    static const u8 elements[] = { 1, 2, 3, 4, 5 }; // Fire, Ice, Shadow, Spirit, Light
+    for (s32 i = 0; i < 5; i++) {
+        if (CHECK_QUEST_ITEM(questItems[i])) {
+            sGustAvailElems[sGustAvailCount++] = elements[i];
+        }
+    }
+    // Find current cursor
+    sGustElemCursor = 0;
+    for (u8 i = 0; i < sGustAvailCount; i++) {
+        if (sGustAvailElems[i] == gCustomItemState.gustJarElement) {
+            sGustElemCursor = i;
+            break;
+        }
+    }
+}
+
+static u8 sGustOverlayActive = 0;
+static s16 sGustHoldTimer = 0;
+#define GUST_KALEIDO_HOLD_FRAMES 20 // Hold C for 20 frames before overlay appears
+
+static void GustJar_HandleElementCycle(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+
+    // Check if cursor is on Gust Jar
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_GUST_JAR) {
+        sGustOverlayActive = 0;
+        sGustHoldTimer = 0;
+        return;
+    }
+
+    GustJar_BuildKaleidoElements();
+    if (sGustAvailCount <= 1) {
+        sGustOverlayActive = 0;
+        sGustHoldTimer = 0;
+        return;
+    }
+
+    // Hold any C-button — count frames, only activate overlay after threshold
+    u8 cHeld = CHECK_BTN_ANY(input->cur.button, BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT);
+    if (cHeld) {
+        sGustHoldTimer++;
+
+        // Only activate overlay after holding for GUST_KALEIDO_HOLD_FRAMES
+        if (sGustHoldTimer >= GUST_KALEIDO_HOLD_FRAMES) {
+            if (!sGustOverlayActive) {
+                // First frame of overlay — play sound
+                Audio_PlaySoundGeneral(NA_SE_SY_CAMERA_ZOOM_UP, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+            sGustOverlayActive = 1;
+
+            // Stick left/right to cycle through elements while overlay is shown
+            s32 stickX = input->rel.stick_x;
+            static s32 sGustStickHeld = 0;
+
+            if (stickX > 30 && !sGustStickHeld) {
+                sGustElemCursor = (sGustElemCursor + 1) % sGustAvailCount;
+                gCustomItemState.gustJarElement = sGustAvailElems[sGustElemCursor];
+                sGustStickHeld = 1;
+                Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            } else if (stickX < -30 && !sGustStickHeld) {
+                sGustElemCursor = (sGustElemCursor + sGustAvailCount - 1) % sGustAvailCount;
+                gCustomItemState.gustJarElement = sGustAvailElems[sGustElemCursor];
+                sGustStickHeld = 1;
+                Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            } else if (stickX > -20 && stickX < 20) {
+                sGustStickHeld = 0;
+            }
+        }
+        // During the first 20 frames of hold, do nothing — equip proceeds normally
+    } else {
+        if (sGustOverlayActive) {
+            // Released C-button → confirm selection
+            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+        sGustOverlayActive = 0;
+        sGustHoldTimer = 0;
+    }
+}
+
+static void GustJar_DrawElementCycle(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_GUST_JAR)
+        return;
+
+    GustJar_BuildKaleidoElements();
+    if (sGustAvailCount <= 1)
+        return;
+
+    u8 curElem = sGustAvailElems[sGustElemCursor];
+
+    static const u16 elemToMedallion[] = { ITEM_MEDALLION_FOREST, ITEM_MEDALLION_FIRE,   ITEM_MEDALLION_WATER,
+                                           ITEM_MEDALLION_SHADOW, ITEM_MEDALLION_SPIRIT, ITEM_MEDALLION_LIGHT };
+
+    // Get cursor slot vertex for positioning
+    s32 cursorSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+    s32 vtxIdx = cursorSlot * 4;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    // Always draw selected medallion at half-alpha behind the Gust Jar icon
+    // (same pattern as SW97 elemental arrows in z_kaleido_collect.c:440-465)
+    if (curElem != 0) { // Not wind (default)
+        void* medallionTex = ExtInv_GetItemIcon(elemToMedallion[curElem]);
+        if (medallionTex != NULL) {
+            // Medallion at 50% alpha (behind)
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha >> 1);
+            gSPVertex(POLY_OPA_DISP++, &pauseCtx->itemVtx[vtxIdx], 4, 0);
+            KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, medallionTex, 24, 24, 0);
+
+            // Gust Jar icon at full alpha (on top)
+            void* gustTex = ExtInv_GetItemIcon(ITEM_GUST_JAR);
+            if (gustTex != NULL) {
+                // Remap texture coords to 32x32 for item icon overlay (75% scale like SW97)
+                Vtx* overlayVtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, 4 * sizeof(Vtx));
+                for (s32 vi = 0; vi < 4; vi++) {
+                    overlayVtx[vi] = pauseCtx->itemVtx[vtxIdx + vi];
+                }
+                overlayVtx[0].v.tc[0] = 0;
+                overlayVtx[0].v.tc[1] = 0;
+                overlayVtx[1].v.tc[0] = 32 << 5;
+                overlayVtx[1].v.tc[1] = 0;
+                overlayVtx[2].v.tc[0] = 0;
+                overlayVtx[2].v.tc[1] = 32 << 5;
+                overlayVtx[3].v.tc[0] = 32 << 5;
+                overlayVtx[3].v.tc[1] = 32 << 5;
+
+                gDPPipeSync(POLY_OPA_DISP++);
+                gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+                gSPVertex(POLY_OPA_DISP++, overlayVtx, 4, 0);
+                KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, gustTex, 32, 32, 0);
+            }
+        }
+    }
+
+    // When overlay is active (C-button held): draw all available elements around cursor
+    if (sGustOverlayActive) {
+        static const s16 offsetX[] = { 0, 20, 20, -20, -20, 0 };
+        static const s16 offsetY[] = { -22, -10, 10, -10, 10, 22 };
+
+        for (u8 i = 0; i < sGustAvailCount; i++) {
+            u8 elem = sGustAvailElems[i];
+            void* tex = ExtInv_GetItemIcon(elemToMedallion[elem]);
+            if (tex == NULL)
+                continue;
+
+            u8 alpha = (i == sGustElemCursor) ? pauseCtx->alpha : (pauseCtx->alpha >> 1);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, alpha);
+
+            // Create offset vertices for this medallion
+            Vtx* elemVtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, 4 * sizeof(Vtx));
+            for (s32 vi = 0; vi < 4; vi++) {
+                elemVtx[vi] = pauseCtx->itemVtx[vtxIdx + vi];
+                elemVtx[vi].v.ob[0] += offsetX[elem];
+                elemVtx[vi].v.ob[1] += offsetY[elem];
+            }
+            gSPVertex(POLY_OPA_DISP++, elemVtx, 4, 0);
+            KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, tex, 24, 24, 0);
+        }
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void KaleidoScope_HandleItemCycles(PlayState* play) {
     // handle the mask select
     KaleidoScope_HandleItemCycleExtras(
@@ -382,6 +571,9 @@ void KaleidoScope_HandleItemCycles(PlayState* play) {
     // Handle Nayru's Love/Roc's Feather
     KaleidoScope_HandleItemCycleExtras(play, SLOT_NAYRUS_LOVE, Randomizer_GetSettingValue(RSK_ROCS_FEATHER),
                                        Enhancement_GetPrevNayrusItem(), Enhancement_GetNextNayrusItem(), true);
+
+    // Handle Gust Jar element cycle
+    GustJar_HandleElementCycle(play);
 }
 
 void KaleidoScope_DrawItemCycles(PlayState* play) {
@@ -405,6 +597,9 @@ void KaleidoScope_DrawItemCycles(PlayState* play) {
     // Draw Nayru's Love/Roc's Feather
     KaleidoScope_DrawItemCycleExtras(play, SLOT_NAYRUS_LOVE, Randomizer_GetSettingValue(RSK_ROCS_FEATHER),
                                      Enhancement_GetPrevNayrusItem(), Enhancement_GetNextNayrusItem());
+
+    // Draw Gust Jar element indicator
+    GustJar_DrawElementCycle(play);
 }
 
 bool IsItemCycling() {
@@ -453,7 +648,7 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
             ((CVarGetInteger(CVAR_ENHANCEMENT("PauseAnyCursor"), 0) == PAUSE_ANY_CURSOR_RANDO_ONLY && IS_RANDO) ||
              (CVarGetInteger(CVAR_ENHANCEMENT("PauseAnyCursor"), 0) == PAUSE_ANY_CURSOR_ALWAYS_ON));
 
-        moveCursorResult = 0 || IsItemCycling();
+        moveCursorResult = 0 || IsItemCycling() || sGustOverlayActive;
         oldCursorPoint = pauseCtx->cursorPoint[PAUSE_ITEM];
 
         cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
@@ -649,7 +844,7 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
             if (cursorItem != PAUSE_ITEM_NONE) {
                 if ((ABS(pauseCtx->stickRelY) > 30) ||
                     (dpad && CHECK_BTN_ANY(input->press.button, BTN_DDOWN | BTN_DUP))) {
-                    moveCursorResult = 0 || IsItemCycling();
+                    moveCursorResult = 0 || IsItemCycling() || sGustOverlayActive;
 
                     cursorPoint = pauseCtx->cursorPoint[PAUSE_ITEM];
                     cursorY = pauseCtx->cursorY[PAUSE_ITEM];
@@ -725,7 +920,7 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                          CHECK_BTN_ALL(input->cur.button, BTN_CUP))) {
                         buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
                     }
-                    if (CHECK_BTN_ANY(input->press.button, buttonsToCheck)) {
+                    if (CHECK_BTN_ANY(input->press.button, buttonsToCheck) && !sGustOverlayActive) {
                         if (CHECK_AGE_REQ_SLOT(inventorySlot) && (cursorItem != ITEM_SOLD_OUT) &&
                             (cursorItem != ITEM_NONE)) {
                             // Use inventorySlot (real slot 0-47) instead of cursorSlot (visual slot 0-23)

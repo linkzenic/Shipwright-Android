@@ -33,23 +33,20 @@ CustomItemState gCustomItemState = { .timer1 = 0,
                                      .spinnerActive = 0,
                                      .spinnerSpinAttackTimer = 0,
                                      .spinnerWallBumpTimer = 0,
-                                     .gustJarState = 0,
-                                     .gustJarTarget = NULL,
+                                     .gustJarEquipped = 0,
                                      .gustJarMode = 0,
-                                     .gustJarAmmoType = 0,
-                                     .gustJarProjectileActive = 0,
-                                     .gustJarProjPos = { 0, 0, 0 },
-                                     .gustJarProjYaw = 0,
-                                     .gustJarProjPitch = 0,
+                                     .gustJarElement = 0,
+                                     .gustJarBlowActive = 0,
+                                     .gustJarHeatTimer = 0,
+                                     .gustJarBlowTimer = 0,
+                                     .gustJarCooldownTimer = 0,
                                      .gustJarTimer = 0,
                                      .gustJarFirstPersonActive = 0,
                                      .gustJarAimMode = 0,
                                      .gustJarPrevCameraMode = 0,
-                                     .gustJarEquipped = 0,
                                      .gustJarButtonMask = 0,
                                      .gustJarPrevInvincibility = 0,
                                      .gustJarPotActor = NULL,
-                                     .gustJarScaleCacheCount = 0,
                                      .shovelActive = 0,
                                      .shovelAnimating = 0,
                                      .shovelAnimTimer = 0,
@@ -325,6 +322,26 @@ void CustomItems_Update(Player* p, PlayState* play) {
 
     CustomItems_CleanupUnequipped(p, play);
 
+    // Zora Mask: allow use in water (like custom items, bypasses Player_UseItem water block).
+    // Scans all equipped buttons for Zora mask and calls transform handler on press.
+    if (p->stateFlags1 & PLAYER_STATE1_IN_WATER) {
+        static const u16 sMaskBtns[] = { BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT, BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT };
+        Input* ctrl = &play->state.input[0];
+        for (s32 mi = 0; mi < 7; mi++) {
+            if (mi >= 3 && !CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0))
+                break;
+            if (CHECK_BTN_ALL(ctrl->press.button, sMaskBtns[mi])) {
+                u8 slot = (mi < 3) ? (mi + 1) : (mi - 3 + 5); // C-buttons: slots 1-3, D-pad: slots 5-8
+                u8 maskItem = gSaveContext.equips.buttonItems[slot];
+                if (maskItem == ITEM_MM_MASK_ZORA || maskItem == ITEM_MASK_ZORA) {
+                    extern void TransformMasks_HandleMaskUse(PlayState*, Player*, s32);
+                    TransformMasks_HandleMaskUse(play, p, maskItem);
+                    break;
+                }
+            }
+        }
+    }
+
     for (u8 i = 1; i <= 8; i++) {
         u8 item = gSaveContext.equips.buttonItems[i];
         if (item < ITEM_ROCS_FEATHER_SKIJER || item > ITEM_PENDING_3)
@@ -455,14 +472,14 @@ s32 CustomItems_OverrideDraw(Player* p, PlayState* play) {
     if (gCustomItemState.bombArrowActive && gCustomItemState.bombArrowFirstPersonActive) {
         FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
     }
-    // Gust Jar - BLUE when sucking (mode 2), RED when shooting/idle
+    // Gust Jar - BLUE when absorbing, element color when blowing, WHITE when idle
     if (gCustomItemState.gustJarFirstPersonActive) {
-        if (gCustomItemState.gustJarMode == 2) {
-            // Suction mode - BLUE (pull)
+        if (gCustomItemState.gustJarMode == 2) { // GUST_MODE_ABSORB
             FirstPerson_DrawReticle(p, play, 0.0f, 0, 100, 255);
+        } else if (gCustomItemState.gustJarMode == 3) { // GUST_MODE_BLOW
+            FirstPerson_DrawReticle(p, play, 0.0f, 255, 100, 0);
         } else {
-            // Shoot/idle mode - RED (expel)
-            FirstPerson_DrawReticle(p, play, 0.0f, 255, 0, 0);
+            FirstPerson_DrawReticle(p, play, 0.0f, 200, 200, 200);
         }
     }
     // Ball and Chain - RED (expel)
@@ -546,10 +563,9 @@ void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {
 
     // Gust Jar
     out->gustJarMode = s->gustJarMode;
-    out->gustJarAmmoType = s->gustJarAmmoType;
-    out->gustJarProjectileActive = s->gustJarProjectileActive;
-    out->gustJarProjPos = s->gustJarProjPos;
-    out->gustJarProjYaw = s->gustJarProjYaw;
+    out->gustJarElement = s->gustJarElement;
+    out->gustJarBlowActive = s->gustJarBlowActive;
+    out->gustJarHeatTimer = s->gustJarHeatTimer;
 
     // Ball and Chain
     out->ballAndChainThrown = s->ballAndChainThrown;
@@ -643,10 +659,9 @@ void CustomItems_ApplyVisualSync(const CustomItemVisualSync* sync) {
     s->dekuLeafAnimTimer = sync->dekuLeafAnimTimer;
 
     // Gust Jar
-    s->gustJarAmmoType = sync->gustJarAmmoType;
-    s->gustJarProjectileActive = sync->gustJarProjectileActive;
-    s->gustJarProjPos = sync->gustJarProjPos;
-    s->gustJarProjYaw = sync->gustJarProjYaw;
+    s->gustJarElement = sync->gustJarElement;
+    s->gustJarBlowActive = sync->gustJarBlowActive;
+    s->gustJarHeatTimer = sync->gustJarHeatTimer;
 
     // Ball and Chain
     s->timer2 = sync->timer2;

@@ -4,6 +4,7 @@
 #include "z64object.h"
 #include "soh/Enhancements/custom-message/CustomMessageTypes.h"
 #include "draw.h"
+#include "mods/extended_equipment.h"
 
 using namespace Rando;
 
@@ -500,6 +501,20 @@ void Rando::StaticData::InitItemTable() {
     itemTable[RG_MM_MASK_GIANT] =                       Item(RG_MM_MASK_GIANT,                    Text{ "Giant's Mask", "Masque de Géant", "Riesenmaske" },                                                                            ITEMTYPE_ITEM,              0xFA,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_MM_MASK_GIANT,                   OBJECT_GI_JEWEL,       0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
     itemTable[RG_MM_MASK_FIERCE_DEITY] =                Item(RG_MM_MASK_FIERCE_DEITY,             Text{ "Fierce Deity Mask", "Masque du Dieu Féroce", "Majoras Maske" },                                                               ITEMTYPE_ITEM,              0xFB,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_MM_MASK_FIERCE_DEITY,            OBJECT_GI_JEWEL,       0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
 
+    // Extended Equipment (12 items for equipment page 2)
+    itemTable[RG_EXT_CANE_OF_BYRNA] =               Item(RG_EXT_CANE_OF_BYRNA,                Text{ "Cane of Byrna", "Canne de Byrna", "Stab von Byrna" },                                                                        ITEMTYPE_ITEM,              0xFC,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_SWORD_1,                     OBJECT_GI_BOOMERANG,    0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_FOUR_SWORD] =                  Item(RG_EXT_FOUR_SWORD,                   Text{ "Four Sword", "Épée de Quatre", "Vier-Schwert" },                                                                             ITEMTYPE_ITEM,              0xFD,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_SWORD_2,                     OBJECT_GI_SWORD_1,      0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_DRILLSHAFT] =                  Item(RG_EXT_DRILLSHAFT,                   Text{ "Drillshaft", "Foreuse", "Bohrer" },                                                                                           ITEMTYPE_ITEM,              0xFE,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_SWORD_3,                     OBJECT_GI_SWORD_1,      0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_DIVINE_SHIELD] =               Item(RG_EXT_DIVINE_SHIELD,                Text{ "Divine Shield", "Bouclier Divin", "Götterschild" },                                                                          ITEMTYPE_ITEM,              0xFF,                 true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_SHIELD_1,                    OBJECT_GI_SHIELD_2,     0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_GERUDO_SCIMITAR] =             Item(RG_EXT_GERUDO_SCIMITAR,              Text{ "Gerudo Scimitar", "Cimeterre Gerudo", "Gerudo-Krummschwert" },                                                                ITEMTYPE_ITEM,              0x100,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_SHIELD_2,                    OBJECT_GI_SWORD_1,      0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_SHIELD_OF_IKANA] =             Item(RG_EXT_SHIELD_OF_IKANA,              Text{ "Shield of Ikana", "Bouclier d'Ikana", "Schild von Ikana" },                                                                  ITEMTYPE_ITEM,              0x101,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_SHIELD_3,                    OBJECT_GI_SHIELD_3,     0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_MAGIC_CAPE] =                  Item(RG_EXT_MAGIC_CAPE,                   Text{ "Magic Cape", "Cape Magique", "Zauberumhang" },                                                                                ITEMTYPE_ITEM,              0x102,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_TUNIC_1,                     OBJECT_GI_JEWEL,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_PENDING_TUNIC] =               Item(RG_EXT_PENDING_TUNIC,                Text{ "Pending", "En Attente", "Ausstehend" },                                                                                      ITEMTYPE_ITEM,              0x103,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_TUNIC_2,                     OBJECT_GI_JEWEL,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_CHAMPIONS_TUNIC] =             Item(RG_EXT_CHAMPIONS_TUNIC,              Text{ "Champion's Tunic", "Tunique du Héros", "Rüstung des Helden" },                                                                ITEMTYPE_ITEM,              0x104,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_TUNIC_3,                     OBJECT_GI_JEWEL,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_PEGASUS_ANKLET] =              Item(RG_EXT_PEGASUS_ANKLET,               Text{ "Pegasus Anklet", "Bracelet de Pégase", "Pegasus-Fußreif" },                                                                  ITEMTYPE_ITEM,              0x105,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_BOOTS_1,                     OBJECT_GI_BOOTS_2,      0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_PENDANT_OF_MEMORIES] =         Item(RG_EXT_PENDANT_OF_MEMORIES,          Text{ "Pendant of Memories", "Pendentif des Souvenirs", "Amulett der Erinnerungen" },                                                ITEMTYPE_ITEM,              0x106,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_BOOTS_2,                     OBJECT_GI_JEWEL,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+    itemTable[RG_EXT_WATER_DRAGON_SCALE] =          Item(RG_EXT_WATER_DRAGON_SCALE,           Text{ "Water Dragon Scale", "Écaille du Dragon d'Eau", "Wasserdrachen-Schuppe" },                                                    ITEMTYPE_ITEM,              0x107,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_BOOTS_3,                     OBJECT_GI_SCALE,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER);
+
     // Register custom draw functions for all 24 custom items
     itemTable[RG_ROCS_FEATHER].SetCustomDrawFunc(Randomizer_DrawRocsFeatherSkijer);
     itemTable[RG_WHIP].SetCustomDrawFunc(Randomizer_DrawWhip);
@@ -526,6 +541,20 @@ void Rando::StaticData::InitItemTable() {
     itemTable[RG_PENDING_3].SetCustomDrawFunc(Randomizer_DrawCryonis);
     itemTable[RG_DESIRE_SENSOR].SetCustomDrawFunc(Randomizer_DrawDesireSensor);
     itemTable[RG_ROCS_CAPE].SetCustomDrawFunc(Randomizer_DrawRocsCape);
+
+    // Extended Equipment draw functions
+    itemTable[RG_EXT_CANE_OF_BYRNA].SetCustomDrawFunc(Randomizer_DrawExtCaneOfByrna);
+    itemTable[RG_EXT_FOUR_SWORD].SetCustomDrawFunc(Randomizer_DrawExtFourSword);
+    itemTable[RG_EXT_DRILLSHAFT].SetCustomDrawFunc(Randomizer_DrawExtDrillshaft);
+    itemTable[RG_EXT_DIVINE_SHIELD].SetCustomDrawFunc(Randomizer_DrawExtDivineShield);
+    itemTable[RG_EXT_GERUDO_SCIMITAR].SetCustomDrawFunc(Randomizer_DrawExtGerudoScimitar);
+    itemTable[RG_EXT_SHIELD_OF_IKANA].SetCustomDrawFunc(Randomizer_DrawExtShieldOfIkana);
+    itemTable[RG_EXT_MAGIC_CAPE].SetCustomDrawFunc(Randomizer_DrawExtMagicCape);
+    itemTable[RG_EXT_PENDING_TUNIC].SetCustomDrawFunc(Randomizer_DrawExtPendingTunic);
+    itemTable[RG_EXT_CHAMPIONS_TUNIC].SetCustomDrawFunc(Randomizer_DrawExtChampionsTunic);
+    itemTable[RG_EXT_PEGASUS_ANKLET].SetCustomDrawFunc(Randomizer_DrawExtPegasusAnklet);
+    itemTable[RG_EXT_PENDANT_OF_MEMORIES].SetCustomDrawFunc(Randomizer_DrawExtPendantOfMemories);
+    itemTable[RG_EXT_WATER_DRAGON_SCALE].SetCustomDrawFunc(Randomizer_DrawExtWaterDragonScale);
 
     // MM Mask get-item 3D models (all 24, from mm.o2r)
     itemTable[RG_MM_MASK_POSTMAN].SetCustomDrawFunc(Randomizer_DrawMmMask);

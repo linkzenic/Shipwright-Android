@@ -44,6 +44,7 @@
 // Extended Inventory for Custom Items (Page 2)
 extern "C" {
 #include "mods/extended_inventory.h"
+#include "mods/extended_equipment.h"
 #include "mods/items/custom_items.h"
 }
 
@@ -4464,6 +4465,43 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_DOMINION_ROD:
             ExtInv_SetItemById(ITEM_DOMINION_ROD);
+            break;
+        // Extended Equipment (ownership bits in upper 16 of inventory.equipment)
+        case RG_EXT_CANE_OF_BYRNA:
+            ExtEquip_GiveItem(EQUIP_TYPE_SWORD, 1);
+            break;
+        case RG_EXT_FOUR_SWORD:
+            ExtEquip_GiveItem(EQUIP_TYPE_SWORD, 2);
+            break;
+        case RG_EXT_DRILLSHAFT:
+            ExtEquip_GiveItem(EQUIP_TYPE_SWORD, 3);
+            break;
+        case RG_EXT_DIVINE_SHIELD:
+            ExtEquip_GiveItem(EQUIP_TYPE_SHIELD, 1);
+            break;
+        case RG_EXT_GERUDO_SCIMITAR:
+            ExtEquip_GiveItem(EQUIP_TYPE_SHIELD, 2);
+            break;
+        case RG_EXT_SHIELD_OF_IKANA:
+            ExtEquip_GiveItem(EQUIP_TYPE_SHIELD, 3);
+            break;
+        case RG_EXT_MAGIC_CAPE:
+            ExtEquip_GiveItem(EQUIP_TYPE_TUNIC, 1);
+            break;
+        case RG_EXT_PENDING_TUNIC:
+            ExtEquip_GiveItem(EQUIP_TYPE_TUNIC, 2);
+            break;
+        case RG_EXT_CHAMPIONS_TUNIC:
+            ExtEquip_GiveItem(EQUIP_TYPE_TUNIC, 3);
+            break;
+        case RG_EXT_PEGASUS_ANKLET:
+            ExtEquip_GiveItem(EQUIP_TYPE_BOOTS, 1);
+            break;
+        case RG_EXT_PENDANT_OF_MEMORIES:
+            ExtEquip_GiveItem(EQUIP_TYPE_BOOTS, 2);
+            break;
+        case RG_EXT_WATER_DRAGON_SCALE:
+            ExtEquip_GiveItem(EQUIP_TYPE_BOOTS, 3);
             break;
         // MM Masks (Third Inventory Page)
         case RG_MM_MASK_POSTMAN:

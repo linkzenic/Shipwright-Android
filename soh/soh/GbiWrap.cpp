@@ -64,14 +64,19 @@ extern "C" void gSPSegmentLoadRes(void* value, int segNum, uintptr_t target) {
     __gSPSegment(value, segNum, target);
 }
 
+extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath);
+
 extern "C" void gSPDisplayList(Gfx* pkt, Gfx* dl) {
     char* imgData = (char*)dl;
 
     if (ResourceMgr_OTRSigCheck(imgData) == 1) {
-
-        // ResourceMgr_PushCurrentDirectory(imgData);
-        // gsSPPushCD(pkt++, imgData);
-        dl = ResourceMgr_LoadGfxByName(imgData);
+        // PAK Loader: Check if this OTR DL should be replaced with a custom .pak DL
+        Gfx* pakDL = PakLoader_GetDLOverride(imgData);
+        if (pakDL) {
+            dl = pakDL;
+        } else {
+            dl = ResourceMgr_LoadGfxByName(imgData);
+        }
     }
 
     __gSPDisplayList(pkt, dl);

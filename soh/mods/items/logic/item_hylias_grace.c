@@ -41,6 +41,23 @@ static u8 sFairyPosValid = 0;
 static Vec3f sFairyVelocity = { 0.0f, 0.0f, 0.0f };
 static f32 sFairyDimLevel = 0.0f;
 
+// Ivan possess mode (Spirit Medallion → spawn real EnPartner controlled by Player 1)
+static Actor* sIvanActor = NULL;
+u8 gIvanPossessActive = 0; // Global flag — extern'd in z_player.c / z_collision_check.c
+
+// Pink fairy skeleton (Hylia's Grace uses Ivan's 3D model with pink colors)
+static SkelAnime sPinkFairySkel;
+static Vec3s sPinkFairyJointTable[15];
+static Vec3s sPinkFairyMorphTable[15];
+static u8 sPinkFairySkelInited = 0;
+
+static void HGrace_InitPinkFairySkel(PlayState* play) {
+    if (sPinkFairySkelInited)
+        return;
+    SkelAnime_Init(play, &sPinkFairySkel, &gFairySkel, &gFairyAnim, sPinkFairyJointTable, sPinkFairyMorphTable, 15);
+    sPinkFairySkelInited = 1;
+}
+
 // Forward declarations (defined after HGrace_IsPassableBarrier, used in HGrace_Stop)
 static void HGrace_DimLighting(PlayState* play, f32 intensity);
 static void HGrace_ResetLighting(PlayState* play);
@@ -115,125 +132,38 @@ static void HGrace_SpawnWarpSparkles(PlayState* play, Vec3f* center) {
 
 static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
     Player* p = (Player*)thisx;
-    u8 isSpirit = hgForcedBySpell;
-    s16 flickerStart = isSpirit ? HGRACE_SW97_FLICKER_START : HGRACE_FLICKER_START;
-
-    // Flicker: skip drawing during flicker-off frames
-    if ((hgTimer <= flickerStart) && ((play->gameplayFrames % 6) < 3))
+    if (!sPinkFairySkelInited)
         return;
 
+    // Animate wings
+    SkelAnime_Update(&sPinkFairySkel);
+
+    Gfx* dListHead = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
+
     OPEN_DISPS(play->state.gfxCtx);
-
-    f32 bx = p->actor.world.pos.x;
-    f32 by = p->actor.world.pos.y + 20.0f;
-    f32 bz = p->actor.world.pos.z;
-
-    // Vanilla fairy pulsation: scale oscillates ±10% around 1.0
-    f32 pulse = (Math_SinS(play->gameplayFrames * 4096) * 0.1f) + 1.0f;
-
-    // Color scheme: golden for Spirit Medallion, green for Hylia's Grace
-    // Spirit fairy = Navi (white core, blue glow); default = green for Hylia's Grace
-    u8 glowR = isSpirit ? 100 : 180, glowG = isSpirit ? 150 : 255, glowB = isSpirit ? 255 : 180;
-    u8 coreR = isSpirit ? 255 : 255, coreG = isSpirit ? 255 : 255, coreB = isSpirit ? 255 : 255;
-    u8 wingR = isSpirit ? 180 : 200, wingG = isSpirit ? 210 : 255, wingB = isSpirit ? 255 : 200;
-    u8 wenvR = isSpirit ? 64 : 100, wenvG = isSpirit ? 64 : 255, wenvB = isSpirit ? 255 : 100;
-
-    // ===== BODY GLOW (single layer, SETUPDL_65 + CLD_SURF) =====
-    POLY_XLU_DISP = func_800947AC(POLY_XLU_DISP++);
-    gDPSetAlphaDither(POLY_XLU_DISP++, G_AD_NOISE);
-    gDPSetColorDither(POLY_XLU_DISP++, G_CD_MAGICSQ);
-    gSPDisplayList(POLY_XLU_DISP++, gGlowCircleTextureLoadDL);
-
-    {
-        // Spirit fairy has a larger glow aura
-        f32 s = (isSpirit ? 0.045f : 0.035f) * pulse;
-        Matrix_Translate(bx, by, bz, MTXMODE_NEW);
-        Matrix_ReplaceRotation(&play->billboardMtxF);
-        Matrix_Scale(s, s, s, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, glowR, glowG, glowB, isSpirit ? 140 : 120);
-        gSPDisplayList(POLY_XLU_DISP++, gGlowCircleDL);
-    }
-
-    // ===== INNER CORE =====
-    {
-        f32 si = 0.012f * pulse;
-        Matrix_Translate(bx, by, bz, MTXMODE_NEW);
-        Matrix_ReplaceRotation(&play->billboardMtxF);
-        Matrix_Scale(si, si, si, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, coreR, coreG, coreB, isSpirit ? 220 : 200);
-        gSPDisplayList(POLY_XLU_DISP++, gGlowCircleDL);
-    }
-
-    // ===== FAIRY WINGS (vanilla EnElf_Draw material pattern) =====
     Gfx_SetupDL_27Xlu(play->state.gfxCtx);
 
-    // Segment 0x08: fairy material — PrimColor + RenderMode (matches EnElf_Draw)
-    {
-        Gfx* seg = Graph_Alloc(play->state.gfxCtx, sizeof(Gfx) * 4);
-        gSPSegment(POLY_XLU_DISP++, 0x08, seg);
-        gDPPipeSync(seg++);
-        gDPSetPrimColor(seg++, 0, 0x01, wingR, wingG, wingB, isSpirit ? 200 : 180);
-        gDPSetRenderMode(seg++, G_RM_PASS, G_RM_ZB_CLD_SURF2);
-        gSPEndDisplayList(seg++);
-    }
-
-    // Outer color with pulsating alpha (vanilla fairy breathing effect)
+    // Pulsating env alpha (vanilla fairy breathing effect)
     s32 envAlpha = (play->gameplayFrames * 50) & 0x1FF;
     envAlpha = (envAlpha > 255) ? 511 - envAlpha : envAlpha;
-    gDPSetEnvColor(POLY_XLU_DISP++, wenvR, wenvG, wenvB, (u8)envAlpha);
 
-    // Wing flap animation (sinusoidal, ~±40 degrees)
-    f32 flapRad = Math_SinS(play->gameplayFrames * 5000) * 0.7f;
-    f32 ws = 0.008f * pulse;
-    f32 wsLower = ws * 0.8f;
-    f32 yr = p->actor.shape.rot.y * (M_PI / 32768.0f);
+    // Segment 0x08: PrimColor (pink inner) + RenderMode
+    gSPSegment(POLY_XLU_DISP++, 0x08, dListHead);
+    gDPPipeSync(dListHead++);
+    gDPSetPrimColor(dListHead++, 0, 0x01, 255, 180, 220, 200); // Pink inner
+    gDPSetRenderMode(dListHead++, G_RM_PASS, G_RM_ZB_CLD_SURF2);
+    gSPEndDisplayList(dListHead++);
 
-    // Forward tilt: lean into movement direction (max ±20 degrees)
-    f32 hSpeed = sqrtf(SQ(sFairyVelocity.x) + SQ(sFairyVelocity.z));
-    f32 maxSpd = hgForcedBySpell ? (HGRACE_SW97_SPEED * HGRACE_SW97_SPRINT_MULT) : (HGRACE_SPEED * HGRACE_SPRINT_MULT);
-    f32 tiltX = -(hSpeed / maxSpd) * 0.35f; // negative = lean forward (pitch down)
+    // Env color (pink outer glow)
+    gDPSetEnvColor(POLY_XLU_DISP++, 255, 100, 180, (u8)envAlpha);
 
-    // Right upper wing
-    Matrix_Translate(bx, by + 2.0f, bz, MTXMODE_NEW);
-    Matrix_RotateY(yr, MTXMODE_APPLY);
-    Matrix_RotateX(tiltX, MTXMODE_APPLY);
-    Matrix_Translate(5.0f, 0.0f, 0.0f, MTXMODE_APPLY);
-    Matrix_RotateZ(flapRad + 0.5f, MTXMODE_APPLY);
-    Matrix_Scale(ws, ws, ws, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, gFairyWing1DL);
+    // Position + scale at fairy location
+    Matrix_Translate(p->actor.world.pos.x, p->actor.world.pos.y + 20.0f, p->actor.world.pos.z, MTXMODE_NEW);
+    f32 pulse = (Math_SinS(play->gameplayFrames * 4096) * 0.1f) + 1.0f;
+    f32 s = 0.008f * pulse;
+    Matrix_Scale(s, s, s, MTXMODE_APPLY);
 
-    // Right lower wing
-    Matrix_Translate(bx, by - 1.0f, bz, MTXMODE_NEW);
-    Matrix_RotateY(yr, MTXMODE_APPLY);
-    Matrix_RotateX(tiltX, MTXMODE_APPLY);
-    Matrix_Translate(4.0f, 0.0f, 0.0f, MTXMODE_APPLY);
-    Matrix_RotateZ(flapRad + 0.3f, MTXMODE_APPLY);
-    Matrix_Scale(wsLower, wsLower, wsLower, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, gFairyWing2DL);
-
-    // Left upper wing (mirrored X scale to flip geometry)
-    Matrix_Translate(bx, by + 2.0f, bz, MTXMODE_NEW);
-    Matrix_RotateY(yr, MTXMODE_APPLY);
-    Matrix_RotateX(tiltX, MTXMODE_APPLY);
-    Matrix_Translate(-5.0f, 0.0f, 0.0f, MTXMODE_APPLY);
-    Matrix_RotateZ(-flapRad - 0.5f, MTXMODE_APPLY);
-    Matrix_Scale(-ws, ws, ws, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, gFairyWing3DL);
-
-    // Left lower wing (mirrored X scale to flip geometry)
-    Matrix_Translate(bx, by - 1.0f, bz, MTXMODE_NEW);
-    Matrix_RotateY(yr, MTXMODE_APPLY);
-    Matrix_RotateX(tiltX, MTXMODE_APPLY);
-    Matrix_Translate(-4.0f, 0.0f, 0.0f, MTXMODE_APPLY);
-    Matrix_RotateZ(-flapRad - 0.3f, MTXMODE_APPLY);
-    Matrix_Scale(-wsLower, wsLower, wsLower, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, gFairyWing4DL);
+    POLY_XLU_DISP = SkelAnime_DrawSkeleton2(play, &sPinkFairySkel, NULL, NULL, NULL, POLY_XLU_DISP);
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -245,6 +175,18 @@ static void HGrace_DrawFairy(Actor* thisx, PlayState* play) {
 static void HGrace_Stop(Player* p, PlayState* play) {
     if (!hgActive)
         return;
+
+    // Clean up Ivan possess mode if active
+    if (sIvanActor != NULL) {
+        Actor_Kill(sIvanActor);
+        sIvanActor = NULL;
+    }
+    gIvanPossessActive = 0;
+
+    // Sync Link position to fairy before restoring
+    if (sFairyPosValid) {
+        p->actor.world.pos = sFairyPos;
+    }
 
     // Restore Link
     p->actor.draw = Player_Draw;
@@ -279,6 +221,7 @@ static void HGrace_Stop(Player* p, PlayState* play) {
     hgFairy = NULL;
     hgForcedBySpell = 0;
     sFairyPosValid = 0;
+    sPinkFairySkelInited = 0;
 
     // No cooldown - free to use again immediately
     (void)wasFairy;
@@ -433,6 +376,7 @@ static void HGrace_StateWarpEnter(Player* p, PlayState* play) {
 
     // Transition to fairy mode — draw fairy DL instead of Link
     if (hgTimer >= HGRACE_WARP_IN_DURATION) {
+        HGrace_InitPinkFairySkel(play);
         p->actor.draw = HGrace_DrawFairy;
         p->invincibilityTimer = -1;
 
@@ -446,14 +390,13 @@ static void HGrace_StateWarpEnter(Player* p, PlayState* play) {
         func_8005B1A4(Play_GetCamera(play, 0));
 
         hgState = HGRACE_STATE_FAIRY;
-        hgTimer = HGRACE_FAIRY_DURATION;
+        hgTimer = 0; // Toggle mode — no duration limit
     }
 }
 
 // =============================================================================
 // Fairy collision bypass
-// Scene geometry always blocks. DynaPoly actors are passable UNLESS they are
-// doors (listed in sHGraceDoorActors in the .h).
+// Scene geometry always blocks. ALL DynaPoly actors are passable (doors, shutters, etc.)
 // =============================================================================
 
 static s32 HGrace_IsPassableBarrier(PlayState* play, s32 bgId) {
@@ -461,15 +404,7 @@ static s32 HGrace_IsPassableBarrier(PlayState* play, s32 bgId) {
     if (!DynaPoly_IsBgIdBgActor(bgId))
         return 0;
 
-    DynaPolyActor* dyna = DynaPoly_GetActor(&play->colCtx, bgId);
-    if (dyna == NULL)
-        return 0;
-
-    // Doors block the fairy — everything else is passable
-    for (s32 i = 0; i < (s32)ARRAY_COUNT(sHGraceDoorActors); i++) {
-        if (dyna->actor.id == sHGraceDoorActors[i])
-            return 0;
-    }
+    // All DynaPoly actors are passable — fairy goes through everything
     return 1;
 }
 
@@ -535,8 +470,50 @@ static void HGrace_SpawnTrailSparkles(Player* p, PlayState* play, f32 actualSpee
     }
 }
 
+// Check proximity to transition actor entries (doors/loading planes) and trigger room transitions.
+// Uses transiActorCtx.list[] directly — works even if the door actor isn't spawned or reachable.
+// Returns 1 if a door transition was triggered.
+static s32 HGrace_CheckDoorTransition(Player* p, PlayState* play) {
+    for (s32 i = 0; i < play->transiActorCtx.numActors; i++) {
+        TransitionActorEntry* entry = &play->transiActorCtx.list[i];
+
+        // Skip disabled entries (negative id means destroyed)
+        if (entry->id < 0)
+            continue;
+
+        f32 dx = p->actor.world.pos.x - (f32)entry->pos.x;
+        f32 dy = p->actor.world.pos.y - (f32)entry->pos.y;
+        f32 dz = p->actor.world.pos.z - (f32)entry->pos.z;
+        f32 xzDist = sqrtf(SQ(dx) + SQ(dz));
+
+        // Trigger range: 100 units XZ, 80 units Y (generous — fairy needs to reach through walls)
+        if (xzDist < 100.0f && fabsf(dy) < 80.0f) {
+            // Determine side: dot product of fairy-relative pos with door facing
+            f32 dot = dx * Math_SinS(entry->rotY) + dz * Math_CosS(entry->rotY);
+            s32 side = (dot < 0.0f) ? 0 : 1;
+
+            s8 targetRoom = entry->sides[side].room;
+            if (targetRoom >= 0 && targetRoom != play->roomCtx.curRoom.num) {
+                // Load the target room
+                func_8009728C(play, &play->roomCtx, targetRoom);
+
+                // Teleport fairy to the door position + push past it so it doesn't re-trigger
+                f32 pushDir = (side == 0) ? 1.0f : -1.0f;
+                p->actor.world.pos.x = (f32)entry->pos.x + Math_SinS(entry->rotY) * 80.0f * pushDir;
+                p->actor.world.pos.y = (f32)entry->pos.y + 20.0f;
+                p->actor.world.pos.z = (f32)entry->pos.z + Math_CosS(entry->rotY) * 80.0f * pushDir;
+                sFairyPos = p->actor.world.pos;
+
+                // Swap rooms
+                func_80097534(play, &play->roomCtx);
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static void HGrace_StateFairy(Player* p, PlayState* play) {
-    u8 isSpirit = hgForcedBySpell;
 
     // Restore position: undo displacement from Actor_UpdateBgCheckInfo
     if (sFairyPosValid) {
@@ -554,8 +531,12 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     p->stateFlags1 &= ~PLAYER_STATE1_IN_ITEM_CS;
     p->actor.draw = HGrace_DrawFairy;
 
-    // SW97: stronger invincibility (matches original -100 style)
-    p->invincibilityTimer = isSpirit ? -20 : -1;
+    // Update focus.pos so the camera tracks the fairy position
+    p->actor.focus.pos.x = p->actor.world.pos.x;
+    p->actor.focus.pos.y = p->actor.world.pos.y + 20.0f;
+    p->actor.focus.pos.z = p->actor.world.pos.z;
+
+    p->invincibilityTimer = -1;
 
     // Zero ALL engine velocity — we move position via smooth velocity
     p->linearVelocity = 0.0f;
@@ -567,23 +548,21 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     p->cylinder.base.acFlags &= ~AC_ON;
     p->cylinder.base.ocFlags1 &= ~OC1_ON;
 
-    // SW97 spirit mode: gradual dim + hide Navi
-    if (isSpirit) {
-        Math_SmoothStepToF(&sFairyDimLevel, 0.4f, 0.05f, 0.02f, 0.001f);
-        HGrace_DimLighting(play, sFairyDimLevel);
-        p->stateFlags2 |= 0x100000;
-    }
-
     // Read input
     u8 aBtn = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_A);
     u8 bBtn = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B);
     u8 lBtn = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_L);
-    s8 stickX = play->state.input[0].cur.stick_x;
-    s8 stickY = play->state.input[0].cur.stick_y;
+
+    // Use OOT's native stick processing (func_80077D10 + Camera_GetInputDirYaw)
+    // for camera-relative movement identical to normal gameplay.
+    f32 stickMag;
+    s16 stickAngle;
+    func_80077D10(&stickMag, &stickAngle, &play->state.input[0]);
+    s16 worldYaw = Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + stickAngle;
 
     // Speed: SW97 spirit fairy is faster
-    f32 speed = isSpirit ? HGRACE_SW97_SPEED : HGRACE_SPEED;
-    f32 sprintMult = isSpirit ? HGRACE_SW97_SPRINT_MULT : HGRACE_SPRINT_MULT;
+    f32 speed = HGRACE_SPEED;
+    f32 sprintMult = HGRACE_SPRINT_MULT;
     if (lBtn)
         speed *= sprintMult;
 
@@ -595,18 +574,12 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
         targetVY = -speed;
 
     f32 targetVX = 0.0f, targetVZ = 0.0f;
-    f32 stickMag = sqrtf(SQ((f32)stickX) + SQ((f32)stickY));
 
     if (stickMag > 10.0f) {
-        Camera* cam = Play_GetCamera(play, 0);
-        s16 camYaw = Math_Atan2S(cam->at.x - cam->eye.x, cam->at.z - cam->eye.z);
-        s16 stickAngle = Math_Atan2S((f32)stickX, (f32)stickY);
-        s16 moveYaw = camYaw + stickAngle;
+        f32 normMag = CLAMP_MAX(stickMag / 60.0f, 1.0f);
 
-        f32 normMag = CLAMP_MAX(stickMag / 127.0f, 1.0f);
-
-        targetVX = Math_SinS(moveYaw) * speed * normMag;
-        targetVZ = Math_CosS(moveYaw) * speed * normMag;
+        targetVX = Math_SinS(worldYaw) * speed * normMag;
+        targetVZ = Math_CosS(worldYaw) * speed * normMag;
     }
 
     // Smooth velocity interpolation (acceleration / deceleration)
@@ -628,30 +601,17 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     desiredPos.y = prevPos.y + sFairyVelocity.y;
     desiredPos.z = prevPos.z + sFairyVelocity.z;
 
-    // Line test: prevent passing through walls/floors/ceilings
-    CollisionPoly* hitPoly = NULL;
-    s32 hitBgId = 0;
-    Vec3f hitPoint;
-    if (BgCheck_EntityLineTest1(&play->colCtx, &prevPos, &desiredPos, &hitPoint, &hitPoly, true, true, true, true,
-                                &hitBgId)) {
-        if (!HGrace_IsPassableBarrier(play, hitBgId)) {
-            desiredPos = hitPoint;
-            // Kill velocity on collision
-            sFairyVelocity.x *= 0.2f;
-            sFairyVelocity.z *= 0.2f;
-        }
-    }
+    // No wall/ceiling collision — fairy passes through everything (walls, doors, actors).
+    // Only floor constraint below.
 
-    // Floor constraint
+    // Floor constraint: prevent going underground
     CollisionPoly* floorPoly = NULL;
     s32 floorBgId;
     f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &floorBgId, &p->actor, &desiredPos);
     if (floor > BGCHECK_Y_MIN && desiredPos.y < floor + HGRACE_FAIRY_HOVER) {
-        if (!HGrace_IsPassableBarrier(play, floorBgId)) {
-            desiredPos.y = floor + HGRACE_FAIRY_HOVER;
-            if (sFairyVelocity.y < 0.0f)
-                sFairyVelocity.y = 0.0f;
-        }
+        desiredPos.y = floor + HGRACE_FAIRY_HOVER;
+        if (sFairyVelocity.y < 0.0f)
+            sFairyVelocity.y = 0.0f;
     }
 
     p->actor.world.pos = desiredPos;
@@ -660,48 +620,47 @@ static void HGrace_StateFairy(Player* p, PlayState* play) {
     sFairyPos = desiredPos;
     sFairyPosValid = 1;
 
-    // Fairy sparkles + speed-proportional trail
-    s16 flickerStart = isSpirit ? HGRACE_SW97_FLICKER_START : HGRACE_FLICKER_START;
-    u8 flickering = (hgTimer <= flickerStart);
-    u8 flickerVisible = !flickering || ((play->gameplayFrames % 6) >= 3);
+    // Loading zone detection: check if fairy is over a floor polygon with an exit index.
+    // This triggers scene transitions (doors, exits, grottos) while in fairy mode.
+    if (floorPoly != NULL && play->transitionTrigger == TRANS_TRIGGER_OFF) {
+        s32 exitIndex = SurfaceType_GetSceneExitIndex(&play->colCtx, floorPoly, floorBgId);
+        if (exitIndex != 0) {
+            // Deactivate fairy mode before transitioning
+            HGrace_Stop(p, play);
 
+            play->nextEntranceIndex = play->setupExitList[exitIndex - 1];
+            if (IS_RANDO) {
+                play->nextEntranceIndex = Entrance_OverrideNextIndex(play->nextEntranceIndex);
+            }
+
+            if (play->nextEntranceIndex == ENTR_RETURN_GROTTO) {
+                gSaveContext.respawnFlag = 2;
+                play->nextEntranceIndex = gSaveContext.respawn[RESPAWN_MODE_RETURN].entranceIndex;
+                play->transitionType = TRANS_TYPE_FADE_WHITE;
+                gSaveContext.nextTransitionType = TRANS_TYPE_FADE_WHITE;
+            } else {
+                gSaveContext.retainWeatherMode = 1;
+                Scene_SetTransitionForNextEntrance(play);
+            }
+            play->transitionTrigger = TRANS_TRIGGER_START;
+            return;
+        }
+    }
+
+    // Door transition: check proximity to En_Door actors for room loading
+    if (HGrace_CheckDoorTransition(p, play)) {
+        return;
+    }
+
+    // Fairy sparkles + speed-proportional trail (always visible — no timer/flicker)
     f32 actualSpeed = sqrtf(SQ(sFairyVelocity.x) + SQ(sFairyVelocity.y) + SQ(sFairyVelocity.z));
 
-    if (flickerVisible) {
-        HGrace_SpawnFairySparkles(p, play);
-        // Trail sparkles when moving
-        if (actualSpeed > 1.0f) {
-            HGrace_SpawnTrailSparkles(p, play, actualSpeed);
-        }
+    HGrace_SpawnFairySparkles(p, play);
+    if (actualSpeed > 1.0f) {
+        HGrace_SpawnTrailSparkles(p, play, actualSpeed);
     }
 
-    // SW97 spirit: looping soul sound
-    if (isSpirit) {
-        func_8002F974(&p->actor, NA_SE_PL_MAGIC_SOUL_NORMAL - SFX_FLAG);
-    }
-
-    // Timer countdown (2x drain when ascending or sprinting)
-    s16 drain = 1;
-    if (aBtn || lBtn)
-        drain = 2;
-    hgTimer -= drain;
-    if (hgTimer < 0)
-        hgTimer = 0;
-
-    // Timer expired: end fairy mode
-    if (hgTimer <= 0) {
-        // SW97: flash at end, restore lighting and Navi
-        if (isSpirit) {
-            HGrace_ResetLighting(play);
-            sFairyDimLevel = 0.0f;
-            p->stateFlags2 &= ~0x100000;
-            func_800AA000(200.0f, 150, 20, 80);
-            Audio_PlayActorSound2(&p->actor, NA_SE_EV_TRIFORCE_FLASH);
-        }
-        hgState = HGRACE_STATE_WARP_OUT;
-        hgTimer = 0;
-        sFairyVelocity.x = sFairyVelocity.y = sFairyVelocity.z = 0.0f;
-    }
+    // No timer — toggle mode. Fairy lasts until player presses the item button again.
 }
 
 // =============================================================================
@@ -712,18 +671,18 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
     p->stateFlags1 |= PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_INPUT_DISABLED;
     p->linearVelocity = 0.0f;
     p->actor.speedXZ = 0.0f;
+    p->actor.velocity.x = p->actor.velocity.y = p->actor.velocity.z = 0.0f;
+
+    // Every frame: force position back to fairy location, ignoring collision pushback.
+    // Actor_UpdateBgCheckInfo runs after us and displaces world.pos if inside geometry;
+    // we undo that displacement each frame so Link teleports cleanly.
+    if (sFairyPosValid) {
+        p->actor.world.pos = sFairyPos;
+    }
 
     hgTimer++;
 
     if (hgTimer == 1) {
-        // Snap Link to the fairy's last authoritative position
-        // (Actor_UpdateBgCheckInfo may have displaced world.pos since the
-        // last fairy frame, so we restore from the saved position)
-        if (sFairyPosValid) {
-            p->actor.world.pos = sFairyPos;
-            sFairyPosValid = 0;
-        }
-
         // Restore Link visibility
         p->actor.draw = Player_Draw;
 
@@ -732,12 +691,14 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
         p->cylinder.base.acFlags |= AC_ON;
         p->cylinder.base.ocFlags1 |= OC1_ON;
 
-        // Snap to floor if close enough
+        // Snap to floor if close enough — also update sFairyPos so subsequent
+        // frame restores use the floor-corrected Y position.
         CollisionPoly* floorPoly = NULL;
         s32 bgId;
         f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &bgId, &p->actor, &p->actor.world.pos);
         if (floor > BGCHECK_Y_MIN && (p->actor.world.pos.y - floor) < 100.0f) {
             p->actor.world.pos.y = floor;
+            sFairyPos.y = floor;
             p->actor.bgCheckFlags |= BGCHECKFLAG_GROUND;
         }
 
@@ -760,12 +721,92 @@ static void HGrace_StateWarpExit(Player* p, PlayState* play) {
             p->stateFlags2 &= ~0x100000; // restore Navi
         }
 
+        sFairyPosValid = 0;
         hgActive = 0;
         hgState = HGRACE_STATE_IDLE;
         hgForcedBySpell = 0;
         sFairyVelocity.x = sFairyVelocity.y = sFairyVelocity.z = 0.0f;
         // No cooldown
     }
+}
+
+// =============================================================================
+// State: Ivan Possess (Spirit Medallion — real EnPartner controlled by P1)
+// =============================================================================
+
+static void HGrace_StateIvan(Player* p, PlayState* play) {
+    extern s16 gEnPartnerId;
+
+    // First frame: spawn Ivan at Link's position, hide Link
+    if (sIvanActor == NULL) {
+        sIvanActor = Actor_Spawn(&play->actorCtx, play, gEnPartnerId, p->actor.world.pos.x,
+                                 p->actor.world.pos.y + Player_GetHeight(p) + 5.0f, p->actor.world.pos.z, 0, 0, 0, 0,
+                                 true); // params=0 → reads input[0] (Player 1)
+        gIvanPossessActive = 1;
+        p->actor.draw = NULL;
+
+        // Flash + sound on enter
+        func_800AA000(200.0f, 150, 20, 80);
+        Audio_PlayActorSound2(&p->actor, NA_SE_EV_TRIFORCE_FLASH);
+    }
+
+    // Every frame: Link follows Ivan (invisible but present for camera + damage)
+    p->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+    p->linearVelocity = 0.0f;
+    p->actor.speedXZ = 0.0f;
+    p->actor.velocity.x = p->actor.velocity.y = p->actor.velocity.z = 0.0f;
+    p->actor.draw = NULL; // Invisible
+
+    // Sync Link's position to Ivan so camera follows and Link can take damage
+    if (sIvanActor != NULL) {
+        p->actor.world.pos = sIvanActor->world.pos;
+        p->actor.focus.pos.x = sIvanActor->world.pos.x;
+        p->actor.focus.pos.y = sIvanActor->world.pos.y;
+        p->actor.focus.pos.z = sIvanActor->world.pos.z;
+    }
+
+    // If Ivan was killed externally (scene change, etc.), restore Link
+    if (sIvanActor != NULL && sIvanActor->update == NULL) {
+        sIvanActor = NULL;
+    }
+
+    // Toggle off: Spirit Medallion button pressed again (debounce: hgTimer > 10)
+    u16 spiritBtn = ItemInput_GetEquippedButton(ITEM_MEDALLION_SPIRIT, play);
+    u8 toggleOff = (spiritBtn && (play->state.input[0].press.button & spiritBtn) && hgTimer > 10);
+
+    // Also toggle off if Ivan died
+    if (sIvanActor == NULL && hgTimer > 10)
+        toggleOff = 1;
+
+    if (toggleOff) {
+        // Kill Ivan if still alive
+        if (sIvanActor != NULL) {
+            Actor_Kill(sIvanActor);
+            sIvanActor = NULL;
+        }
+        gIvanPossessActive = 0;
+
+        // Restore Link
+        p->actor.draw = Player_Draw;
+        p->stateFlags1 &= ~(PLAYER_STATE1_INPUT_DISABLED | PLAYER_STATE1_IN_ITEM_CS);
+        p->invincibilityTimer = 20;
+
+        // Flash + sound
+        func_800AA000(200.0f, 150, 20, 80);
+        Audio_PlayActorSound2(&p->actor, NA_SE_EV_TRIFORCE_FLASH);
+
+        // Reset lighting (spirit mode dims)
+        HGrace_ResetLighting(play);
+        sFairyDimLevel = 0.0f;
+        p->stateFlags2 &= ~0x100000; // restore Navi
+
+        hgActive = 0;
+        hgState = HGRACE_STATE_IDLE;
+        hgForcedBySpell = 0;
+        return;
+    }
+
+    hgTimer++;
 }
 
 // =============================================================================
@@ -804,6 +845,13 @@ void Handle_HyliasGrace(Player* p, PlayState* play) {
                 HGrace_Start(p, play);
             return;
         }
+
+        // Toggle off: press Hylia's Grace again during fairy flight → warp-out
+        if (hgState == HGRACE_STATE_FAIRY && in.isPressed) {
+            hgState = HGRACE_STATE_WARP_OUT;
+            hgTimer = 0;
+            sFairyVelocity.x = sFairyVelocity.y = sFairyVelocity.z = 0.0f;
+        }
     } else {
         // Forced by spell (Spirit Medallion) — skip item-equip checks, still check damage/water
         if (ItemInput_CheckDamage(p, &sHGracePrevInvinc)) {
@@ -828,6 +876,9 @@ void Handle_HyliasGrace(Player* p, PlayState* play) {
             break;
         case HGRACE_STATE_WARP_OUT:
             HGrace_StateWarpExit(p, play);
+            break;
+        case HGRACE_STATE_IVAN:
+            HGrace_StateIvan(p, play);
             break;
         default:
             HGrace_Stop(p, play);

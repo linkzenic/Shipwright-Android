@@ -25,6 +25,9 @@ typedef PlayState GlobalContext;
 #define PLAYER GET_PLAYER(Effect_GetPlayState())
 #endif
 
+// Matrix_GetCurrent — declared in sys_matrix.c but not in any SOH header
+extern MtxF* Matrix_GetCurrent(void);
+
 // Matrix_MultZ — SW97 custom function, not in SOH
 static inline void Matrix_MultZ(f32 scale, Vec3f* dst) {
     MtxF* cmf = Matrix_GetCurrent();

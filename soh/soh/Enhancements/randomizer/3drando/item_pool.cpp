@@ -775,6 +775,22 @@ void GenerateItemPool() {
         AddItemToPool(RG_DESIRE_SENSOR, 2, 1, 1, 1);
     }
 
+    // Extended Equipment (12 items for equipment page 2)
+    if (CVarGetInteger("gCheats.ExtEquip.Enabled", 0)) {
+        AddItemToPool(RG_EXT_CANE_OF_BYRNA, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_FOUR_SWORD, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_DRILLSHAFT, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_DIVINE_SHIELD, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_GERUDO_SCIMITAR, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_SHIELD_OF_IKANA, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_MAGIC_CAPE, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_PENDING_TUNIC, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_CHAMPIONS_TUNIC, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_PEGASUS_ANKLET, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_PENDANT_OF_MEMORIES, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_WATER_DRAGON_SCALE, 2, 1, 1, 1);
+    }
+
     int bronzeScale = ctx->GetOption(RSK_SHUFFLE_SWIM) ? 1 : 0;
     AddItemToPool(RG_PROGRESSIVE_SCALE, 3 + bronzeScale, 2 + bronzeScale, 2 + bronzeScale, 2 + bronzeScale);
     int powerBracelet = ctx->GetOption(RSK_SHUFFLE_GRAB) ? 1 : 0;

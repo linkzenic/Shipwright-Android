@@ -318,65 +318,94 @@ u8 PikaItem_Thunder(PlayState* play, Player* player, s32 item);
 u8 PikaItem_QuickAtk(PlayState* play, Player* player, s32 item);
 u8 PikaItem_IronTail(PlayState* play, Player* player, s32 item);
 u8 PikaItem_ForwardTilt(PlayState* play, Player* player, s32 item);
+u8 PikaItem_Hammer(PlayState* play, Player* player, s32 item);
+u8 PikaItem_ElementalRod(PlayState* play, Player* player, s32 item);
+u8 PikaItem_Bottle(PlayState* play, Player* player, s32 item);
+u8 PikaItem_BombThrow(PlayState* play, Player* player, s32 item);
 u8 PikaItem_PassThrough(PlayState* play, Player* player, s32 item);
 u8 PikaItem_BlockSword(PlayState* play, Player* player, s32 item);
 u8 PikaItem_Shield(PlayState* play, Player* player, s32 item);
 }
 
 // Pikachu item handler table.
-// Items listed here with PikaItem_PassThrough let Player_UseItem run (OOT handles them).
-// Items with custom handlers block Player_UseItem.
-// Items NOT in this table fall through to OOT by default (pass through).
+// Return 0 = let OOT handle normally (first person aim, hookshot pull, etc.)
+// Return 1 = block OOT, Pikachu handles it entirely
+// Items NOT in this table fall through to OOT by default.
 static const FormItemEntry sPikaItemHandlers[] = {
-    // ── Custom behavior (blocks Player_UseItem) ───────────────────────────────
-    { ITEM_ROCS_CAPE, PikaItem_RocsCape },           // 360° flip (air) / side spec (ground)
-    { ITEM_ROCS_FEATHER_SKIJER, PikaItem_RocsCape }, // same
-    { ITEM_BOW, PikaItem_ThunderJolt },              // Thunder Jolt blasts
-    { ITEM_DINS_FIRE, PikaItem_Thunder },            // Thunder (multi-phase + AoE bomb)
-    { ITEM_DEMISE_DESTRUCTION, PikaItem_Thunder },   // Thunder (custom version)
-    { ITEM_NAYRUS_LOVE, PikaItem_QuickAtk },         // Quick Attack dash/teleport
-    { ITEM_ZONAI_PERMAFROST, PikaItem_QuickAtk },    // Quick Attack (custom item 0xA1)
-    { ITEM_FARORES_WIND, PikaItem_IronTail },        // Iron Tail metallic hammer
-    { ITEM_HYLIAS_GRACE, PikaItem_IronTail },        // Iron Tail (custom item 0xA0)
-    { ITEM_WHIP, PikaItem_WhipGrab },                // Grab + pummel + throw
-    { ITEM_SLINGSHOT, PikaItem_PassThrough },        // OOT handles (no longer Up Special)
+    // ── OOT handles normally (first person items) ─────────────────────────────
+    { ITEM_BOW, PikaItem_PassThrough },
+    { ITEM_BOW_ARROW_FIRE, PikaItem_PassThrough },
+    { ITEM_BOW_ARROW_ICE, PikaItem_PassThrough },
+    { ITEM_BOW_ARROW_LIGHT, PikaItem_PassThrough },
+    { ITEM_SLINGSHOT, PikaItem_PassThrough },
+    { ITEM_HOOKSHOT, PikaItem_PassThrough },
+    { ITEM_LONGSHOT, PikaItem_PassThrough },
+    { ITEM_ROD_FIRE, PikaItem_PassThrough },
+    { ITEM_ROD_ICE, PikaItem_PassThrough },
+    { ITEM_ROD_LIGHT, PikaItem_PassThrough },
+    { ITEM_DOMINION_ROD, PikaItem_PassThrough },
+    { ITEM_CANE_OF_SOMARIA, PikaItem_PassThrough },
+    { ITEM_SWITCH_HOOK, PikaItem_PassThrough },
+    { ITEM_WHIP, PikaItem_PassThrough },
+    { ITEM_BEETLE, PikaItem_PassThrough },
+    { ITEM_FARORES_WIND, PikaItem_PassThrough },
+    { ITEM_HYLIAS_GRACE, PikaItem_PassThrough },
+    { ITEM_ZONAI_PERMAFROST, PikaItem_PassThrough },
+    { ITEM_DEMISE_DESTRUCTION, PikaItem_PassThrough },
+    { ITEM_DEKU_LEAF, PikaItem_PassThrough },
+    { ITEM_GUST_JAR, PikaItem_PassThrough },
+    { ITEM_SPINNER, PikaItem_PassThrough },
+    { ITEM_SHOVEL, PikaItem_PassThrough },
+    { ITEM_MINISH_CAP, PikaItem_PassThrough },
 
-    // ── Pass-through (OOT Player_UseItem handles these) ───────────────────────
-    { ITEM_HOOKSHOT, PikaItem_PassThrough },       // Grapple
-    { ITEM_LONGSHOT, PikaItem_PassThrough },       // Long grapple
-    { ITEM_BOOMERANG, PikaItem_ForwardTilt },      // Forward tilt dash (Z-target + ≤40u) or pass-through
-    { ITEM_HAMMER, PikaItem_PassThrough },         // Smash
-    { ITEM_BALL_AND_CHAIN, PikaItem_PassThrough }, // Swing
-    // Transformation masks: pass through so de/re-transform works
+    // ── Custom Pikachu behavior (blocks OOT) ──────────────────────────────────
+    { ITEM_BOOMERANG, PikaItem_QuickAtk },    // Quick Attack (2-phase dash)
+    { ITEM_HAMMER, PikaItem_Hammer },         // JumpB → EscapeAir (hammer damage)
+    { ITEM_BALL_AND_CHAIN, PikaItem_Hammer }, // Same as Hammer
+    { ITEM_BOMB, PikaItem_BombThrow },        // HeavyGet → spawn bomb → HeavyThrowHi
+    { ITEM_BOMBCHU, PikaItem_BombThrow },     // Same for bombchus
+    { ITEM_NUT, PikaItem_BombThrow },         // Item throw (same chain as bomb)
+    { ITEM_DINS_FIRE, PikaItem_Thunder },     // Final Smash (thunder AoE)
+    { ITEM_NAYRUS_LOVE, PikaItem_WhipGrab },  // Grab + pummel + throw
+
+    // ── Jump (custom) ─────────────────────────────────────────────────────────
+    { ITEM_ROCS_CAPE, PikaItem_RocsCape },
+    { ITEM_ROCS_FEATHER_SKIJER, PikaItem_RocsCape },
+
+    // ── Transformation masks: pass through ────────────────────────────────────
     { ITEM_MASK_KEATON, PikaItem_PassThrough },
     { ITEM_MASK_GORON, PikaItem_PassThrough },
     { ITEM_MASK_ZORA, PikaItem_PassThrough },
     { ITEM_MASK_GERUDO, PikaItem_PassThrough },
     { ITEM_MASK_TRUTH, PikaItem_PassThrough },
-    // Bottles: all OOT bottle content items pass through (drink potion, catch fairy, etc.)
-    { ITEM_BOTTLE, PikaItem_PassThrough },
-    { ITEM_POTION_RED, PikaItem_PassThrough },
-    { ITEM_POTION_GREEN, PikaItem_PassThrough },
-    { ITEM_POTION_BLUE, PikaItem_PassThrough },
-    { ITEM_FAIRY, PikaItem_PassThrough },
-    { ITEM_FISH, PikaItem_PassThrough },
-    { ITEM_MILK_BOTTLE, PikaItem_PassThrough },
-    { ITEM_MILK_HALF, PikaItem_PassThrough },
-    { ITEM_LETTER_RUTO, PikaItem_PassThrough },
-    { ITEM_BLUE_FIRE, PikaItem_PassThrough },
-    { ITEM_BUG, PikaItem_PassThrough },
-    { ITEM_BIG_POE, PikaItem_PassThrough },
-    { ITEM_POE, PikaItem_PassThrough },
-    // Swords: explicitly blocked (OOT sword swing on Pikachu skeleton looks wrong)
+
+    // ── Bottles: let OOT handle ───────────────────────────────────────────────
+    { ITEM_BOTTLE, PikaItem_Bottle },
+    { ITEM_POTION_RED, PikaItem_Bottle },
+    { ITEM_POTION_GREEN, PikaItem_Bottle },
+    { ITEM_POTION_BLUE, PikaItem_Bottle },
+    { ITEM_FAIRY, PikaItem_Bottle },
+    { ITEM_FISH, PikaItem_Bottle },
+    { ITEM_MILK_BOTTLE, PikaItem_Bottle },
+    { ITEM_MILK_HALF, PikaItem_Bottle },
+    { ITEM_LETTER_RUTO, PikaItem_Bottle },
+    { ITEM_BLUE_FIRE, PikaItem_Bottle },
+    { ITEM_BUG, PikaItem_Bottle },
+    { ITEM_BIG_POE, PikaItem_Bottle },
+    { ITEM_POE, PikaItem_Bottle },
+
+    // ── Swords: blocked ───────────────────────────────────────────────────────
     { ITEM_SWORD_KOKIRI, PikaItem_BlockSword },
     { ITEM_SWORD_MASTER, PikaItem_BlockSword },
     { ITEM_SWORD_BGS, PikaItem_BlockSword },
     { ITEM_SWORD_KNIFE, PikaItem_BlockSword },
     { ITEM_SWORD_BROKEN, PikaItem_BlockSword },
-    // Shields: custom bubble effect (shrinks per press, breaks at 0 HP)
+
+    // ── Shields: bubble shield ────────────────────────────────────────────────
     { ITEM_SHIELD_DEKU, PikaItem_Shield },
     { ITEM_SHIELD_HYLIAN, PikaItem_Shield },
     { ITEM_SHIELD_MIRROR, PikaItem_Shield },
+
     { -1, NULL } // terminator
 };
 
@@ -826,6 +855,7 @@ typedef struct {
     s16 swimDashTimer;    // Dash burst timer (decays speed from 16→0)
     u8 zoraBoots;         // 0=ZORA_LAND (free swim), 1=ZORA_UNDERWATER (iron boots/sink)
     u8 fastSwimActive;    // Equivalent to PLAYER_STATE3_8000 (dolphin swim mode)
+    u8 zoraSwimEnabled;   // Dragon Scale: enables Zora swim for non-Zora forms (Adult Link only)
     s16 swimRollSmoothed; // Smoothed roll for draw (unk_B8E equivalent in MM)
     // Fast swim 3-phase state machine (from 2Ship Player_Action_56)
     u8 swimPhase;          // 0=waterroll transition, 1=active swimming, 2=exiting
@@ -863,6 +893,7 @@ typedef struct {
     u8 savedMass;
     s16 savedStrength;                       // Original UPG_STRENGTH value (FD forces max strength)
     u8 savedTunic;                           // Original currentTunic (restored on detransform)
+    s32 savedTunicEquip;                     // Original inventory tunic equip value
     PlayerAgeProperties* savedAgeProperties; // Original ageProperties pointer to restore
 
     // Per-form ageProperties override (copy of original with form-specific dimension fields).
@@ -872,6 +903,9 @@ typedef struct {
 } MmFormState;
 
 static MmFormState gFormState;
+
+// Helper: true if Zora swim mechanics should be active (Zora form OR Dragon Scale equipped)
+#define MMFORM_IS_ZORA_SWIM() (gFormState.currentForm == MM_PLAYER_FORM_ZORA || gFormState.zoraSwimEnabled)
 
 // Static variables to preserve form across scene transitions (survive memset of gFormState)
 static MmPlayerTransformation sPendingReactivateForm = MM_PLAYER_FORM_HUMAN;
@@ -2286,13 +2320,17 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
     gFormState.savedAgeProperties = player->ageProperties;
     gFormState.savedStrength = CUR_UPG_VALUE(UPG_STRENGTH);
     gFormState.savedTunic = player->currentTunic;
+    gFormState.savedTunicEquip = CUR_EQUIP_VALUE(EQUIP_TYPE_TUNIC);
 
-    // Form-specific tunic effects:
-    // Zora form grants Zora Tunic (breathe underwater, no drowning timer)
-    // Goron form grants Goron Tunic (heat/lava resistance)
+    // Form-specific tunic: change at inventory level so Player_SetEquipmentData picks it up.
+    // Zora = Zora Tunic (breathe underwater), Goron = Goron Tunic (heat resistance).
     if (form == MM_PLAYER_FORM_ZORA) {
+        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
+                                        (EQUIP_VALUE_TUNIC_ZORA << gEquipShifts[EQUIP_TYPE_TUNIC]);
         player->currentTunic = PLAYER_TUNIC_ZORA;
     } else if (form == MM_PLAYER_FORM_GORON) {
+        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
+                                        (EQUIP_VALUE_TUNIC_GORON << gEquipShifts[EQUIP_TYPE_TUNIC]);
         player->currentTunic = PLAYER_TUNIC_GORON;
     }
 
@@ -2358,9 +2396,9 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
         gFormState.formAgeProperties.unk_08 = mmProps->unk_08;
         gFormState.formAgeProperties.unk_0C = mmProps->unk_0C;
         gFormState.formAgeProperties.unk_10 = mmProps->unk_10;
-        gFormState.formAgeProperties.unk_14 = mmProps->unk_14;
-        gFormState.formAgeProperties.unk_18 = mmProps->unk_18;
-        gFormState.formAgeProperties.unk_1C = mmProps->unk_1C;
+        // Keep OOT Adult's unk_14/18/1C (ledge grab + step-up heights).
+        // MM form heights are shorter and cause ladder-top overshoot on OOT geometry.
+        // These values stay at OOT defaults from the initial copy above.
         gFormState.formAgeProperties.unk_20 = mmProps->unk_20;
         gFormState.formAgeProperties.unk_24 = mmProps->unk_24;
         gFormState.formAgeProperties.unk_28 = mmProps->unk_28;
@@ -2368,7 +2406,10 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
         gFormState.formAgeProperties.unk_30 = mmProps->unk_30;
         gFormState.formAgeProperties.unk_34 = mmProps->unk_34;
         gFormState.formAgeProperties.wallCheckRadius = mmProps->wallCheckRadius;
-        gFormState.formAgeProperties.unk_3C = mmProps->unk_3C;
+        // Keep OOT Adult's unk_3C (wall push distance during climbing).
+        // MM Zora has 23.0 vs OOT's 15.0 — pushes player too far from wall,
+        // causing ladder-top ledge detection to fail (raycast misses the ledge).
+        // unk_3C stays at OOT default from the memcpy above.
         gFormState.formAgeProperties.unk_40 = mmProps->unk_40;
 
         // Override animation pointers so OOT's action handlers use form-correct timing.
@@ -2416,8 +2457,17 @@ static void MmForm_RestoreOotState(Player* player) {
     // Restore original strength level (FD forces Gold Gauntlets)
     Inventory_ChangeUpgrade(UPG_STRENGTH, gFormState.savedStrength);
 
-    // Restore original tunic (Zora/Goron form overrides it)
-    player->currentTunic = gFormState.savedTunic;
+    // Zora/Goron: always equip Kokiri tunic on detransform.
+    // They force Zora/Goron tunic on transform, so detransform gives Kokiri back.
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA || gFormState.currentForm == MM_PLAYER_FORM_GORON) {
+        player->currentTunic = PLAYER_TUNIC_KOKIRI;
+        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
+                                        (EQUIP_VALUE_TUNIC_KOKIRI << gEquipShifts[EQUIP_TYPE_TUNIC]);
+    } else {
+        player->currentTunic = gFormState.savedTunic;
+        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
+                                        (gFormState.savedTunicEquip << gEquipShifts[EQUIP_TYPE_TUNIC]);
+    }
 
     // Restore default OOT Link collider
     player->cylinder.dim.radius = 12;
@@ -2870,7 +2920,7 @@ static void MmForm_EnterShield(Player* player, PlayState* play) {
     if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
         MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_SQUAT, NA_SE_PL_BODY_HIT);
     } else {
-        Audio_PlayActorSound2(&player->actor, NA_SE_IT_SHIELD_BOUND);
+        MmForm_PlaySfx(player, MM_NA_SE_PL_LAND, NA_SE_IT_SHIELD_BOUND);
     }
 }
 
@@ -2931,7 +2981,7 @@ static void MmForm_GoronAction_Idle(Player* player, PlayState* play) {
         gFormState.cutterAttack != NULL) {
         if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
             gFormState.boomerangHoldTimer++;
-            if (gFormState.boomerangHoldTimer >= 10) {
+            if (gFormState.boomerangHoldTimer >= 30) { // 10 frames at 20fps = 30 at 60fps
                 gFormState.boomerangHoldTimer = 0;
                 MmForm_StartBoomerangThrow(player, play);
                 return;
@@ -3474,7 +3524,7 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
             Vec3f burstPos = player->actor.world.pos;
             burstPos.y += 5.0f;
             EffectSsHahen_SpawnBurst(play, &burstPos, 4.0f, 0, 12, 6, 3, -1, 10, NULL);
-            Player_PlaySfx(&player->actor, NA_SE_IT_HAMMER_HIT);
+            MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_PUNCH, NA_SE_IT_HAMMER_HIT);
         }
     }
 
@@ -3491,12 +3541,12 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
 
     // Combo continuation: check B during non-final punches
     // (from 2Ship Player_Action_84 line 18833-18839)
-    // Use cur.button (B held) instead of press.button so the combo chains
-    // fluidly without requiring frame-perfect re-presses. Zora's shorter
-    // animations gave too little window with press-only detection.
+    // Combo: each B PRESS during the current punch advances to the next.
+    // Hold B does NOT advance — hold after combo enters boomerang aim (handled in PunchEnd).
+    // From MM Player_Action_84 line 18386: press.button only.
     if (step < 2) {
         Input* input = &play->state.input[0];
-        if (CHECK_BTN_ALL(input->cur.button, BTN_B)) {
+        if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
             gFormState.comboBPressed = 1;
         }
     }
@@ -3507,10 +3557,10 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
         // Disable directional quad AT
         MmForm_DisablePunchQuad(player);
 
-        // Check for B on this frame too (catches presses on the exact end frame)
+        // Check for B press on this frame too (catches presses on the exact end frame)
         if (step < 2) {
             Input* bufInput = &play->state.input[0];
-            if (CHECK_BTN_ALL(bufInput->press.button, BTN_B) || CHECK_BTN_ALL(bufInput->cur.button, BTN_B)) {
+            if (CHECK_BTN_ALL(bufInput->press.button, BTN_B)) {
                 gFormState.comboBPressed = 1;
             }
         }
@@ -3550,7 +3600,7 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
         // Buffer: wait extra frames for B-press before going to recovery.
         // Zora's shorter animations leave little time during the anim itself,
         // so allow 8 frames after it ends to still chain the combo.
-        if (!gFormState.comboBPressed && step < 2 && gFormState.comboBufferTimer < 8) {
+        if (!gFormState.comboBPressed && step < 2 && gFormState.comboBufferTimer < 24) { // 8 at 20fps = 24 at 60fps
             gFormState.comboBufferTimer++;
             return;
         }
@@ -3602,26 +3652,28 @@ static void MmForm_GoronAction_PunchEnd(Player* player, PlayState* play) {
     // Decelerate during recovery
     Math_StepToF(&player->linearVelocity, 0.0f, 5.0f);
 
-    // B hold during/after punch recovery → boomerang aim after 10 frames (Zora only)
-    // In MM, you do an action first (punch/kick), THEN hold B to enter boomerang mode.
+    // B hold during punch recovery → boomerang aim (Zora only)
+    // From MM Player_ActionHandler_8 (z_player.c:8462-8480):
+    // If unk_ADC > 0 (did at least 1 punch) AND B held → enter boomerang immediately.
+    // No timer — just B held after a punch combo.
     if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
         gFormState.cutterAttack != NULL) {
         Input* input = &play->state.input[0];
-        if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
-            gFormState.boomerangHoldTimer++;
-            if (gFormState.boomerangHoldTimer >= 10) {
-                gFormState.boomerangHoldTimer = 0;
-                MmForm_StartBoomerangThrow(player, play);
-                return;
-            }
-        } else if (!CHECK_BTN_ALL(input->cur.button, BTN_B)) {
-            gFormState.boomerangHoldTimer = 0;
+        if (CHECK_BTN_ALL(input->cur.button, BTN_B)) {
+            MmForm_StartBoomerangThrow(player, play);
+            return;
         }
     }
 
-    // Animation finished → back to idle
+    // Animation finished → back to idle (or swim idle if underwater)
     if (curFrame >= endFrame) {
-        MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
+        if (gFormState.swimState > 0) {
+            MmForm_SetAction(MMFORM_ACT_SWIM_IDLE, play,
+                             gFormState.swimWaitAnim ? gFormState.swimWaitAnim : gFormState.idleAnim, 1.0f,
+                             ANIMMODE_LOOP);
+        } else {
+            MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
+        }
     }
 }
 
@@ -3744,7 +3796,7 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
 
     // Zora barrier immunity (from 2Ship func_8082F1AC: PLAYER_IMPACT_ZORA_BARRIER)
     // While barrier is active with intensity > 0, block all incoming damage
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.barrierActive && gFormState.barrierIntensity > 0) {
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.barrierActive && gFormState.barrierIntensity > 0) {
         // Spark VFX at hit position (from 2Ship line 2980: barrier absorbs damage)
         CollisionCheck_SpawnShieldParticlesMetal(play, &player->actor.world.pos);
         gMmFormPendingDamage.hasPending = 0;
@@ -3786,7 +3838,7 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
 
     // Check if attacker has body hit SFX flag (from 2Ship line 6240)
     if (attacker != NULL && (attacker->flags & ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT)) {
-        Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
+        MmForm_PlaySfx(player, MM_NA_SE_PL_LAND, NA_SE_PL_BODY_HIT);
     }
 
     // Determine damage effect type (from 2Ship func_80834600 lines 6120-6141)
@@ -3867,10 +3919,8 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         player->damageFlickerAnimCounter = 0;
     }
 
-    // Play damage SFX (from 2Ship func_80833B18 line 5883)
-    Player_PlaySfx(&player->actor, NA_SE_PL_DAMAGE);
-
     // Play form-specific voice SFX via MM audio system
+    // (NA_SE_PL_DAMAGE removed — MM damage voice below is the feedback)
     // From 2Ship: Player_AnimSfx_PlayVoice(this, NA_SE_VO_LI_DAMAGE_S)
     // MM transforms use different voice banks per form
     if (MmSfx_IsAvailable()) {
@@ -3891,10 +3941,6 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         if (voiceSfx != 0) {
             MmSfx_PlayAtPos(voiceSfx, &player->actor.projectedPos);
         }
-    } else {
-        // OOT Link voice (used when mm.o2r unavailable)
-        Audio_PlaySoundGeneral(NA_SE_VO_LI_DAMAGE_S, &player->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Determine knockback direction (from 2Ship line 6263)
@@ -3939,9 +3985,14 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
     // Clean up gakki (instrument) state — damage interrupts ocarina
     gFormState.gakkiActive = 0;
 
+    // Clean up ledge climb state — damage interrupts the climb
+    if (player->stateFlags1 & PLAYER_STATE1_CLIMBING_LEDGE) {
+        player->stateFlags1 &= ~PLAYER_STATE1_CLIMBING_LEDGE;
+    }
+
     // Clean up swim visual state when taking damage while swimming
     // Reset pitch/roll so the model doesn't stay rotated during damage animation
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState != 0) {
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState != 0) {
         gFormState.fastSwimActive = 0;
         gFormState.swimPitch = 0;
         gFormState.swimRoll = 0;
@@ -3983,7 +4034,7 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         MmForm_DisablePunchQuad(player);
         MmForm_StopRootMotion();
         // In water: keep swim gravity so Zora doesn't sink while frozen
-        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState != 0) {
+        if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState != 0) {
             player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_SWIM);
         }
         player->cylinder.base.acFlags &= ~AC_HIT;
@@ -4019,7 +4070,7 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         MmForm_DisablePunchQuad(player);
         MmForm_StopRootMotion();
         // In water: keep swim gravity so Zora doesn't sink while shocked
-        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState != 0) {
+        if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState != 0) {
             player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_SWIM);
         }
         player->cylinder.base.acFlags &= ~AC_HIT;
@@ -4055,7 +4106,7 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
 
         // Launch into air (from 2Ship line 5839-5841)
         // In water: don't launch vertically, keep swim gravity (buoyancy handles Y)
-        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState != 0) {
+        if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState != 0) {
             player->linearVelocity = 4.0f;
             player->actor.velocity.y = 0.0f;
             player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_SWIM);
@@ -4161,7 +4212,7 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
     MmForm_StopRootMotion();
 
     // In water: keep swim gravity so buoyancy keeps Zora afloat during knockback
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState != 0) {
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState != 0) {
         player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_SWIM);
     }
 
@@ -4206,8 +4257,8 @@ static void MmForm_GoronAction_Damage(Player* player, PlayState* play) {
     MmForm_DisablePunchQuad(player);
 
     // In water: keep buoyancy running so Zora doesn't sink to the ground
-    u8 inWater = (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState != 0 &&
-                  player->actor.yDistToWater > ZORA_SURFACE_DEPTH);
+    u8 inWater =
+        (MMFORM_IS_ZORA_SWIM() && gFormState.swimState != 0 && player->actor.yDistToWater > ZORA_SURFACE_DEPTH);
     if (inWater) {
         MmForm_WaterBuoyancy(player);
     }
@@ -4737,8 +4788,9 @@ static void MmForm_Action_Roll(Player* player, PlayState* play) {
                 Quake_SetCountdown(quakeIdx, 12);
             }
             func_800AA000(0.0f, 255, 20, 150);
-            Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
-            Audio_PlayActorSound2(&player->actor, NA_SE_VO_LI_CLIMB_END);
+            MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_PUNCH, NA_SE_PL_BODY_HIT);
+            // MM form voice instead of OOT Link voice
+            MmForm_PlayAttackVoice(player);
 
             MmForm_DisablePunchQuad(player);
             return;
@@ -5004,7 +5056,7 @@ static void MmForm_Action_ZTargetWalk(Player* player, PlayState* play) {
             gFormState.cutterAttack != NULL) {
             if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
                 gFormState.boomerangHoldTimer++;
-                if (gFormState.boomerangHoldTimer >= 10) {
+                if (gFormState.boomerangHoldTimer >= 30) { // 10 frames at 20fps = 30 at 60fps
                     gFormState.boomerangHoldTimer = 0;
                     MmForm_StartBoomerangThrow(player, play);
                     return;
@@ -5207,11 +5259,9 @@ static void MmForm_Action_LedgeClimb(Player* player, PlayState* play) {
 
     // Animation finished → player is on top of ledge
     if (curFrame >= endFrame) {
-        // Move player up to ledge top
-        // From 2Ship: uses yDistToLedge for position correction
-        // In OOT, the climb animation moves the player model up visually.
-        // The final position should be set by bgCheck after gravity re-enables.
         player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
+        player->stateFlags1 &= ~PLAYER_STATE1_CLIMBING_LEDGE;
+        player->actor.shape.yOffset = 0.0f; // Reset visual offset from water climb entry
         MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
     }
 }
@@ -5257,6 +5307,14 @@ static void MmForm_Action_WaterVoidOut(Player* player, PlayState* play) {
     //
     // Goron: curl → ball → sink → void out (visual sequence).
     //   Phases: 0=start curl, 1=curl playing, 2=ball sinking, 100=void triggered.
+
+    // If an item is pending or get-item cutscene active, pause void out.
+    // Clear PAUSE so OOT's actionFunc can process the item offer.
+    // Void out re-triggers from centralized water check after item is received.
+    if ((player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) || player->getItemId != GI_NONE) {
+        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        return;
+    }
 
     player->linearVelocity = 0.0f;
 
@@ -5346,6 +5404,12 @@ static void MmForm_Action_WaterVoidOut(Player* player, PlayState* play) {
 //   2 = fire hit (Deku/Zora): body already on fire from knockback → burn → void out
 // ---------------------------------------------------------------------------
 static void MmForm_Action_HazardVoidOut(Player* player, PlayState* play) {
+    // If an item is pending or get-item cutscene active, pause void out.
+    if ((player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) || player->getItemId != GI_NONE) {
+        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        return;
+    }
+
     gFormState.hazardVoidTimer++;
     player->linearVelocity = 0.0f;
 
@@ -5379,11 +5443,12 @@ static void MmForm_Action_HazardVoidOut(Player* player, PlayState* play) {
                     player->bodyFlameTimers[i] = Rand_S16Offset(0, 200);
                 }
                 player->bodyIsBurning = true;
-                // Damage voice
-                Player_PlayVoiceSfx(player, NA_SE_VO_LI_FALL_L);
+                // Damage voice — MM form voice only, no OOT fallback
                 if (MmSfx_IsAvailable()) {
                     u16 voiceSfx = 0;
-                    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA)
+                    if (gFormState.currentForm == MM_PLAYER_FORM_GORON)
+                        voiceSfx = MM_NA_SE_VO_GORON_DAMAGE_S;
+                    else if (gFormState.currentForm == MM_PLAYER_FORM_ZORA)
                         voiceSfx = MM_NA_SE_VO_ZORA_DAMAGE_S;
                     else if (gFormState.currentForm == MM_PLAYER_FORM_DEKU)
                         voiceSfx = MM_NA_SE_VO_DEKU_DAMAGE_S;
@@ -5424,8 +5489,18 @@ static void MmForm_Action_HazardVoidOut(Player* player, PlayState* play) {
                         player->bodyFlameTimers[i] = Rand_S16Offset(80, 120);
                 }
                 player->bodyIsBurning = true;
-                // Damage voice
-                Player_PlayVoiceSfx(player, NA_SE_VO_LI_FALL_L);
+                // Damage voice — MM form voice only, no OOT fallback
+                if (MmSfx_IsAvailable()) {
+                    u16 voiceSfx = 0;
+                    if (gFormState.currentForm == MM_PLAYER_FORM_GORON)
+                        voiceSfx = MM_NA_SE_VO_GORON_DAMAGE_S;
+                    else if (gFormState.currentForm == MM_PLAYER_FORM_ZORA)
+                        voiceSfx = MM_NA_SE_VO_ZORA_DAMAGE_S;
+                    else if (gFormState.currentForm == MM_PLAYER_FORM_DEKU)
+                        voiceSfx = MM_NA_SE_VO_DEKU_DAMAGE_S;
+                    if (voiceSfx != 0)
+                        MmSfx_PlayAtPos(voiceSfx, &player->actor.projectedPos);
+                }
                 // Damage animation
                 LinkAnimationHeader* anim = gFormState.dmgAnims[4]; // front_hit
                 if (anim == NULL)
@@ -5647,7 +5722,7 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
 
             // Attack: DMG_HAMMER_SWING, damage=4, radius=60
             // From 2Ship: Player_SetCylinderForAttack(this, DMG_GORON_POUND, 4, 60)
-            MmForm_SetRollAttack(player, 0x02000000, 4, 60);
+            MmForm_SetRollAttack(player, DMG_HAMMER_SWING, 4, 60);
             CollisionCheck_SetAT(play, &play->colChkCtx, &player->cylinder.base);
         }
 
@@ -5667,17 +5742,19 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
 
             // Keep attack active on first frame only
             if (gFormState.actionTimer == 0) {
-                MmForm_SetRollAttack(player, 0x02000000, 4, 60);
+                MmForm_SetRollAttack(player, DMG_HAMMER_SWING, 4, 60);
                 CollisionCheck_SetAT(play, &play->colChkCtx, &player->cylinder.base);
                 gFormState.actionTimer = 1;
             } else {
                 MmForm_ClearRollAttack(player);
             }
         } else {
-            // Resume rolling
+            // Resume rolling — reset gravity from ground pound's -10.0f slam
+            // Without this, next time the ball goes airborne it falls instantly.
             MmForm_ClearRollAttack(player);
             gFormState.rollChargeLevel = 4;
             gFormState.goronAction = GORON_ACT_GORON_ROLL;
+            player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
         }
 
         player->actor.shape.rot.x += gFormState.rollSpinRate;
@@ -5700,7 +5777,7 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
             gFormState.rollChargeLevel = 3;
             Magic_Reset(play);
         }
-        Player_PlaySfx(&player->actor, NA_SE_PL_BODY_HIT);
+        MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_ROLLING_REFLECTION, NA_SE_PL_BODY_HIT);
     }
 
     // --- Wall bounce detection (from 2Ship line 19917-19928) ---
@@ -5748,9 +5825,13 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
 
         // Steep slope check: spike disabled on slopes > 0x3A98
         // From 2Ship line 20180: ABS(sp8E) + ABS(floorPitch) > 0x3A98
-        s16 yawDiff = player->yaw - gFormState.rollHomeYaw;
-        if ((ABS(yawDiff) + ABS(player->floorPitch)) > 0x3A98)
-            deactivateSpike = 1;
+        // Only check while on ground — airborne floorPitch is stale and would
+        // falsely deactivate spikes when rolling off a ledge.
+        if (onGround) {
+            s16 yawDiff = player->yaw - gFormState.rollHomeYaw;
+            if ((ABS(yawDiff) + ABS(player->floorPitch)) > 0x3A98)
+                deactivateSpike = 1;
+        }
 
         if (deactivateSpike) {
             if (Math_StepToS(&gFormState.rollSpikeActive, 0, 1)) {
@@ -5765,6 +5846,10 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
 
     if (onGround) {
         // === ON GROUND ROLLING ===
+        // Ensure gravity is normal while on ground (resets any leftover from
+        // ground pound slam=-10, or spike airborne=-1). Actor_UpdateBgCheckInfo
+        // handles ground collision, so this gravity only matters when leaving ground.
+        player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
 
         // --- Ground pound: B press while rolling (NOT spike mode) ---
         // From 2Ship line 19524-19526: func_80857640(this, 14.0f, 0x1F40)
@@ -6152,8 +6237,8 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
 
     // --- Roll attack collision (from 2Ship line 20248-20256) ---
     if (gFormState.rollSpikeActive > 0) {
-        // Spike roll: damage with DMG_HAMMER_SWING equivalent, damage=1, radius=25
-        MmForm_SetRollAttack(player, 0x02000000, 1, 25);
+        // Spike roll: damage with DMG_HAMMER_SWING, damage=1, radius=25
+        MmForm_SetRollAttack(player, DMG_HAMMER_SWING, 1, 25);
         CollisionCheck_SetAT(play, &play->colChkCtx, &player->cylinder.base);
     } else if (gFormState.rollBallSpeed > 2.0f) {
         // Normal roll: damage with basic roll damage, damage=1, radius=25
@@ -7315,7 +7400,7 @@ static void MmForm_Action_DekuFly(Player* player, PlayState* play) {
         Vec3f nutVel = { 0.0f, -8.0f, 0.0f };
         Vec3f nutAccel = { 0.0f, -1.5f, 0.0f };
         EffectSsExtra_Spawn(play, &nutPos, &nutVel, &nutAccel, 4, 0);
-        Player_PlaySfx(&player->actor, NA_SE_IT_DEKU);
+        MmForm_PlaySfx(player, MM_NA_SE_PL_DEKUNUTS_FIRE, NA_SE_IT_DEKU);
     }
 
     // === Main glide physics (from 2Ship line 19130-19270) ===
@@ -7542,8 +7627,8 @@ static ColliderCylinderInit sBarrierColliderInit = {
     },
     {
         ELEMTYPE_UNK2,
-        { 0x00080000 | DMG_SLASH_KOKIRI | DMG_SPIN_KOKIRI | DMG_JUMP_KOKIRI, 0x00,
-          0x02 }, // dmgFlags + Kokiri sword flags, damage=2
+        { 0x00080000 | DMG_SLASH_KOKIRI | DMG_SPIN_KOKIRI | DMG_JUMP_KOKIRI | DMG_HOOKSHOT, 0x00,
+          0x02 }, // dmgFlags + Kokiri sword flags + hookshot (activates crystal switches), damage=2
         { 0xF7CFFFFF, 0x00, 0x00 },
         TOUCH_ON | TOUCH_NEAREST | TOUCH_SFX_NORMAL,
         BUMP_NONE,
@@ -7567,7 +7652,7 @@ static void MmForm_InitBarrierCollider(Player* player, PlayState* play) {
 // Ground: R+B = barrier (from Player_Action_18 line 14914: func_8082F164(this, BTN_R | BTN_B))
 // Water:  R   = barrier (from swim actions: func_8082F164(this, BTN_R))
 static void MmForm_CheckBarrierInput(Player* player, PlayState* play) {
-    if (gFormState.currentForm != MM_PLAYER_FORM_ZORA)
+    if (!MMFORM_IS_ZORA_SWIM())
         return;
 
     Input* input = &play->state.input[0];
@@ -7581,6 +7666,9 @@ static void MmForm_CheckBarrierInput(Player* player, PlayState* play) {
     }
 
     if (CHECK_BTN_ALL(input->cur.button, barrierButtons) && gSaveContext.magic > 0) {
+        if (!gFormState.barrierActive) {
+            gFormState.magicDrainTimer = 10; // Init drain timer on first activation
+        }
         gFormState.barrierActive = 1;
 
         // Init collider on first activation
@@ -7602,18 +7690,23 @@ static void MmForm_CheckBarrierInput(Player* player, PlayState* play) {
 // Runs regardless of current action. Updates intensity, light, damage collider.
 // Player can move while barrier is active (not frozen like old action-based approach).
 static void MmForm_UpdateBarrier(Player* player, PlayState* play) {
-    if (gFormState.currentForm != MM_PLAYER_FORM_ZORA)
+    if (!MMFORM_IS_ZORA_SWIM())
         return;
 
     s16 prevIntensity = gFormState.barrierIntensity;
 
     // Magic + intensity logic (from 2Ship func_8082F1AC line 2947-2961)
     if ((gSaveContext.magic != 0) && gFormState.barrierActive) {
-        // Magic drain: 2 per frame (from 2Ship: MAGIC_CONSUME_GORON_ZORA)
+        // Magic drain: 1 per N frames.
+        // Zora form: 1/10 frames. Dragon Scale: 1/30 frames (1/3 cost).
         if (gSaveContext.magicState == MAGIC_STATE_IDLE) {
-            gSaveContext.magic -= 2;
-            if (gSaveContext.magic < 0) {
-                gSaveContext.magic = 0;
+            gFormState.magicDrainTimer--;
+            if (gFormState.magicDrainTimer <= 0) {
+                gSaveContext.magic--;
+                if (gSaveContext.magic < 0) {
+                    gSaveContext.magic = 0;
+                }
+                gFormState.magicDrainTimer = gFormState.zoraSwimEnabled ? 30 : 10;
             }
         }
 
@@ -7711,7 +7804,10 @@ static void MmForm_UpdateBarrier(Player* player, PlayState* play) {
 // B = ZORA_UNDERWATER (iron boots, sink), A = ZORA_LAND (free swim)
 // Called from swim actions only.
 static void MmForm_CheckBootToggle(Player* player, PlayState* play) {
-    if (gFormState.currentForm != MM_PLAYER_FORM_ZORA)
+    if (!MMFORM_IS_ZORA_SWIM())
+        return;
+    // Dragon Scale: no boot toggle (uses Iron Boots for sinking instead)
+    if (gFormState.zoraSwimEnabled)
         return;
     if (gFormState.swimState == 0)
         return;
@@ -7841,16 +7937,15 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
         // Apply aim to upper body rotation (from MM z_player_lib.c:2493-2516)
         // upperLimbRot.y = aim yaw relative to body facing (full value — yaw looks correct)
         // upperLimbRot.x = aim pitch (REDUCED for visual — full pitch used for spawn direction)
-        // In MM, Player_UpdateUpperBody maps focus.rot to upperLimbRot with damping.
-        // The upper body should only tilt subtly (±30°), not rotate fully.
-        // Full aimPitch (±0x36B0) is kept in gFormState for boomerang spawn direction.
+        // From MM: full pitch applied to upper body (same as aim direction)
         player->upperLimbRot.y = gFormState.boomerangAimYaw;
-        {
-            // Scale pitch to ±0x1555 (~30°) for upper body visual
-            s16 visualPitch = gFormState.boomerangAimPitch * 3 / 8;
-            visualPitch = CLAMP(visualPitch, -0x1555, 0x1555);
-            player->upperLimbRot.x = visualPitch;
-        }
+        player->upperLimbRot.x = gFormState.boomerangAimPitch;
+
+        // Update camera focus so it follows the aim direction.
+        // OOT's camera uses actor.focus.rot to determine viewing angle.
+        // Without this, camera stays forward while upper body rotates → can't see aim.
+        player->actor.focus.rot.y = gFormState.boomerangLockedYaw + gFormState.boomerangAimYaw;
+        player->actor.focus.rot.x = gFormState.boomerangAimPitch;
 
         // B released → transition to throw
         if (!CHECK_BTN_ALL(input->cur.button, BTN_B)) {
@@ -7916,7 +8011,7 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
 
             if (leftBoom != NULL) {
                 // From MM: unk_1CC = unk_1CF(16) + 0x24(36) = 52 frames flight time
-                leftBoom->returnTimer = 52;
+                leftBoom->returnTimer = 20; // Vanilla OOT boomerang distance
                 leftBoom->moveTo = player->focusActor;
                 gFormState.boomerangActorL = &leftBoom->actor;
             }
@@ -7931,7 +8026,7 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
                                                      yawR, 0, 2, true); // params=2: right Zora fin
 
             if (rightBoom != NULL) {
-                rightBoom->returnTimer = 52;
+                rightBoom->returnTimer = 20; // Vanilla OOT boomerang distance
                 rightBoom->moveTo = player->focusActor;
                 gFormState.boomerangActorR = &rightBoom->actor;
 
@@ -8016,7 +8111,7 @@ static void MmForm_TrackBoomerangsInFlight(Player* player, PlayState* play) {
 
     // Safety timeout: if boomerangs stuck for too long, force cleanup
     gFormState.boomerangTimer++;
-    if (gFormState.boomerangTimer > 180) {
+    if (gFormState.boomerangTimer > 540) { // MM: 180 at 20fps = 540 at 60fps (9 sec)
         if (MmForm_IsBoomerangAlive(gFormState.boomerangActorL)) {
             Actor_Kill(gFormState.boomerangActorL);
         }
@@ -8122,7 +8217,8 @@ static void MmForm_SwimEffects(Player* player, PlayState* play) {
     // During fast swim, disable shield/hand items display.
     // MUST clear when not fast-swimming, otherwise flag persists and makes Link invisible
     // after detransform (OOT's Player_Draw checks this flag to skip entire skeleton draw).
-    if (gFormState.fastSwimActive) {
+    // Dragon Scale swim: do NOT hide Link's model — he stays visible as Link.
+    if (gFormState.fastSwimActive && !gFormState.zoraSwimEnabled) {
         player->stateFlags2 |= PLAYER_STATE2_DISABLE_DRAW;
     } else {
         player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_DRAW;
@@ -8208,126 +8304,122 @@ static void MmForm_EnterSwimIdle(Player* player, PlayState* play) {
     // Clean up stale state from land actions that may have been interrupted
     player->actor.shape.rot.x = 0; // Clear pitch rotation from floor/roll
 
-    // CRITICAL: Prevent OOT's ground actionFunc from interfering with swim.
-    // OOT's Player_UpdateCommon runs BEFORE our code:
-    //   1. actionFunc → sets yaw/linearVelocity from stick (ground movement)
-    //   2. speedXZ = linearVelocity, world.rot.y = yaw
-    //   3. Actor_UpdateVelocityXZGravity → moves player in OOT's direction
-    //   4. Player_UpdateShapeYaw → interpolates shape.rot.y toward yaw
-    // All of this happens BEFORE TransformMasks_Update. To prevent interference:
-    //   - PAUSE_ACTION_FUNC: blocks OOT's actionFunc from running next frame
-    //     (Player_UpdateCommon clears it at the end, we re-set it each frame)
-    //   - DISABLE_ROTATION_ALWAYS: blocks Player_UpdateShapeYaw from modifying shape.rot.y
-    player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
-    player->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
-    player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
-
-    // Gravity handled by MmForm_WaterBuoyancy (called from swim actions)
-    player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_SWIM);
+    // OOT handles ALL swim physics (buoyancy, gravity, movement, ladders, ledges).
+    // Do NOT set PAUSE — OOT's swim actionFunc must run.
+    // Only fast swim (MMFORM_ACT_SWIM_FAST) sets PAUSE to take over from OOT.
+    player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+    player->stateFlags2 &= ~(PLAYER_STATE2_DISABLE_ROTATION_ALWAYS | PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET);
 }
 
 // Forward declaration — defined after SwimMove, used by SwimIdle/SurfaceWalk/UnderwaterWalk
 static void MmForm_SwimMovement(Player* player, f32 speedTarget, s16 yawTarget);
 
-// Surface idle (from 2Ship Player_Action_54, z_player.c:16820)
-// Handles boot toggle (B→iron boots, A→free swim), buoyancy/sinking, and action transitions.
+// Zora swim idle — OOT handles swim physics (buoyancy, movement, ladders, ledges).
+// Controls depend on whether we're on the ocean floor or swimming:
+//   Swimming (not on floor): B = iron boots toggle, A = fast swim, R = barrier
+//   Ocean floor (iron boots): B = Zora punch combo / boomerang aim, A = fast swim (deequips boots), R = barrier
 static void MmForm_Action_SwimIdle(Player* player, PlayState* play) {
     LinkAnimation_Update(play, &gFormState.formSkelAnime);
     Input* input = &play->state.input[0];
 
+    // CRITICAL: Force PAUSE cleared every frame during normal swim.
+    // OOT's swim actionFunc MUST run for buoyancy/movement/ladders/ledges.
+    // Various code paths may have set PAUSE before entering water — clear it here.
+    if (!gFormState.fastSwimActive) {
+        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+    }
+
     // Visual effects (ripples, bubbles)
     MmForm_SwimEffects(player, play);
 
-    // Barrier input (flag-based, from 2Ship func_8082F164 called in Action_54)
+    // R = Zora barrier (always available)
     MmForm_CheckBarrierInput(player, play);
 
-    // Boot mode toggle (from 2Ship func_8083A04C)
-    MmForm_CheckBootToggle(player, play);
-
-    // Buoyancy (from 2Ship func_808475B4 — real MM physics)
-    MmForm_WaterBuoyancy(player);
-
-    // Boot toggle delay countdown
-    if (gFormState.bootToggleDelay > 0) {
-        gFormState.bootToggleDelay--;
+    // Clean up swimState if OOT took us out of water (ledge climb, exit water, etc.)
+    // Always deequip iron boots when leaving water.
+    if (!(player->stateFlags1 & PLAYER_STATE1_IN_WATER) && gFormState.swimState > 0) {
+        gFormState.swimState = 0;
+        gFormState.fastSwimActive = 0;
+        gFormState.zoraBoots = 0;
+        player->currentBoots = PLAYER_BOOTS_KOKIRI;
+        Player_SetBootData(play, player);
+        MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
+        return;
     }
 
-    if (gFormState.zoraBoots == 1) { // DIVE MODE (sinking)
-        // When we hit the ocean floor → switch to normal land controls (idle, walk, Z-target, attacks).
-        // Same controls as surface, but underwater. A = surface (handled in main update).
-        // Unlike SWIM_UNDERWATER_WALK, this avoids oscillation and gives full land controls.
-        if (MMFORM_ON_GROUND(player)) {
-            player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
-            // Restore OOT control for land controls on floor
-            player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
-            player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
-            MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
-            // Keep swimState = 1 so we know we're still underwater
-            MmForm_PlaySfx(player, MM_NA_SE_PL_LAND, NA_SE_PL_LAND);
-            return;
-        }
-    } else { // ZORA_LAND (free swim)
-        // A hold → dive into fast swim (from 2Ship func_80850734, line 16794-16808)
-        // Condition: Zora, A cur (hold), no wind, LAND boots, no boot delay
-        if (CHECK_BTN_ALL(input->cur.button, BTN_A) && gFormState.bootToggleDelay == 0) {
-            if (gFormState.waterRoll != NULL) {
-                // Start waterroll from frame 4 (from 2Ship line 16799: startFrame=4.0f)
-                MmForm_SetAction(MMFORM_ACT_SWIM_FAST, play, gFormState.waterRoll, 1.0f, ANIMMODE_ONCE);
-                LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.waterRoll, 1.0f, 4.0f,
-                                     Animation_GetLastFrame(gFormState.waterRoll), ANIMMODE_ONCE, -6.0f);
-                gFormState.swimPhase = 0;                         // Phase 0: waterroll transition
-                gFormState.swimPhaseCounter = 1;                  // Play waterroll once then transition
-                gFormState.swimExitFlag = 0;                      // Not exiting (from 2Ship line 16802)
-                gFormState.swimSpeedB48 = player->linearVelocity; // Save current speed (from 2Ship line 16803)
-                player->actor.velocity.y = 0.0f;                  // (from 2Ship line 16804)
-                gFormState.fastSwimActive = 1;                    // Visible from first frame
-                gFormState.swimRoll = 0;                          // Reset roll for clean 2-rotation barrel roll
-                gFormState.swimRollSmoothed = 0;
-                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
+    // Detect ocean floor: on ground + deep underwater
+    u8 onOceanFloor = MMFORM_ON_GROUND(player) && (player->actor.yDistToWater > ZORA_SWIM_THRESHOLD);
+
+    if (onOceanFloor && MMFORM_IS_ZORA_SWIM()) {
+        // === OCEAN FLOOR (Zora only) ===
+        // Only intercept B when standing still. Moving = OOT handles everything (roll, sidehop, backflip, hookshot).
+        if (fabsf(player->linearVelocity) < 1.0f) {
+            // B press (standing still) = Zora punch combo
+            if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+                MmForm_StartPunch(player, play);
+                return;
+            }
+            // B hold (standing still, after punch) = Zora boomerang aim (instant, like MM)
+            if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B) &&
+                gFormState.boomerangState == 0 && gFormState.cutterAttack != NULL) {
+                MmForm_StartBoomerangThrow(player, play);
                 return;
             }
         }
-    }
 
-    // Exit water: on ground + above water surface → land
-    if (player->actor.yDistToWater <= 0.0f && MMFORM_ON_GROUND(player)) {
-        gFormState.swimState = 0;
-        gFormState.zoraBoots = 0;
-        gFormState.fastSwimActive = 0;
-        player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
-        player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
-        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
-        MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
-        MmForm_PlaySfx(player, MM_NA_SE_PL_LAND, NA_SE_PL_LAND);
-        return;
-    }
-
-    // Movement from stick (from 2Ship Player_Action_54: Player_GetMovementSpeedAndYaw + func_8084748C)
-    f32 speedTarget = 0.0f;
-    s16 yawTarget = player->actor.shape.rot.y;
-
-    Player_GetMovementSpeedAndYaw(player, &speedTarget, &yawTarget, SPEED_MODE_LINEAR, play);
-
-    if (speedTarget != 0.0f) {
-        // U-turn deceleration (from 2Ship line 16860-16862)
-        // If angle > 90°, decelerate first before turning
-        s16 yawDiff = (s16)(player->actor.shape.rot.y - yawTarget);
-        if ((ABS(yawDiff) > 0x6000) && !Math_StepToF(&player->linearVelocity, 0.0f, 1.0f)) {
-            MmForm_SwimMovement(player, 0.0f, yawTarget);
-            return;
+        // A press = fast swim (instant, deactivates boots, exits floor)
+        if (CHECK_BTN_ALL(input->press.button, BTN_A) && gFormState.waterRoll != NULL) {
+            goto enter_fast_swim;
+        }
+        // Moving on floor: OOT handles everything (roll, hookshot, sidehop, backflip, etc.)
+    } else if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState > 0) {
+        // === SWIMMING (not on floor) ===
+        // A press = fast swim (instant)
+        if (CHECK_BTN_ALL(input->press.button, BTN_A) && gFormState.waterRoll != NULL) {
+            goto enter_fast_swim;
         }
 
-        // Transition to surface walk (from 2Ship func_8083B73C)
-        player->actor.shape.rot.y = yawTarget;
-        player->yaw = yawTarget;
-        player->actor.world.rot.y = yawTarget;
-        MmForm_SetAction(MMFORM_ACT_SWIM_SURFACE_WALK, play,
-                         gFormState.swimAnim ? gFormState.swimAnim : gFormState.walkAnim, 1.0f, ANIMMODE_LOOP);
-        return;
+        // B press = toggle iron boots on/off (Zora form only, not Dragon Scale)
+        if (!gFormState.zoraSwimEnabled && CHECK_BTN_ALL(input->press.button, BTN_B)) {
+            if (player->currentBoots != PLAYER_BOOTS_IRON) {
+                player->currentBoots = PLAYER_BOOTS_IRON;
+                gFormState.zoraBoots = 1;
+            } else {
+                player->currentBoots = PLAYER_BOOTS_KOKIRI;
+                gFormState.zoraBoots = 0;
+            }
+            Player_SetBootData(play, player);
+        }
     }
 
-    // Always update yaw + speed even when idle (from 2Ship: func_8084748C always called)
-    MmForm_SwimMovement(player, speedTarget, yawTarget);
+    // OOT handles everything else.
+    goto swim_idle_end;
+
+enter_fast_swim:
+    // Deactivate iron boots + take over from OOT for custom fast swim
+    gFormState.zoraBoots = 0;
+    player->currentBoots = PLAYER_BOOTS_KOKIRI;
+    Player_SetBootData(play, player);
+    player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+    player->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+
+    MmForm_SetAction(MMFORM_ACT_SWIM_FAST, play, gFormState.waterRoll, 1.0f, ANIMMODE_ONCE);
+    LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.waterRoll, 1.0f, 4.0f,
+                         Animation_GetLastFrame(gFormState.waterRoll), ANIMMODE_ONCE, -6.0f);
+    gFormState.swimPhase = 0;
+    gFormState.swimPhaseCounter = 1;
+    gFormState.swimExitFlag = 0;
+    gFormState.swimSpeedB48 = player->linearVelocity;
+    player->actor.velocity.y = 0.0f;
+    gFormState.fastSwimActive = 1;
+    gFormState.swimRoll = 0;
+    gFormState.swimRollSmoothed = 0;
+    MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
+    return;
+
+swim_idle_end:;
+    // OOT handles: exit water, movement, buoyancy, gravity, ladders, ledges, diving.
 }
 
 // Surface walk (from 2Ship Player_Action_57, z_player.c:17041-17072)
@@ -8347,6 +8439,23 @@ static void MmForm_Action_SwimSurfaceWalk(Player* player, PlayState* play) {
 
     // Boot mode toggle
     MmForm_CheckBootToggle(player, play);
+
+    // Ladder/vine detection (same as SwimIdle)
+    if ((player->actor.bgCheckFlags & 8) && player->actor.wallPoly != NULL) {
+        if (func_80041DB8(&play->colCtx, player->actor.wallPoly, player->actor.wallBgId) & 8) {
+            gFormState.swimState = 0;
+            gFormState.fastSwimActive = 0;
+            gFormState.swimPitch = 0;
+            gFormState.swimRoll = 0;
+            gFormState.swimRollSmoothed = 0;
+            player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
+            player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+            player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            player->actor.shape.rot.x = 0;
+            MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
+            return;
+        }
+    }
 
     // If boots switched to UNDERWATER → return to idle (will sink from there)
     // (from 2Ship Player_Action_57 line 17060: currentBoots >= UNDERWATER → func_808353DC)
@@ -8445,6 +8554,13 @@ static void MmForm_ExitFastSwim(Player* player, PlayState* play) {
     gFormState.swimYawRate = 0;
     gFormState.swimExitFlag = 0;
     gFormState.swimFloorTimer = 0;
+    // Auto-deactivate iron boots when exiting fast swim
+    gFormState.zoraBoots = 0;
+    player->currentBoots = PLAYER_BOOTS_KOKIRI;
+    // Return control to OOT for surface swim (ladders, ledges, interactions).
+    // PAUSE was set when entering fast swim; clear it so OOT's swim actionFunc resumes.
+    player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+    player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
 }
 
 // Helper: exit swim entirely (leave water)
@@ -8539,13 +8655,7 @@ static s32 MmForm_CheckDolphinJump(Player* player, PlayState* play) {
 static void MmForm_Action_DolphinJump(Player* player, PlayState* play) {
     LinkAnimation_Update(play, &gFormState.formSkelAnime);
 
-    // Enforce MM gravity every frame (OOT may reset to its default)
-    player->actor.gravity = -1.0f; // MM Player_Action_28 uses -1.0f
-
-    // Recalculate pitch from actual velocity trajectory (MM Player_Action_28 line 15377)
-    gFormState.swimPitch = Math_Atan2S(player->linearVelocity, -player->actor.velocity.y);
-
-    // Smooth roll toward 0 during arc (MM Player_Action_28)
+    // Smooth roll toward 0 during arc (MM Player_Action_28 line 15365)
     Math_SmoothStepToS(&gFormState.swimRoll, 0, 6, 0x7D0, 0x190);
 
     // Water re-entry: back in water deep enough AND falling
@@ -8573,7 +8683,9 @@ static void MmForm_Action_DolphinJump(Player* player, PlayState* play) {
         return;
     }
 
-    // Ground contact: if still underwater → return to swim idle; if above water → exit to land
+    // Ground contact (from MM Player_Action_28 line 15367-15373):
+    // MM checks bgCheckFlags & BGCHECKFLAG_GROUND INSIDE the !bonk check.
+    // If steep angle (unk_AAA > 0x36B0): damage. Otherwise: normal land.
     if (MMFORM_ON_GROUND(player) && player->actor.velocity.y <= 0.0f) {
         if (player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
             // Underwater floor contact → return to swim idle, don't exit swim
@@ -8593,6 +8705,11 @@ static void MmForm_Action_DolphinJump(Player* player, PlayState* play) {
         MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
         return;
     }
+
+    // Airborne: set gravity and recalculate pitch from trajectory
+    // (from MM Player_Action_28 line 15375-15376: only when NOT on ground)
+    player->actor.gravity = -1.0f;
+    gFormState.swimPitch = Math_Atan2S(player->linearVelocity, -player->actor.velocity.y);
 }
 
 // Fast swim — 3-phase state machine (from 2Ship Player_Action_56, z_player.c:16910-17039)
@@ -8682,10 +8799,12 @@ static void MmForm_Action_SwimFast(Player* player, PlayState* play) {
             }
         }
 
-        // Barrel roll during waterroll: 2 full rotations over ~14 frames (frame 4-18)
-        // 2 * 0x10000 / 14 ≈ 0x2492 per frame
-        gFormState.swimRoll += 0x2492;
-        gFormState.swimRollSmoothed = gFormState.swimRoll; // Direct, no lag during barrel roll
+        // Bank smoothing from stick input during waterroll (from MM line 16966):
+        // MM: Math_SmoothStepToS(&unk_B86[1], input->rel.stick_x * 0xC8, 0xA, 0x3E8, 0x64)
+        // The barrel roll visual comes from the waterroll ANIMATION's root Z rotation,
+        // NOT from code-side accumulation. The code-side roll is input-based banking only.
+        Math_SmoothStepToS(&gFormState.swimRoll, (s16)(input->rel.stick_x * 0xC8), 0xA, 0x3E8, 0x64);
+        Math_SmoothStepToS(&gFormState.swimRollSmoothed, gFormState.swimRoll, 2, 0x5DC, 0x64);
     }
     // =============================================
     // PHASE 1: Active swimming (av2 == 0, exitFlag == 0)
@@ -8762,7 +8881,7 @@ static void MmForm_Action_SwimFast(Player* player, PlayState* play) {
         if (gFormState.swimFloorTimer < 8 && MMFORM_ON_GROUND(player)) {
             gFormState.swimPitch += (s16)((-player->floorPitch - gFormState.swimPitch) * 2);
             gFormState.swimFloorTimer = 15;
-            Audio_PlayActorSound2(&player->actor, NA_SE_PL_BODY_BOUND);
+            MmForm_PlaySfx(player, MM_NA_SE_PL_LAND, NA_SE_PL_BODY_BOUND);
 
             // Floor dust effect (from 2Ship func_80850D20: func_8083F8A8 with dust params)
             Vec3f dustPos = player->actor.world.pos;
@@ -8778,32 +8897,44 @@ static void MmForm_Action_SwimFast(Player* player, PlayState* play) {
         Math_SmoothStepToS(&gFormState.swimRoll, 0, 4, 0xFA0, 0x190);
         Math_SmoothStepToS(&gFormState.swimRollSmoothed, gFormState.swimRoll, 2, 0x5DC, 0x64);
 
-        // Allow re-dive early in exit (from 2Ship line 17014)
+        // Re-dive check (from 2Ship line 17014):
+        // MM: if ((curFrame <= 5.0f) || !func_80850734(play, this))
+        // func_80850734 returns true when A held + Zora + no boots + no wind.
+        // If conditions MET and frame > 5: animation update is SKIPPED (frozen),
+        // so the top-level dolphin jump / water exit checks handle re-entry.
+        // If conditions NOT met OR frame <= 5: animation advances normally.
+        u8 canReDive = CHECK_BTN_ALL(input->cur.button, BTN_A) && gFormState.zoraBoots == 0;
+
         if (gFormState.formSkelAnime.curFrame <= 5.0f) {
-            if (CHECK_BTN_ALL(input->cur.button, BTN_A) && gFormState.waterRoll != NULL && gFormState.zoraBoots == 0) {
-                // Re-initiate dive
+            // Early frames: allow explicit re-dive with waterroll
+            if (canReDive && gFormState.waterRoll != NULL) {
                 LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.waterRoll, 1.0f, 4.0f,
                                      Animation_GetLastFrame(gFormState.waterRoll), ANIMMODE_ONCE, -6.0f);
                 gFormState.swimPhase = 0;
-                gFormState.swimPhaseCounter = 1; // Play waterroll once then transition
+                gFormState.swimPhaseCounter = 1;
                 gFormState.swimExitFlag = 0;
                 gFormState.swimSpeedB48 = player->linearVelocity;
                 player->actor.velocity.y = 0.0f;
-                gFormState.fastSwimActive = 1; // Visible from first frame
-                gFormState.swimRoll = 0;       // Reset roll for clean barrel roll
+                gFormState.fastSwimActive = 1;
+                gFormState.swimRoll = 0;
                 gFormState.swimRollSmoothed = 0;
                 MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_SWIM_DASH, NA_SE_PL_DIVE_BUBBLE);
                 return;
             }
         }
 
-        if (LinkAnimation_Update(play, &gFormState.formSkelAnime)) {
-            // Exit animation done → swim idle (from 2Ship line 17016: func_808353DC)
-            MmForm_ExitFastSwim(player, play);
-            MmForm_SetAction(MMFORM_ACT_SWIM_IDLE, play,
-                             gFormState.swimWaitAnim ? gFormState.swimWaitAnim : gFormState.idleAnim, 1.0f,
-                             ANIMMODE_LOOP);
-            return;
+        // MM: if frame > 5 AND A held → freeze animation (don't advance).
+        // The speed/velocity update at bottom of function + dolphin jump check
+        // at top handle re-entry into fast swim naturally.
+        if (gFormState.formSkelAnime.curFrame <= 5.0f || !canReDive) {
+            if (LinkAnimation_Update(play, &gFormState.formSkelAnime)) {
+                // Exit animation done → swim idle (from 2Ship line 17016: func_808353DC)
+                MmForm_ExitFastSwim(player, play);
+                MmForm_SetAction(MMFORM_ACT_SWIM_IDLE, play,
+                                 gFormState.swimWaitAnim ? gFormState.swimWaitAnim : gFormState.idleAnim, 1.0f,
+                                 ANIMMODE_LOOP);
+                return;
+            }
         }
     }
 
@@ -9168,7 +9299,19 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // Force yOffset to 0 every frame (from 2Ship: shape.yOffset = unk_ABC + unk_AC0, both 0 when standing).
     // OOT's ledge climbing sets negative yOffset that Math_StepToF returns to 0, but if
     // transformation interrupts that process, a stale value could persist. Force clean.
-    player->actor.shape.yOffset = 0.0f;
+    // Exception: during climb animations, OOT uses shape.yOffset to animate the model
+    // rising up to the ledge. Don't force it to 0 or the climb-over animation breaks.
+    // - MMFORM_ACT_LEDGE_CLIMB: our custom water ledge climb
+    // - MMFORM_ACT_OOT_ACTION with CLIMBING_LEDGE: OOT's ladder-top climb-over (via yield)
+    if (gFormState.goronAction == MMFORM_ACT_LEDGE_CLIMB && player->actor.shape.yOffset < 0.0f) {
+        Math_StepToF(&player->actor.shape.yOffset, 0.0f, 400.0f);
+    } else if (gFormState.goronAction == MMFORM_ACT_OOT_ACTION) {
+        // During OOT yield: let OOT control yOffset freely.
+        // Climbing, ledge hang, and climb-over animations all use yOffset.
+        // Forcing 0 breaks the visual position during these transitions.
+    } else {
+        player->actor.shape.yOffset = 0.0f;
+    }
 
     // Shadow type per frame: DrawFeet when PostLimbDraw runs (updates feetPos[]),
     // DrawCircle for Goron ball/shield where no skeleton traversal occurs.
@@ -9310,30 +9453,27 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         if (gFormState.currentForm == MM_PLAYER_FORM_GORON || gFormState.currentForm == MM_PLAYER_FORM_DEKU) {
             // Goron sinks in deep water / Deku with no hops left → void out
             // From 2Ship: Goron excluded from diving (func_8083B3B4 line 8930)
-            if (gFormState.goronAction != MMFORM_ACT_WATER_VOID && gFormState.goronAction != MMFORM_ACT_HAZARD_VOID) {
+            // Don't void out during get-item cutscene — let item pickup complete first.
+            if (gFormState.goronAction != MMFORM_ACT_WATER_VOID && gFormState.goronAction != MMFORM_ACT_HAZARD_VOID &&
+                !(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM)) {
                 gFormState.goronAction = MMFORM_ACT_WATER_VOID;
                 gFormState.actionTimer = 0;
                 gFormState.rollGroundPoundTimer = 0;
             }
             // Don't return here - fall through to action dispatch so
             // MmForm_Action_WaterVoidOut can run each frame and progress the void out.
-        } else if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState == 0 &&
+        } else if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState == 0 &&
                    player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
-            // Zora enters water → swim mode (from 2Ship: func_8083B3B4 → Player_Action_54)
-            // Block swim entry only when already in a swim/water action.
-            // All other actions (idle, walk, run, Z-target, fall, jump, OOT yield, etc.)
-            // allow water entry so Zora can always transition to swim on contact.
-            s32 curAct = gFormState.goronAction;
-            u8 blockSwimEntry =
-                (curAct == MMFORM_ACT_WATER_VOID || curAct == MMFORM_ACT_HAZARD_VOID ||
-                 curAct == MMFORM_ACT_SWIM_IDLE || curAct == MMFORM_ACT_SWIM_MOVE || curAct == MMFORM_ACT_SWIM_FAST ||
-                 curAct == MMFORM_ACT_SWIM_DASH || curAct == MMFORM_ACT_SWIM_SURFACE_WALK ||
-                 curAct == MMFORM_ACT_SWIM_UNDERWATER_WALK || curAct == MMFORM_ACT_DOLPHIN_JUMP);
-            if (!blockSwimEntry) {
-                MmForm_EnterSwimIdle(player, play);
-                MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_DIVE, NA_SE_PL_DIVE_BUBBLE);
-                return;
-            }
+            // Zora enters water: OOT handles ALL swim physics (buoyancy, movement, ladders).
+            // Mark swimState for draw, clear PAUSE so OOT's swim action runs.
+            gFormState.swimState = 1;
+            gFormState.swimPitch = 0;
+            gFormState.swimRoll = 0;
+            gFormState.swimRollSmoothed = 0;
+            gFormState.fastSwimActive = 0;
+            gFormState.goronAction = MMFORM_ACT_SWIM_IDLE;
+            player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
         }
     }
 
@@ -9354,7 +9494,8 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             } else if ((gFormState.currentForm == MM_PLAYER_FORM_DEKU ||
                         gFormState.currentForm == MM_PLAYER_FORM_ZORA) &&
                        gFormState.goronAction != MMFORM_ACT_HAZARD_VOID &&
-                       gFormState.goronAction != MMFORM_ACT_WATER_VOID) {
+                       gFormState.goronAction != MMFORM_ACT_WATER_VOID &&
+                       !(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM)) {
                 gFormState.goronAction = MMFORM_ACT_HAZARD_VOID;
                 gFormState.hazardVoidType = 1; // lava
                 gFormState.hazardVoidTimer = 0;
@@ -9371,6 +9512,16 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             }
         }
     }
+
+    // Zora/FD in water: ALWAYS ensure PAUSE is cleared so OOT's swim system works.
+    if ((gFormState.currentForm == MM_PLAYER_FORM_ZORA || gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY) &&
+        (player->stateFlags1 & PLAYER_STATE1_IN_WATER) && !gFormState.fastSwimActive) {
+        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+    }
+
+    // Zora tunic is equipped on transform and removed on detransform (see MmForm_ApplyFormProperties /
+    // MmForm_RestoreOotState).
 
     // Fierce Deity 1.5x speed multiplier - MOVED to walk/run/strafe action handlers.
     // Applying *= 1.5f here compounded every frame because OOT's actionFunc (still running)
@@ -9393,9 +9544,11 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         Collider_ResetCylinderAC(play, &gFormState.shieldCollider.base);
     }
 
-    // Damage/knockback: OOT handles natively via func_808382DC → func_80837C0C.
-    // The form yields to OOT via PLAYER_STATE1_DAMAGED in MMFORM_OOT_YIELD_FLAGS.
-    // OOT's jointTable (with knockback animation) is copied to the form skeleton in Draw.
+    // Damage/knockback: OOT handles via yield (PLAYER_STATE1_DAMAGED in yield flags).
+    // During yield, we maintain buoyancy for Zora underwater (see yield section below).
+    // When yield ends, MmForm_EnterSwimIdle restores swim if still underwater.
+    // NOTE: gMmFormPendingDamage / MmForm_CheckDamage exist but the write side
+    // (in OOT's func_808382DC) was never implemented — all damage goes through yield.
 
     // =========================================================================
     // OOT Fallback Action System
@@ -9434,6 +9587,13 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
 
         u32 yieldFlags = player->stateFlags1 & MMFORM_OOT_YIELD_FLAGS;
 
+        // Hookshot pull: FLYING_WITH_HOOKSHOT is in stateFlags3 (not stateFlags1).
+        // Must yield during pull so OOT's Player_Action_80850AEC runs and detects
+        // arrival at target. Without this, pull never terminates → infinite flying.
+        if (player->stateFlags3 & PLAYER_STATE3_FLYING_WITH_HOOKSHOT) {
+            yieldFlags |= PLAYER_STATE1_FIRST_PERSON; // Reuse flag bit to trigger yield
+        }
+
         // Don't yield for FIRST_PERSON when WE set it (Deku bubble aim / Zora boomerang aim)
         if (gFormState.bubbleCharging || gFormState.goronAction == MMFORM_ACT_DEKU_BUBBLE_AIM ||
             gFormState.goronAction == MMFORM_ACT_BOOMERANG_THROW) {
@@ -9449,6 +9609,11 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             gFormState.goronAction == MMFORM_ACT_SWIM_UNDERWATER_WALK ||
             gFormState.goronAction == MMFORM_ACT_DOLPHIN_JUMP) {
             yieldFlags &= ~PLAYER_STATE1_IN_CUTSCENE;
+        }
+
+        // Don't yield for CLIMBING_LEDGE when WE set it (water ledge climb handled by our code)
+        if (gFormState.goronAction == MMFORM_ACT_LEDGE_CLIMB || gFormState.goronAction == MMFORM_ACT_LEDGE_HANG) {
+            yieldFlags &= ~(PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_HANGING_OFF_LEDGE);
         }
 
         if (yieldFlags) {
@@ -9486,6 +9651,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
 
                 gFormState.goronAction = MMFORM_ACT_OOT_ACTION;
                 gFormState.actionTimer = 0;
+
                 // Don't zero linearVelocity during damage yield — OOT's knockback
                 // system already set the correct knockback speed and we must not override it.
                 if (!(yieldFlags & PLAYER_STATE1_DAMAGED)) {
@@ -9510,6 +9676,35 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 MmForm_UpdateGakki(player, play);
             }
 
+            // Climbing: make OOT treat the player as 100% vanilla Link.
+            // Restore original ageProperties + Link's collider so ALL climbing physics,
+            // ledge detection, climb-over animation, and positioning are vanilla.
+            if (yieldFlags &
+                (PLAYER_STATE1_CLIMBING_LADDER | PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_HANGING_OFF_LEDGE)) {
+                player->ageProperties = gFormState.savedAgeProperties; // Full OOT ageProperties
+                player->cylinder.dim.radius = 12;
+                player->cylinder.dim.height = 60;
+                player->cylinder.dim.yShift = 0;
+            } else {
+                // Not climbing: restore form properties
+                player->ageProperties = &gFormState.formAgeProperties;
+                player->cylinder.dim.radius = (s16)sFormProps[gFormState.currentForm].cylinderRadius;
+                player->cylinder.dim.height = (s16)sFormProps[gFormState.currentForm].cylinderHeight;
+                player->cylinder.dim.yShift = (s16)sFormProps[gFormState.currentForm].cylinderYShift;
+            }
+
+            // Zora underwater during yield (e.g. damage knockback): maintain buoyancy
+            // so the player doesn't sink to the ocean floor with OOT's normal gravity.
+            // Without this, taking damage while swimming → sinks → softlock.
+            if (MMFORM_IS_ZORA_SWIM() && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
+                player->actor.gravity = 0.0f;
+                MmForm_WaterBuoyancy(player);
+
+                // Note: OOT's water knockback (Player_Action_8084E30C) handles its own
+                // buoyancy via func_8084B000, and transitions to swim idle via func_80838F18
+                // when the hit animation finishes. DAMAGED clears naturally → yield ends.
+            }
+
             // Don't run form logic - OOT is in control.
             // jointTable copy happens in MmForm_Draw (unless gakkiActive overrides).
             return;
@@ -9517,6 +9712,10 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
 
         // Yield flags cleared - return to idle if we were yielding
         if (gFormState.goronAction == MMFORM_ACT_OOT_ACTION) {
+            // actionTimer was reset to 0 when entering yield (line ~9646).
+            // But the climbing yield can last hundreds of frames, exceeding the 120-frame
+            // timeout for the animation wait. Fix: use a larger timeout.
+
             // Gakki exit: if gakki was active during yield, start the reverse animation
             // before returning to idle. From MM z_player.c line 17441.
             if (gFormState.gakkiActive == 1 || gFormState.gakkiActive == 2) {
@@ -9529,20 +9728,39 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 return; // Stay in OOT_ACTION while instrument exit animation plays
             }
 
+            // Zora underwater: skip animation wait and immediately re-enter swim.
+            // Waiting for OOT's damage recovery animation to finish while underwater
+            // leaves the player unable to act (sinking/stuck). Re-enter swim ASAP.
+            if (MMFORM_IS_ZORA_SWIM() && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
+                MmForm_EnterSwimIdle(player, play);
+                player->linearVelocity = 0.0f;
+                return;
+            }
+
             // Wait for OOT's one-shot animation to finish before accepting input.
             // OOT clears CLIMBING_LEDGE ~34 frames before the climb animation ends.
             // Without this check, the MM form returns to idle and accepts movement
             // while the climbing animation is still playing (player slides mid-climb).
             // Once OOT transitions to a loop animation (idle/walk), we know it's done.
-            // Timeout after 120 frames (2 seconds) to prevent softlocks if OOT gets stuck.
+            // Wait for OOT's one-shot animation to finish (climb-over, ledge hang, etc.)
+            // Don't force linearVelocity=0 — climb-over needs root motion to move forward.
+            // OOT clears CLIMBING_LEDGE ~34 frames before climb animation ends, so we
+            // must keep yielding until the animation actually finishes.
+            // Timeout 600 frames (10s) — climbing yield can last hundreds of frames,
+            // and actionTimer counts from yield START, not from flags clearing.
             gFormState.actionTimer++;
-            if (gFormState.actionTimer < 120 &&
+            if (gFormState.actionTimer < 600 &&
                 (player->skelAnime.mode == ANIMMODE_ONCE || player->skelAnime.mode == ANIMMODE_ONCE_INTERP)) {
                 if (player->skelAnime.curFrame < Animation_GetLastFrame(player->skelAnime.animation) - 1.0f) {
-                    player->linearVelocity = 0.0f;
-                    return; // Stay yielded until OOT's animation finishes
+                    return; // Stay yielded — OOT's actionFunc runs and handles movement
                 }
             }
+
+            // Restore form collider (was shrunk to Link's size during climbing yield)
+            player->cylinder.dim.radius = (s16)sFormProps[gFormState.currentForm].cylinderRadius;
+            player->cylinder.dim.height = (s16)sFormProps[gFormState.currentForm].cylinderHeight;
+            player->cylinder.dim.yShift = (s16)sFormProps[gFormState.currentForm].cylinderYShift;
+
             MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
             player->linearVelocity = 0.0f;
             return; // Don't process idle input on the transition frame
@@ -9597,8 +9815,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // --- Zora: air action entering water → swim ---
     // Jump attack, jump, fall, sidehop, backflip into water should start swimming,
     // not continue sinking with land gravity. Also covers OOT yield actions (e.g. items mid-air).
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState == 0 &&
-        player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState == 0 && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
         s32 airAct = gFormState.goronAction;
         if (airAct == MMFORM_ACT_JUMP || airAct == MMFORM_ACT_FALL || airAct == MMFORM_ACT_JUMP_KICK ||
             airAct == MMFORM_ACT_SIDEHOP || airAct == MMFORM_ACT_BACKFLIP || airAct == MMFORM_ACT_OOT_ACTION) {
@@ -9606,11 +9823,13 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 MmForm_DisableJumpKickQuads(player);
                 gFormState.jumpKickActive = 0;
             }
-            // Clear jump kick's PAUSE_ACTION_FUNC (EnterSwimIdle sets its own)
+            // OOT handles swim physics. Clear PAUSE so OOT's swim action can run.
             player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
-            player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_SWIM);
-            MmForm_EnterSwimIdle(player, play);
-            MmForm_PlaySfx(player, MM_NA_SE_PL_ZORA_DIVE, NA_SE_PL_DIVE_BUBBLE);
+            player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+            // Mark swim state for draw, OOT handles the rest.
+            gFormState.swimState = 1;
+            gFormState.fastSwimActive = 0;
+            gFormState.goronAction = MMFORM_ACT_SWIM_IDLE;
         }
     }
 
@@ -9692,6 +9911,45 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         }
     }
 
+    // --- Ledge grab from WATER ---
+    // OOT's Player_ActionHandler_12 handles water→ledge transitions, but we block it
+    // via PLAYER_STATE3_PAUSE_ACTION_FUNC. Handle the climb directly in our code.
+    // From OOT z_player.c:5102-5152: ledgeClimbType >= 2, in water, unk_14 > yDistToLedge.
+    if (gFormState.swimState > 0 && gFormState.currentForm != MM_PLAYER_FORM_GORON && player->ledgeClimbType >= 2 &&
+        player->ageProperties->unk_14 > player->yDistToLedge && gFormState.ledgeClimb != NULL) {
+        // Exit swim mode cleanly
+        gFormState.swimState = 0;
+        gFormState.fastSwimActive = 0;
+        gFormState.swimPitch = 0;
+        gFormState.swimRoll = 0;
+        gFormState.swimRollSmoothed = 0;
+        gFormState.swimSpeedB48 = 0.0f;
+        gFormState.swimYawRate = 0;
+        player->actor.shape.rot.x = 0;
+        player->actor.shape.rot.z = 0;
+
+        // Position correction (from OOT z_player.c:5144-5166):
+        // Move player to ledge top, push into wall, offset model down so anim rises up.
+        f32 wallNX = COLPOLY_GET_NORMAL(player->actor.wallPoly->normal.x);
+        f32 wallNZ = COLPOLY_GET_NORMAL(player->actor.wallPoly->normal.z);
+        f32 pushDist = player->distToInteractWall + 0.5f;
+        f32 yOffset = player->yDistToLedge - (60.0f * player->ageProperties->unk_08);
+
+        player->actor.world.pos.x -= pushDist * wallNX;
+        player->actor.world.pos.y += player->yDistToLedge;
+        player->actor.world.pos.z -= pushDist * wallNZ;
+        player->actor.shape.yOffset -= yOffset * 100.0f;
+
+        player->stateFlags1 &= ~PLAYER_STATE1_IN_WATER;
+        player->stateFlags1 |= PLAYER_STATE1_CLIMBING_LEDGE;
+        player->actor.velocity.y = 0.0f;
+        player->linearVelocity = 0.0f;
+        player->actor.gravity = MmForm_GetGravity(MMFORM_GRAVITY_NORMAL);
+
+        MmForm_SetAction(MMFORM_ACT_LEDGE_CLIMB, play, gFormState.ledgeClimb, 1.0f, ANIMMODE_ONCE);
+        MmForm_PlaySfx(player, MM_NA_SE_PL_CLIMB_CLIFF, NA_SE_PL_CLIMB_CLIFF);
+    }
+
     // --- Ledge detection ---
     // From 2Ship Player_ActionHandler_12 (line 6330): Goron CANNOT grab ledges/corners.
     // In MM, climbing is also blocked, but user wants Goron to climb surfaces.
@@ -9724,7 +9982,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         player->linearVelocity = 2.5f;
         player->actor.bgCheckFlags &= ~1;
         Player_PlayJumpingSfx(player);
-        Player_PlayVoiceSfx(player, NA_SE_VO_LI_SWORD_N);
+        MmForm_PlayAttackVoice(player);
         LinkAnimationHeader* jumpAnim = gFormState.jumpAnim ? gFormState.jumpAnim : gFormState.idleAnim;
         MmForm_SetAction(MMFORM_ACT_JUMP, play, jumpAnim, 1.0f, ANIMMODE_ONCE);
     }
@@ -9750,7 +10008,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // If walked off underwater ledge, re-enter swim idle to sink again.
     // If walked out of water entirely, exit swim mode.
     // =========================================================================
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState > 0 && gFormState.zoraBoots == 1) {
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState > 0 && gFormState.zoraBoots == 1) {
         s32 act = gFormState.goronAction;
         u8 isSwimAction = (act == MMFORM_ACT_SWIM_IDLE || act == MMFORM_ACT_SWIM_MOVE || act == MMFORM_ACT_SWIM_FAST ||
                            act == MMFORM_ACT_SWIM_DASH || act == MMFORM_ACT_SWIM_SURFACE_WALK ||
@@ -9804,7 +10062,9 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // because Player_UpdateCommon clears it). DISABLE_ROTATION_ALWAYS blocks
     // Player_UpdateShapeYaw. Restore yaw from our shape.rot.y (untouched by OOT).
     // =========================================================================
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.swimState > 0 && gFormState.zoraBoots == 0) {
+    // Only override yaw during FAST SWIM (our custom system with PAUSE set).
+    // During normal swim, OOT handles yaw — don't interfere.
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState > 0 && gFormState.fastSwimActive) {
         player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
         player->yaw = player->actor.shape.rot.y;
         player->actor.world.rot.y = player->actor.shape.rot.y;
@@ -10131,7 +10391,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                     MmForm_PlaySfx(player, MM_NA_SE_PL_GORON_BALL_TO_GORON, NA_SE_PL_BODY_HIT);
                 } else {
                     // From 2Ship Player_Action_18 (line 15356): NA_SE_IT_SHIELD_REMOVE
-                    Audio_PlayActorSound2(&player->actor, NA_SE_IT_SHIELD_REMOVE);
+                    MmForm_PlaySfx(player, MM_NA_SE_IT_SHIELD_REMOVE_ZORA, NA_SE_IT_SHIELD_REMOVE);
                 }
                 // Return to idle — MmForm_SetAction's -8.0f morph smoothly blends
                 // from defense pose to idle pose (same as MM's func_80836A98)
@@ -10215,7 +10475,7 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // CheckBarrierInput: sets barrierActive when R held + Zora + magic > 0
     // UpdateBarrier: updates intensity, light, damage collider every frame
     // Both run regardless of current action so barrier works during walk/swim/etc.
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
+    if (MMFORM_IS_ZORA_SWIM()) {
         MmForm_CheckBarrierInput(player, play);
     }
     MmForm_UpdateBarrier(player, play);
@@ -10322,7 +10582,7 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
             // immediately so there's no gap where the player is stuck standing underwater.
             // OOT may have started its own swim action during the 5-frame transform delay;
             // our swim entry takes precedence and the form handles water from here.
-            if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
+            if (MMFORM_IS_ZORA_SWIM() && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
                 MmForm_EnterSwimIdle(player, play);
                 player->stateFlags1 |= PLAYER_STATE1_IN_WATER;
                 MMFORM_LOG("[MmForm] Zora reactivated underwater, forced swim entry");
@@ -10554,6 +10814,11 @@ static u8 MmForm_UsesOotAnim(void) {
         return 1;
     }
 
+    // Swim idle: OOT handles swim, copy its animations (not during fast swim — that uses formSkelAnime)
+    if (act == MMFORM_ACT_SWIM_IDLE && !gFormState.fastSwimActive) {
+        return 1;
+    }
+
     // Idle: Goron has pg_wait, Zora has pz_wait (form-specific).
     // Deku and FD use link_normal_wait_free / link_fighter_wait_long (shared).
     if (act == GORON_ACT_IDLE) {
@@ -10594,7 +10859,7 @@ static s32 MmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, 
         // MM manually takes over the root limb transform: translate (with pitch Y offset),
         // then pitch rotation, then roll rotation, then original rotation.
         // We zero pos/rot afterward so SkelAnime doesn't double-apply them.
-        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.fastSwimActive) {
+        if (MMFORM_IS_ZORA_SWIM() && gFormState.fastSwimActive) {
             Vec3f origPos = *pos;
             Vec3s origRot = *rot;
 
@@ -10603,7 +10868,9 @@ static s32 MmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, 
 
             Matrix_Translate(origPos.x, yAdj + origPos.y, origPos.z, MTXMODE_APPLY);
             Matrix_RotateX(BINANG_TO_RAD(gFormState.swimPitch), MTXMODE_APPLY);
-            Matrix_RotateZ(BINANG_TO_RAD(gFormState.swimRollSmoothed), MTXMODE_APPLY);
+            // MM uses unk_B86[1] (raw roll) for body, NOT unk_B8E (smoothed).
+            // unk_B8E is only for the Zora barrier/shield draw (z_player_lib.c:2394).
+            Matrix_RotateZ(BINANG_TO_RAD(gFormState.swimRoll), MTXMODE_APPLY);
             Matrix_RotateZYX(origRot.x, origRot.y, origRot.z, MTXMODE_APPLY);
 
             // Zero so SkelAnime's TranslateRotateZYX is identity (no double-apply)
@@ -11318,6 +11585,136 @@ u8 MmForm_IsTransformedAny(void) {
            gFormState.state == MMFORM_STATE_DETRANSFORMING;
 }
 
+u8 MmForm_IsZoraSwimEnabled(void) {
+    return gFormState.zoraSwimEnabled;
+}
+
+void MmForm_SetZoraSwimEnabled(u8 enabled) {
+    gFormState.zoraSwimEnabled = enabled;
+}
+
+// Load a DL from mm.o2r, pre-resolve hashes, and return the Gfx pointer.
+// Used by ext equipment to load MM models (mirror shield, etc.)
+// Uses static storage for safe copies (persists across frames).
+static std::vector<std::vector<Gfx>> sExtDLSafeCopies;
+
+Gfx* MmForm_LoadAndPreResolveMmDL(const char* path) {
+    if (path == NULL)
+        return NULL;
+
+    sExtDLSafeCopies.emplace_back();
+    std::vector<Gfx>& safeCopy = sExtDLSafeCopies.back();
+
+    Gfx* dl = MmForm_LoadAndValidateDL(path, safeCopy);
+    if (dl == NULL) {
+        sExtDLSafeCopies.pop_back();
+        return NULL;
+    }
+
+    MmForm_PreResolveDLHashes(dl, path, 0);
+    return dl;
+}
+
+// Dragon Scale: initialize Zora swim (loads anims only, NO form properties)
+u8 MmForm_DragonScaleEnterSwim(PlayState* play, Player* player) {
+    // Load Zora skeleton + anims if not already loaded
+    // DO NOT call MmForm_ApplyFormProperties (no tunic, no scale, no equip restrict)
+    if (!gFormState.skeletonLoaded) {
+        if (!MmForm_LoadFormSkeleton(play, MM_PLAYER_FORM_ZORA)) {
+            return 0;
+        }
+        // DON'T apply form properties — Link stays as Link
+    }
+    gFormState.zoraSwimEnabled = 1;
+    gFormState.swimState = 1;
+    gFormState.swimPitch = 0;
+    gFormState.swimRoll = 0;
+    gFormState.swimSpeed = 0.0f;
+    gFormState.swimDashTimer = 0;
+    gFormState.zoraBoots = 0;
+    gFormState.fastSwimActive = 0;
+    gFormState.swimRollSmoothed = 0;
+    gFormState.swimPhase = 0;
+    gFormState.swimPhaseCounter = 0;
+    gFormState.swimSpeedB48 = 0.0f;
+    gFormState.swimYawRate = 0;
+    gFormState.swimExitFlag = 0;
+    gFormState.swimFloorTimer = 0;
+    gFormState.bootToggleDelay = 0;
+    gFormState.goronAction = MMFORM_ACT_SWIM_IDLE;
+
+    // Init formSkelAnime with swim wait anim (needed for fast swim later)
+    if (gFormState.swimWaitAnim != NULL) {
+        LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.swimWaitAnim, 1.0f, 0.0f,
+                             Animation_GetLastFrame(gFormState.swimWaitAnim), ANIMMODE_LOOP, 0.0f);
+    }
+
+    // Don't touch OOT's state — let OOT handle normal swim movement
+    player->stateFlags1 |= PLAYER_STATE1_IN_WATER;
+
+    return 1;
+}
+
+// Dragon Scale: run one frame of Zora swim logic
+// New system: OOT handles base swim (movement, buoyancy, anims).
+// We only run SwimIdle to intercept A=fast swim and R=barrier.
+// During fast swim, we take over fully with PAUSE_ACTION_FUNC.
+void MmForm_DragonScaleSwimUpdate(PlayState* play, Player* player) {
+    s32 act = gFormState.goronAction;
+
+    if (act == MMFORM_ACT_SWIM_FAST) {
+        // Fast swim: fully managed by MM system
+        // Re-force PAUSE + DISABLE_ROTATION every frame (OOT clears them between frames)
+        player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        player->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+        MmForm_Action_SwimFast(player, play);
+
+        // Sync animation to player->skelAnime
+        if (gFormState.formSkelAnime.animation != NULL) {
+            if (player->skelAnime.animation != gFormState.formSkelAnime.animation) {
+                LinkAnimation_Change(play, &player->skelAnime, (LinkAnimationHeader*)gFormState.formSkelAnime.animation,
+                                     gFormState.formSkelAnime.playSpeed, gFormState.formSkelAnime.curFrame,
+                                     gFormState.formSkelAnime.endFrame, gFormState.formSkelAnime.mode, -6.0f);
+            } else {
+                player->skelAnime.curFrame = gFormState.formSkelAnime.curFrame;
+            }
+            LinkAnimation_Update(play, &player->skelAnime);
+        }
+        player->actor.shape.rot.x = gFormState.swimPitch;
+    } else if (act == MMFORM_ACT_DOLPHIN_JUMP) {
+        // Dolphin jump: keep PAUSE so OOT doesn't interfere with arc trajectory
+        player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        MmForm_Action_DolphinJump(player, play);
+        player->actor.shape.rot.x = gFormState.swimPitch;
+    } else {
+        // Normal swim: OOT handles movement/anims. We just intercept buttons.
+        MmForm_Action_SwimIdle(player, play);
+    }
+}
+
+// Dragon Scale: exit swim and clean up
+void MmForm_DragonScaleExitSwim(Player* player) {
+    gFormState.zoraSwimEnabled = 0;
+    gFormState.swimState = 0;
+    gFormState.swimPitch = 0;
+    gFormState.swimRoll = 0;
+    gFormState.swimRollSmoothed = 0;
+    gFormState.fastSwimActive = 0;
+    gFormState.zoraBoots = 0;
+    gFormState.swimSpeedB48 = 0.0f;
+    gFormState.swimYawRate = 0;
+    gFormState.swimExitFlag = 0;
+    gFormState.barrierActive = 0;
+    gFormState.barrierIntensity = 0;
+    // DON'T touch currentForm — we never set it to ZORA
+
+    player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+    player->stateFlags2 &= ~(PLAYER_STATE2_DISABLE_ROTATION_ALWAYS | PLAYER_STATE2_DISABLE_DRAW);
+    player->actor.gravity = -1.2f;
+    player->actor.shape.rot.x = 0;
+    // Keep skeletonLoaded so re-entry is instant
+}
+
 u8 MmForm_IsSlotAllowed(u8 slot) {
     return MmForm_IsSlotAllowedInternal(slot);
 }
@@ -11454,8 +11851,8 @@ u8 MmForm_OnWaterSwimAttempt(PlayState* play, Player* player) {
         if (gFormState.dekuHopsRemaining > 0 && gSaveContext.health > 0 && player->actor.yDistToWater > 0.0f &&
             gFormState.goronAction != MMFORM_ACT_JUMP) { // Not already mid-hop
             MmForm_DekuWaterHop(player, play);
-        } else {
-            // No hops left → void out
+        } else if (!(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM)) {
+            // No hops left → void out (defer if getting item)
             if (gFormState.goronAction != MMFORM_ACT_WATER_VOID && gFormState.goronAction != MMFORM_ACT_HAZARD_VOID) {
                 gFormState.goronAction = MMFORM_ACT_WATER_VOID;
                 gFormState.actionTimer = 0;
@@ -11463,15 +11860,40 @@ u8 MmForm_OnWaterSwimAttempt(PlayState* play, Player* player) {
             }
         }
     } else if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
-        // Goron can't swim → start water void-out (only once)
-        if (gFormState.goronAction != MMFORM_ACT_WATER_VOID && gFormState.goronAction != MMFORM_ACT_HAZARD_VOID) {
+        // Goron can't swim → start water void-out (only once, defer if getting item)
+        if (gFormState.goronAction != MMFORM_ACT_WATER_VOID && gFormState.goronAction != MMFORM_ACT_HAZARD_VOID &&
+            !(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM)) {
             gFormState.goronAction = MMFORM_ACT_WATER_VOID;
             gFormState.actionTimer = 0;
             gFormState.rollGroundPoundTimer = 0;
         }
     }
 
-    return 1; // Block OOT swimming for ALL forms
+    // Zora: let OOT handle surface swimming (ladders, ledges, interactions).
+    // Our code draws the Zora form visually and intercepts A for fast swim.
+    // OOT's swim actions (Player_Action_8084D610/D84C) use sActionHandlerList11
+    // which includes Handler_12 (ledge climbing) — we get that for free.
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
+        // Set swimState for draw, clear PAUSE so OOT's swim runs
+        if (gFormState.swimState == 0) {
+            gFormState.swimState = 1;
+            gFormState.swimPitch = 0;
+            gFormState.swimRoll = 0;
+            gFormState.swimRollSmoothed = 0;
+            gFormState.fastSwimActive = 0;
+            gFormState.goronAction = MMFORM_ACT_SWIM_IDLE;
+        }
+        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_ALWAYS;
+        return 0; // Don't block OOT swim — let vanilla handle surface
+    }
+
+    // Fierce Deity / Pikachu: same as vanilla Link, OOT handles all water.
+    if (gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY || gFormState.currentForm == MM_PLAYER_FORM_PIKACHU) {
+        return 0;
+    }
+
+    return 1; // Block OOT swimming for Goron/Deku (our code handles swim)
 }
 
 TransformMaskId MmForm_GetMaskType(s32 item) {
@@ -11491,9 +11913,11 @@ TransformMaskId MmForm_GetMaskType(s32 item) {
             result = TRANSFORM_MASK_FIERCE_DEITY;
             break;
         // Pikachu (Keaton mask — vanilla OOT and MM variants)
+        // Only treat as transform mask if Pikachu CVar is enabled;
+        // otherwise fall through to NONE so OOT normal mask wearing works.
         case ITEM_MASK_KEATON:
         case ITEM_MM_MASK_KEATON:
-            result = TRANSFORM_MASK_KEATON;
+            result = PikachuForm_IsEnabled() ? TRANSFORM_MASK_KEATON : TRANSFORM_MASK_NONE;
             break;
         // OOT mask items (backward compat)
         case ITEM_MASK_GORON:
@@ -11525,6 +11949,11 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
     if (maskId == TRANSFORM_MASK_NONE)
         return;
 
+    // If Dragon Scale swim is active, deactivate it before transforming
+    if (gFormState.zoraSwimEnabled) {
+        MmForm_DragonScaleExitSwim(player);
+    }
+
     MmPlayerTransformation targetForm = MmForm_MaskIdToForm(maskId);
 
     // If already transformed to the same form -> de-transform
@@ -11549,6 +11978,8 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
         gFormState.swimSpeedB48 = 0.0f;
         gFormState.swimYawRate = 0;
         gFormState.swimExitFlag = 0;
+        // Restore normal boots (iron boots may have been set for Zora underwater)
+        player->currentBoots = PLAYER_BOOTS_KOKIRI;
         return;
     }
 
@@ -11626,14 +12057,8 @@ static void MmForm_FDSkinSpeedBoost(Player* player, PlayState* play) {
         return;
     }
 
-    // Speed boost: 1.5x normal Link movement speed (only when grounded, pushing stick, and NOT attacking)
-    // Without the meleeWeaponState gate, the boost overrides the attack action's deceleration
-    // causing FD to rush forward at full speed during charge attacks regardless of stick direction.
-    f32 stickMag = MmForm_GetStickMagnitude(play);
-    if (stickMag > 0.5f && (player->actor.bgCheckFlags & 1) && (player->meleeWeaponState == 0)) {
-        f32 fdTarget = stickMag * 0.168f; // 0.112 * 1.5
-        Math_StepToF(&player->linearVelocity, fdTarget, 1.5f);
-    }
+    // FD speed boost: handled in z_player.c alongside Bunny Hood (1.5x speed target + maxSpeed).
+    // No REG/linearVelocity hacks needed — OOT handles acceleration/deceleration naturally.
 
     // NOTE: playSpeed is NOT modified. Slowing all animations by 2/3 to match the
     // speed boost causes one-shot animations (backflip, roll, sidehop) to never complete
@@ -11695,7 +12120,11 @@ void MmForm_Update(PlayState* play, Player* player) {
 
     switch (gFormState.state) {
         case MMFORM_STATE_INACTIVE:
-            // Nothing to do
+            // Dragon Scale swim: run barrier input/update even without form
+            if (gFormState.zoraSwimEnabled) {
+                MmForm_CheckBarrierInput(player, play);
+                MmForm_UpdateBarrier(player, play);
+            }
             break;
 
         case MMFORM_STATE_TRANSFORMING:
@@ -11724,8 +12153,13 @@ void MmForm_Update(PlayState* play, Player* player) {
 }
 
 void MmForm_Draw(PlayState* play, Player* player) {
-    if (gFormState.state == MMFORM_STATE_INACTIVE)
+    if (gFormState.state == MMFORM_STATE_INACTIVE) {
+        // Dragon Scale swim: draw barrier even without form active
+        if (gFormState.zoraSwimEnabled && gFormState.barrierIntensity > 0) {
+            MmForm_DrawZoraBarrier(player, play);
+        }
         return;
+    }
 
     // In first-person aiming (bow, slingshot, hookshot): skip the MM skeleton entirely.
     // OOT's draw path (reached because z_player.c doesn't early-return when unk_6AD != 0)
@@ -12189,7 +12623,7 @@ void MmForm_Draw(PlayState* play, Player* player) {
     }
 
     // Zora Electric Barrier draw (from 2Ship Player_DrawZoraShield, z_player_lib.c:2316)
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.barrierIntensity > 0) {
+    if (MMFORM_IS_ZORA_SWIM() && gFormState.barrierIntensity > 0) {
         MmForm_DrawZoraBarrier(player, play);
     }
 

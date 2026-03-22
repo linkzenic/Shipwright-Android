@@ -12,8 +12,10 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "mods/items/custom_items.h"
 #include "mods/extended_player.h"
+#include "mods/extended_equipment.h"
 #include "mods/items/logic/item_mitts.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/pak_loader/pak_loader.h"
 
 #include <stdlib.h>
 
@@ -1093,7 +1095,14 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
         eyeIndex = 7;
 
 #if defined(MODDING) || defined(_MSC_VER) || defined(__GNUC__)
-    gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(sEyeTextures[gSaveContext.linkAge][eyeIndex]));
+    {
+        void* pakEye = PakLoader_GetEyeTexture(eyeIndex);
+        if (pakEye) {
+            gSPSegment(POLY_OPA_DISP++, 0x08, (uintptr_t)pakEye);
+        } else {
+            gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(sEyeTextures[gSaveContext.linkAge][eyeIndex]));
+        }
+    }
 #else
     gSPSegment(POLY_OPA_DISP++, 0x08, SEGMENTED_TO_VIRTUAL(sEyeTextures[eyeIndex]));
 #endif
@@ -1105,7 +1114,14 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
         mouthIndex = 3;
 
 #if defined(MODDING) || defined(_MSC_VER) || defined(__GNUC__)
-    gSPSegment(POLY_OPA_DISP++, 0x09, SEGMENTED_TO_VIRTUAL(sMouthTextures[gSaveContext.linkAge][mouthIndex]));
+    {
+        void* pakMouth = PakLoader_GetMouthTexture(mouthIndex);
+        if (pakMouth) {
+            gSPSegment(POLY_OPA_DISP++, 0x09, (uintptr_t)pakMouth);
+        } else {
+            gSPSegment(POLY_OPA_DISP++, 0x09, SEGMENTED_TO_VIRTUAL(sMouthTextures[gSaveContext.linkAge][mouthIndex]));
+        }
+    }
 #else
     gSPSegment(POLY_OPA_DISP++, 0x09, SEGMENTED_TO_VIRTUAL(sMouthTextures[eyeIndex]));
 #endif
@@ -1120,6 +1136,14 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
         color = &sTemp;
     } else if (tunic == PLAYER_TUNIC_ZORA && CVarGetInteger(CVAR_COSMETIC("Link.ZoraTunic.Changed"), 0)) {
         sTemp = CVarGetColor24(CVAR_COSMETIC("Link.ZoraTunic.Value"), sTunicColors[PLAYER_TUNIC_ZORA]);
+        color = &sTemp;
+    }
+
+    // Champion's Tunic (Ext Tunic 3): BotW blue #38b6f1
+    if (ExtEquip_IsEnabled() && ExtEquip_GetCurrent(EQUIP_TYPE_TUNIC) == 3) {
+        sTemp.r = 56;
+        sTemp.g = 182;
+        sTemp.b = 241;
         color = &sTemp;
     }
 
@@ -1438,7 +1462,17 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
     Player* this = (Player*)thisx;
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
-        if (limbIndex == PLAYER_LIMB_L_HAND) {
+        // PAK Loader: When a custom .pak model is active, use equipment DLs from the alias table
+        if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
+                                           limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
+            Gfx* pakDL = PakLoader_GetEquipDL(this, limbIndex);
+            if (pakDL == PAK_DL_STUB) {
+                *dList = NULL; // Stub: model intentionally hides this
+            } else if (pakDL != NULL) {
+                *dList = pakDL; // Custom equipment DL from pak
+            }
+            // else: NULL → keep skeleton's default DL
+        } else if (limbIndex == PLAYER_LIMB_L_HAND) {
             Gfx** dLists = this->leftHandDLists;
 
             if ((sLeftHandType == PLAYER_MODELTYPE_LH_BGS) && (gSaveContext.swordHealth <= 0.0f)) {
@@ -1453,12 +1487,25 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
                 sLeftHandType = PLAYER_MODELTYPE_LH_CLOSED;
             }
 
+            // Extended equipment: hide sword DL when ext sword draws its own model
+            if (ExtEquip_ShouldHideSwordDL() &&
+                (sLeftHandType != PLAYER_MODELTYPE_LH_OPEN && sLeftHandType != PLAYER_MODELTYPE_LH_CLOSED &&
+                 sLeftHandType != PLAYER_MODELTYPE_LH_BOOMERANG)) {
+                dLists = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
+                sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
+            }
             *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
         } else if (limbIndex == PLAYER_LIMB_R_HAND) {
             Gfx** dLists = this->rightHandDLists;
 
             if (sRightHandType == PLAYER_MODELTYPE_RH_SHIELD) {
-                dLists += this->currentShield * 4;
+                if (ExtEquip_GetShieldDLOverride() != NULL) {
+                    // Shield of Ikana: show open hand, custom shield drawn in PostLimbDraw
+                    dLists = &sPlayerRightHandOpenDLs[gSaveContext.linkAge];
+                    sRightHandType = PLAYER_MODELTYPE_RH_OPEN;
+                } else {
+                    dLists += this->currentShield * 4;
+                }
             } else if ((this->rightHandType == PLAYER_MODELTYPE_RH_OPEN) && (this->actor.speedXZ > 2.0f) &&
                        !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
                 dLists = &sPlayerRightHandClosedDLs[gSaveContext.linkAge];
@@ -1470,7 +1517,12 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
             Gfx** dLists = this->sheathDLists;
 
             if ((this->sheathType == PLAYER_MODELTYPE_SHEATH_18) || (this->sheathType == PLAYER_MODELTYPE_SHEATH_19)) {
-                dLists += this->currentShield * 4;
+                if (ExtEquip_GetShieldDLOverride() != NULL) {
+                    // Shield of Ikana: hide OOT shield on back, custom drawn in PostLimbDraw
+                    dLists = &sSheathDLs[0]; // No shield on back (just sheath)
+                } else {
+                    dLists += this->currentShield * 4;
+                }
                 if (!LINK_IS_ADULT && (this->currentShield < PLAYER_SHIELD_HYLIAN) &&
                     (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
                     dLists += PLAYER_SHIELD_MAX * 4;
@@ -1517,7 +1569,11 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
     Player* this = (Player*)thisx;
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
-        if (this->unk_6AD != 2) {
+        if (TransformMasks_IsTransformed()) {
+            // Transformed: hide ALL limbs (including arm). Skeleton is still traversed
+            // so body part positions are calculated for hookshot chain, arrow spawn, etc.
+            *dList = NULL;
+        } else if (this->unk_6AD != 2) {
             *dList = NULL;
         } else if (!Player_HoldsHookshot(this) && !Player_HoldsBow(this) && !Player_HoldsSlingshot(this) &&
                    this->heldItemAction != PLAYER_IA_BOMB_ARROWS) {
@@ -1916,6 +1972,32 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             }
 
             CLOSE_DISPS(play->state.gfxCtx);
+        } else if (ExtEquip_ShouldHideSwordDL() && (this->actor.scale.y >= 0.0f)) {
+            // Cane of Byrna: draw blue cane using limb matrix (follows hand rotation exactly)
+            OPEN_DISPS(play->state.gfxCtx);
+
+            // Melee weapon trail/collision (same as normal sword)
+            if (this->meleeWeaponState != 0) {
+                Vec3f spE4_byrna[3];
+                D_80126080.x = sMeleeWeaponLengths[Player_GetMeleeWeaponHeld(this)];
+                EffectBlure_ChangeType(Effect_GetByIndex(this->meleeWeaponEffectIndex),
+                                       sSwordTypes[Player_GetMeleeWeaponHeld(this)]);
+                func_80090A28(this, spE4_byrna);
+                func_800906D4(play, this, spE4_byrna);
+            }
+
+            // Draw Byrna cane model using current limb matrix
+            Matrix_Push();
+            Matrix_Translate(2028.26f, 267.2f, -33.82f, MTXMODE_APPLY);
+            Matrix_RotateZYX(-0x8000, 0, 0x4000, MTXMODE_APPLY);
+            Matrix_Scale(5.0f, 5.0f, 5.0f, MTXMODE_APPLY);
+
+            Gfx_SetupDL_25Opa(play->state.gfxCtx);
+            gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            ExtEquip_DrawSwordDL(play);
+            Matrix_Pop();
+
+            CLOSE_DISPS(play->state.gfxCtx);
         } else if ((this->actor.scale.y >= 0.0f) && (this->meleeWeaponState != 0)) {
             Vec3f spE4[3];
 
@@ -2026,6 +2108,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
         } else if ((this->actor.scale.y >= 0.0f) && (this->rightHandType == PLAYER_MODELTYPE_RH_SHIELD)) {
             Matrix_Get(&this->shieldMf);
             Player_UpdateShieldCollider(play, this, &this->shieldQuad, sRightHandLimbModelShieldQuadVertices);
+
+            // Shield of Ikana: draw MM Mirror Shield from mm.o2r
+            ExtEquip_DrawShieldDL(play);
         }
 
         if (this->actor.scale.y >= 0.0f) {
@@ -2112,6 +2197,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
 
                 Matrix_TranslateRotateZYX(&sSheathLimbModelShieldOnBackPos, &sSheathLimbModelShieldOnBackZyxRot);
                 Matrix_Get(&this->shieldMf);
+
+                // Shield of Ikana: draw MM Mirror Shield on back
+                ExtEquip_DrawShieldBackDL(play);
             }
         } else if (limbIndex == PLAYER_LIMB_HEAD) {
             Matrix_MultVec3f(&D_801260D4, &this->actor.focus.pos);
@@ -2119,10 +2207,16 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             // Draw worn MM mask on Link's head (matrix is in head limb space)
             TransformMasks_WearDraw(play, this);
 
-        } else {
+        } else if (limbIndex == PLAYER_LIMB_L_SHOULDER || limbIndex == PLAYER_LIMB_R_SHOULDER) {
+            // Magic Cape + Champion's Scarf: capture shoulder world positions
+            ExtEquip_CaptureCapeShoulderPos(limbIndex);
+        } else if (limbIndex == PLAYER_LIMB_L_FOOT || limbIndex == PLAYER_LIMB_R_FOOT) {
             Vec3f* vec = &sLeftRightFootLimbModelFootPos[(gSaveContext.linkAge)];
 
             Actor_SetFeetPos(&this->actor, limbIndex, PLAYER_LIMB_L_FOOT, vec, PLAYER_LIMB_R_FOOT, vec);
+
+            // Draw Pegasus Anklet (golden torus + fairy wings) on each foot
+            ExtEquip_DrawAnklet(play, (limbIndex == PLAYER_LIMB_R_FOOT) ? 1 : 0);
         }
     }
 }

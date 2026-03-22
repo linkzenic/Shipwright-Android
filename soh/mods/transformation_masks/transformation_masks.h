@@ -190,6 +190,16 @@ u8 TransformMasks_IsFDSkinMode(void);
 // Returns true if ANY form is active (including FD skin mode)
 u8 TransformMasks_IsTransformedAny(void);
 
+// Dragon Scale: Zora swim for non-Zora forms (Adult Link only)
+u8 TransformMasks_IsZoraSwimEnabled(void);
+void TransformMasks_SetZoraSwimEnabled(u8 enabled);
+
+// Load a DL from mm.o2r with hash pre-resolution (safe for drawing)
+void* TransformMasks_LoadMmDL(const char* path);
+u8 TransformMasks_DragonScaleEnterSwim(void* play, void* player);
+void TransformMasks_DragonScaleSwimUpdate(void* play, void* player);
+void TransformMasks_DragonScaleExitSwim(void* player);
+
 // Item restriction: returns true if item is allowed for current form
 u8 TransformMasks_IsItemAllowed(s32 item);
 

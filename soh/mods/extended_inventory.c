@@ -8,38 +8,14 @@
  */
 
 #include "extended_inventory.h"
+#include "extended_equipment.h"
 #include "z64.h"
 #include <string.h>
-#include "items/custom_icons.c"
+#include "assets/soh_assets.h"
 #include "transformation_masks/transformation_masks.h"
 #include "transformation_masks/assets/mm_asset_loader.h"
 extern void* gItemIcons[];
 extern uint8_t gItemSlots[];
-extern const unsigned char gItemIconRocsFeatherTex[];
-extern const unsigned char gItemIconRocsCapeTex[];
-extern const unsigned char gItemIconDesireSensorTex[];
-extern const unsigned char gItemIconHyliaGraceTex[];
-extern const unsigned char gItemIconZonaiPermafrostTex[];
-extern const unsigned char gItemIconDemiseDestructionTex[];
-extern const unsigned char gItemIconDekuLeafTex[];
-extern const unsigned char gItemIconSwitchHookTex[];
-extern const unsigned char gItemIconMogmaMittsTex[];
-extern const unsigned char gItemIconGustJarTex[];
-extern const unsigned char gItemIconBallAndChainTex[];
-extern const unsigned char gItemIconWhipTex[];
-extern const unsigned char gItemIconSpinnerTex[];
-extern const unsigned char gItemIconCaneOfSomariaTex[];
-extern const unsigned char gItemIconDominionRodTex[];
-extern const unsigned char gItemIconTimeGateTex[];
-extern const unsigned char gItemIconBombArrowsTex[];
-extern const unsigned char gItemIconFireRodTex[];
-extern const unsigned char gItemIconIceRodTex[];
-extern const unsigned char gItemIconLightRodTex[];
-extern const unsigned char gItemIconBeetleTex[];
-extern const unsigned char gItemIconShovelTex[];
-extern const unsigned char gItemIconMinishCapTex[];
-extern const unsigned char gItemIconPending2Tex[];
-extern const unsigned char gItemIconPending3Tex[];
 static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTimer = 0 };
 
 // Page 2 item layout (slots 24-47)
@@ -256,31 +232,6 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return (void*)"__OTR__item_name_static/gItemNameChateauRomaniENGTex";
         return NULL;
     }
-    extern const unsigned char gRocsFeatherNameTex[];
-    extern const unsigned char gRocsCapeNameTex[];
-    extern const unsigned char gDesireSensorNameTex[];
-    extern const unsigned char gDekuLeafNameTex[];
-    extern const unsigned char gSwitchHookNameTex[];
-    extern const unsigned char gMogmaMittsNameTex[];
-    extern const unsigned char gGustJarNameTex[];
-    extern const unsigned char gBallAndChainNameTex[];
-    extern const unsigned char gWhipNameTex[];
-    extern const unsigned char gSpinnerNameTex[];
-    extern const unsigned char gCaneOfSomariaNameTex[];
-    extern const unsigned char gDominionRodNameTex[];
-    extern const unsigned char gTimeGateNameTex[];
-    extern const unsigned char gBombArrowsNameTex[];
-    extern const unsigned char gFireRodNameTex[];
-    extern const unsigned char gIceRodNameTex[];
-    extern const unsigned char gLightRodNameTex[];
-    extern const unsigned char gBeetleNameTex[];
-    extern const unsigned char gShovelNameTex[];
-    extern const unsigned char gHyliaGraceNameTex[];
-    extern const unsigned char gZonaiPermafrostNameTex[];
-    extern const unsigned char gDemiseDestructionNameTex[];
-    extern const unsigned char gMinishCapNameTex[];
-    extern const unsigned char gPending2NameTex[];
-    extern const unsigned char gPending3NameTex[];
     switch (itemId) {
         case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
             return (void*)gRocsFeatherNameTex;
@@ -343,6 +294,18 @@ extern const char* MmAssets_GetChateauIconPath(void);
 
 void* ExtInv_GetItemIcon(uint16_t itemId) {
 
+    // Extended equipment: override A button icon when ext sword/shield is active
+    // Suppressed during kaleido equipment screen so vanilla icons show there
+    if (ExtEquip_IsEnabled() && !gExtEquipSuppressIconOverride) {
+        u8 extSword = ExtEquip_GetCurrent(EQUIP_TYPE_SWORD);
+        if (extSword > 0 && (itemId == ITEM_SWORD_KOKIRI || itemId == ITEM_SWORD_MASTER || itemId == ITEM_SWORD_BGS ||
+                             itemId == ITEM_SWORD_KNIFE)) {
+            void* icon = ExtEquip_GetIcon(EQUIP_TYPE_SWORD, extSword);
+            if (icon)
+                return icon;
+        }
+    }
+
     // FD skin mode: show FD sword icon for any equipped sword
     if (TransformMasks_IsFDSkinMode() && (itemId == ITEM_SWORD_KOKIRI || itemId == ITEM_SWORD_MASTER ||
                                           itemId == ITEM_SWORD_BGS || itemId == ITEM_SWORD_KNIFE)) {
@@ -353,6 +316,16 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
 
     if (itemId < 156) {
         return gItemIcons[itemId];
+    }
+    // Extended equipment items (0xD0-0xDB): return ext equip icon
+    // Must check BEFORE MM masks since ranges overlap (0xC8-0xDB)
+    if (itemId >= ITEM_EXT_SWORD_1 && itemId <= ITEM_EXT_BOOTS_3) {
+        u8 equipType = (itemId - ITEM_EXT_SWORD_1) / 3; // 0=sword,1=shield,2=tunic,3=boots
+        u8 index = (itemId - ITEM_EXT_SWORD_1) % 3 + 1; // 1-3
+        void* icon = ExtEquip_GetIcon(equipType, index);
+        if (icon)
+            return icon;
+        return gItemIcons[0];
     }
     // MM Mask items: return OTR path string so the RSP resolves actual texture
     // dimensions from resource metadata (HD mod textures render at native resolution).

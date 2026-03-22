@@ -39,6 +39,12 @@ extern void MmForm_Draw(PlayState* play, Player* player);
 extern void MmForm_Reset(void);
 extern f32 MmForm_GetCameraHeight(void);
 extern u8 MmForm_BlocksLedgeGrab(void);
+extern u8 MmForm_IsZoraSwimEnabled(void);
+extern void MmForm_SetZoraSwimEnabled(u8 enabled);
+extern Gfx* MmForm_LoadAndPreResolveMmDL(const char* path);
+extern u8 MmForm_DragonScaleEnterSwim(PlayState* play, Player* player);
+extern void MmForm_DragonScaleSwimUpdate(PlayState* play, Player* player);
+extern void MmForm_DragonScaleExitSwim(Player* player);
 
 // mm_mask_wear.cpp
 extern void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId);
@@ -189,6 +195,30 @@ u8 TransformMasks_IsFDSkinMode(void) {
 
 u8 TransformMasks_IsTransformedAny(void) {
     return MmForm_IsTransformedAny();
+}
+
+u8 TransformMasks_IsZoraSwimEnabled(void) {
+    return MmForm_IsZoraSwimEnabled();
+}
+
+void TransformMasks_SetZoraSwimEnabled(u8 enabled) {
+    MmForm_SetZoraSwimEnabled(enabled);
+}
+
+void* TransformMasks_LoadMmDL(const char* path) {
+    return (void*)MmForm_LoadAndPreResolveMmDL(path);
+}
+
+u8 TransformMasks_DragonScaleEnterSwim(void* play, void* player) {
+    return MmForm_DragonScaleEnterSwim((PlayState*)play, (Player*)player);
+}
+
+void TransformMasks_DragonScaleSwimUpdate(void* play, void* player) {
+    MmForm_DragonScaleSwimUpdate((PlayState*)play, (Player*)player);
+}
+
+void TransformMasks_DragonScaleExitSwim(void* player) {
+    MmForm_DragonScaleExitSwim((Player*)player);
 }
 
 u8 TransformMasks_IsItemAllowed(s32 item) {
