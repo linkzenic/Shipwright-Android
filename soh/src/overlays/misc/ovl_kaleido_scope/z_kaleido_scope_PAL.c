@@ -2149,7 +2149,7 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                         textureName = iconNameTextures[0];
                     }
                     // isCustomItem stays false: OTR path string handled like vanilla via strlen copy
-                } else if (originalItemId >= 0xD0 && originalItemId <= 0xDB) {
+                } else if (originalItemId >= 0xE0 && originalItemId <= 0xEB) {
                     // Extended equipment items: use name texture from ext_equip_names.c
                     textureName = (const char*)ExtEquip_GetNameTex(originalItemId, gSaveContext.language);
                     if (textureName == NULL) {

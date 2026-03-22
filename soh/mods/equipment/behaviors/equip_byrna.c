@@ -96,15 +96,25 @@ static void Byrna_Behavior(Player* player, PlayState* play) {
         return;
     }
 
-    // Force Biggoron Sword IA for long reach (two-handed swing)
-    if (player->heldItemAction != PLAYER_IA_SWORD_BIGGORON) {
+    // Save original sword state before overriding (only once)
+    if (!gExtEquipBehavior.byrnaActive) {
+        gExtEquipBehavior.byrnaSavedSwordEquip =
+            (gSaveContext.equips.equipment >> gEquipShifts[EQUIP_TYPE_SWORD]) & 0xF;
+        gExtEquipBehavior.byrnaSavedButtonItem = gSaveContext.equips.buttonItems[0];
+        gExtEquipBehavior.byrnaActive = 1;
+    }
+
+    // Only force BGS IA when player is in a sword-related action (not using C-button items)
+    // Sword IAs: NONE, SWORD_MASTER, SWORD_KOKIRI, SWORD_BIGGORON
+    if (player->heldItemAction == PLAYER_IA_SWORD_MASTER || player->heldItemAction == PLAYER_IA_SWORD_KOKIRI ||
+        player->heldItemAction == PLAYER_IA_NONE) {
         player->heldItemAction = PLAYER_IA_SWORD_BIGGORON;
     }
 
     // Force BGS equipment so the sword system works
     Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_BIGGORON);
 
-    // Keep A button showing BGS item (icon override handled by ExtInv_GetItemIcon)
+    // Keep B button showing BGS item (icon override handled by ExtInv_GetItemIcon)
     gSaveContext.equips.buttonItems[0] = ITEM_SWORD_BGS;
 
     // Force swordHealth > 0 so spin attack / charge attack works
@@ -112,6 +122,17 @@ static void Byrna_Behavior(Player* player, PlayState* play) {
     if (gSaveContext.swordHealth <= 0.0f) {
         gSaveContext.swordHealth = 8.0f;
     }
+}
+
+// Restore original sword state when Byrna is unequipped
+static void Byrna_Cleanup(void) {
+    if (!gExtEquipBehavior.byrnaActive)
+        return;
+
+    // Restore original sword equipment
+    Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, gExtEquipBehavior.byrnaSavedSwordEquip);
+    gSaveContext.equips.buttonItems[0] = gExtEquipBehavior.byrnaSavedButtonItem;
+    gExtEquipBehavior.byrnaActive = 0;
 }
 
 // Draw is now handled by PostLimbDraw in z_player_lib.c via ExtEquip_DrawSwordDL

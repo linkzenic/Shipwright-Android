@@ -93,6 +93,11 @@ void ExtEquip_SwitchPage(void) {
 
     gExtEquipState.equipPage = (gExtEquipState.equipPage == 0) ? 1 : 0;
     gExtEquipState.pageSwitchTimer = EXT_EQUIP_PAGE_SWITCH_COOLDOWN;
+
+    // When switching to vanilla page, restore original sword if Byrna was overriding it
+    if (gExtEquipState.equipPage == 0 && gExtEquipBehavior.byrnaActive) {
+        Byrna_Cleanup();
+    }
 }
 
 u8 ExtEquip_CanSwitch(void) {
@@ -197,14 +202,9 @@ void ExtEquip_Equip(s16 equipType, u8 index) {
     // Ext swords use Kokiri Sword as base (model + IA), ext shields use Mirror Shield
     switch (equipType) {
         case EQUIP_TYPE_SWORD:
-            // Byrna (slot 1) uses Biggoron Sword IA for long reach
-            if (index == 1) {
-                Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_BIGGORON);
-                gSaveContext.equips.buttonItems[0] = ITEM_SWORD_BGS;
-            } else {
-                Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
-                gSaveContext.equips.buttonItems[0] = ITEM_SWORD_KOKIRI;
-            }
+            // Ext swords don't change vanilla sword equipment or B button item.
+            // The sword model/IA override is handled by the behavior/draw system.
+            // This prevents giving BGS/Kokiri Sword if the player doesn't own them.
             break;
         case EQUIP_TYPE_SHIELD:
             // Shield of Ikana (slot 3) uses Mirror Shield model
@@ -224,6 +224,11 @@ void ExtEquip_Equip(s16 equipType, u8 index) {
 }
 
 void ExtEquip_Unequip(s16 equipType) {
+    // Restore sword state if Byrna was active
+    if (equipType == EQUIP_TYPE_SWORD && gExtEquipBehavior.byrnaActive) {
+        Byrna_Cleanup();
+    }
+
     ExtEquip_SetCurrentByType(equipType, 0);
 
     const char* cvarKey = ExtEquip_GetCVarKey(equipType);

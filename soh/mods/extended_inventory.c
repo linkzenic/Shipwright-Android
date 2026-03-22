@@ -317,8 +317,8 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     if (itemId < 156) {
         return gItemIcons[itemId];
     }
-    // Extended equipment items (0xD0-0xDB): return ext equip icon
-    // Must check BEFORE MM masks since ranges overlap (0xC8-0xDB)
+    // Extended equipment items (0xE0-0xEB): return ext equip icon
+    // Must check BEFORE MM masks since ranges overlap
     if (itemId >= ITEM_EXT_SWORD_1 && itemId <= ITEM_EXT_BOOTS_3) {
         u8 equipType = (itemId - ITEM_EXT_SWORD_1) / 3; // 0=sword,1=shield,2=tunic,3=boots
         u8 index = (itemId - ITEM_EXT_SWORD_1) % 3 + 1; // 1-3

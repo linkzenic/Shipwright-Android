@@ -119,6 +119,11 @@ static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
     // Always run cleanup for behaviors that need it (cape boost removal, etc.)
     MagicCape_Cleanup();
 
+    // Byrna cleanup: restore original sword when Byrna is no longer active
+    if (gExtEquipState.currentExtSword != 1) {
+        Byrna_Cleanup();
+    }
+
     if (gExtEquipState.currentExtSword > 0 && gExtEquipState.currentExtSword <= 3) {
         sExtSwordBehaviors[gExtEquipState.currentExtSword - 1](player, play);
     }

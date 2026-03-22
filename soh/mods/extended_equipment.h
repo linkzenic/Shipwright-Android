@@ -32,18 +32,18 @@ extern "C" {
 // ---------------------------------------------------------------------------
 // Extended equipment item IDs (for icon/name lookup, NOT stored in inventory)
 // ---------------------------------------------------------------------------
-#define ITEM_EXT_SWORD_1 0xD0
-#define ITEM_EXT_SWORD_2 0xD1
-#define ITEM_EXT_SWORD_3 0xD2
-#define ITEM_EXT_SHIELD_1 0xD3
-#define ITEM_EXT_SHIELD_2 0xD4
-#define ITEM_EXT_SHIELD_3 0xD5
-#define ITEM_EXT_TUNIC_1 0xD6
-#define ITEM_EXT_TUNIC_2 0xD7
-#define ITEM_EXT_TUNIC_3 0xD8
-#define ITEM_EXT_BOOTS_1 0xD9
-#define ITEM_EXT_BOOTS_2 0xDA
-#define ITEM_EXT_BOOTS_3 0xDB
+#define ITEM_EXT_SWORD_1 0xE0
+#define ITEM_EXT_SWORD_2 0xE1
+#define ITEM_EXT_SWORD_3 0xE2
+#define ITEM_EXT_SHIELD_1 0xE3
+#define ITEM_EXT_SHIELD_2 0xE4
+#define ITEM_EXT_SHIELD_3 0xE5
+#define ITEM_EXT_TUNIC_1 0xE6
+#define ITEM_EXT_TUNIC_2 0xE7
+#define ITEM_EXT_TUNIC_3 0xE8
+#define ITEM_EXT_BOOTS_1 0xE9
+#define ITEM_EXT_BOOTS_2 0xEA
+#define ITEM_EXT_BOOTS_3 0xEB
 
 // ---------------------------------------------------------------------------
 // Extended equipment indices (1-based, 0 = none)
@@ -147,7 +147,7 @@ u16 ExtEquip_GetItemId(s16 equipType, u8 index);
  * Toggle an extended equipment item from a C button press.
  * If the item's equipment type is already equipped with this index, unequip it.
  * Otherwise, equip it.
- * @param itemId ITEM_EXT_xxx constant (0xD0-0xDB)
+ * @param itemId ITEM_EXT_xxx constant (0xE0-0xEB)
  */
 void ExtEquip_ToggleFromCButton(u16 itemId);
 
@@ -176,6 +176,11 @@ typedef enum {
 } DragonScaleState;
 
 typedef struct {
+    // Cane of Byrna (Ext Sword 1)
+    u8 byrnaSavedSwordEquip; // Original equips.equipment sword nibble
+    u8 byrnaSavedButtonItem; // Original equips.buttonItems[0]
+    u8 byrnaActive;          // Whether Byrna has overridden sword state
+
     // Pegasus Anklet
     u8 pegasusState;
     s16 pegasusTimer;
