@@ -33,11 +33,12 @@ extern "C" {
 
 #include <spdlog/spdlog.h>
 // Use spdlog for file logging but keep printf-style format
-#define PAK_LOG(fmt, ...) do { \
-    char _pakbuf[512]; \
-    snprintf(_pakbuf, sizeof(_pakbuf), "[PakLoader] " fmt, ##__VA_ARGS__); \
-    SPDLOG_INFO("{}", _pakbuf); \
-} while(0)
+#define PAK_LOG(fmt, ...)                                                      \
+    do {                                                                       \
+        char _pakbuf[512];                                                     \
+        snprintf(_pakbuf, sizeof(_pakbuf), "[PakLoader] " fmt, ##__VA_ARGS__); \
+        SPDLOG_INFO("{}", _pakbuf);                                            \
+    } while (0)
 
 // ============================================================================
 // Big-Endian Read Helpers
@@ -81,14 +82,14 @@ static inline void SWAP32_INPLACE(u8* p) {
 // F3DEX2 Opcodes (values for F3DEX2 microcode)
 // ============================================================================
 
-#define F3DEX2_G_VTX      0x01
+#define F3DEX2_G_VTX 0x01
 #define F3DEX2_G_MODIFYVTX 0x02
-#define F3DEX2_G_DL       0xDE
-#define F3DEX2_G_ENDDL    0xDF
-#define F3DEX2_G_MTX      0xDA
-#define F3DEX2_G_MOVEMEM  0xDC
-#define F3DEX2_G_SETTIMG  0xFD
-#define F3DEX2_G_SETTILE  0xF5
+#define F3DEX2_G_DL 0xDE
+#define F3DEX2_G_ENDDL 0xDF
+#define F3DEX2_G_MTX 0xDA
+#define F3DEX2_G_MOVEMEM 0xDC
+#define F3DEX2_G_SETTIMG 0xFD
+#define F3DEX2_G_SETTILE 0xF5
 #define F3DEX2_G_MOVEWORD 0xDB
 #define F3DEX2_G_LOADBLOCK 0xF3
 #define F3DEX2_G_LOADTLUT 0xF0
@@ -97,16 +98,16 @@ static inline void SWAP32_INPLACE(u8* p) {
 // Texture Format Constants (from G_SETTILE)
 // ============================================================================
 
-#define G_IM_FMT_RGBA  0
-#define G_IM_FMT_YUV   1
-#define G_IM_FMT_CI    2
-#define G_IM_FMT_IA    3
-#define G_IM_FMT_I     4
+#define G_IM_FMT_RGBA 0
+#define G_IM_FMT_YUV 1
+#define G_IM_FMT_CI 2
+#define G_IM_FMT_IA 3
+#define G_IM_FMT_I 4
 
-#define G_IM_SIZ_4b    0
-#define G_IM_SIZ_8b    1
-#define G_IM_SIZ_16b   2
-#define G_IM_SIZ_32b   3
+#define G_IM_SIZ_4b 0
+#define G_IM_SIZ_8b 1
+#define G_IM_SIZ_16b 2
+#define G_IM_SIZ_32b 3
 
 // ============================================================================
 // PAK Model Structure
@@ -172,7 +173,8 @@ struct PakEntry {
 
 static bool PakParser_Parse(const std::string& pakPath, std::vector<PakEntry>& entries) {
     FILE* f = fopen(pakPath.c_str(), "rb");
-    if (!f) return false;
+    if (!f)
+        return false;
 
     // Get file size
     fseek(f, 0, SEEK_END);
@@ -211,8 +213,7 @@ static bool PakParser_Parse(const std::string& pakPath, std::vector<PakEntry>& e
     // Skip past the magic "ModLoader64\0" and any header bytes to find first UNCO
     u32 startPos = 12;
     // Scan forward to find the first UNCO or DEFL marker (header size varies between .pak files)
-    while (startPos + 16 <= (u32)fileSize &&
-           memcmp(data.data() + startPos, "UNCO", 4) != 0 &&
+    while (startPos + 16 <= (u32)fileSize && memcmp(data.data() + startPos, "UNCO", 4) != 0 &&
            memcmp(data.data() + startPos, "DEFL", 4) != 0) {
         startPos++;
     }
@@ -221,12 +222,12 @@ static bool PakParser_Parse(const std::string& pakPath, std::vector<PakEntry>& e
         bool isUnco = memcmp(data.data() + pos, "UNCO", 4) == 0;
         bool isDefl = memcmp(data.data() + pos, "DEFL", 4) == 0;
         if (isUnco || isDefl) {
-            u32 nameOff   = BE_U32(data.data() + pos + 4);
+            u32 nameOff = BE_U32(data.data() + pos + 4);
             u32 dataStart = BE_U32(data.data() + pos + 8);
-            u32 dataEnd   = BE_U32(data.data() + pos + 12);
+            u32 dataEnd = BE_U32(data.data() + pos + 12);
 
             if (nameOff < (u32)fileSize && dataStart < (u32)fileSize && dataEnd <= (u32)fileSize) {
-                rawEntries.push_back({nameOff, dataStart, dataEnd, isDefl});
+                rawEntries.push_back({ nameOff, dataStart, dataEnd, isDefl });
             }
         } else {
             // End of entries
@@ -245,7 +246,8 @@ static bool PakParser_Parse(const std::string& pakPath, std::vector<PakEntry>& e
         std::string name;
         for (u32 i = nameOff; i < (u32)fileSize; i++) {
             u8 c = data[i];
-            if (c == 0xFF || c == 0x00) break;
+            if (c == 0xFF || c == 0x00)
+                break;
             name += (char)c;
         }
 
@@ -268,14 +270,17 @@ static std::string JsonFindString(const std::string& json, const std::string& ke
     // Find "key": "value" pattern
     std::string search = "\"" + key + "\"";
     size_t pos = json.find(search);
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos)
+        return "";
 
     pos = json.find("\"", pos + search.length());
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos)
+        return "";
     pos++; // skip opening quote
 
     size_t end = json.find("\"", pos);
-    if (end == std::string::npos) return "";
+    if (end == std::string::npos)
+        return "";
 
     return json.substr(pos, end - pos);
 }
@@ -284,15 +289,18 @@ static std::string JsonFindString(const std::string& json, const std::string& ke
 static std::string JsonFindModelFile(const std::string& json, const std::string& modelKey) {
     // Find the model key (e.g., "adult_model")
     size_t pos = json.find("\"" + modelKey + "\"");
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos)
+        return "";
 
     // Find the array start
     pos = json.find("[", pos);
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos)
+        return "";
 
     // Find "file" within this array section
     size_t arrayEnd = json.find("]", pos);
-    if (arrayEnd == std::string::npos) return "";
+    if (arrayEnd == std::string::npos)
+        return "";
 
     std::string arraySection = json.substr(pos, arrayEnd - pos);
 
@@ -307,16 +315,16 @@ static std::string JsonFindModelFile(const std::string& json, const std::string&
 struct SwapContext {
     u8* data;
     u32 size;
-    std::set<u32> swappedDLs;    // DL offsets already processed
-    std::set<u32> swappedVtx;    // Vtx buffer offsets already processed
-    std::set<u32> swappedTex;    // Texture offsets already processed
+    std::set<u32> swappedDLs; // DL offsets already processed
+    std::set<u32> swappedVtx; // Vtx buffer offsets already processed
+    std::set<u32> swappedTex; // Texture offsets already processed
 
     // Current texture state (from SETTILE/SETTIMG)
     u8 lastTexFmt;
     u8 lastTexSiz;
-    u32 lastTexAddr;    // segment offset of last SETTIMG
-    u32 lastTexWidth;   // width from SETTILE
-    u32 lastTexHeight;  // height from SETTILESIZE
+    u32 lastTexAddr;   // segment offset of last SETTIMG
+    u32 lastTexWidth;  // width from SETTILE
+    u32 lastTexHeight; // height from SETTILESIZE
 };
 
 /**
@@ -324,12 +332,14 @@ struct SwapContext {
  * Vtx layout (16 bytes): ob[3](s16) + flag(u16) + tc[2](s16) + cn[4](u8)
  */
 static void SwapVertexBuffer(SwapContext& ctx, u32 offset, u32 count) {
-    if (ctx.swappedVtx.count(offset)) return;
+    if (ctx.swappedVtx.count(offset))
+        return;
     ctx.swappedVtx.insert(offset);
 
     for (u32 i = 0; i < count; i++) {
         u32 voff = offset + i * 16;
-        if (voff + 16 > ctx.size) break;
+        if (voff + 16 > ctx.size)
+            break;
 
         u8* v = ctx.data + voff;
         // ob[0..2]: 3 x s16 (bytes 0-5)
@@ -350,12 +360,14 @@ static void SwapVertexBuffer(SwapContext& ctx, u32 offset, u32 count) {
  * Each pixel is a 16-bit value that needs swapping.
  */
 static void SwapTextureRGBA16(SwapContext& ctx, u32 offset, u32 numPixels) {
-    if (ctx.swappedTex.count(offset)) return;
+    if (ctx.swappedTex.count(offset))
+        return;
     ctx.swappedTex.insert(offset);
 
     for (u32 i = 0; i < numPixels; i++) {
         u32 toff = offset + i * 2;
-        if (toff + 2 > ctx.size) break;
+        if (toff + 2 > ctx.size)
+            break;
         SWAP16_INPLACE(ctx.data + toff);
     }
 }
@@ -365,12 +377,14 @@ static void SwapTextureRGBA16(SwapContext& ctx, u32 offset, u32 numPixels) {
  * Each pixel is a 32-bit value that needs swapping.
  */
 static void SwapTextureRGBA32(SwapContext& ctx, u32 offset, u32 numPixels) {
-    if (ctx.swappedTex.count(offset)) return;
+    if (ctx.swappedTex.count(offset))
+        return;
     ctx.swappedTex.insert(offset);
 
     for (u32 i = 0; i < numPixels; i++) {
         u32 toff = offset + i * 4;
-        if (toff + 4 > ctx.size) break;
+        if (toff + 4 > ctx.size)
+            break;
         SWAP32_INPLACE(ctx.data + toff);
     }
 }
@@ -384,11 +398,11 @@ static void SwapTextureRGBA32(SwapContext& ctx, u32 offset, u32 numPixels) {
  */
 #define Z64O_MANIFEST_START 0x5000
 
-static Gfx* TranslateDL(SwapContext& ctx, u32 dlOffset,
-                         std::map<u32, Gfx*>& translatedDLs) {
+static Gfx* TranslateDL(SwapContext& ctx, u32 dlOffset, std::map<u32, Gfx*>& translatedDLs) {
     // Already translated?
     auto it = translatedDLs.find(dlOffset);
-    if (it != translatedDLs.end()) return it->second;
+    if (it != translatedDLs.end())
+        return it->second;
 
     if (dlOffset + 8 > ctx.size) {
         PAK_LOG("TranslateDL: offset 0x%X out of range (size=0x%X)", dlOffset, ctx.size);
@@ -401,8 +415,8 @@ static Gfx* TranslateDL(SwapContext& ctx, u32 dlOffset,
     static u32 sTranslateLogCount = 0;
     if (sTranslateLogCount < 30) {
         sTranslateLogCount++;
-        PAK_LOG("TranslateDL: offset=0x%X, first cmd: w0=0x%08X w1=0x%08X (opcode=0x%02X)",
-                dlOffset, dbgW0, dbgW1, (dbgW0 >> 24) & 0xFF);
+        PAK_LOG("TranslateDL: offset=0x%X, first cmd: w0=0x%08X w1=0x%08X (opcode=0x%02X)", dlOffset, dbgW0, dbgW1,
+                (dbgW0 >> 24) & 0xFF);
     }
 
     // First pass: count valid commands
@@ -414,11 +428,36 @@ static Gfx* TranslateDL(SwapContext& ctx, u32 dlOffset,
 
         // Validate opcode - stop if we hit non-DL data
         switch (opcode) {
-            case 0x00: case 0x01: case 0x03: case 0x05: case 0x06: case 0x07:
-            case 0xD7: case 0xD9: case 0xDA: case 0xDB: case 0xDC: case 0xDE:
-            case 0xDF: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE6:
-            case 0xE7: case 0xE8: case 0xE9: case 0xF0: case 0xF2: case 0xF3:
-            case 0xF4: case 0xF5: case 0xFA: case 0xFB: case 0xFC: case 0xFD:
+            case 0x00:
+            case 0x01:
+            case 0x03:
+            case 0x05:
+            case 0x06:
+            case 0x07:
+            case 0xD7:
+            case 0xD9:
+            case 0xDA:
+            case 0xDB:
+            case 0xDC:
+            case 0xDE:
+            case 0xDF:
+            case 0xE1:
+            case 0xE2:
+            case 0xE3:
+            case 0xE4:
+            case 0xE6:
+            case 0xE7:
+            case 0xE8:
+            case 0xE9:
+            case 0xF0:
+            case 0xF2:
+            case 0xF3:
+            case 0xF4:
+            case 0xF5:
+            case 0xFA:
+            case 0xFB:
+            case 0xFC:
+            case 0xFD:
                 break;
             default:
                 goto countDone; // Unknown opcode = not a DL command
@@ -426,14 +465,17 @@ static Gfx* TranslateDL(SwapContext& ctx, u32 dlOffset,
 
         cmdCount++;
 
-        if (opcode == 0xDF) break; // G_ENDDL
-        if (opcode == 0xDE && ((w0 >> 16) & 1) == 1) break; // G_DL branch
+        if (opcode == 0xDF)
+            break; // G_ENDDL
+        if (opcode == 0xDE && ((w0 >> 16) & 1) == 1)
+            break; // G_DL branch
 
         pos += 8;
     }
 countDone:
 
-    if (cmdCount == 0) return NULL;
+    if (cmdCount == 0)
+        return NULL;
 
     // Allocate native Gfx array (persistent)
     Gfx* nativeDL = (Gfx*)calloc(cmdCount + 1, sizeof(Gfx)); // +1 for safety ENDDL
@@ -567,11 +609,9 @@ countDone:
  * 2. Byte-swap all referenced DLs/vertices/textures
  * 3. Build native StandardLimb[] and FlexSkeletonHeader
  */
-static bool ZobjBuildSkeleton(u8* zobjData, u32 zobjSize,
-                               LodLimb* outLimbs, void** outLimbTable,
-                               FlexSkeletonHeader* outFlexHeader,
-                               std::map<u32, Gfx*>& translatedDLs,
-                               SwapContext* outSwapCtx) {
+static bool ZobjBuildSkeleton(u8* zobjData, u32 zobjSize, LodLimb* outLimbs, void** outLimbTable,
+                              FlexSkeletonHeader* outFlexHeader, std::map<u32, Gfx*>& translatedDLs,
+                              SwapContext* outSwapCtx) {
     // zzplayas manifest: skeleton pointer at 0x500C
     if (zobjSize < 0x5010) {
         PAK_LOG("ZOBJ too small for zzplayas manifest");
@@ -642,8 +682,8 @@ static bool ZobjBuildSkeleton(u8* zobjData, u32 zobjSize,
 
     u32 limbTableOffset = limbTableSegAddr & 0x00FFFFFF;
 
-    PAK_LOG("Skeleton at 0x%X: limbTable=0x%08X, limbCount=%d, dListCount=%d",
-            skelOffset, limbTableSegAddr, limbCount, dListCount);
+    PAK_LOG("Skeleton at 0x%X: limbTable=0x%08X, limbCount=%d, dListCount=%d", skelOffset, limbTableSegAddr, limbCount,
+            dListCount);
 
     if (limbCount == 0 || limbCount > PAK_MAX_LIMBS) {
         PAK_LOG("Invalid limb count: %d", limbCount);
@@ -718,7 +758,8 @@ static bool ZobjBuildSkeleton(u8* zobjData, u32 zobjSize,
     outFlexHeader->dListCount = dListCount;
 
     // Pass swap context out so alias table parser shares vertex/texture tracking
-    if (outSwapCtx) *outSwapCtx = swapCtx;
+    if (outSwapCtx)
+        *outSwapCtx = swapCtx;
 
     PAK_LOG("Skeleton built: %d limbs, %d dLists", limbCount, dListCount);
     return true;
@@ -732,10 +773,13 @@ static bool ZobjBuildSkeleton(u8* zobjData, u32 zobjSize,
 static u32 UnwrapDLChain(u8* zobjData, u32 zobjSize, u32 startOff) {
     u32 cur = startOff;
     for (s32 i = 0; i < 10; i++) { // max 10 hops to prevent infinite loop
-        if (cur < 0x5000 || cur >= 0x5800) return cur; // Real DL offset
-        if (cur + 8 > zobjSize) return cur;
+        if (cur < 0x5000 || cur >= 0x5800)
+            return cur; // Real DL offset
+        if (cur + 8 > zobjSize)
+            return cur;
         u32 ptr = BE_U32(zobjData + cur + 4);
-        if ((ptr >> 24) != 0x06) return cur;
+        if ((ptr >> 24) != 0x06)
+            return cur;
         cur = ptr & 0x00FFFFFF;
     }
     return cur;
@@ -745,13 +789,12 @@ static u32 UnwrapDLChain(u8* zobjData, u32 zobjSize, u32 startOff) {
  * Read a DL entry from the zobj, unwrap chains, translate, and store.
  * Old format entries are simple 8-byte {0xDE010000, 0x06XXXXXX} at the LUT offset.
  */
-static void ParseOneEquipEntry(u8* zobjData, u32 zobjSize, u32 lutOff, u32 z64oAlias,
-                                std::map<u32, Gfx*>& equipDLs,
-                                std::map<u32, Gfx*>& translatedDLs,
-                                SwapContext& ctx, s32& customCount) {
-    if (lutOff + 8 > zobjSize) return;
+static void ParseOneEquipEntry(u8* zobjData, u32 zobjSize, u32 lutOff, u32 z64oAlias, std::map<u32, Gfx*>& equipDLs,
+                               std::map<u32, Gfx*>& translatedDLs, SwapContext& ctx, s32& customCount) {
+    if (lutOff + 8 > zobjSize)
+        return;
 
-    u32 de  = BE_U32(zobjData + lutOff);
+    u32 de = BE_U32(zobjData + lutOff);
     u32 ptr = BE_U32(zobjData + lutOff + 4);
 
     if (de == 0xDF000000) {
@@ -760,11 +803,14 @@ static void ParseOneEquipEntry(u8* zobjData, u32 zobjSize, u32 lutOff, u32 z64oA
     }
 
     // Must be a 0xDE01xxxx command (gsSPDisplayList branch)
-    if ((de >> 24) != 0xDE) return;
-    if ((ptr >> 24) != 0x06) return;
+    if ((de >> 24) != 0xDE)
+        return;
+    if ((ptr >> 24) != 0x06)
+        return;
 
     u32 dlOff = UnwrapDLChain(zobjData, zobjSize, ptr & 0x00FFFFFF);
-    if (dlOff >= zobjSize) return;
+    if (dlOff >= zobjSize)
+        return;
 
     Gfx* translated = TranslateDL(ctx, dlOff, translatedDLs);
     if (translated) {
@@ -774,7 +820,10 @@ static void ParseOneEquipEntry(u8* zobjData, u32 zobjSize, u32 lutOff, u32 z64oA
 }
 
 // Old zzplayas LUT offset → Z64O alias offset mapping (adult)
-struct OldToZ64O { u32 oldLut; u32 z64oAlias; };
+struct OldToZ64O {
+    u32 oldLut;
+    u32 z64oAlias;
+};
 static const OldToZ64O sOldAdultMap[] = {
     // Hands
     { 0x5108, 0x5098 }, // LHAND
@@ -893,10 +942,8 @@ static const OldToZ64O sOldChildMap[] = {
  * Parse equipment DLs from the zobj, supporting both old zzplayas and Z64O formats.
  * Stores results keyed by Z64O alias offsets so PakLoader_GetEquipDL works for both.
  */
-static void ZobjParseAliasTable(u8* zobjData, u32 zobjSize,
-                                 std::map<u32, Gfx*>& equipDLs,
-                                 std::map<u32, Gfx*>& translatedDLs,
-                                 SwapContext& ctx) {
+static void ZobjParseAliasTable(u8* zobjData, u32 zobjSize, std::map<u32, Gfx*>& equipDLs,
+                                std::map<u32, Gfx*>& translatedDLs, SwapContext& ctx) {
     s32 customCount = 0;
 
     // Detect format: old zzplayas has "MODLOADER64" but NOT "UNIVERSAL_ALIAS_TABLE"
@@ -906,7 +953,8 @@ static void ZobjParseAliasTable(u8* zobjData, u32 zobjSize,
         // Check for UNIVERSAL_ALIAS_TABLE string anywhere in the zobj
         bool hasUAT = false;
         for (u32 i = 0; i + 21 <= zobjSize && !hasUAT; i++) {
-            if (memcmp(zobjData + i, "UNIVERSAL_ALIAS_TABLE", 21) == 0) hasUAT = true;
+            if (memcmp(zobjData + i, "UNIVERSAL_ALIAS_TABLE", 21) == 0)
+                hasUAT = true;
         }
         isOldFormat = hasML64 && !hasUAT;
     }
@@ -918,9 +966,11 @@ static void ZobjParseAliasTable(u8* zobjData, u32 zobjSize,
         const OldToZ64O* map = (age == 1) ? sOldChildMap : sOldAdultMap;
         PAK_LOG("Detected OLD zzplayas format (age=%d), using old LUT offsets", age);
         for (const OldToZ64O* m = map; m->oldLut != 0; m++) {
-            if (m->oldLut + 8 > zobjSize) continue;
+            if (m->oldLut + 8 > zobjSize)
+                continue;
             u32 de = BE_U32(zobjData + m->oldLut);
-            if ((de >> 24) != 0xDE) continue; // Not a DL entry
+            if ((de >> 24) != 0xDE)
+                continue; // Not a DL entry
 
             // Translate the entire mini-DL at this LUT offset.
             // Combined entries (like LFIST_SWORD) are multi-command DLs
@@ -935,7 +985,7 @@ static void ZobjParseAliasTable(u8* zobjData, u32 zobjSize,
     } else {
         // Z64O universal format: read from standard alias table at 0x5020+
         for (u32 off = 0x5020; off < 0x5808 && off + 8 <= zobjSize; off += 8) {
-            u32 de  = BE_U32(zobjData + off);
+            u32 de = BE_U32(zobjData + off);
             u32 ptr = BE_U32(zobjData + off + 4);
 
             if (de == 0xDE010000 && (ptr >> 24) == 0x06) {
@@ -972,7 +1022,8 @@ static bool LoadPakModel(PakModel& model) {
 
     // Read entire .pak into memory for extraction
     FILE* f = fopen(model.pakPath.c_str(), "rb");
-    if (!f) return false;
+    if (!f)
+        return false;
 
     fseek(f, 0, SEEK_END);
     long fileSize = ftell(f);
@@ -996,8 +1047,7 @@ static bool LoadPakModel(PakModel& model) {
             if (entry.compressed) {
                 uLongf decompSize = size * 8;
                 std::vector<u8> decompBuf(decompSize);
-                if (uncompress(decompBuf.data(), &decompSize,
-                               pakData.data() + entry.dataStart, size) == Z_OK) {
+                if (uncompress(decompBuf.data(), &decompSize, pakData.data() + entry.dataStart, size) == Z_OK) {
                     packageJson.assign((char*)decompBuf.data(), decompSize);
                 }
             } else {
@@ -1022,28 +1072,29 @@ static bool LoadPakModel(PakModel& model) {
     adultZobjName = JsonFindModelFile(packageJson, "adult_model");
     childZobjName = JsonFindModelFile(packageJson, "child_model");
 
-    PAK_LOG("Model '%s': adult='%s', child='%s'",
-            model.displayName, adultZobjName.c_str(), childZobjName.c_str());
+    PAK_LOG("Model '%s': adult='%s', child='%s'", model.displayName, adultZobjName.c_str(), childZobjName.c_str());
 
     // Extract and process .zobj files
     auto extractZobj = [&](const std::string& zobjName, u8** outData, u32* outSize) -> bool {
-        if (zobjName.empty()) return false;
+        if (zobjName.empty())
+            return false;
 
         for (auto& entry : entries) {
             // Match by filename (entries may have path prefix like "N64_Kafei/xxx.zobj")
             if (entry.name.find(zobjName) != std::string::npos) {
                 u32 compSize = entry.dataEnd - entry.dataStart;
-                if (compSize == 0 || entry.dataStart + compSize > (u32)fileSize) return false;
+                if (compSize == 0 || entry.dataStart + compSize > (u32)fileSize)
+                    return false;
 
                 if (entry.compressed) {
                     // DEFL: decompress with zlib
                     // Estimate max decompressed size (zobj rarely > 4x compressed)
                     uLongf decompSize = compSize * 8;
                     u8* decompBuf = (u8*)malloc(decompSize);
-                    if (!decompBuf) return false;
+                    if (!decompBuf)
+                        return false;
 
-                    int ret = uncompress(decompBuf, &decompSize,
-                                         pakData.data() + entry.dataStart, compSize);
+                    int ret = uncompress(decompBuf, &decompSize, pakData.data() + entry.dataStart, compSize);
                     if (ret != Z_OK) {
                         PAK_LOG("zlib decompress failed (err=%d) for '%s'", ret, zobjName.c_str());
                         free(decompBuf);
@@ -1052,15 +1103,17 @@ static bool LoadPakModel(PakModel& model) {
 
                     // Realloc to exact size
                     *outData = (u8*)realloc(decompBuf, decompSize);
-                    if (!*outData) *outData = decompBuf; // realloc failed, keep original
+                    if (!*outData)
+                        *outData = decompBuf; // realloc failed, keep original
                     *outSize = (u32)decompSize;
 
-                    PAK_LOG("Extracted '%s': %u bytes (decompressed from %u)",
-                            zobjName.c_str(), (u32)decompSize, compSize);
+                    PAK_LOG("Extracted '%s': %u bytes (decompressed from %u)", zobjName.c_str(), (u32)decompSize,
+                            compSize);
                 } else {
                     // UNCO: raw copy
                     *outData = (u8*)malloc(compSize);
-                    if (!*outData) return false;
+                    if (!*outData)
+                        return false;
 
                     memcpy(*outData, pakData.data() + entry.dataStart, compSize);
                     *outSize = compSize;
@@ -1081,14 +1134,11 @@ static bool LoadPakModel(PakModel& model) {
             model.hasAdult = 1;
 
             SwapContext adultSwapCtx = {};
-            if (ZobjBuildSkeleton(model.adultZobj, model.adultZobjSize,
-                                   model.adultLimbs, model.adultLimbTable,
-                                   &model.adultFlexHeader, model.adultTranslatedDLs,
-                                   &adultSwapCtx)) {
+            if (ZobjBuildSkeleton(model.adultZobj, model.adultZobjSize, model.adultLimbs, model.adultLimbTable,
+                                  &model.adultFlexHeader, model.adultTranslatedDLs, &adultSwapCtx)) {
                 model.adultReady = 1;
-                ZobjParseAliasTable(model.adultZobj, model.adultZobjSize,
-                                     model.adultEquipDLs, model.adultTranslatedDLs,
-                                     adultSwapCtx);
+                ZobjParseAliasTable(model.adultZobj, model.adultZobjSize, model.adultEquipDLs, model.adultTranslatedDLs,
+                                    adultSwapCtx);
                 PAK_LOG("Adult model ready!");
             } else {
                 PAK_LOG("Failed to build adult skeleton");
@@ -1102,14 +1152,11 @@ static bool LoadPakModel(PakModel& model) {
             model.hasChild = 1;
 
             SwapContext childSwapCtx = {};
-            if (ZobjBuildSkeleton(model.childZobj, model.childZobjSize,
-                                   model.childLimbs, model.childLimbTable,
-                                   &model.childFlexHeader, model.childTranslatedDLs,
-                                   &childSwapCtx)) {
+            if (ZobjBuildSkeleton(model.childZobj, model.childZobjSize, model.childLimbs, model.childLimbTable,
+                                  &model.childFlexHeader, model.childTranslatedDLs, &childSwapCtx)) {
                 model.childReady = 1;
-                ZobjParseAliasTable(model.childZobj, model.childZobjSize,
-                                     model.childEquipDLs, model.childTranslatedDLs,
-                                     childSwapCtx);
+                ZobjParseAliasTable(model.childZobj, model.childZobjSize, model.childEquipDLs, model.childTranslatedDLs,
+                                    childSwapCtx);
                 PAK_LOG("Child model ready!");
             } else {
                 PAK_LOG("Failed to build child skeleton");
@@ -1129,7 +1176,8 @@ static void** sSavedSkeleton = NULL;
 static s32 sSavedDListCount = 0;
 
 extern "C" void PakLoader_SwapSkeleton(Player* player) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) return;
+    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
+        return;
 
     PakModel& model = sModels[sSelectedIndex];
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
@@ -1145,7 +1193,8 @@ extern "C" void PakLoader_SwapSkeleton(Player* player) {
         pakDListCount = model.childFlexHeader.dListCount;
     }
 
-    if (!pakSkeleton) return;
+    if (!pakSkeleton)
+        return;
 
     // Save originals
     sSavedSkeleton = (void**)player->skelAnime.skeleton;
@@ -1157,7 +1206,8 @@ extern "C" void PakLoader_SwapSkeleton(Player* player) {
 }
 
 extern "C" void PakLoader_RestoreSkeleton(Player* player) {
-    if (!sSavedSkeleton) return;
+    if (!sSavedSkeleton)
+        return;
 
     player->skelAnime.skeleton = sSavedSkeleton;
     player->skelAnime.dListCount = sSavedDListCount;
@@ -1177,20 +1227,32 @@ static u8 sPakRightHandCombined = 0;
 // Try alias with fallbacks. Returns PAK_DL_STUB for 0xDF entries, NULL if not found.
 static Gfx* FindEquip(std::map<u32, Gfx*>& equipDLs, u32 primary, u32 fb1 = 0, u32 fb2 = 0) {
     auto it = equipDLs.find(primary);
-    if (it != equipDLs.end()) return it->second; // Could be real DL or PAK_DL_STUB
-    if (fb1) { it = equipDLs.find(fb1); if (it != equipDLs.end()) return it->second; }
-    if (fb2) { it = equipDLs.find(fb2); if (it != equipDLs.end()) return it->second; }
+    if (it != equipDLs.end())
+        return it->second; // Could be real DL or PAK_DL_STUB
+    if (fb1) {
+        it = equipDLs.find(fb1);
+        if (it != equipDLs.end())
+            return it->second;
+    }
+    if (fb2) {
+        it = equipDLs.find(fb2);
+        if (it != equipDLs.end())
+            return it->second;
+    }
     return NULL;
 }
 
 extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) return NULL;
-    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) return NULL;
+    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
+        return NULL;
+    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
+        return NULL;
 
     PakModel& model = sModels[sSelectedIndex];
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
     std::map<u32, Gfx*>& eq = isAdult ? model.adultEquipDLs : model.childEquipDLs;
-    if (eq.empty()) return NULL;
+    if (eq.empty())
+        return NULL;
 
     Gfx* result = NULL;
 
@@ -1200,37 +1262,77 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
     if (limbIndex == PLAYER_LIMB_L_HAND) {
         sPakLeftHandCombined = 0;
         switch (player->leftHandType) {
-            case PLAYER_MODELTYPE_LH_OPEN:      result = FindEquip(eq, 0x5098); break;
-            case PLAYER_MODELTYPE_LH_CLOSED:     result = FindEquip(eq, 0x50A0); break;
-            case PLAYER_MODELTYPE_LH_SWORD:      result = FindEquip(eq, 0x5448, 0x50A0); sPakLeftHandCombined = 1; break;
-            case PLAYER_MODELTYPE_LH_SWORD_2:    result = FindEquip(eq, 0x5450, 0x5448, 0x50A0); sPakLeftHandCombined = 1; break;
-            case PLAYER_MODELTYPE_LH_BGS:        result = FindEquip(eq, 0x5458, 0x5448, 0x50A0); sPakLeftHandCombined = 1; break;
-            case PLAYER_MODELTYPE_LH_HAMMER:     result = FindEquip(eq, 0x5460, 0x50A0); sPakLeftHandCombined = 1; break;
-            case PLAYER_MODELTYPE_LH_BOOMERANG:  result = FindEquip(eq, 0x5500, 0x50A0); sPakLeftHandCombined = 1; break;
-            case PLAYER_MODELTYPE_LH_BOTTLE:     result = FindEquip(eq, 0x50A8, 0x5098); break;
+            case PLAYER_MODELTYPE_LH_OPEN:
+                result = FindEquip(eq, 0x5098);
+                break;
+            case PLAYER_MODELTYPE_LH_CLOSED:
+                result = FindEquip(eq, 0x50A0);
+                break;
+            case PLAYER_MODELTYPE_LH_SWORD:
+                result = FindEquip(eq, 0x5448, 0x50A0);
+                sPakLeftHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_LH_SWORD_2:
+                result = FindEquip(eq, 0x5450, 0x5448, 0x50A0);
+                sPakLeftHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_LH_BGS:
+                result = FindEquip(eq, 0x5458, 0x5448, 0x50A0);
+                sPakLeftHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_LH_HAMMER:
+                result = FindEquip(eq, 0x5460, 0x50A0);
+                sPakLeftHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_LH_BOOMERANG:
+                result = FindEquip(eq, 0x5500, 0x50A0);
+                sPakLeftHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_LH_BOTTLE:
+                result = FindEquip(eq, 0x50A8, 0x5098);
+                break;
         }
     } else if (limbIndex == PLAYER_LIMB_R_HAND) {
         sPakRightHandCombined = 0;
         switch (player->rightHandType) {
-            case PLAYER_MODELTYPE_RH_OPEN:            result = FindEquip(eq, 0x50B0); break;
-            case PLAYER_MODELTYPE_RH_CLOSED:           result = FindEquip(eq, 0x50B8); break;
+            case PLAYER_MODELTYPE_RH_OPEN:
+                result = FindEquip(eq, 0x50B0);
+                break;
+            case PLAYER_MODELTYPE_RH_CLOSED:
+                result = FindEquip(eq, 0x50B8);
+                break;
             case PLAYER_MODELTYPE_RH_SHIELD: {
                 u32 sa[] = { 0x5468, 0x5470, 0x5478 };
                 s32 idx = player->currentShield - 1;
-                if (idx >= 0 && idx < 3) result = FindEquip(eq, sa[idx], 0x5468, 0x50B8);
-                else result = FindEquip(eq, 0x5468, 0x50B8);
+                if (idx >= 0 && idx < 3)
+                    result = FindEquip(eq, sa[idx], 0x5468, 0x50B8);
+                else
+                    result = FindEquip(eq, 0x5468, 0x50B8);
                 sPakRightHandCombined = 1;
                 break;
             }
-            case PLAYER_MODELTYPE_RH_BOW_SLINGSHOT:    result = FindEquip(eq, 0x5480, 0x50B8); sPakRightHandCombined = 1; break;
-            case PLAYER_MODELTYPE_RH_BOW_SLINGSHOT_2:   result = FindEquip(eq, 0x5480, 0x50B8); sPakRightHandCombined = 1; break;
-            case PLAYER_MODELTYPE_RH_OCARINA:           result = FindEquip(eq, 0x5510, 0x50B0); break;
-            case PLAYER_MODELTYPE_RH_OOT:               result = FindEquip(eq, 0x5490, 0x50B0); break;
-            case PLAYER_MODELTYPE_RH_HOOKSHOT:          result = FindEquip(eq, 0x5488, 0x50B8); sPakRightHandCombined = 1; break;
+            case PLAYER_MODELTYPE_RH_BOW_SLINGSHOT:
+                result = FindEquip(eq, 0x5480, 0x50B8);
+                sPakRightHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_RH_BOW_SLINGSHOT_2:
+                result = FindEquip(eq, 0x5480, 0x50B8);
+                sPakRightHandCombined = 1;
+                break;
+            case PLAYER_MODELTYPE_RH_OCARINA:
+                result = FindEquip(eq, 0x5510, 0x50B0);
+                break;
+            case PLAYER_MODELTYPE_RH_OOT:
+                result = FindEquip(eq, 0x5490, 0x50B0);
+                break;
+            case PLAYER_MODELTYPE_RH_HOOKSHOT:
+                result = FindEquip(eq, 0x5488, 0x50B8);
+                sPakRightHandCombined = 1;
+                break;
         }
     } else if (limbIndex == PLAYER_LIMB_SHEATH) {
-        s32 hasSword = (player->sheathType == PLAYER_MODELTYPE_SHEATH_16 ||
-                        player->sheathType == PLAYER_MODELTYPE_SHEATH_18);
+        s32 hasSword =
+            (player->sheathType == PLAYER_MODELTYPE_SHEATH_16 || player->sheathType == PLAYER_MODELTYPE_SHEATH_18);
         s32 shield = player->currentShield;
 
         if (hasSword && shield > 0) {
@@ -1250,9 +1352,8 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
 
     if (doLog && result != NULL) {
         sEquipLog++;
-        PAK_LOG("GetEquipDL: limb=%d LH=%d RH=%d result=%p stub=%d",
-                limbIndex, player->leftHandType, player->rightHandType,
-                (void*)result, (result == PAK_DL_STUB) ? 1 : 0);
+        PAK_LOG("GetEquipDL: limb=%d LH=%d RH=%d result=%p stub=%d", limbIndex, player->leftHandType,
+                player->rightHandType, (void*)result, (result == PAK_DL_STUB) ? 1 : 0);
     }
 
     return result;
@@ -1271,85 +1372,91 @@ extern "C" u8 PakLoader_UsedCombinedDL(u8 isLeftHand) {
 // Map OTR path pointers → Z64O alias offsets for standalone equipment DLs.
 // These are items drawn by PostLimbDraw and other systems that reference
 // object_link_boy DLs directly via gSPDisplayList.
-struct OtrAliasEntry { const char* otr; u32 alias; };
+struct OtrAliasEntry {
+    const char* otr;
+    u32 alias;
+};
 
 static const OtrAliasEntry sStandaloneOtrTable[] = {
     // Hookshot parts
-    { gLinkAdultHookshotChainDL,        0x5150 }, // DL_HOOKSHOT_CHAIN
-    { gLinkAdultHookshotTipDL,          0x5158 }, // DL_HOOKSHOT_HOOK
+    { gLinkAdultHookshotChainDL, 0x5150 }, // DL_HOOKSHOT_CHAIN
+    { gLinkAdultHookshotTipDL, 0x5158 },   // DL_HOOKSHOT_HOOK
     // Bow string
-    { gLinkAdultBowStringDL,            0x5140 }, // DL_BOW_STRING
+    { gLinkAdultBowStringDL, 0x5140 }, // DL_BOW_STRING
     // Bottle
-    { gLinkAdultBottleDL,               0x5120 }, // DL_BOTTLE
+    { gLinkAdultBottleDL, 0x5120 }, // DL_BOTTLE
     // Boots
-    { gLinkAdultLeftIronBootDL,         0x5228 }, // DL_BOOT_LIRON
-    { gLinkAdultRightIronBootDL,        0x5230 }, // DL_BOOT_RIRON
-    { gLinkAdultLeftHoverBootDL,        0x5238 }, // DL_BOOT_LHOVER
-    { gLinkAdultRightHoverBootDL,       0x5240 }, // DL_BOOT_RHOVER
+    { gLinkAdultLeftIronBootDL, 0x5228 },   // DL_BOOT_LIRON
+    { gLinkAdultRightIronBootDL, 0x5230 },  // DL_BOOT_RIRON
+    { gLinkAdultLeftHoverBootDL, 0x5238 },  // DL_BOOT_LHOVER
+    { gLinkAdultRightHoverBootDL, 0x5240 }, // DL_BOOT_RHOVER
     // Waist
-    { gLinkAdultWaistNearDL,            0x5020 }, // DL_WAIST
-    { gLinkAdultWaistFarDL,             0x5020 },
+    { gLinkAdultWaistNearDL, 0x5020 }, // DL_WAIST
+    { gLinkAdultWaistFarDL, 0x5020 },
     // Gauntlet upgrade forearms/hands
-    { gLinkAdultRightArmOutNearDL,      0x5210 }, // DL_UPGRADE_RFOREARM
-    { gLinkAdultRightHandOutNearDL,     0x5218 }, // DL_UPGRADE_RHAND
-    { gLinkAdultLeftArmOutNearDL,       0x51F8 }, // DL_UPGRADE_LFOREARM
+    { gLinkAdultRightArmOutNearDL, 0x5210 },  // DL_UPGRADE_RFOREARM
+    { gLinkAdultRightHandOutNearDL, 0x5218 }, // DL_UPGRADE_RHAND
+    { gLinkAdultLeftArmOutNearDL, 0x51F8 },   // DL_UPGRADE_LFOREARM
     // Gauntlet plates (no direct Z64O alias — keep vanilla)
     // Hookshot reticle
-    { gLinkAdultHookshotReticleDL,      0x5160 }, // DL_HOOKSHOT_AIM
+    { gLinkAdultHookshotReticleDL, 0x5160 }, // DL_HOOKSHOT_AIM
     // Sheath combos on back (drawn by OverrideLimbDraw but also referenced standalone)
-    { gLinkAdultSheathNearDL,           0x50C8 }, // DL_SWORD_SHEATH_2
-    { gLinkAdultSheathFarDL,            0x50C8 },
+    { gLinkAdultSheathNearDL, 0x50C8 }, // DL_SWORD_SHEATH_2
+    { gLinkAdultSheathFarDL, 0x50C8 },
     { gLinkAdultMasterSwordAndSheathNearDL, 0x50C0 }, // DL_SWORD_SHEATH_1
-    { gLinkAdultMasterSwordAndSheathFarDL,  0x50C0 },
+    { gLinkAdultMasterSwordAndSheathFarDL, 0x50C0 },
     { gLinkAdultHylianShieldSwordAndSheathNearDL, 0x5420 }, // DL_SWORD2_SHIELD2
-    { gLinkAdultHylianShieldSwordAndSheathFarDL,  0x5420 },
+    { gLinkAdultHylianShieldSwordAndSheathFarDL, 0x5420 },
     { gLinkAdultMirrorShieldSwordAndSheathNearDL, 0x5428 }, // DL_SWORD2_SHIELD3
-    { gLinkAdultMirrorShieldSwordAndSheathFarDL,  0x5428 },
-    { gLinkAdultHylianShieldAndSheathNearDL,  0x53F0 }, // DL_SHIELD2_BACK
-    { gLinkAdultHylianShieldAndSheathFarDL,   0x53F0 },
-    { gLinkAdultMirrorShieldAndSheathNearDL,  0x53F8 }, // DL_SHIELD3_BACK
-    { gLinkAdultMirrorShieldAndSheathFarDL,   0x53F8 },
+    { gLinkAdultMirrorShieldSwordAndSheathFarDL, 0x5428 },
+    { gLinkAdultHylianShieldAndSheathNearDL, 0x53F0 }, // DL_SHIELD2_BACK
+    { gLinkAdultHylianShieldAndSheathFarDL, 0x53F0 },
+    { gLinkAdultMirrorShieldAndSheathNearDL, 0x53F8 }, // DL_SHIELD3_BACK
+    { gLinkAdultMirrorShieldAndSheathFarDL, 0x53F8 },
     // Hand combos (also caught by OverrideLimbDraw but backup for other code paths)
     { gLinkAdultLeftHandHoldingMasterSwordNearDL, 0x5448 }, // DL_LFIST_SWORD1
-    { gLinkAdultLeftHandHoldingMasterSwordFarDL,  0x5448 },
-    { gLinkAdultLeftHandHoldingBgsNearDL,         0x5458 }, // DL_LFIST_SWORD3
-    { gLinkAdultLeftHandHoldingBgsFarDL,          0x5458 },
-    { gLinkAdultLeftHandHoldingHammerNearDL,      0x5460 }, // DL_LFIST_HAMMER
-    { gLinkAdultLeftHandHoldingHammerFarDL,       0x5460 },
-    { gLinkAdultRightHandHoldingBowNearDL,        0x5480 }, // DL_RFIST_BOW
-    { gLinkAdultRightHandHoldingBowFarDL,         0x5480 },
-    { gLinkAdultRightHandHoldingHookshotNearDL,   0x5488 }, // DL_RFIST_HOOKSHOT
-    { gLinkAdultRightHandHoldingOotNearDL,        0x5490 }, // DL_RHAND_OCARINA_TIME
-    { gLinkAdultRightHandHoldingOotFarDL,         0x5490 },
+    { gLinkAdultLeftHandHoldingMasterSwordFarDL, 0x5448 },
+    { gLinkAdultLeftHandHoldingBgsNearDL, 0x5458 }, // DL_LFIST_SWORD3
+    { gLinkAdultLeftHandHoldingBgsFarDL, 0x5458 },
+    { gLinkAdultLeftHandHoldingHammerNearDL, 0x5460 }, // DL_LFIST_HAMMER
+    { gLinkAdultLeftHandHoldingHammerFarDL, 0x5460 },
+    { gLinkAdultRightHandHoldingBowNearDL, 0x5480 }, // DL_RFIST_BOW
+    { gLinkAdultRightHandHoldingBowFarDL, 0x5480 },
+    { gLinkAdultRightHandHoldingHookshotNearDL, 0x5488 }, // DL_RFIST_HOOKSHOT
+    { gLinkAdultRightHandHoldingOotNearDL, 0x5490 },      // DL_RHAND_OCARINA_TIME
+    { gLinkAdultRightHandHoldingOotFarDL, 0x5490 },
     { gLinkAdultRightHandHoldingHylianShieldNearDL, 0x5470 }, // DL_RFIST_SHIELD_2
-    { gLinkAdultRightHandHoldingHylianShieldFarDL,  0x5470 },
+    { gLinkAdultRightHandHoldingHylianShieldFarDL, 0x5470 },
     { gLinkAdultRightHandHoldingMirrorShieldNearDL, 0x5478 }, // DL_RFIST_SHIELD_3
-    { gLinkAdultRightHandHoldingMirrorShieldFarDL,  0x5478 },
+    { gLinkAdultRightHandHoldingMirrorShieldFarDL, 0x5478 },
     // Plain hands (backup for code paths that bypass OverrideLimbDraw)
-    { gLinkAdultLeftHandNearDL,         0x5098 }, // DL_LHAND
-    { gLinkAdultLeftHandFarDL,          0x5098 },
-    { gLinkAdultLeftHandClosedNearDL,   0x50A0 }, // DL_LFIST
-    { gLinkAdultLeftHandClosedFarDL,    0x50A0 },
-    { gLinkAdultLeftHandOutNearDL,      0x50A8 }, // DL_LHAND_BOTTLE
-    { gLinkAdultRightHandNearDL,        0x50B0 }, // DL_RHAND
-    { gLinkAdultRightHandFarDL,         0x50B0 },
-    { gLinkAdultRightHandClosedNearDL,  0x50B8 }, // DL_RFIST
-    { gLinkAdultRightHandClosedFarDL,   0x50B8 },
+    { gLinkAdultLeftHandNearDL, 0x5098 }, // DL_LHAND
+    { gLinkAdultLeftHandFarDL, 0x5098 },
+    { gLinkAdultLeftHandClosedNearDL, 0x50A0 }, // DL_LFIST
+    { gLinkAdultLeftHandClosedFarDL, 0x50A0 },
+    { gLinkAdultLeftHandOutNearDL, 0x50A8 }, // DL_LHAND_BOTTLE
+    { gLinkAdultRightHandNearDL, 0x50B0 },   // DL_RHAND
+    { gLinkAdultRightHandFarDL, 0x50B0 },
+    { gLinkAdultRightHandClosedNearDL, 0x50B8 }, // DL_RFIST
+    { gLinkAdultRightHandClosedFarDL, 0x50B8 },
     // Broken Giant's Knife
-    { gLinkAdultHandHoldingBrokenGiantsKnifeDL,    0x54F0 },
+    { gLinkAdultHandHoldingBrokenGiantsKnifeDL, 0x54F0 },
     { gLinkAdultHandHoldingBrokenGiantsKnifeFarDL, 0x54F0 },
     // Sentinel
     { NULL, 0 }
 };
 
 extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) return NULL;
-    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) return NULL;
+    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
+        return NULL;
+    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
+        return NULL;
 
     PakModel& model = sModels[sSelectedIndex];
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
     std::map<u32, Gfx*>& eq = isAdult ? model.adultEquipDLs : model.childEquipDLs;
-    if (eq.empty()) return NULL;
+    if (eq.empty())
+        return NULL;
 
     // Debug: log calls matching object_link_boy
     static u32 sHookCallCount = 0;
@@ -1381,17 +1488,16 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
 // ============================================================================
 
 // Eye/mouth texture offsets within zzplayas zobj (same as vanilla object_link_boy)
-static const u32 sEyeTextureOffsets[] = {
-    0x0000, 0x0800, 0x1000, 0x1800, 0x2000, 0x2800, 0x3000, 0x3800
-};
-static const u32 sMouthTextureOffsets[] = {
-    0x4000, 0x4400, 0x4800, 0x4C00
-};
+static const u32 sEyeTextureOffsets[] = { 0x0000, 0x0800, 0x1000, 0x1800, 0x2000, 0x2800, 0x3000, 0x3800 };
+static const u32 sMouthTextureOffsets[] = { 0x4000, 0x4400, 0x4800, 0x4C00 };
 
 static void* PakLoader_GetFaceTexture(const u32* offsets, s32 index, s32 maxIndex, u32 texSize) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) return NULL;
-    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) return NULL;
-    if (index < 0 || index > maxIndex) index = 0;
+    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
+        return NULL;
+    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
+        return NULL;
+    if (index < 0 || index > maxIndex)
+        index = 0;
 
     PakModel& model = sModels[sSelectedIndex];
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
@@ -1399,18 +1505,24 @@ static void* PakLoader_GetFaceTexture(const u32* offsets, s32 index, s32 maxInde
     u32 zobjSize = isAdult ? model.adultZobjSize : model.childZobjSize;
     u8 ready = isAdult ? model.adultReady : model.childReady;
 
-    if (!ready || !zobjData) return NULL;
+    if (!ready || !zobjData)
+        return NULL;
 
     u32 offset = offsets[index];
-    if (offset + texSize > zobjSize) return NULL;
+    if (offset + texSize > zobjSize)
+        return NULL;
 
     // Check if face texture area has data (not all zeros)
     // Sample multiple bytes across the texture to detect non-zero content
     u8 hasData = 0;
     for (u32 j = offset; j < offset + texSize && j < zobjSize; j++) {
-        if (zobjData[j] != 0) { hasData = 1; break; }
+        if (zobjData[j] != 0) {
+            hasData = 1;
+            break;
+        }
     }
-    if (!hasData) return NULL; // All zeros = no custom texture, use vanilla
+    if (!hasData)
+        return NULL; // All zeros = no custom texture, use vanilla
     return (void*)(zobjData + offset);
 }
 
@@ -1518,10 +1630,12 @@ static void PakLoader_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, 
 // ============================================================================
 
 extern "C" void PakLoader_Init(void) {
-    if (sInitialized) return;
+    if (sInitialized)
+        return;
 
     // Don't try to init until Context is ready
-    if (!Ship::Context::GetInstance()) return;
+    if (!Ship::Context::GetInstance())
+        return;
 
     sInitialized = 1;
     PAK_LOG("Initializing...");
@@ -1534,7 +1648,8 @@ extern "C" void PakLoader_Init(void) {
 
     if (!modsPath.empty() && std::filesystem::exists(modsPath) && std::filesystem::is_directory(modsPath)) {
         for (auto& entry : std::filesystem::recursive_directory_iterator(modsPath)) {
-            if (entry.is_directory()) continue;
+            if (entry.is_directory())
+                continue;
             if (entry.path().extension() == ".pak") {
                 pakFiles.push_back(entry.path().string());
                 PAK_LOG("Found: %s", entry.path().string().c_str());
@@ -1558,15 +1673,18 @@ extern "C" void PakLoader_Init(void) {
             // Fix up limbTable pointers after move (they pointed to the old struct)
             PakModel& m = sModels.back();
             for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
-                if (m.adultLimbTable[j]) m.adultLimbTable[j] = &m.adultLimbs[j];
-                if (m.childLimbTable[j]) m.childLimbTable[j] = &m.childLimbs[j];
+                if (m.adultLimbTable[j])
+                    m.adultLimbTable[j] = &m.adultLimbs[j];
+                if (m.childLimbTable[j])
+                    m.childLimbTable[j] = &m.childLimbs[j];
             }
-            PAK_LOG("Loaded: '%s' (adult=%d, child=%d)",
-                    m.displayName, m.adultReady, m.childReady);
+            PAK_LOG("Loaded: '%s' (adult=%d, child=%d)", m.displayName, m.adultReady, m.childReady);
         } else {
             // Free any allocated data
-            if (model.adultZobj) free(model.adultZobj);
-            if (model.childZobj) free(model.childZobj);
+            if (model.adultZobj)
+                free(model.adultZobj);
+            if (model.childZobj)
+                free(model.childZobj);
             PAK_LOG("Failed to load: %s", pakPath.c_str());
         }
     }
@@ -1592,7 +1710,7 @@ extern "C" u8 PakLoader_HasActiveModel(void) {
     }
 }
 
-#if 0 // Legacy DrawPlayer - disabled, using skeleton swap instead
+#if 0  // Legacy DrawPlayer - disabled, using skeleton swap instead
 extern "C" void PakLoader_DrawPlayer(PlayState* play, Player* player) {
     if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) return;
 
@@ -1684,7 +1802,8 @@ extern "C" s32 PakLoader_GetModelCount(void) {
 }
 
 extern "C" const char* PakLoader_GetModelName(s32 index) {
-    if (index < 0 || index >= (s32)sModels.size()) return NULL;
+    if (index < 0 || index >= (s32)sModels.size())
+        return NULL;
     return sModels[index].displayName;
 }
 
@@ -1692,7 +1811,8 @@ extern "C" void PakLoader_SelectModel(s32 index) {
     if (index < -1 || index >= (s32)sModels.size()) {
         index = -1;
     }
-    if (index == sSelectedIndex) return; // No change, skip log spam
+    if (index == sSelectedIndex)
+        return; // No change, skip log spam
     sSelectedIndex = index;
 
     if (index >= 0) {
@@ -1708,8 +1828,10 @@ extern "C" s32 PakLoader_GetSelectedIndex(void) {
 
 extern "C" void PakLoader_Shutdown(void) {
     for (auto& model : sModels) {
-        if (model.adultZobj) free(model.adultZobj);
-        if (model.childZobj) free(model.childZobj);
+        if (model.adultZobj)
+            free(model.adultZobj);
+        if (model.childZobj)
+            free(model.childZobj);
     }
     sModels.clear();
     sSelectedIndex = -1;

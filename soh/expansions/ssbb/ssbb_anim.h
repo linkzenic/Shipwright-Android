@@ -10,9 +10,9 @@
 
 // Per-bone per-frame transform (9 floats: T3 + R3 + S3)
 typedef struct {
-    f32 tx, ty, tz;     // Translation (DAE space, local to parent)
-    f32 rx, ry, rz;     // Rotation in degrees (ZYX Euler order, matching Maya/Brawl)
-    f32 sx, sy, sz;     // Scale (1.0 = no scale)
+    f32 tx, ty, tz; // Translation (DAE space, local to parent)
+    f32 rx, ry, rz; // Rotation in degrees (ZYX Euler order, matching Maya/Brawl)
+    f32 sx, sy, sz; // Scale (1.0 = no scale)
 } SSBBBoneFrame;
 
 // Full animation: array of [numFrames x numBones] SSBBBoneFrame
@@ -21,9 +21,9 @@ struct SSBBAnim {
     const char* name;
     u16 numFrames;
     u16 numBones;
-    f32 frameRate;                  // frames per second (usually 30 or 60)
-    const SSBBBoneFrame* frames;    // [numFrames * numBones] -- frame-major order
-                                    // frames[frame * numBones + boneIdx]
+    f32 frameRate;               // frames per second (usually 30 or 60)
+    const SSBBBoneFrame* frames; // [numFrames * numBones] -- frame-major order
+                                 // frames[frame * numBones + boneIdx]
 };
 
 // Get the transform for a specific bone at a specific frame

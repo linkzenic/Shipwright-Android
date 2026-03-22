@@ -25,7 +25,7 @@ static Gfx gfx_byrna_cane_mat_body[] = {
                          G_CK_NONE | G_PM_NPRIMITIVE | G_TT_NONE | G_TC_FILT),
     gsSPSetOtherMode(G_SETOTHERMODE_L, 0, 32, G_RM_FOG_SHADE_A | G_AC_NONE | G_ZS_PIXEL | G_RM_AA_ZB_OPA_SURF2),
     gsSPTexture(65535, 65535, 0, 0, 1),
-    gsDPSetPrimColor(0, 0, 41, 80, 200, 255),  // Blue body (was 177, 50, 41 red)
+    gsDPSetPrimColor(0, 0, 41, 80, 200, 255), // Blue body (was 177, 50, 41 red)
     gsSPEndDisplayList(),
 };
 
@@ -57,9 +57,9 @@ Gfx g_byrna_cane_dl[] = {
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define BYRNA_HP_RECOVER  16  // HP recovered per hit
-#define BYRNA_MP_RECOVER   4  // MP recovered per hit
-#define BYRNA_SCALE       (0.05f * 1.15f) // Somaria base scale * 1.15
+#define BYRNA_HP_RECOVER 16         // HP recovered per hit
+#define BYRNA_MP_RECOVER 4          // MP recovered per hit
+#define BYRNA_SCALE (0.05f * 1.15f) // Somaria base scale * 1.15
 
 // ---------------------------------------------------------------------------
 // Melee Hit Callback
@@ -91,9 +91,8 @@ static void Byrna_OnMeleeHit(Player* player, PlayState* play) {
 // ---------------------------------------------------------------------------
 static void Byrna_Behavior(Player* player, PlayState* play) {
     // Skip during cutscenes, dying, loading, etc.
-    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                                PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
-                                PLAYER_STATE1_GETTING_ITEM)) {
+    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
+                               PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM)) {
         return;
     }
 

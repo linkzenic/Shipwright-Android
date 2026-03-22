@@ -10,10 +10,10 @@
 
 typedef struct SSBBThunder {
     Actor actor;
-    ColliderCylinder collider;  // Tall cylinder for the lightning column
-    s16 timer;                  // Lifetime
-    f32 columnHeight;           // Current visual height (grows from 0 to max)
-    u8 phase;                   // 0=charging, 1=bolt active, 2=fading
+    ColliderCylinder collider; // Tall cylinder for the lightning column
+    s16 timer;                 // Lifetime
+    f32 columnHeight;          // Current visual height (grows from 0 to max)
+    u8 phase;                  // 0=charging, 1=bolt active, 2=fading
 } SSBBThunder;
 
 void SSBBThunder_Init(Actor* thisx, PlayState* play);

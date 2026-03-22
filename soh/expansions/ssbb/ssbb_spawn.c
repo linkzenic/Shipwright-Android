@@ -24,7 +24,8 @@ void SSBBSpawn_Update(PlayState* play, Player* player) {
         if (!sSSBBInitialized || mode != sSSBBLastMode || play != sSSBBLastPlay) {
             if (!sSSBBRegistered) {
                 sSSBBPikachuDefIndex = pikachu_ssbb_Register();
-                if (sSSBBPikachuDefIndex < 0) return;
+                if (sSSBBPikachuDefIndex < 0)
+                    return;
                 sSSBBRegistered = 1;
             }
             // On soft reset, arena is wiped — NULL out old pointers before re-init
@@ -66,8 +67,7 @@ static void SSBBSpawn_DrawStaticDL(PlayState* play, Player* player) {
     gSPSegment(POLY_OPA_DISP++, 0x0C, gCullBackDList);
 
     // Push matrix to RSP so the DL vertices are transformed
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     // Draw the Fast64 DL — has its own materials, lighting, and geometry
     gSPDisplayList(POLY_OPA_DISP++, polygon0_opaque_dl);
@@ -78,7 +78,8 @@ static void SSBBSpawn_DrawStaticDL(PlayState* play, Player* player) {
 }
 
 void SSBBSpawn_Draw(PlayState* play, Player* player) {
-    if (!sSSBBInitialized || CVarGetInteger(CVAR_SSBB_PIKACHU, SSBB_PIKACHU_OFF) == SSBB_PIKACHU_OFF) return;
+    if (!sSSBBInitialized || CVarGetInteger(CVAR_SSBB_PIKACHU, SSBB_PIKACHU_OFF) == SSBB_PIKACHU_OFF)
+        return;
 
     s32 mode = CVarGetInteger(CVAR_SSBB_PIKACHU, SSBB_PIKACHU_OFF);
 

@@ -9,12 +9,12 @@
 #include "ssbb_thunder_jolt.h"
 #include "z64.h"
 
-#define JOLT_LIFETIME 90        // ~1.5 seconds
-#define JOLT_SPEED 8.0f         // Forward speed
-#define JOLT_BOUNCE_VEL 4.0f    // Bounce impulse
-#define JOLT_GRAVITY -0.8f      // Gravity per frame
-#define JOLT_RADIUS 15.0f       // Visual/collider radius
-#define JOLT_DAMAGE 4           // Quarter-hearts
+#define JOLT_LIFETIME 90     // ~1.5 seconds
+#define JOLT_SPEED 8.0f      // Forward speed
+#define JOLT_BOUNCE_VEL 4.0f // Bounce impulse
+#define JOLT_GRAVITY -0.8f   // Gravity per frame
+#define JOLT_RADIUS 15.0f    // Visual/collider radius
+#define JOLT_DAMAGE 4        // Quarter-hearts
 
 // Collider init — sphere AT (attacks enemies)
 static ColliderSphereInit sJoltColliderInit = {
@@ -28,7 +28,7 @@ static ColliderSphereInit sJoltColliderInit = {
     },
     {
         ELEMTYPE_UNK0,
-        { 0x000A2024, 0x00, 0x00 },  // ARROW + SLINGSHOT + MAGIC_FIRE + MAGIC_LIGHT (like arrow)
+        { 0x000A2024, 0x00, 0x00 }, // ARROW + SLINGSHOT + MAGIC_FIRE + MAGIC_LIGHT (like arrow)
         { 0x00000000, 0x00, 0x00 },
         TOUCH_ON | TOUCH_SFX_HARD,
         BUMP_NONE,
@@ -92,8 +92,7 @@ void SSBBThunderJolt_Update(Actor* thisx, PlayState* play) {
     Actor_MoveForward(thisx);
 
     // Floor check for bouncing
-    Actor_UpdateBgCheckInfo(play, thisx, 10.0f, JOLT_RADIUS, 0.0f,
-                            UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2);
+    Actor_UpdateBgCheckInfo(play, thisx, 10.0f, JOLT_RADIUS, 0.0f, UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2);
 
     // Bounce off floor
     if (thisx->bgCheckFlags & BGCHECKFLAG_GROUND) {
@@ -116,8 +115,7 @@ void SSBBThunderJolt_Update(Actor* thisx, PlayState* play) {
         static Color_RGBA8 envWhite = { 255, 255, 200, 200 };
         Vec3f sparkVel = { 0, 1.0f, 0 };
         Vec3f sparkAccel = { 0, 0, 0 };
-        EffectSsBlast_Spawn(play, &thisx->world.pos, &sparkVel, &sparkAccel,
-                            &primYellow, &envWhite, 15, -2, 1, 3);
+        EffectSsBlast_Spawn(play, &thisx->world.pos, &sparkVel, &sparkAccel, &primYellow, &envWhite, 15, -2, 1, 3);
     }
 }
 
@@ -131,15 +129,12 @@ void SSBBThunderJolt_Draw(Actor* thisx, PlayState* play) {
     gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 230, 50, 180);
     gDPSetEnvColor(POLY_XLU_DISP++, 120, 180, 255, 128);
 
-    Matrix_SetTranslateRotateYXZ(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z,
-                                  &thisx->shape.rot);
+    Matrix_SetTranslateRotateYXZ(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, &thisx->shape.rot);
     // Pulsing scale
     f32 pulse = 1.0f + 0.2f * sinf(play->gameplayFrames * 0.3f);
-    Matrix_Scale(JOLT_RADIUS * pulse * 0.01f, JOLT_RADIUS * pulse * 0.01f,
-                 JOLT_RADIUS * pulse * 0.01f, MTXMODE_APPLY);
+    Matrix_Scale(JOLT_RADIUS * pulse * 0.01f, JOLT_RADIUS * pulse * 0.01f, JOLT_RADIUS * pulse * 0.01f, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     // Use gameplay_keep sphere DL (same as Navi's glow)
     gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
@@ -153,10 +148,7 @@ void SSBBThunderJolt_Spawn(PlayState* play, Player* player) {
     f32 yaw = (f32)player->actor.world.rot.y * (3.14159265f / 32768.0f);
     f32 spawnDist = 30.0f;
 
-    Actor_Spawn(&play->actorCtx, play,
-                ACTOR_SSBB_THUNDER_JOLT,
-                player->actor.world.pos.x + sinf(yaw) * spawnDist,
-                player->actor.world.pos.y + 25.0f,
-                player->actor.world.pos.z + cosf(yaw) * spawnDist,
-                0, player->actor.world.rot.y, 0, 0, 0);
+    Actor_Spawn(&play->actorCtx, play, ACTOR_SSBB_THUNDER_JOLT, player->actor.world.pos.x + sinf(yaw) * spawnDist,
+                player->actor.world.pos.y + 25.0f, player->actor.world.pos.z + cosf(yaw) * spawnDist, 0,
+                player->actor.world.rot.y, 0, 0, 0);
 }

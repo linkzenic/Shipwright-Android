@@ -26,14 +26,14 @@ typedef struct SSBBSkinMesh SSBBSkinMesh;
 typedef struct {
     const char* name;
     FlexSkeletonHeader* skeleton;
-    AnimationHeader** anims;        // OOT format (rotation only, for rigid path)
-    const struct SSBBAnim** ssbbAnims;     // New format (translate+rotate+scale, for skin path)
+    AnimationHeader** anims;           // OOT format (rotation only, for rigid path)
+    const struct SSBBAnim** ssbbAnims; // New format (translate+rotate+scale, for skin path)
     u16 numAnims;
     u16 numSSBBAnims;
     f32 scale;
     u8 numLimbs;
     u8 rotOrder;
-    SSBBSkinMesh* skinMesh;  // NULL = rigid limb rendering, non-NULL = weighted skinning
+    SSBBSkinMesh* skinMesh; // NULL = rigid limb rendering, non-NULL = weighted skinning
 } SSBBCharacterDef;
 
 typedef struct {

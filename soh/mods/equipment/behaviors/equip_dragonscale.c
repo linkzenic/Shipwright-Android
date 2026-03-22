@@ -18,15 +18,15 @@
 // ---------------------------------------------------------------------------
 static Gfx gfx_dragon_scale_color[] = {
     gsDPPipeSync(),
-    gsDPSetPrimColor(0, 0x80, 30, 80, 200, 180),  // Blue sapphire frame (semi-transparent)
-    gsDPSetEnvColor(10, 40, 120, 0),                // Dark blue env
+    gsDPSetPrimColor(0, 0x80, 30, 80, 200, 180), // Blue sapphire frame (semi-transparent)
+    gsDPSetEnvColor(10, 40, 120, 0),             // Dark blue env
     gsSPEndDisplayList(),
 };
 
 static Gfx gfx_dragon_scale_water_color[] = {
     gsDPPipeSync(),
-    gsDPSetPrimColor(0, 0x80, 60, 140, 255, 255),  // Bright sapphire blue interior
-    gsDPSetEnvColor(20, 80, 200, 0),                 // Blue env
+    gsDPSetPrimColor(0, 0x80, 60, 140, 255, 255), // Bright sapphire blue interior
+    gsDPSetEnvColor(20, 80, 200, 0),              // Blue env
     gsSPEndDisplayList(),
 };
 
@@ -46,12 +46,10 @@ static void DScale_DrawWaistScale(PlayState* play) {
     // Animated water texture scroll (same as GetItem_DrawScale)
     u32 frames = play->gameplayFrames;
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0,
-                                (s32)(frames * 2), -(s32)(frames * 2), 64, 64,
-                                1, (s32)(frames * 4), -(s32)(frames * 4), 32, 32));
+               Gfx_TwoTexScroll(play->state.gfxCtx, 0, (s32)(frames * 2), -(s32)(frames * 2), 64, 64, 1,
+                                (s32)(frames * 4), -(s32)(frames * 4), 32, 32));
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     // Draw: blue frame color → scale geometry → blue water color → water geometry
     gSPDisplayList(POLY_XLU_DISP++, gfx_dragon_scale_color);
@@ -111,17 +109,16 @@ static void DragonScale_Behavior(Player* player, PlayState* play) {
     }
 
     // Skip during cutscenes, death, etc.
-    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                                PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
-                                PLAYER_STATE1_GETTING_ITEM)) {
+    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
+                               PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM)) {
         if (TransformMasks_IsZoraSwimEnabled())
             TransformMasks_DragonScaleExitSwim(player);
         return;
     }
 
     // Don't override during climbing/ledge grab
-    if (player->stateFlags1 & (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE |
-                                PLAYER_STATE1_CLIMBING_LADDER)) {
+    if (player->stateFlags1 &
+        (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_CLIMBING_LADDER)) {
         if (TransformMasks_IsZoraSwimEnabled())
             TransformMasks_DragonScaleExitSwim(player);
         return;

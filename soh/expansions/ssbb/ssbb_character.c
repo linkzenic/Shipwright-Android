@@ -8,16 +8,17 @@
 static void SSBBChar_ApplyDaeToOot(void) {
     MtxF m;
     s32 i;
-    for (i = 0; i < 16; i++) ((f32*)&m)[i] = 0.0f;
+    for (i = 0; i < 16; i++)
+        ((f32*)&m)[i] = 0.0f;
     // Column-major: mf[col][row]
     // col 0: input X → output Y = -1.4899*x
     m.mf[0][1] = -1.4899f;
     // col 1: input Y → output X = +1.4899*y
-    m.mf[1][0] =  1.4899f;
+    m.mf[1][0] = 1.4899f;
     // col 2: input Z → output Z = -1.4899*z
     m.mf[2][2] = -1.4899f;
     // col 3: homogeneous
-    m.mf[3][3] =  1.0f;
+    m.mf[3][3] = 1.0f;
     Matrix_Mult(&m, MTXMODE_APPLY);
 }
 
@@ -25,7 +26,8 @@ static SSBBCharacterDef* sRegisteredChars[SSBB_MAX_CHARACTERS] = { 0 };
 static s32 sNumRegistered = 0;
 
 s32 SSBBChar_Register(SSBBCharacterDef* def) {
-    if (!def || sNumRegistered >= SSBB_MAX_CHARACTERS) return -1;
+    if (!def || sNumRegistered >= SSBB_MAX_CHARACTERS)
+        return -1;
     sRegisteredChars[sNumRegistered] = def;
     return sNumRegistered++;
 }
@@ -50,7 +52,8 @@ static void SSBBChar_GetFrameData(AnimationHeader* animHeader, s32 frame, s32 li
 }
 
 void SSBBChar_Init(SSBBCharacterInstance* inst, s32 defIndex, PlayState* play) {
-    if (!inst || defIndex < 0 || defIndex >= sNumRegistered) return;
+    if (!inst || defIndex < 0 || defIndex >= sNumRegistered)
+        return;
 
     inst->def = sRegisteredChars[defIndex];
     inst->initialized = 0;
@@ -94,11 +97,11 @@ void SSBBChar_Init(SSBBCharacterInstance* inst, s32 defIndex, PlayState* play) {
 }
 
 void SSBBChar_SetAnim(SSBBCharacterInstance* inst, u16 animIndex, f32 playSpeed) {
-    if (!inst || !inst->initialized || !inst->def) return;
+    if (!inst || !inst->initialized || !inst->def)
+        return;
 
     // Prefer SSBB format (translate+rotate+scale) if available
-    if (inst->def->ssbbAnims && animIndex < inst->def->numSSBBAnims &&
-        inst->def->ssbbAnims[animIndex]) {
+    if (inst->def->ssbbAnims && animIndex < inst->def->numSSBBAnims && inst->def->ssbbAnims[animIndex]) {
         inst->ssbbAnim = inst->def->ssbbAnims[animIndex];
         inst->animLength = (f32)inst->ssbbAnim->numFrames;
         inst->curFrame = 0.0f;
@@ -108,9 +111,11 @@ void SSBBChar_SetAnim(SSBBCharacterInstance* inst, u16 animIndex, f32 playSpeed)
     }
 
     // Fallback to OOT format (rotation only)
-    if (animIndex >= inst->def->numAnims) return;
+    if (animIndex >= inst->def->numAnims)
+        return;
     AnimationHeader* anim = inst->def->anims[animIndex];
-    if (!anim) return;
+    if (!anim)
+        return;
 
     inst->currentAnim = anim;
     inst->ssbbAnim = NULL;
@@ -121,7 +126,8 @@ void SSBBChar_SetAnim(SSBBCharacterInstance* inst, u16 animIndex, f32 playSpeed)
 }
 
 void SSBBChar_Update(SSBBCharacterInstance* inst) {
-    if (!inst || !inst->initialized) return;
+    if (!inst || !inst->initialized)
+        return;
 
     // SSBB anim: just advance frame (bone computation happens in SSBBSkin_Draw)
     if (inst->ssbbAnim) {
@@ -136,7 +142,8 @@ void SSBBChar_Update(SSBBCharacterInstance* inst) {
     }
 
     // OOT anim: decode frame data into jointTable
-    if (!inst->currentAnim || !inst->jointTable) return;
+    if (!inst->currentAnim || !inst->jointTable)
+        return;
     SSBBChar_GetFrameData(inst->currentAnim, (s32)inst->curFrame, inst->limbCount, inst->jointTable);
 
     f32 updateRate = R_UPDATE_RATE * (1.0f / 3.0f);
@@ -227,7 +234,8 @@ void SSBBChar_Draw(SSBBCharacterInstance* inst, PlayState* play, Vec3f* pos, Vec
     Vec3s* drawTable;
     Vec3s zeroTable[50];
 
-    if (!inst || !inst->initialized || !inst->def || !inst->jointTable) return;
+    if (!inst || !inst->initialized || !inst->def || !inst->jointTable)
+        return;
 
     debugMode = CVarGetInteger("gExpansions.SSBB.Pikachu", 0);
 
@@ -244,9 +252,8 @@ void SSBBChar_Draw(SSBBCharacterInstance* inst, PlayState* play, Vec3f* pos, Vec
     gDPPipeSync(POLY_OPA_DISP++);
     // Yellow base color × lighting shade (normals stored in vertex RGBA)
     gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 220, 50, 255);
-    gDPSetCombineLERP(POLY_OPA_DISP++,
-        PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE,
-        PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE);
+    gDPSetCombineLERP(POLY_OPA_DISP++, PRIMITIVE, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, PRIMITIVE, 0, SHADE, 0, 0, 0, 0,
+                      PRIMITIVE);
     gSPLoadGeometryMode(POLY_OPA_DISP++, G_ZBUFFER | G_SHADING_SMOOTH | G_LIGHTING | G_SHADE);
     gSPSegment(POLY_OPA_DISP++, 0x0C, gCullBackDList);
 

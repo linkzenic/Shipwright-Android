@@ -4203,8 +4203,7 @@ s32 Player_GetMovementSpeedAndYaw(Player* this, f32* outSpeedTarget, s16* outYaw
         // walking, running, swimming, midair — same as MM's Player_CalcSpeedAndYawFromControlStick.
         // Use IsTransformedAny() because FD skin mode returns false for IsTransformed().
         if (TransformMasks_IsTransformedAny()) {
-            extern s32 MmForm_GetCurrentForm(void);
-            s32 form = MmForm_GetCurrentForm();
+            s32 form = (s32)MmForm_GetCurrentForm();
             if (form == 0 /* FIERCE_DEITY */ || form == 5 /* PIKACHU */) {
                 *outSpeedTarget *= 1.5f;
             }
@@ -7034,8 +7033,7 @@ s32 func_8083D12C(PlayState* play, Player* this, Input* arg2) {
     // Goron/Deku void out in water. Zora uses custom fast swim instead of vanilla dive.
     // Fierce Deity and Pikachu use vanilla dive.
     if (TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode()) {
-        extern s32 MmForm_GetCurrentForm(void);
-        if (MmForm_GetCurrentForm() != 5 /* MM_PLAYER_FORM_PIKACHU */)
+        if ((s32)MmForm_GetCurrentForm() != 5 /* MM_PLAYER_FORM_PIKACHU */)
             return 0;
     }
     // Dragon Scale: block OOT dive — A button is used for fast swim instead
@@ -7178,8 +7176,7 @@ void func_8083D53C(PlayState* play, Player* this) {
                 this->underwaterTimer = 0;
             }
 
-            extern s32 MmForm_GetCurrentForm(void);
-            s32 form = MmForm_GetCurrentForm();
+            s32 form = (s32)MmForm_GetCurrentForm();
             // Zora (2), Fierce Deity (4), Pikachu (5): fall through to OOT's normal water handling
             if (form != 2 /* MM_PLAYER_FORM_ZORA */ && form != 4 /* MM_PLAYER_FORM_FIERCE_DEITY */ &&
                 form != 5 /* MM_PLAYER_FORM_PIKACHU */) {
@@ -7405,8 +7402,7 @@ void func_8083DFE0(Player* this, f32* arg1, s16* arg2) {
 
         // Fierce Deity and Pikachu: 1.5x jump velocity (matches MM FD speed boost)
         if (TransformMasks_IsTransformedAny()) {
-            extern s32 MmForm_GetCurrentForm(void);
-            s32 form = MmForm_GetCurrentForm();
+            s32 form = (s32)MmForm_GetCurrentForm();
             if (form == 0 /* FIERCE_DEITY */ || form == 5 /* PIKACHU */) {
                 maxSpeed *= 1.5f;
             }

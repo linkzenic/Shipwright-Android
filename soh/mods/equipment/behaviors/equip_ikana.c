@@ -17,7 +17,7 @@ extern void Rupees_ChangeBy(s16 rupeeChange);
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define IKANA_RUPEE_INTERVAL    30  // Passive drain: 1 rupee every N frames
+#define IKANA_RUPEE_INTERVAL 30 // Passive drain: 1 rupee every N frames
 #define IKANA_JYNXED_SPEED_MULT 0.5f
 
 // ---------------------------------------------------------------------------
@@ -41,14 +41,18 @@ static void Ikana_ApplyJynxed(Player* p, PlayState* play) {
     u16 pressA = input->press.button & BTN_A;
     u16 pressB = input->press.button & BTN_B;
     input->press.button &= ~(BTN_A | BTN_B);
-    if (pressA) input->press.button |= BTN_B;
-    if (pressB) input->press.button |= BTN_A;
+    if (pressA)
+        input->press.button |= BTN_B;
+    if (pressB)
+        input->press.button |= BTN_A;
 
     u16 curA = input->cur.button & BTN_A;
     u16 curB = input->cur.button & BTN_B;
     input->cur.button &= ~(BTN_A | BTN_B);
-    if (curA) input->cur.button |= BTN_B;
-    if (curB) input->cur.button |= BTN_A;
+    if (curA)
+        input->cur.button |= BTN_B;
+    if (curB)
+        input->cur.button |= BTN_A;
 
     // Slow movement
     p->linearVelocity *= IKANA_JYNXED_SPEED_MULT;
@@ -60,9 +64,8 @@ static void Ikana_ApplyJynxed(Player* p, PlayState* play) {
 // ---------------------------------------------------------------------------
 static void Ikana_Behavior(Player* player, PlayState* play) {
     // Skip during cutscenes, dying, etc.
-    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                                PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
-                                PLAYER_STATE1_GETTING_ITEM)) {
+    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
+                               PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM)) {
         return;
     }
 
@@ -93,9 +96,8 @@ static void Ikana_Behavior(Player* player, PlayState* play) {
             }
             Rupees_ChangeBy(-rupeeCost);
 
-            Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_BOUND, &player->actor.world.pos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_BOUND, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         }
     }
 }

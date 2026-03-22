@@ -20,15 +20,15 @@
 // ---------------------------------------------------------------------------
 // Constants (adapted from EnGanonMant for Link's scale)
 // ---------------------------------------------------------------------------
-#define CAPE_NUM_JOINTS  12
+#define CAPE_NUM_JOINTS 12
 #define CAPE_NUM_STRANDS 12
 #define CAPE_JOINT_LENGTH 4.5f
-#define CAPE_GRAVITY     -3.0f
-#define CAPE_BACK_PUSH   -4.0f
-#define CAPE_MIN_DIST    8.0f
-#define CAPE_MIN_Y_OFFSET -200.0f  // Below actor pos
-#define CAPE_TEX_WIDTH   32
-#define CAPE_TEX_HEIGHT  64
+#define CAPE_GRAVITY -3.0f
+#define CAPE_BACK_PUSH -4.0f
+#define CAPE_MIN_DIST 8.0f
+#define CAPE_MIN_Y_OFFSET -200.0f // Below actor pos
+#define CAPE_TEX_WIDTH 32
+#define CAPE_TEX_HEIGHT 64
 
 // ---------------------------------------------------------------------------
 // Strand struct (same as MantStrand from z_en_ganon_mant.h)
@@ -71,11 +71,10 @@ static f32 sCapeDistMult[CAPE_NUM_JOINTS] = {
 };
 
 // Vertex mapping (same as EnGanonMant)
-#define CAPE_MAP_STRAND(n) \
-    (n) + CAPE_NUM_JOINTS * 0,  (n) + CAPE_NUM_JOINTS * 1,  (n) + CAPE_NUM_JOINTS * 2, \
-    (n) + CAPE_NUM_JOINTS * 3,  (n) + CAPE_NUM_JOINTS * 4,  (n) + CAPE_NUM_JOINTS * 5, \
-    (n) + CAPE_NUM_JOINTS * 6,  (n) + CAPE_NUM_JOINTS * 7,  (n) + CAPE_NUM_JOINTS * 8, \
-    (n) + CAPE_NUM_JOINTS * 9,  (n) + CAPE_NUM_JOINTS * 10, (n) + CAPE_NUM_JOINTS * 11
+#define CAPE_MAP_STRAND(n)                                                                                          \
+    (n) + CAPE_NUM_JOINTS * 0, (n) + CAPE_NUM_JOINTS * 1, (n) + CAPE_NUM_JOINTS * 2, (n) + CAPE_NUM_JOINTS * 3,     \
+        (n) + CAPE_NUM_JOINTS * 4, (n) + CAPE_NUM_JOINTS * 5, (n) + CAPE_NUM_JOINTS * 6, (n) + CAPE_NUM_JOINTS * 7, \
+        (n) + CAPE_NUM_JOINTS * 8, (n) + CAPE_NUM_JOINTS * 9, (n) + CAPE_NUM_JOINTS * 10, (n) + CAPE_NUM_JOINTS * 11
 
 static u16 sCapeVerticesMap[CAPE_NUM_STRANDS * CAPE_NUM_JOINTS] = {
     CAPE_MAP_STRAND(11), CAPE_MAP_STRAND(10), CAPE_MAP_STRAND(9), CAPE_MAP_STRAND(8),
@@ -184,10 +183,8 @@ static void MagicCape_CaptureShoulderPos(s32 limbIndex) {
 // ---------------------------------------------------------------------------
 // Update single strand (adapted from EnGanonMant_UpdateStrand)
 // ---------------------------------------------------------------------------
-static void MagicCape_UpdateStrand(Vec3f* actorPos, f32 actorRotY,
-                                   Vec3f* root, Vec3f* pos, Vec3f* nextPos,
-                                   Vec3f* rot, Vec3f* vel, s16 strandNum,
-                                   f32 backSwayMag, f32 sideSwayMag, f32 minY) {
+static void MagicCape_UpdateStrand(Vec3f* actorPos, f32 actorRotY, Vec3f* root, Vec3f* pos, Vec3f* nextPos, Vec3f* rot,
+                                   Vec3f* vel, s16 strandNum, f32 backSwayMag, f32 sideSwayMag, f32 minY) {
     s16 i;
     f32 x, y, z;
     f32 yaw;
@@ -211,14 +208,12 @@ static void MagicCape_UpdateStrand(Vec3f* actorPos, f32 actorRotY,
             // Back push + sway
             delta.x = 0;
             delta.y = 0;
-            delta.z = (CAPE_BACK_PUSH + (sinf((strandNum * (2 * M_PI)) / 2.1f) * backSwayMag)) *
-                      sCapeBackSwayCoeff[i];
+            delta.z = (CAPE_BACK_PUSH + (sinf((strandNum * (2 * M_PI)) / 2.1f) * backSwayMag)) * sCapeBackSwayCoeff[i];
             Matrix_RotateY(sCapeBaseYaw, MTXMODE_NEW);
             Matrix_MultVec3f(&delta, &backSwayOffset);
 
             // Side sway
-            delta.x = cosf((strandNum * M_PI) / (CAPE_NUM_STRANDS - 1.0f)) * sideSwayMag *
-                      sCapeSideSwayCoeff[i];
+            delta.x = cosf((strandNum * M_PI) / (CAPE_NUM_STRANDS - 1.0f)) * sideSwayMag * sCapeSideSwayCoeff[i];
             delta.z = 0;
             Matrix_MultVec3f(&delta, &sideSwayOffset);
 
@@ -274,12 +269,18 @@ static void MagicCape_UpdateStrand(Vec3f* actorPos, f32 actorRotY,
             vel->z = (pos->z - z) * 0.8f;
 
             // Clamp velocity
-            if (vel->x > 5.0f) vel->x = 5.0f;
-            else if (vel->x < -5.0f) vel->x = -5.0f;
-            if (vel->y > 5.0f) vel->y = 5.0f;
-            else if (vel->y < -5.0f) vel->y = -5.0f;
-            if (vel->z > 5.0f) vel->z = 5.0f;
-            else if (vel->z < -5.0f) vel->z = -5.0f;
+            if (vel->x > 5.0f)
+                vel->x = 5.0f;
+            else if (vel->x < -5.0f)
+                vel->x = -5.0f;
+            if (vel->y > 5.0f)
+                vel->y = 5.0f;
+            else if (vel->y < -5.0f)
+                vel->y = -5.0f;
+            if (vel->z > 5.0f)
+                vel->z = 5.0f;
+            else if (vel->z < -5.0f)
+                vel->z = -5.0f;
 
             // Update angle
             xDiff = pos->x - nextPos->x;
@@ -382,14 +383,10 @@ static void MagicCape_Draw(Player* player, PlayState* play) {
                 nextStrandIdx = strandIdx - 1;
             }
 
-            MagicCape_UpdateStrand(
-                &player->actor.world.pos, player->actor.shape.rot.y,
-                &sCapeStrands[strandIdx].root,
-                sCapeStrands[strandIdx].joints,
-                sCapeStrands[nextStrandIdx].joints,
-                sCapeStrands[strandIdx].rotations,
-                sCapeStrands[strandIdx].velocities,
-                strandIdx, backSwayMag, sideSwayMag, minY);
+            MagicCape_UpdateStrand(&player->actor.world.pos, player->actor.shape.rot.y, &sCapeStrands[strandIdx].root,
+                                   sCapeStrands[strandIdx].joints, sCapeStrands[nextStrandIdx].joints,
+                                   sCapeStrands[strandIdx].rotations, sCapeStrands[strandIdx].velocities, strandIdx,
+                                   backSwayMag, sideSwayMag, minY);
 
             Matrix_Pop();
         }
@@ -404,8 +401,7 @@ static void MagicCape_Draw(Player* player, PlayState* play) {
     gSPInvalidateTexCache(POLY_OPA_DISP++, sCapeMaskTex);
 
     Matrix_Translate(0.0f, 0.0f, 0.0f, MTXMODE_NEW);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     gSPDisplayList(POLY_OPA_DISP++, gMantMaterialDL);
 
@@ -435,8 +431,8 @@ static void MagicCape_Cleanup(void) {
 // ---------------------------------------------------------------------------
 static void MagicCape_Behavior(Player* player, PlayState* play) {
     // Skip during cutscenes
-    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                                PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS)) {
+    if (player->stateFlags1 &
+        (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS)) {
         if (sCapeInitialized) {
             MagicCape_Reset();
         }

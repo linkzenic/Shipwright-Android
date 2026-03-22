@@ -7,7 +7,7 @@
 // 0 = off, 1 = rest pose (DL only), 2 = animated (Wait3)
 #define CVAR_SSBB_PIKACHU "gExpansions.SSBB.Pikachu"
 
-#define SSBB_PIKACHU_OFF  0
+#define SSBB_PIKACHU_OFF 0
 #define SSBB_PIKACHU_REST 1
 #define SSBB_PIKACHU_ANIM 2
 

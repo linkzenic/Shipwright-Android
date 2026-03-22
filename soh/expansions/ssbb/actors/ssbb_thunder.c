@@ -11,18 +11,18 @@
 #include "ssbb_thunder.h"
 #include "z64.h"
 
-#define THUNDER_LIFETIME 45      // ~0.75 seconds
-#define THUNDER_CHARGE_FRAMES 8  // Frames before bolt appears
-#define THUNDER_BOLT_FRAMES 25   // Active damage frames
-#define THUNDER_FADE_FRAMES 12   // Fade out
+#define THUNDER_LIFETIME 45     // ~0.75 seconds
+#define THUNDER_CHARGE_FRAMES 8 // Frames before bolt appears
+#define THUNDER_BOLT_FRAMES 25  // Active damage frames
+#define THUNDER_FADE_FRAMES 12  // Fade out
 #define THUNDER_RADIUS 90
-#define THUNDER_HEIGHT 400       // Tall column
-#define THUNDER_DAMAGE 16        // Strong — light arrow equivalent
+#define THUNDER_HEIGHT 400 // Tall column
+#define THUNDER_DAMAGE 16  // Strong — light arrow equivalent
 
 static ColliderCylinderInit sThunderColliderInit = {
     {
         COLTYPE_NONE,
-        AT_ON | AT_TYPE_ALL,   // AT_TYPE_ALL so it hits walls/crates too
+        AT_ON | AT_TYPE_ALL, // AT_TYPE_ALL so it hits walls/crates too
         AC_NONE,
         OC1_NONE,
         OC2_NONE,
@@ -30,7 +30,7 @@ static ColliderCylinderInit sThunderColliderInit = {
     },
     {
         ELEMTYPE_UNK0,
-        { 0x200E3048, 0x00, 0x00 },  // EXPLOSIVE + ARROW_LIGHT + MAGIC_ALL + UNBLOCKABLE
+        { 0x200E3048, 0x00, 0x00 }, // EXPLOSIVE + ARROW_LIGHT + MAGIC_ALL + UNBLOCKABLE
         { 0x00000000, 0x00, 0x00 },
         TOUCH_ON | TOUCH_SFX_HARD,
         BUMP_NONE,
@@ -105,8 +105,7 @@ void SSBBThunder_Update(Actor* thisx, PlayState* play) {
             particlePos.z = thisx->world.pos.z + Math_CosS((s16)angle) * (THUNDER_RADIUS * 0.7f);
 
             Vec3f upVel = { 0, 8.0f, 0 };
-            EffectSsBlast_Spawn(play, &particlePos, &upVel, &zero,
-                                &primYellow, &envWhite, 30, -3, 2, 5);
+            EffectSsBlast_Spawn(play, &particlePos, &upVel, &zero, &primYellow, &envWhite, 30, -3, 2, 5);
         }
     }
 
@@ -122,7 +121,8 @@ void SSBBThunder_Update(Actor* thisx, PlayState* play) {
 void SSBBThunder_Draw(Actor* thisx, PlayState* play) {
     SSBBThunder* this = (SSBBThunder*)thisx;
 
-    if (this->columnHeight < 1.0f) return;
+    if (this->columnHeight < 1.0f)
+        return;
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -135,15 +135,13 @@ void SSBBThunder_Draw(Actor* thisx, PlayState* play) {
     gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 240, 100, alpha);
     gDPSetEnvColor(POLY_XLU_DISP++, 255, 255, 200, alpha / 2);
 
-    Matrix_SetTranslateRotateYXZ(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z,
-                                  &thisx->shape.rot);
+    Matrix_SetTranslateRotateYXZ(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, &thisx->shape.rot);
     // Scale cylinder to match column dimensions
     f32 radiusScale = THUNDER_RADIUS * 0.01f;
     f32 heightScale = this->columnHeight * 0.01f;
     Matrix_Scale(radiusScale, heightScale, radiusScale, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
 
     // Inner bright core (narrower, brighter)
@@ -151,11 +149,9 @@ void SSBBThunder_Draw(Actor* thisx, PlayState* play) {
         gDPPipeSync(POLY_XLU_DISP++);
         gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 255);
 
-        Matrix_SetTranslateRotateYXZ(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z,
-                                      &thisx->shape.rot);
+        Matrix_SetTranslateRotateYXZ(thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z, &thisx->shape.rot);
         Matrix_Scale(radiusScale * 0.3f, heightScale, radiusScale * 0.3f, MTXMODE_APPLY);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                  G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
     }
 
@@ -163,10 +159,6 @@ void SSBBThunder_Draw(Actor* thisx, PlayState* play) {
 }
 
 void SSBBThunder_Spawn(PlayState* play, Player* player) {
-    Actor_Spawn(&play->actorCtx, play,
-                ACTOR_SSBB_THUNDER,
-                player->actor.world.pos.x,
-                player->actor.world.pos.y,
-                player->actor.world.pos.z,
-                0, 0, 0, 0, 0);
+    Actor_Spawn(&play->actorCtx, play, ACTOR_SSBB_THUNDER, player->actor.world.pos.x, player->actor.world.pos.y,
+                player->actor.world.pos.z, 0, 0, 0, 0, 0);
 }

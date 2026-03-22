@@ -10,9 +10,9 @@
 typedef struct SSBBThunderJolt {
     Actor actor;
     ColliderSphere collider;
-    s16 timer;              // Lifetime countdown (frames)
-    f32 bounceVelY;         // Current vertical velocity for bouncing
-    u8 hitSomething;        // Set when collider registers AT hit
+    s16 timer;       // Lifetime countdown (frames)
+    f32 bounceVelY;  // Current vertical velocity for bouncing
+    u8 hitSomething; // Set when collider registers AT hit
 } SSBBThunderJolt;
 
 void SSBBThunderJolt_Init(Actor* thisx, PlayState* play);

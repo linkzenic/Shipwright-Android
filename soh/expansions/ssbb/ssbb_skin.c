@@ -11,7 +11,8 @@ static MtxF sCombinedMatrices[SSBB_MAX_SKIN_BONES];
 void SSBBSkin_Init(SSBBSkinMesh* skin) {
     s32 size;
 
-    if (!skin) return;
+    if (!skin)
+        return;
 
     size = skin->vertexCount * sizeof(Vtx);
     skin->vtxBuf[0] = ZELDA_ARENA_MALLOC_DEBUG(size);
@@ -34,15 +35,22 @@ void SSBBSkin_Init(SSBBSkinMesh* skin) {
             vtx0->n.n[0] = vtx1->n.n[0] = 0;
             vtx0->n.n[1] = vtx1->n.n[1] = 0;
             vtx0->n.n[2] = vtx1->n.n[2] = 0;
-            vtx0->n.a    = vtx1->n.a    = sv->alpha;
+            vtx0->n.a = vtx1->n.a = sv->alpha;
         }
     }
 }
 
 void SSBBSkin_Destroy(SSBBSkinMesh* skin) {
-    if (!skin) return;
-    if (skin->vtxBuf[0]) { ZELDA_ARENA_FREE_DEBUG(skin->vtxBuf[0]); skin->vtxBuf[0] = NULL; }
-    if (skin->vtxBuf[1]) { ZELDA_ARENA_FREE_DEBUG(skin->vtxBuf[1]); skin->vtxBuf[1] = NULL; }
+    if (!skin)
+        return;
+    if (skin->vtxBuf[0]) {
+        ZELDA_ARENA_FREE_DEBUG(skin->vtxBuf[0]);
+        skin->vtxBuf[0] = NULL;
+    }
+    if (skin->vtxBuf[1]) {
+        ZELDA_ARENA_FREE_DEBUG(skin->vtxBuf[1]);
+        skin->vtxBuf[1] = NULL;
+    }
 }
 
 // ── Build local bone matrix: T(pos) × R(euler_ZYX) × S(scale) ──
@@ -59,7 +67,8 @@ static void SSBBSkin_BuildLocalMatrix(const SSBBBoneFrame* bf, MtxF* out) {
     f32 cz = cosf(rz), sz = sinf(rz);
     s32 i;
 
-    for (i = 0; i < 16; i++) ((f32*)out)[i] = 0.0f;
+    for (i = 0; i < 16; i++)
+        ((f32*)out)[i] = 0.0f;
 
     // R(ZYX) × S — combined rotation+scale in column-major mf[col][row]
     out->mf[0][0] = cy * cz * bf->sx;
@@ -85,9 +94,8 @@ static void SSBBSkin_BuildLocalMatrix(const SSBBBoneFrame* bf, MtxF* out) {
 // Uses SkinMatrix_MtxFMtxFMult directly to avoid FrameInterpolation interference.
 // Matches Three.js: bone.matrixWorld = parent.matrixWorld × bone.localMatrix
 
-static void SSBBSkin_ComputeBoneMatricesFromAnim(void** skeleton, const struct SSBBAnim* anim,
-                                                  u16 frame, MtxF* parentWorld,
-                                                  u8 limbIdx, s32 numLimbs) {
+static void SSBBSkin_ComputeBoneMatricesFromAnim(void** skeleton, const struct SSBBAnim* anim, u16 frame,
+                                                 MtxF* parentWorld, u8 limbIdx, s32 numLimbs) {
     StandardLimb* limb;
     const SSBBBoneFrame* bf;
     MtxF localMat;
@@ -119,7 +127,8 @@ static void SSBBSkin_ComputeBoneMatricesFromAnim(void** skeleton, const struct S
     } else {
         // Identity if no animation data
         s32 i;
-        for (i = 0; i < 16; i++) ((f32*)&localMat)[i] = 0.0f;
+        for (i = 0; i < 16; i++)
+            ((f32*)&localMat)[i] = 0.0f;
         localMat.mf[0][0] = localMat.mf[1][1] = localMat.mf[2][2] = localMat.mf[3][3] = 1.0f;
     }
 
@@ -127,12 +136,10 @@ static void SSBBSkin_ComputeBoneMatricesFromAnim(void** skeleton, const struct S
     SkinMatrix_MtxFMtxFMult(parentWorld, &localMat, &sBoneWorldMatrices[limbIdx]);
 
     // Children inherit this bone's world matrix
-    SSBBSkin_ComputeBoneMatricesFromAnim(skeleton, anim, frame,
-                                          &sBoneWorldMatrices[limbIdx], limb->child, numLimbs);
+    SSBBSkin_ComputeBoneMatricesFromAnim(skeleton, anim, frame, &sBoneWorldMatrices[limbIdx], limb->child, numLimbs);
 
     // Siblings inherit PARENT's world matrix
-    SSBBSkin_ComputeBoneMatricesFromAnim(skeleton, anim, frame,
-                                          parentWorld, limb->sibling, numLimbs);
+    SSBBSkin_ComputeBoneMatricesFromAnim(skeleton, anim, frame, parentWorld, limb->sibling, numLimbs);
 }
 
 // ── Blend Vertices ──────────────────────────────────────────────────────────
@@ -142,7 +149,8 @@ static void SSBBSkin_BlendVertices(SSBBSkinMesh* skin) {
     s32 v;
     s32 j;
 
-    if (!skin->vtxBuf[0] || !skin->vtxBuf[1]) return;
+    if (!skin->vtxBuf[0] || !skin->vtxBuf[1])
+        return;
 
     vtxBuf = skin->vtxBuf[skin->bufIndex];
 
@@ -171,7 +179,8 @@ static void SSBBSkin_BlendVertices(SSBBSkinMesh* skin) {
         blendedNorm.x = blendedNorm.y = blendedNorm.z = 0.0f;
 
         for (j = 0; j < SSBB_MAX_INFLUENCES; j++) {
-            if (sw->weight[j] == 0) break;
+            if (sw->weight[j] == 0)
+                break;
 
             w = sw->weight[j] * (1.0f / 255.0f);
 
@@ -202,9 +211,7 @@ static void SSBBSkin_BlendVertices(SSBBSkinMesh* skin) {
         vtxBuf[v].n.ob[1] = (s16)blendedPos.y;
         vtxBuf[v].n.ob[2] = (s16)blendedPos.z;
 
-        len = sqrtf(blendedNorm.x * blendedNorm.x +
-                     blendedNorm.y * blendedNorm.y +
-                     blendedNorm.z * blendedNorm.z);
+        len = sqrtf(blendedNorm.x * blendedNorm.x + blendedNorm.y * blendedNorm.y + blendedNorm.z * blendedNorm.z);
         if (len > 0.001f) {
             vtxBuf[v].n.n[0] = (s8)(blendedNorm.x / len * 127.0f);
             vtxBuf[v].n.n[1] = (s8)(blendedNorm.y / len * 127.0f);
@@ -223,11 +230,14 @@ void SSBBSkin_Draw(SSBBCharacterInstance* inst, PlayState* play, Vec3f* pos, Vec
     s32 b;
     Mtx* worldMtx;
 
-    if (!inst || !inst->initialized || !inst->def || !inst->def->skinMesh) return;
+    if (!inst || !inst->initialized || !inst->def || !inst->def->skinMesh)
+        return;
 
     skin = inst->def->skinMesh;
-    if (!skin->vtxBuf[0] || !skin->vtxBuf[1]) return;
-    if (!inst->ssbbAnim) return;
+    if (!skin->vtxBuf[0] || !skin->vtxBuf[1])
+        return;
+    if (!inst->ssbbAnim)
+        return;
 
     // ── 1. Compute bone matrices from SSBBAnim (translate + rotate + scale) ──
     {
@@ -239,7 +249,8 @@ void SSBBSkin_Draw(SSBBCharacterInstance* inst, PlayState* play, Vec3f* pos, Vec
             // If this looks wrong, the issue is in vertex data or DL generation.
             MtxF identity;
             s32 i;
-            for (i = 0; i < 16; i++) ((f32*)&identity)[i] = 0.0f;
+            for (i = 0; i < 16; i++)
+                ((f32*)&identity)[i] = 0.0f;
             identity.mf[0][0] = identity.mf[1][1] = identity.mf[2][2] = identity.mf[3][3] = 1.0f;
             for (b = 0; b < skin->boneCount; b++) {
                 sCombinedMatrices[b] = identity;
@@ -250,9 +261,8 @@ void SSBBSkin_Draw(SSBBCharacterInstance* inst, PlayState* play, Vec3f* pos, Vec
             if (frame >= inst->ssbbAnim->numFrames)
                 frame = inst->ssbbAnim->numFrames - 1;
 
-            SSBBSkin_ComputeBoneMatricesFromAnim(inst->skeleton, inst->ssbbAnim,
-                                                  frame, &skin->daeToF64,
-                                                  0, inst->def->numLimbs);
+            SSBBSkin_ComputeBoneMatricesFromAnim(inst->skeleton, inst->ssbbAnim, frame, &skin->daeToF64, 0,
+                                                 inst->def->numLimbs);
 
             for (b = 0; b < skin->boneCount; b++) {
                 SkinMatrix_MtxFMtxFMult(&sBoneWorldMatrices[b], &skin->invBindMatrices[b], &sCombinedMatrices[b]);

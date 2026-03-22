@@ -293,7 +293,7 @@ typedef enum PlayerModelGroup {
     /* 0x00 */ PLAYER_MODELGROUP_0,                   // unused (except for a bug in `Player_OverrideLimbDrawPause`)
     /* 0x01 */ PLAYER_MODELGROUP_CHILD_HYLIAN_SHIELD, // hold sword only. used for holding sword only as child link with
                                                       // hylian shield equipped
-    /* 0x02 */ PLAYER_MODELGROUP_SWORD_AND_SHIELD, // hold sword and shield or just sword if no shield is equipped
+    /* 0x02 */ PLAYER_MODELGROUP_SWORD_AND_SHIELD,    // hold sword and shield or just sword if no shield is equipped
     /* 0x03 */ PLAYER_MODELGROUP_DEFAULT,       // non-specific models, for items that don't have particular link models
     /* 0x04 */ PLAYER_MODELGROUP_4,             // unused, same as PLAYER_MODELGROUP_DEFAULT
     /* 0x05 */ PLAYER_MODELGROUP_BGS,           // biggoron sword

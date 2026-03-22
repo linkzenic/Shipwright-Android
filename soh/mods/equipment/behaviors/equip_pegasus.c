@@ -17,14 +17,14 @@
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define PEGASUS_WINDUP_FRAMES   10
-#define PEGASUS_DASH_SPEED      18.0f
-#define PEGASUS_BONK_FRAMES     20
-#define PEGASUS_BONK_RECOIL     -6.0f
-#define PEGASUS_MAGIC_INTERVAL  15   // Drain 1 MP every N frames
-#define PEGASUS_COL_RADIUS      50
-#define PEGASUS_COL_HEIGHT      80
-#define PEGASUS_COL_FORWARD     40.0f // Collider offset in front of Link
+#define PEGASUS_WINDUP_FRAMES 10
+#define PEGASUS_DASH_SPEED 18.0f
+#define PEGASUS_BONK_FRAMES 20
+#define PEGASUS_BONK_RECOIL -6.0f
+#define PEGASUS_MAGIC_INTERVAL 15 // Drain 1 MP every N frames
+#define PEGASUS_COL_RADIUS 50
+#define PEGASUS_COL_HEIGHT 80
+#define PEGASUS_COL_FORWARD 40.0f // Collider offset in front of Link
 
 // Stab pose: hardcoded upper body joint rotations matching BGS forward thrust.
 // Values in s16 (0x4000 = 90 degrees). Only upper body is overridden;
@@ -35,17 +35,15 @@
 // ---------------------------------------------------------------------------
 static ColliderCylinder sPegasusCol;
 
-static ColliderCylinderInit sPegasusColInit = {
-    { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE,
-      OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
-    { ELEMTYPE_UNK2,
-      { 0x00000100, 0x00, 0x04 }, // DMG_SLASH, 4 damage
-      { 0, 0, 0 },
-      TOUCH_ON | TOUCH_SFX_NORMAL,
-      BUMP_NONE,
-      OCELEM_NONE },
-    { PEGASUS_COL_RADIUS, PEGASUS_COL_HEIGHT, 0, { 0, 0, 0 } }
-};
+static ColliderCylinderInit sPegasusColInit = { { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE, OC1_NONE, OC2_NONE,
+                                                  COLSHAPE_CYLINDER },
+                                                { ELEMTYPE_UNK2,
+                                                  { 0x00000100, 0x00, 0x04 }, // DMG_SLASH, 4 damage
+                                                  { 0, 0, 0 },
+                                                  TOUCH_ON | TOUCH_SFX_NORMAL,
+                                                  BUMP_NONE,
+                                                  OCELEM_NONE },
+                                                { PEGASUS_COL_RADIUS, PEGASUS_COL_HEIGHT, 0, { 0, 0, 0 } } };
 
 static void Pegasus_InitCollider(PlayState* play, Player* p) {
     if (gExtEquipBehavior.pegasusColInit)
@@ -68,9 +66,8 @@ static void Pegasus_UpdateCollider(PlayState* play, Player* p) {
 
     // Check and clear hit
     if (sPegasusCol.base.atFlags & AT_HIT) {
-        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &p->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         sPegasusCol.base.atFlags &= ~AT_HIT;
     }
 }
@@ -94,8 +91,8 @@ static void Pegasus_Stop(Player* p) {
 // ---------------------------------------------------------------------------
 static void Pegasus_ApplyPose(Player* p, PlayState* play) {
     // Load BGS stab frame 2 into upperJointTable (async — ready next frame)
-    AnimationContext_SetLoadFrame(play, &gPlayerAnim_link_fighter_Lpierce_kiru, 2,
-                                  p->skelAnime.limbCount, p->upperJointTable);
+    AnimationContext_SetLoadFrame(play, &gPlayerAnim_link_fighter_Lpierce_kiru, 2, p->skelAnime.limbCount,
+                                  p->upperJointTable);
 
     // Copy upper body joints from upperJointTable (loaded previous frame) into jointTable
     // Lower body (ROOT=1, WAIST=2, LOWER=3, thighs=4/7, shins=5/8, feet=6/9) keeps run_free
@@ -138,9 +135,8 @@ static void Pegasus_StateIdle(Player* p, PlayState* play) {
 
         // Stab pose applied per-frame in Pegasus_StateRunning
 
-        Audio_PlaySoundGeneral(NA_SE_PL_WALK_GROUND, &p->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_PL_WALK_GROUND, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -168,9 +164,8 @@ static void Pegasus_StateWindup(Player* p, PlayState* play) {
 
         Pegasus_InitCollider(play, p);
 
-        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &p->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -206,9 +201,8 @@ static void Pegasus_StateRunning(Player* p, PlayState* play) {
     // The skeleton plays this animation for ALL limbs, then ApplyPose
     // overrides only the upper body limbs — legs stay running
     if (p->skelAnime.animation != &gPlayerAnim_link_normal_run_free) {
-        LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_normal_run_free,
-                             1.5f, 0.0f, Animation_GetLastFrame(&gPlayerAnim_link_normal_run_free),
-                             ANIMMODE_LOOP, -6.0f);
+        LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_normal_run_free, 1.5f, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_normal_run_free), ANIMMODE_LOOP, -6.0f);
     }
 
     // Apply stab pose on upper body (lower body keeps running anim)
@@ -272,9 +266,8 @@ static void Pegasus_StateRunning(Player* p, PlayState* play) {
         if (doBonk) {
             // Bonk: play hip_down animation, reverse velocity, quake, sounds
             // (exact roll bonk from z_player.c:10079-10088)
-            LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_normal_hip_down_free,
-                                 1.0f, 0.0f, Animation_GetLastFrame(&gPlayerAnim_link_normal_hip_down_free),
-                                 ANIMMODE_ONCE, -6.0f);
+            LinkAnimation_Change(play, &p->skelAnime, &gPlayerAnim_link_normal_hip_down_free, 1.0f, 0.0f,
+                                 Animation_GetLastFrame(&gPlayerAnim_link_normal_hip_down_free), ANIMMODE_ONCE, -6.0f);
 
             p->linearVelocity = -p->linearVelocity;
             p->stateFlags1 &= ~PLAYER_STATE1_CHARGING_SPIN_ATTACK;
@@ -284,12 +277,10 @@ static void Pegasus_StateRunning(Player* p, PlayState* play) {
             func_800AA000(255.0f, 20, 150, 0);
 
             // Bonk sounds
-            Audio_PlaySoundGeneral(NA_SE_PL_BODY_HIT, &p->actor.world.pos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
-            Audio_PlaySoundGeneral(NA_SE_VO_LI_CLIMB_END, &p->actor.world.pos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_PL_BODY_HIT, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_VO_LI_CLIMB_END, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
             gExtEquipBehavior.pegasusState = PEGASUS_BONK;
             gExtEquipBehavior.pegasusTimer = 0; // Timer not used — wait for anim to finish
@@ -323,30 +314,28 @@ extern char sWindEffTexture[];
 // ---------------------------------------------------------------------------
 static Vtx sPegasusConeFrontVtx[] = {
     // 0: Tip (front, converges to a point)
-    VTX(0,     0,    0,  512, 2048, 0xFF, 0xFF, 0xFF, 0xFF),
+    VTX(0, 0, 0, 512, 2048, 0xFF, 0xFF, 0xFF, 0xFF),
     // 1-8: Base ring (behind Link, radius 4000)
-    VTX( 4000, 8000,    0,    0,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX( 2828, 8000, 2828,  256,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX(    0, 8000, 4000,  512,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX(-2828, 8000, 2828,  768,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX(-4000, 8000,    0, 1024,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX(-2828, 8000,-2828, 1280,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX(    0, 8000,-4000, 1536,    0, 0xFF, 0xFF, 0xFF, 0x00),
-    VTX( 2828, 8000,-2828, 1792,    0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(4000, 8000, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(2828, 8000, 2828, 256, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(0, 8000, 4000, 512, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(-2828, 8000, 2828, 768, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(-4000, 8000, 0, 1024, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(-2828, 8000, -2828, 1280, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(0, 8000, -4000, 1536, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(2828, 8000, -2828, 1792, 0, 0xFF, 0xFF, 0xFF, 0x00),
 };
 
 static Gfx gfx_pegasus_cone[] = {
     gsDPPipeSync(),
     gsDPSetTextureLUT(G_TT_NONE),
     gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON),
-    gsDPLoadTextureBlock(sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
-                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP,
-                         6, 6, G_TX_NOLOD, G_TX_NOLOD),
-    gsDPLoadMultiBlock(sWindEffTexture, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
-                       G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP,
-                       6, 6, 14, 14),
-    gsDPSetCombineLERP(TEXEL1, PRIMITIVE, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0,
-                       PRIMITIVE, ENVIRONMENT, COMBINED, ENVIRONMENT, COMBINED, 0, SHADE, 0),
+    gsDPLoadTextureBlock(sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                         G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD),
+    gsDPLoadMultiBlock(sWindEffTexture, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                       G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 14, 14),
+    gsDPSetCombineLERP(TEXEL1, PRIMITIVE, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0, PRIMITIVE,
+                       ENVIRONMENT, COMBINED, ENVIRONMENT, COMBINED, 0, SHADE, 0),
     gsDPSetRenderMode(G_RM_PASS, G_RM_AA_ZB_XLU_SURF2),
     gsSPClearGeometryMode(G_CULL_BACK | G_FOG | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR),
     gsDPSetPrimColor(0, 0x80, 255, 255, 170, 255),
@@ -380,8 +369,7 @@ static void Pegasus_Draw(Player* p, PlayState* play) {
     // Position at Link's chest height, cone tip far in front
     f32 sinY = Math_SinS(p->actor.shape.rot.y);
     f32 cosY = Math_CosS(p->actor.shape.rot.y);
-    Matrix_Translate(p->actor.world.pos.x + sinY * 80.0f,
-                     p->actor.world.pos.y + 40.0f,
+    Matrix_Translate(p->actor.world.pos.x + sinY * 80.0f, p->actor.world.pos.y + 40.0f,
                      p->actor.world.pos.z + cosY * 80.0f, MTXMODE_NEW);
     Matrix_RotateY(BINANG_TO_RAD(p->actor.shape.rot.y), MTXMODE_APPLY);
     // Tip points forward
@@ -390,15 +378,13 @@ static void Pegasus_Draw(Player* p, PlayState* play) {
     f32 scale = 0.015f;
     Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     // Animated texture scroll (same as wind spell)
     u32 frames = play->gameplayFrames;
     gSPSegment(POLY_XLU_DISP++, 0x08,
-               Gfx_TwoTexScroll(play->state.gfxCtx, 0,
-                                -(s32)(frames * 1), (s32)(frames * 20), 0x40, 0x40,
-                                1, -(s32)(frames * 2), (s32)(frames * 10), 0x40, 0x40));
+               Gfx_TwoTexScroll(play->state.gfxCtx, 0, -(s32)(frames * 1), (s32)(frames * 20), 0x40, 0x40, 1,
+                                -(s32)(frames * 2), (s32)(frames * 10), 0x40, 0x40));
 
     gSPDisplayList(POLY_XLU_DISP++, gfx_pegasus_cone);
 
@@ -410,10 +396,10 @@ static void Pegasus_Draw(Player* p, PlayState* play) {
 // ---------------------------------------------------------------------------
 // Anklet pendulum physics (wing charm swings with movement)
 // ---------------------------------------------------------------------------
-#define PEGASUS_PENDULUM_GRAVITY  0.015f
-#define PEGASUS_PENDULUM_DAMPING  0.92f
-#define PEGASUS_PENDULUM_ACCEL    0.003f
-#define PEGASUS_PENDULUM_MAX      0.6f   // Max swing angle (radians, ~34 degrees)
+#define PEGASUS_PENDULUM_GRAVITY 0.015f
+#define PEGASUS_PENDULUM_DAMPING 0.92f
+#define PEGASUS_PENDULUM_ACCEL 0.003f
+#define PEGASUS_PENDULUM_MAX 0.6f // Max swing angle (radians, ~34 degrees)
 
 static void Pegasus_UpdateWingPhysics(Player* player) {
     f32 accel = player->actor.speedXZ * PEGASUS_PENDULUM_ACCEL;
@@ -437,23 +423,23 @@ static void Pegasus_UpdateWingPhysics(Player* player) {
 static Vtx sAnkletTorusVtx[] = {
     // 16-segment torus: outer ring (radius 300, tube radius 40)
     // Top ring (y=40)
-    VTX(300,  40,   0, 0, 0, 0, 127, 0, 255),
-    VTX(212,  40, 212, 0, 0, 0, 127, 0, 255),
-    VTX(  0,  40, 300, 0, 0, 0, 127, 0, 255),
+    VTX(300, 40, 0, 0, 0, 0, 127, 0, 255),
+    VTX(212, 40, 212, 0, 0, 0, 127, 0, 255),
+    VTX(0, 40, 300, 0, 0, 0, 127, 0, 255),
     VTX(-212, 40, 212, 0, 0, 0, 127, 0, 255),
-    VTX(-300, 40,   0, 0, 0, 0, 127, 0, 255),
-    VTX(-212, 40,-212, 0, 0, 0, 127, 0, 255),
-    VTX(  0,  40,-300, 0, 0, 0, 127, 0, 255),
-    VTX(212,  40,-212, 0, 0, 0, 127, 0, 255),
+    VTX(-300, 40, 0, 0, 0, 0, 127, 0, 255),
+    VTX(-212, 40, -212, 0, 0, 0, 127, 0, 255),
+    VTX(0, 40, -300, 0, 0, 0, 127, 0, 255),
+    VTX(212, 40, -212, 0, 0, 0, 127, 0, 255),
     // Bottom ring (y=-40)
-    VTX(300, -40,   0, 0, 0, 0,-127, 0, 255),
-    VTX(212, -40, 212, 0, 0, 0,-127, 0, 255),
-    VTX(  0, -40, 300, 0, 0, 0,-127, 0, 255),
-    VTX(-212,-40, 212, 0, 0, 0,-127, 0, 255),
-    VTX(-300,-40,   0, 0, 0, 0,-127, 0, 255),
-    VTX(-212,-40,-212, 0, 0, 0,-127, 0, 255),
-    VTX(  0, -40,-300, 0, 0, 0,-127, 0, 255),
-    VTX(212, -40,-212, 0, 0, 0,-127, 0, 255),
+    VTX(300, -40, 0, 0, 0, 0, -127, 0, 255),
+    VTX(212, -40, 212, 0, 0, 0, -127, 0, 255),
+    VTX(0, -40, 300, 0, 0, 0, -127, 0, 255),
+    VTX(-212, -40, 212, 0, 0, 0, -127, 0, 255),
+    VTX(-300, -40, 0, 0, 0, 0, -127, 0, 255),
+    VTX(-212, -40, -212, 0, 0, 0, -127, 0, 255),
+    VTX(0, -40, -300, 0, 0, 0, -127, 0, 255),
+    VTX(212, -40, -212, 0, 0, 0, -127, 0, 255),
 };
 
 static Gfx gfx_anklet_torus[] = {
@@ -480,12 +466,12 @@ static Gfx gfx_anklet_torus[] = {
 // ---------------------------------------------------------------------------
 static Vtx sAnkletWingVtx[] = {
     // Wing shape: base at origin, extends outward (+Z) and upward (+Y)
-    VTX(  0,    0,   0, 0, 0,  0,  0, 127, 255), // 0: base center
-    VTX(  0,  100, 150, 0, 0,  0,  0, 127, 255), // 1: upper tip
-    VTX(  0,   50, 300, 0, 0,  0,  0, 127, 255), // 2: far tip
-    VTX(  0,  -30, 200, 0, 0,  0,  0, 127, 255), // 3: lower mid
-    VTX(  0,  -50,  80, 0, 0,  0,  0, 127, 255), // 4: lower base
-    VTX( 20,   30, 100, 0, 0,  0,  0, 127, 255), // 5: thickness (front)
+    VTX(0, 0, 0, 0, 0, 0, 0, 127, 255),     // 0: base center
+    VTX(0, 100, 150, 0, 0, 0, 0, 127, 255), // 1: upper tip
+    VTX(0, 50, 300, 0, 0, 0, 0, 127, 255),  // 2: far tip
+    VTX(0, -30, 200, 0, 0, 0, 0, 127, 255), // 3: lower mid
+    VTX(0, -50, 80, 0, 0, 0, 0, 127, 255),  // 4: lower base
+    VTX(20, 30, 100, 0, 0, 0, 0, 127, 255), // 5: thickness (front)
 };
 
 static Gfx gfx_anklet_wing[] = {
@@ -496,8 +482,8 @@ static Gfx gfx_anklet_wing[] = {
     gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH),
     gsDPSetPrimColor(0, 0, 255, 220, 100, 200), // Golden translucent
     gsSPVertex(sAnkletWingVtx, 6, 0),
-    gsSP2Triangles(0, 1, 5, 0, 1, 2, 5, 0),  // Upper wing
-    gsSP2Triangles(0, 5, 4, 0, 5, 2, 3, 0),  // Lower wing
+    gsSP2Triangles(0, 1, 5, 0, 1, 2, 5, 0), // Upper wing
+    gsSP2Triangles(0, 5, 4, 0, 5, 2, 3, 0), // Lower wing
     gsSPEndDisplayList(),
 };
 
@@ -516,9 +502,9 @@ static void Pegasus_DrawAnklet(PlayState* play, s32 isRightFoot) {
     Matrix_RotateX(M_PI / 2.0f, MTXMODE_APPLY); // Lay flat around the ankle
     Matrix_Scale(0.015f, 0.015f, 0.015f, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, ResourceMgr_LoadGfxByName("__OTR__objects/object_light_ring/gGoldenGoddessLightRingDL"));
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++,
+                   ResourceMgr_LoadGfxByName("__OTR__objects/object_light_ring/gGoldenGoddessLightRingDL"));
     Matrix_Pop();
 
     // === Golden wings (inline geometry, pendulum physics) ===
@@ -534,14 +520,12 @@ static void Pegasus_DrawAnklet(PlayState* play, s32 isRightFoot) {
     // Wing scale
     Matrix_Scale(1.0f, 1.0f, 1.0f, MTXMODE_APPLY);
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gfx_anklet_wing);
 
     // Mirror wing on other side
     Matrix_Scale(1.0f, 1.0f, -1.0f, MTXMODE_APPLY);
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gfx_anklet_wing);
 
     Matrix_Pop();
@@ -554,9 +538,8 @@ static void Pegasus_DrawAnklet(PlayState* play, s32 isRightFoot) {
 // ---------------------------------------------------------------------------
 static void Pegasus_Behavior(Player* player, PlayState* play) {
     // Skip during cutscenes, etc.
-    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                                PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
-                                PLAYER_STATE1_GETTING_ITEM)) {
+    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
+                               PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM)) {
         if (gExtEquipBehavior.pegasusState != PEGASUS_IDLE)
             Pegasus_Stop(player);
         return;
