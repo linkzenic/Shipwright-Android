@@ -88,7 +88,9 @@ void SohMenu::AddMenuElements() {
     AddMenuSettings();
     AddMenuEnhancements();
     AddMenuRandomizer();
+#ifndef __ANDROID__
     AddMenuNetwork();
+#endif
     AddMenuDevTools();
 
     if (CVarGetInteger(CVAR_SETTING("Menu.SidebarSearch"), 0)) {
