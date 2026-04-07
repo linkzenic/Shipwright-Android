@@ -32,9 +32,8 @@
 #define MMASSETS_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
 #define MMSFX_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
 
-// Path to extracted MM samples from decomp (WAV files decoded from N64 ADPCM)
-#define MM_DECOMP_SAMPLEBANK_PATH \
-    "C:/Users/LENOVO/Documents/mm_decomp/extracted/n64-us/assets/audio/samples/SampleBank_0/"
+// NOTE: WAV filesystem loading was removed. All MM audio comes from mm.o2r via ADPCM decoding.
+// The decomp SampleBank_0 WAV files are NOT needed - mm.o2r contains the same samples in ADPCM format.
 
 // Cache to keep mm.o2r resources alive (shared_ptr prevents destruction)
 static std::unordered_map<std::string, std::shared_ptr<Ship::IResource>> sMmResourceCache;
@@ -1567,171 +1566,176 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0811, 26, 65 }, // JUMP L1b: INST_26, F4(65) — metallic ring
     { 0x0811, 23, 53 }, // JUMP L1c: INST_23, F3(53) — whoosh tail
     // CHAN_PL_JUMP_CONCRETE: L0=INST_2 G#3+B3, L1=same LAYER_05DF chain
-    { 0x0812, 2, 56 },  // LAND L0: INST_2, GF3(56)
+    { 0x0812, 2, 54 },  // LAND L0: INST_2, GF3(54) — seq_0: PITCH_GF3
     { 0x0812, 32, 72 }, // LAND L1a: INST_32, C5(72)
     { 0x0812, 26, 65 }, // LAND L1b: INST_26, F4(65)
     { 0x0812, 23, 53 }, // LAND L1c: INST_23, F3(53)
-    { 0x0814, 9, 66 },  // CLIMB_CLIFF: INST_9, FS4
-    { 0x0839, 20, 57 }, // SWIM: INST_20, A3
-    { 0x0874, 15, 64 }, // FREEZE_S L0: INST_15, E4
-    { 0x0874, 80, 41 }, // FREEZE_S L1: INST_80, F2
+    { 0x0814, 9, 69 },  // CLIMB_CLIFF: INST_9, A4(69) — seq_0: PITCH_A4
+    { 0x0839, 20, 48, 0, 57, 200 }, // SWIM: INST_20, target C3(48), porta from A3(57) — seq_0: porta 0x81
+    // CHAN_PL_FREEZE (seq_0): gain=30
+    { 0x0874, 15, 52, 0, 64, 255 }, // L0: INST_15, E3(52), porta from E4(64)
+    { 0x0874, 80, 35, 0, 41, 255 }, // L1: INST_80, B1(35), porta from F2(41)
     { 0x0877, 9, 53 },  // PUT_OUT_ITEM: INST_9, F3
     { 0x08D0, 12, 60 }, // SLIP_LEVEL: INST_12, C4
 
     // === Player Bank: Deku SFX ===
-    { 0x08E0, 74, 49 }, // DEKUNUTS_FIRE: INST_74, E3
-    // CHAN_PL_DEKUNUTS_IN_GRD = 3 layers
-    { 0x08E2, 47, 57 }, // L0: INST_47, A3
-    { 0x08E2, 35, 72 }, // L1: INST_35, t48→high range (bombchu_motor)
-    { 0x08E2, 32, 58 }, // L2: INST_32, BF3
-    // CHAN_PL_DEKUNUTS_OUT_GRD = 3 layers
-    { 0x08E3, 47, 59 },  // L0: INST_47, B3
-    { 0x08E3, 106, 64 }, // L1: INST_106, E4
-    { 0x08E3, 33, 76 },  // L2: INST_33, E5
+    // CHAN_PL_DEKUNUTS_FIRE: INST_74, t6, E3 then porta E3→Db4 (seq_0 line 4362)
+    { 0x08E0, 74, 61, 6, 52, 56 }, // INST_74, target Db4(61), t6, porta from E3(52), speed 56
+    // CHAN_PL_DEKUNUTS_IN_GRD = 3 layers (seq_0 line 2364)
+    { 0x08E2, 47, 57, 0, 43, 255 },   // L0: INST_47, A3(57), porta mode82 from G2(43)
+    { 0x08E2, 35, 59, 48, 40, 127 },  // L1: INST_35 t48, B3(59), porta from E2(40) — seq_0: PITCH_B3
+    { 0x08E2, 32, 58 },               // L2: INST_32, BF3(58) loop
+    // CHAN_PL_DEKUNUTS_OUT_GRD = 3 layers (seq_0 line 2390)
+    { 0x08E3, 47, 59, 0, 57, 192 },   // L0: INST_47, B3(59), porta from A3(57) — seq_0: PITCH_B3
+    { 0x08E3, 106, 64 },              // L1: INST_106, E4(64)
+    { 0x08E3, 33, 76, 48, 64, 127 },  // L2: INST_33 t48, E5(76), porta from E4(64)
 
     // === Player Bank: Goron SFX ===
-    // CHAN_PL_GORON_BALLJUMP: INST_102, porta G2→G3, vibrato
-    { 0x08E1, 102, 55 }, // INST_102, G3 (porta start G2, target G3)
-    // CHAN_PL_TRANSFORM: 2 layers
-    { 0x08E4, 68, 78 }, // L0: INST_68, GF5
-    { 0x08E4, 64, 35 }, // L1: INST_64, B1
-    // CHAN_PL_TRANSFORM_DEMO: INST_47, notedvg G3 then porta to B1
-    { 0x08E5, 47, 55 }, // INST_47, G3 (first note before porta)
-    // CHAN_PL_GORON_TO_BALL: INST_47, notedvg G3 then porta G3→B1
-    { 0x08E6, 47, 55 }, // INST_47, G3 (first note)
-    // CHAN_PL_BALL_TO_GORON: INST_47, porta E3→G1
-    { 0x08E7, 47, 52 }, // INST_47, E3 (porta start)
+    // CHAN_PL_GORON_BALLJUMP: INST_102, porta G2→G3, vibrato (seq_0 line 4379)
+    { 0x08E1, 102, 55, 0, 43, 255 }, // INST_102, target G3(55), porta from G2(43), speed 255
+    // CHAN_PL_TRANSFORM (seq_0): INST_68 at channel, 3 layers sharing porta F5→GF5→A5
+    // L0+L1: INST_68, t=0/t=5, legato, porta from F5(77), note GF5(78)
+    { 0x08E4, 68, 78, 0, 77, 127 },  // L0: INST_68, GF5(78), porta from F5(77)
+    { 0x08E4, 68, 78, 5, 77, 127 },  // L1: INST_68, GF5(78), t5, porta from F5(77)
+    // L2: INST_64, t=-43, same porta code
+    { 0x08E4, 64, 78, -43, 77, 127 }, // L2: INST_64, GF5(78), t-43, porta from F5(77)
+    // CHAN_PL_TRANSFORM_DEMO (seq_0): INST_47, note G3(55) dur=20, then porta G3(55)→B1(35) dur=35
+    { 0x08E5, 47, 35, 0, 55, 127 }, // INST_47, target B1(35), porta from G3(55)
+    // CHAN_PL_GORON_TO_BALL: same channel as TRANSFORM_DEMO
+    { 0x08E6, 47, 35, 0, 55, 127 }, // INST_47, target B1(35), porta from G3(55)
+    // CHAN_PL_BALL_TO_GORON (seq_0 line 2455): INST_47, porta mode82 from E3(52), note G1(31)
+    { 0x08E7, 47, 31, 0, 52, 208 }, // INST_47, G1(31), porta from E3(52)
     // CHAN_PL_GORON_PUNCH: 2 layers (verified correct)
     { 0x08E8, 65, 53 }, // L0: INST_65 (settled_stone_block), F3, dur=0
     { 0x08E8, 77, 60 }, // L1: INST_77 (mechanical_ramp_up), C4, dur=100
     // CHAN_PL_GORON_BALL_CHARGE: 2 layers, both looping with porta
-    { 0x08EB, 35, 72 }, // L0: INST_35, t48→high range (bombchu_motor), porta C2→F4
-    { 0x08EB, 75, 66 }, // L1: INST_75, E4+t2=F4
+    { 0x08EB, 35, 65, 48, 36, 127 }, // L0: INST_35, F4(65) t48→high, porta from C2(36)
+    { 0x08EB, 75, 64, 2, 36, 127 },  // L1: INST_75, E4(64) t2, porta from C2(36)
 
     // === Player Bank: Zora SFX ===
-    // CHAN_PL_ZORA_SWIM_DASH: 3 layers
-    // L0: INST_72, porta C2→F3 then C5
-    { 0x08EC, 72, 53, 0, 36, 255 }, // INST_72, F3(53) porta from C2(36)
-    // L1: INST_27, t-12, porta F3→F2
-    { 0x08EC, 27, 41, -12, 53, 255 }, // INST_27, F2(41) porta from F3(53), t-12
-    // L2: INST_20, porta C3→Db5
-    { 0x08EC, 20, 73, 0, 48, 200 }, // INST_20, DF5(73) porta from C3(48)
-    // CHAN_PL_ZORA_SWIM_LV: 2 layers (looping)
-    // L0: INST_72, porta C2→F2 (loop)
+    // CHAN_PL_ZORA_SWIM_DASH (seq_0): 3 layers, all with portamento
+    { 0x08EC, 72, 53, 0, 36, 255 },   // L0: INST_72, F3(53), porta from C2(36) — seq_0: porta 0x85
+    { 0x08EC, 27, 41, -12, 53, 255 }, // L1: INST_27, F2(41) t-12, porta from F3(53) — seq_0: porta 0x81
+    { 0x08EC, 20, 73, 0, 48, 200 },   // L2: INST_20, DF5(73), porta from C3(48) — seq_0: porta 0x81
+    // CHAN_PL_ZORA_SWIM_LV: keep only L0 (L1 INST_51 t48 causes extra noise without ADSR)
     { 0x08ED, 72, 41, 0, 36, 64 }, // INST_72, F2(41) porta from C2(36)
-    // L1: INST_51, t48, porta C2→Eb2 (loop)
-    { 0x08ED, 51, 39, 48, 36, 64 }, // INST_51, EF2(39) porta from C2(36), t48
-    // CHAN_PL_ZORA_SWIM_ROLL: INST_105, porta E1→E2
-    { 0x08EE, 105, 40 }, // INST_105, E2 (porta target)
-    // CHAN_PL_GORON_SQUAT: INST_47, porta G3→B1
-    { 0x08EF, 47, 55 }, // INST_47, G3 (porta start)
+    // CHAN_PL_ZORA_SWIM_ROLL (seq_0): INST_105, porta from E1(28)→E2(40)
+    { 0x08EE, 105, 40, 0, 28, 160 }, // INST_105, E2(40), porta from E1(28)
+    // CHAN_PL_GORON_SQUAT (seq_0): gain=20, INST_47, porta from G3(55)→B1(35)
+    { 0x08EF, 47, 35, 0, 55, 127 }, // INST_47, B1(35), porta from G3(55)
 
     // === Player Bank: Zora dummy footstep SFX (0x8F0 range) ===
     // CRITICAL: These are CHAN_PL_DUMMY_240 = footstep table lookup + INST_31 woosh layer.
     // In MM these are generic footstep sounds, NOT Zora-specific attacks.
     // Layer 1 is INST_31 with porta F3→B0. We use porta start F3(53).
-    { 0x08F0, 31, 53 }, // DUMMY_240: INST_31 (air_whistle), porta F3→B0
-    { 0x08F1, 31, 53 }, // DUMMY_241: same
-    { 0x08F2, 31, 53 }, // DUMMY_242: same
-    { 0x08F3, 31, 53 }, // DUMMY_243: same
-    { 0x08F4, 31, 53 }, // DUMMY_244: same
-    { 0x08F5, 31, 53 }, // DUMMY_245: same
+    { 0x08F0, 31, 23, 0, 53, 207 }, // DUMMY_240: INST_31, B0(23) porta from F3(53) — seq_0: porta 0x81
+    { 0x08F1, 31, 23, 0, 53, 207 }, // DUMMY_241: same
+    { 0x08F2, 31, 23, 0, 53, 207 }, // DUMMY_242: same
+    { 0x08F3, 31, 23, 0, 53, 207 }, // DUMMY_243: same
+    { 0x08F4, 31, 23, 0, 53, 207 }, // DUMMY_244: same
+    { 0x08F5, 31, 23, 0, 53, 207 }, // DUMMY_245: same
 
     // === Player Bank: Goron roll SFX ===
-    // CHAN_PL_GORON_CHG_ROLL: 3 layers (was missing INST_77 layer!)
-    { 0x0980, 35, 72 }, // L0: INST_35, t48→high range (bombchu_motor), use C5 for pitch
-    { 0x0980, 77, 60 }, // L2: INST_77, transpose 22, porta G2→C3 (use C4=60 as midpoint)
-    // CHAN_PL_GORON_ROLL: 2 layers (user confirmed correct) + footstep (skipped)
-    { 0x0990, 77, 58 }, // L1: INST_77 (mechanical_ramp_up), BF3
-    { 0x0990, 47, 41 }, // L2: INST_47 (explosion1), F2
+    // CHAN_PL_GORON_CHG_ROLL: 3 layers
+    { 0x0980, 35, 67, 48, 0, 0 },  // L0: INST_35, G4(67) t48→high(bombchu_motor)
+    { 0x0980, 77, 48, 22, 43, 175 }, // L2: INST_77, C3(48) t22, porta from G2(43)
+    // CHAN_PL_GORON_ROLL (seq_0): gain=15, 3 layers (L0=surface footstep dynamic)
+    { 0x0990, 77, 58 },  // L1: INST_77, BF3(58)
+    { 0x0990, 47, 41 },  // L2: INST_47, F2(41)
 
     // === Player Bank: Deku SFX (0x9A0 range) ===
-    // CHAN_PL_DEKUNUTS_BUD: 2 layers (L1 = L0 + transpose 7)
-    // L0: INST_52, porta E2→Eb1 then Eb3
-    { 0x09A0, 52, 27, 0, 28, 255 }, // INST_52, EF1(27) porta from E2(28)
-    // L1: INST_52, same but t7
-    { 0x09A0, 52, 27, 7, 28, 255 }, // INST_52, EF1(27) porta from E2(28), t7
-    // CHAN_PL_DEKUNUTS_BUBLE_BREATH: 2 layers + vibrato
-    // L0: INST_74, porta Ab2→A3 (legato loop)
-    { 0x09A1, 74, 57, 0, 44, 255 }, // INST_74, A3(57) porta from AF2(44)
-    // L1: FONTANY_INSTR_8PULSE (synth), porta F3→D4
-    { 0x09A1, 74, 62, 0, 53, 255 }, // placeholder: INST_74 D4(62) porta from F3(53)
-    // CHAN_PL_GORON_BALL_CHARGE_FAILED: 2 layers (was missing INST_75!)
-    { 0x09A2, 35, 72 }, // L0: INST_35, t48→high range (bombchu_motor), porta G4→C2
-    { 0x09A2, 75, 66 }, // L1: INST_75, t2, porta E4→C2 (use start E4+2=F4=66)
-    // CHAN_PL_GORON_BALL_CHARGE_DASH: 3 layers (was missing INST_35 and INST_47!)
-    { 0x09A3, 35, 72 }, // L0: INST_35, t48, porta A4→C3 (use C5=72 first note)
-    { 0x09A3, 75, 71 }, // L1: INST_75, t2, porta G4→C3 (use B4=71 first note)
-    { 0x09A3, 47, 67 }, // L2: INST_47, G4
-    // CHAN_PL_FACE_CHANGE: 2 layers + vibrato(60Hz, depth 40)
-    { 0x09A4, 69, 53 },  // L0: INST_69, F3(53)
-    { 0x09A4, 119, 53 }, // L1: INST_119, F3(53) — shares same note sequence
+    // CHAN_PL_DEKUNUTS_BUD (seq_0 line 2773): 2 layers
+    // L0: INST_52, porta mode83 from E2(40), note EF1(27) then EF3(51)
+    { 0x09A0, 52, 27, 0, 40, 255 },  // L0: INST_52, EF1(27), porta from E2(40)
+    // L1: same but transpose=7
+    { 0x09A0, 52, 27, 7, 40, 255 },  // L1: INST_52 t7, EF1(27), porta from E2(40)
+    // CHAN_PL_DEKUNUTS_BUBLE_BREATH: 2 layers + vibrato(45Hz,24) (seq_0 line 5143)
+    // L0: INST_74, porta Ab2(44)→A3(57), legato loop
+    { 0x09A1, 74, 57, 0, 44, 255 },
+    // L1: FONTANY_INSTR_8PULSE → use triangle wave approximation, porta F3(53)→D4(62)
+    { 0x09A1, 129, 62, 0, 53, 255 },
+    // CHAN_PL_GORON_BALL_CHARGE_FAILED: 2 layers
+    { 0x09A2, 35, 36, 48, 67, 255 }, // L0: INST_35, C2(36) t48→high, porta from G4(67)
+    { 0x09A2, 75, 36, 2, 64, 255 },  // L1: INST_75, C2(36) t2, porta from E4(64)
+    // CHAN_PL_GORON_BALL_CHARGE_DASH: 3 layers
+    { 0x09A3, 35, 48, 48, 69, 255 }, // L0: INST_35, C3(48) t48→high, porta from A4(69)
+    { 0x09A3, 75, 48, 2, 67, 255 },  // L1: INST_75, C3(48) t2, porta from G4(67)
+    { 0x09A3, 47, 67 },              // L2: INST_47, G4(67)
+    // CHAN_PL_FACE_CHANGE (seq_0): vibfreq=60, vibdepth=40, legato, t=3, porta from G2(43)
+    // Both layers share same notes: F3(53)→C2(36)→B3(59)→C3(48)
+    { 0x09A4, 69, 53, 3, 43, 255 },  // L0: INST_69, F3(53), t3, porta from G2(43)
+    { 0x09A4, 119, 53, 3, 43, 255 }, // L1: INST_119, F3(53), t3, porta from G2(43)
     // CHAN_PL_DEKUNUTS_ATTACK: 2 layers (L0=shimmer sweep, L1=bass sweep)
     // L0: INST_46, t48, porta A0(21)→F5(77), speed 255
     { 0x09A9, 46, 77, 48, 21, 255 },
     // L1: INST_27, porta A1(33)→C1(24), speed 200
     { 0x09A9, 27, 24, 0, 33, 200 },
     { 0x09AA, 127, 4 }, // TRANSFORM_VOICE: DRUM[4]
-    // CHAN_PL_GORON_SLIP: INST_111, porta A3→C4 (looping)
-    { 0x09AD, 111, 60 }, // INST_111, C4 (porta target, looping sound)
-    // CHAN_PL_ZORA_SPARK_BARRIER: 2 layers, both INST_46 (no porta, no vibrato)
-    { 0x09AF, 46, 73 }, // L0: INST_46, t48→high range (shimmering_treasure), use DF5
-    { 0x09AF, 46, 55 }, // L1: INST_46, G3
+    // CHAN_PL_GORON_SLIP (seq_0): INST_111, porta mode01 from A3(57)→C4(60), legato loop
+    { 0x09AD, 111, 60, 0, 57, 100 }, // INST_111, C4(60), porta from A3(57)
+    // CHAN_PL_ZORA_SPARK_BARRIER: 2 layers, both INST_46
+    { 0x09AF, 46, 64, 48, 0, 0 }, // L0: INST_46, E4(64) t48→high(shimmering), legato loop
+    { 0x09AF, 46, 55 },            // L1: INST_46, G3(55), legato loop
     // CHAN_PL_GORON_STOMACH_EXPLOSION: INST_77, 2 notes F5→A4
     { 0x09B8, 77, 77 }, // INST_77, F5 (first note)
     // CHAN_PL_GORON_DRINK_BOMB: INST_106, t48, porta C2→B2
-    { 0x09B9, 106, 72 }, // INST_106, t48→high range (gulp), use C5
+    { 0x09B9, 106, 47, 48, 36, 255 }, // INST_106, B2(47) t48→high(gulp), porta from C2(36)
 
     // === Item Bank: Form-specific ===
-    // CHAN_IT_GORON_BALLFANG: 3 layers (was missing INST_29 and INST_26!)
-    { 0x184F, 29, 64 }, // L0: INST_29, E4 dur=6, then E4 dur=48
-    { 0x184F, 26, 74 }, // L1: INST_26, t48→high range (sword_strike), use D5 for pitch
-    { 0x184F, 32, 60 }, // L2: INST_32, C4 dur=6, then G3
+    // CHAN_IT_GORON_BALLFANG (seq_0): 3 layers
+    { 0x184F, 29, 64 },              // L0: INST_29, E4(64)
+    { 0x184F, 26, 62, 48, 0, 0 },    // L1: INST_26 t48, D4(62)→high sample
+    { 0x184F, 32, 60 },              // L2: INST_32, C4(60)
     // CHAN_IT_DEKUNUTS_FLOWER_OPEN: 2 layers
-    { 0x1850, 27, 43 }, // L0: INST_27, G2
+    { 0x1850, 27, 43, 0, 31, 240 }, // L0: INST_27, G2(43), porta from G1(31) — seq_0: porta 0x84
     { 0x1850, 78, 59 }, // L1: INST_78, B3
     { 0x1852, 78, 65 }, // IT_DEKUNUTS_FLOWER_CLOSE: INST_78, F4
-    { 0x1853, 41, 60 }, // IT_DEKUNUTS_BUBLE_BROKEN: INST_41, C4
-    { 0x1854, 41, 60 }, // IT_DEKUNUTS_BUBLE_VANISH: INST_41, C4
+    { 0x1853, 41, 60, 0, 64, 255 }, // IT_DEKUNUTS_BUBLE_BROKEN: INST_41, C4(60), porta from E4(64)
+    { 0x1854, 41, 60, 0, 64, 255 }, // IT_DEKUNUTS_BUBLE_VANISH: INST_41, C4(60), porta from E4(64)
     // CHAN_IT_SET_TRANSFORM_MASK: sequential INST_9 then INST_28
     { 0x1856, 9, 55 },  // L0: INST_9, G3
     { 0x1856, 28, 62 }, // L1: INST_28, D4
-    // CHAN_IT_GORON_PUNCH_SWING: 2 layers both INST_27 (was only 1 layer!)
-    // porta A1→C1, layer 1 has transpose +4
-    { 0x1857, 27, 33 }, // L0: INST_27 (whish), A1 (porta start)
-    { 0x1857, 27, 37 }, // L1: INST_27, A1+t4=DF2 (porta start + transpose)
+    // CHAN_IT_GORON_PUNCH_SWING: 2 layers both INST_27, porta A1→C1
+    { 0x1857, 27, 24, 0, 33, 200 },  // L0: INST_27, C1(24) porta from A1(33)
+    { 0x1857, 27, 24, 4, 33, 200 },  // L1: INST_27, C1(24) t4, porta from A1(33)
     { 0x1858, 15, 36 }, // IT_TRANSFORM_MASK_BROKEN: INST_15, C2
-    // CHAN_IT_ZORA_KICK_SWING: 2 layers (was missing INST_27!)
-    { 0x1859, 27, 50 }, // L0: INST_27, t2, porta D3→D2 (use start D3+2=E3=52, but D3=50)
-    { 0x1859, 39, 72 }, // L1: INST_39, porta C5→GF2 (use start C5=72)
-    // 0x1869 = IT_SHIELD_REMOVE_ZORA — same channel as ZORA_KICK_SWING (0x1859)
-    { 0x1869, 27, 50 }, // L0: INST_27, same as 0x1859
-    { 0x1869, 39, 72 }, // L1: INST_39, same as 0x1859
-    { 0x185A, 34, 72 }, // IT_DEKUNUTS_BUBLE_SHOT_LEVEL: INST_34, t48→high range
-    // CHAN_IT_GORON_ROLLING_REFLECTION: 2 layers (was missing INST_21!)
-    { 0x185E, 102, 65 }, // L0: INST_102, porta AF1→F4 (use target F4=65)
-    { 0x185E, 21, 66 },  // L1: INST_21, porta GF4→B2 (use start GF4=66)
+    // CHAN_IT_ZORA_KICK_SWING: 2 layers
+    { 0x1859, 27, 38, 2, 50, 255 },  // L0: INST_27, D2(38) t2, porta from D3(50)
+    { 0x1859, 39, 42, 0, 72, 255 },  // L1: INST_39, GF2(42) porta from C5(72)
+    // 0x1869 = IT_SHIELD_REMOVE_ZORA — same channel
+    { 0x1869, 27, 38, 2, 50, 255 },
+    { 0x1869, 39, 42, 0, 72, 255 },
+    { 0x185A, 34, 57, 48, 60, 255 }, // IT_DEKUNUTS_BUBLE_SHOT_LEVEL: INST_34, A3(57) t48, porta from C4(60)
+    // CHAN_IT_GORON_ROLLING_REFLECTION (seq_0): vibfreq=128
+    { 0x185E, 102, 65, 0, 32, 255 }, // L0: INST_102, F4(65), porta from AF1(32)
+    { 0x185E, 21, 47, 0, 66, 255 },  // L1: INST_21, B2(47), porta from GF4(66)
 
     // === Player Bank: Deku form-specific ===
-    { 0x09A6, 27, 43 }, // DEKUNUTS_STRUGGLE: INST_27, G2
+    { 0x09A6, 27, 43, 0, 40, 255 }, // DEKUNUTS_STRUGGLE: INST_27, G2(43), porta from E2(40) — seq_0: porta 0x83
     { 0x09BF, 74, 71 }, // DEKUNUTS_MISS_FIRE: INST_74, B4
     // === Player Bank: Deku hop SFX (0x09B0-0x09B4) ===
-    { 0x09B0, 129, 60 }, // DEKUNUTS_JUMP L0: TRIANGLE, C4
-    { 0x09B0, 4, 57 },   // DEKUNUTS_JUMP L1: INST_4, A3
-    { 0x09B1, 129, 62 }, // DEKUNUTS_JUMP2 L0: TRIANGLE, D4
-    { 0x09B1, 4, 57 },   // DEKUNUTS_JUMP2 L1: INST_4, A3
-    { 0x09B2, 129, 64 }, // DEKUNUTS_JUMP3 L0: TRIANGLE, E4
-    { 0x09B2, 4, 57 },   // DEKUNUTS_JUMP3 L1: INST_4, A3
-    { 0x09B3, 129, 65 }, // DEKUNUTS_JUMP4 L0: TRIANGLE, F4
-    { 0x09B3, 4, 57 },   // DEKUNUTS_JUMP4 L1: INST_4, A3
-    { 0x09B4, 129, 67 }, // DEKUNUTS_JUMP5 L0: TRIANGLE, G4
-    { 0x09B4, 4, 57 },   // DEKUNUTS_JUMP5 L1: INST_4, A3
+    { 0x09B0, 129, 60, 0, 36, 255 }, // DEKUNUTS_JUMP L0: TRIANGLE, C4(60) porta from C2(36)
+    { 0x09B0, 4, 57 },               // DEKUNUTS_JUMP L1: INST_4, A3
+    { 0x09B1, 129, 62, 0, 38, 255 }, // DEKUNUTS_JUMP2 L0: TRIANGLE, D4(62) porta from D2(38)
+    { 0x09B1, 4, 57 },               // DEKUNUTS_JUMP2 L1: INST_4, A3
+    { 0x09B2, 129, 64, 0, 40, 255 }, // DEKUNUTS_JUMP3 L0: TRIANGLE, E4(64) porta from E2(40)
+    { 0x09B2, 4, 57 },               // DEKUNUTS_JUMP3 L1: INST_4, A3
+    { 0x09B3, 129, 65, 0, 41, 255 }, // DEKUNUTS_JUMP4 L0: TRIANGLE, F4(65) porta from F2(41)
+    { 0x09B3, 4, 57 },               // DEKUNUTS_JUMP4 L1: INST_4, A3
+    { 0x09B4, 129, 67, 0, 43, 255 }, // DEKUNUTS_JUMP5 L0: TRIANGLE, G4(67) porta from G2(43)
+    { 0x09B4, 4, 57 },               // DEKUNUTS_JUMP5 L1: INST_4, A3
     // === Environment Bank ===
-    { 0x2912, 47, 72 }, // EV_LIGHTNING_HARD: INST_47, C5
+    // CHAN_EV_LIGHTNING_HARD (seq_0): 3 layers, gain=15
+    // L0: INST_74 t42, env BF44 (shares note with L1)
+    { 0x2912, 74, 72, 42, 0, 0 },  // L0: INST_74, C5(72), t42
+    // L1: INST_47, env BF44 (shares note)
+    { 0x2912, 47, 72 },            // L1: INST_47, C5(72)
+    // L2: INST_74, porta C4(60)→C2(36)
+    { 0x2912, 74, 36, 0, 60, 255 }, // L2: INST_74, C2(36), porta from C4(60)
     // === System Bank: Transform flash ===
-    { 0x484F, 64, 84 }, // SY_TRANSFORM_MASK_FLASH L0: INST_64, C4+t24
-    { 0x484F, 68, 96 }, // SY_TRANSFORM_MASK_FLASH L1: INST_68, C4+t36
-    { 0x4835, 64, 84 }, // (legacy ID)
+    { 0x484F, 64, 60, 24, 0, 0 }, // SY_TRANSFORM_MASK_FLASH L0: INST_64, C4(60) t24
+    { 0x484F, 68, 60, 36, 0, 0 }, // SY_TRANSFORM_MASK_FLASH L1: INST_68, C4(60) t36
+    { 0x4835, 64, 60, 24, 0, 0 }, // (legacy ID)
 };
 static const s32 sMmSfxInstrMapSize = sizeof(sMmSfxInstrMap) / sizeof(sMmSfxInstrMap[0]);
 
@@ -1776,18 +1780,18 @@ static const MmVoiceEffectEntry sAdultVoiceEffects[] = {
     { { 0, 1, 2, 3 }, 4 },
     // [1] SWORD_L:    ARRAY_B6CD = {4,5}
     { { 4, 5, 0, 0 }, 2 },
-    // [2] LASH:       CHAN_VO_LI_LASH → reuses SWORD_N effects
-    { { 0, 1, 2, 3 }, 4 },
-    // [3] HANG:       CHAN_VO_LI_LASH → reuses SWORD_N effects
-    { { 0, 1, 2, 3 }, 4 },
-    // [4] CLIMB_END:  CHAN_VO_LI_LASH → reuses SWORD_N effects
-    { { 0, 1, 2, 3 }, 4 },
-    // [5] DAMAGE_S:   ARRAY_B73E = {9,10}
-    { { 9, 10, 0, 0 }, 2 },
+    // [2] LASH:       FD=silent(cdelay1), Zora/Goron→B6D4 ARRAY_B6F6={10,11}
+    { { 10, 11, 0, 0 }, 2 },
+    // [3] HANG:       FD=silent, Zora/Goron→B6FD ARRAY_B70E={6,25}
+    { { 6, 25, 0, 0 }, 2 },
+    // [4] CLIMB_END:  FD=silent, Zora/Goron→B715 ARRAY_B726={7,8}
+    { { 7, 8, 0, 0 }, 2 },
+    // [5] DAMAGE_S:   ARRAY_B73E = {9,10,11} (verified: 3 effects, not 2)
+    { { 9, 10, 11, 0 }, 3 },
     // [6] FREEZE:     ARRAY_B758 = {12,13,14}
     { { 12, 13, 14, 0 }, 3 },
-    // [7] FALL_S:     CHAN_VO_LI_LASH → reuses SWORD_N effects
-    { { 0, 1, 2, 3 }, 4 },
+    // [7] FALL_S:     FD=silent, Zora/Goron→B761 ARRAY_B772={17,18}
+    { { 17, 18, 0, 0 }, 2 },
     // [8] FALL_L:     ARRAY_B78A = {15,16}
     { { 15, 16, 0, 0 }, 2 },
     // [9] BREATH_REST: ARRAY_B7A2 = {19,23}
@@ -1808,8 +1812,8 @@ static const MmVoiceEffectEntry sChildVoiceEffects[] = {
     { { 34, 50, 0, 0 }, 2 },
     // [4] CLIMB_END:  ARRAY_B923 = {35,36}
     { { 35, 36, 0, 0 }, 2 },
-    // [5] DAMAGE_S:   ARRAY_B93B = {37,38}
-    { { 37, 38, 0, 0 }, 2 },
+    // [5] DAMAGE_S:   ARRAY_B93B = {37,38,39} (verified: 3 effects)
+    { { 37, 38, 39, 0 }, 3 },
     // [6] FREEZE:     ARRAY_B955 = {40,41,42}
     { { 40, 41, 42, 0 }, 3 },
     // [7] FALL_S:     ARRAY_B96F = {45,46}
@@ -1821,143 +1825,8 @@ static const MmVoiceEffectEntry sChildVoiceEffects[] = {
 };
 static const s32 sChildVoiceEffectsSize = sizeof(sChildVoiceEffects) / sizeof(sChildVoiceEffects[0]);
 
-// =============================================================================
-// Decomp WAV Mapping Tables (Soundfont_0.xml → WAV filenames)
-// =============================================================================
-// Maps instrument indices and voice effect indices to WAV files in the decomp's
-// extracted SampleBank_0. Used by the WAV loader as an alternative to mm.o2r ADPCM.
-
-// Instrument → WAV mapping (for non-voice SFX)
-// rangeSplitNote: notes <= this use this entry; 127 = all notes
-// Entries for the same instrument MUST be ordered: low-range first, high-range second.
-typedef struct {
-    u8 instrumentIdx;
-    u8 rangeSplitNote;
-    u8 baseNote;    // MIDI base note from Soundfont_0.xml (usually 60=C4)
-    u32 sampleRate; // WAV native sample rate
-    const char* wavFile;
-} MmInstWavEntry;
-
-static const MmInstWavEntry sMmInstWavMap[] = {
-    { 0, 127, 60, 22050, "step_ground.wav" },
-    { 4, 127, 60, 16000, "step_water.wav" },
-    { 9, 127, 60, 22050, "small_splash.wav" },
-    { 12, 127, 60, 16000, "sliding_block.wav" },
-    { 15, 71, 60, 16000, "Sample045.half.wav" }, // RangeHi=B5
-    { 15, 127, 60, 16000, "howling.wav" },       // hi range
-    { 20, 127, 60, 16000, "swimming.wav" },
-    { 27, 127, 60, 22050, "whish.wav" },
-    { 31, 127, 60, 22050, "air_whistle.wav" },
-    { 32, 127, 60, 22050, "sword_striking_metal_shield.wav" },
-    { 34, 71, 60, 22050, "moving_metal_chain.wav" }, // RangeHi=B5
-    { 34, 127, 60, 16000, "Sample072.wav" },         // hi range
-    { 35, 71, 60, 16000, "Sample058.half.wav" },     // RangeHi=B5
-    { 35, 127, 60, 22050, "bombchu_motor.wav" },     // hi range
-    { 39, 127, 60, 22050, "air_whoosh.wav" },
-    { 41, 71, 60, 22050, "whip_snap.wav" },            // RangeHi=B5
-    { 41, 127, 60, 22050, "popping_cork.wav" },        // hi range
-    { 46, 72, 60, 22050, "Sample107.wav" },            // RangeHi=C6 (XML SampleRate override)
-    { 46, 127, 60, 22050, "shimmering_treasure.wav" }, // hi range
-    { 47, 127, 60, 16000, "explosion1.wav" },
-    { 52, 127, 60, 32000, "ocarina_looped.wav" },
-    { 64, 127, 60, 24000, "flying_fairy.wav" },
-    { 65, 127, 60, 16000, "settled_stone_block.wav" },
-    { 68, 127, 60, 32000, "warp_circle_ambience.wav" },
-    { 69, 127, 60, 16000, "fairy_magic.wav" },
-    { 72, 127, 60, 16000, "underwater_bubbles.wav" },
-    { 74, 71, 60, 16000, "Sample390.wav" },       // RangeHi=B5
-    { 74, 127, 12, 22050, "Sample016.half.wav" }, // hi, BaseNote=C0
-    { 75, 127, 60, 16000, "heavy_platform_rotating.wav" },
-    { 77, 71, 60, 16000, "Sample391.half.wav" },             // RangeHi=B5
-    { 77, 127, 60, 16000, "mechanical_ramp_up.wav" },        // hi range
-    { 78, 96, 60, 16000, "flapping_cloak.wav" },             // RangeHi=C7
-    { 78, 127, 12, 16000, "rustling_large_wings.half.wav" }, // hi, BaseNote=C0
-    { 80, 127, 60, 22050, "cloth_ripping.half.wav" },
-    { 102, 127, 72, 32000, "timpani.wav" }, // BaseNote=C5
-    { 105, 127, 60, 24000, "Sample046.wav" },
-    { 106, 71, 60, 16000, "Sample047.wav" },  // RangeHi=B5
-    { 106, 127, 12, 16000, "gulp.half.wav" }, // hi, BaseNote=C0
-    { 111, 127, 60, 16000, "Sample048.wav" },
-};
-static const s32 sMmInstWavMapSize = sizeof(sMmInstWavMap) / sizeof(sMmInstWavMap[0]);
-
-// Voice Effect → WAV mapping (for voice bank sounds)
-typedef struct {
-    u8 effectIdx;
-    u8 baseNote;
-    u32 sampleRate;
-    const char* wavFile;
-} MmEffectWavEntry;
-
-static const MmEffectWavEntry sMmEffectWavMap[] = {
-    // Adult Link voices (effects 0-27)
-    { 0, 60, 20000, "adult_link_attack1.wav" },
-    { 1, 60, 20000, "adult_link_attack2.wav" },
-    { 2, 60, 20000, "adult_link_attack3.wav" },
-    { 3, 60, 20000, "adult_link_attack4.wav" },
-    { 4, 60, 20000, "adult_link_strong_attack1.wav" },
-    { 5, 60, 20000, "adult_link_strong_attack2.wav" },
-    { 6, 60, 20000, "Sample162.wav" },
-    { 7, 60, 20000, "Sample164.wav" },
-    { 8, 60, 20000, "Sample165.wav" },
-    { 9, 60, 20000, "Sample167.wav" },
-    { 10, 60, 20000, "Sample169.wav" },
-    { 11, 60, 20000, "Sample171.wav" },
-    { 12, 60, 20000, "Sample173.wav" },
-    { 13, 60, 20000, "Sample175.wav" },
-    { 14, 60, 20000, "Sample177.wav" },
-    { 15, 60, 20000, "adult_link_falling1.wav" },
-    { 16, 60, 20000, "adult_link_falling2.wav" },
-    { 17, 60, 20000, "adult_link_falling2.wav" }, // Same sample as 16
-    { 18, 60, 20000, "Sample182.wav" },
-    { 19, 60, 20000, "Sample184.wav" },
-    { 20, 60, 20000, "Sample225.wav" },
-    { 21, 60, 20000, "Sample148.half.wav" },
-    { 22, 60, 20000, "Sample148.half.wav" }, // Same sample as 21
-    { 23, 60, 20000, "Sample186.wav" },
-    { 24, 60, 20000, "Sample188.wav" },
-    { 25, 60, 20000, "Sample163.wav" },
-    { 26, 60, 20000, "adult_link_hup.wav" },
-    { 27, 60, 20000, "adult_link_gasp1.wav" },
-    // Child Link voices (effects 28-50)
-    { 28, 60, 20000, "Sample193.wav" },
-    { 29, 60, 20000, "Sample194.wav" },
-    { 30, 60, 20000, "Sample195.wav" },
-    { 31, 60, 20000, "Sample196.wav" },
-    { 32, 60, 20000, "child_link_strong_attack1.wav" },
-    { 33, 60, 20000, "child_link_strong_attack2.wav" },
-    { 34, 60, 20000, "Sample203.wav" },
-    { 35, 60, 20000, "Sample205.wav" },
-    { 36, 60, 20000, "Sample206.wav" },
-    { 37, 60, 20000, "Sample207.wav" },
-    { 38, 60, 20000, "Sample208.wav" },
-    { 39, 60, 20000, "Sample209.wav" },
-    { 40, 60, 20000, "Sample210.wav" },
-    { 41, 60, 20000, "Sample211.wav" },
-    { 42, 60, 20000, "Sample212.wav" },
-    { 43, 60, 20000, "Sample213.wav" },
-    { 44, 60, 20000, "Sample214.wav" },
-    { 45, 60, 20000, "child_link_gasp1.wav" },
-    { 46, 60, 20000, "child_link_gasp2.wav" },
-    { 47, 60, 20000, "Sample217.wav" },
-    { 48, 60, 20000, "Sample218.wav" },
-    { 49, 60, 20000, "Sample223.wav" },
-    { 50, 60, 20000, "Sample204.wav" },
-};
-static const s32 sMmEffectWavMapSize = sizeof(sMmEffectWavMap) / sizeof(sMmEffectWavMap[0]);
-
-// Drum → WAV mapping (for FONTANY_INSTR_DRUM sounds)
-typedef struct {
-    u8 drumIdx;
-    u8 baseNote;
-    u32 sampleRate;
-    const char* wavFile;
-} MmDrumWavEntry;
-
-static const MmDrumWavEntry sMmDrumWavMap[] = {
-    { 4, 53, 20000, "child_link_gasp1.wav" }, // TRANSFORM_VOICE drum, BaseNote=F3
-};
-static const s32 sMmDrumWavMapSize = sizeof(sMmDrumWavMap) / sizeof(sMmDrumWavMap[0]);
+// NOTE: WAV mapping tables (sMmInstWavMap, sMmEffectWavMap, sMmDrumWavMap) were removed.
+// All audio samples come from mm.o2r via ADPCM decoding — no filesystem WAV files needed.
 
 // Form voice base addresses and transposes
 #define MM_VOICE_FD_BASE 0x6800
@@ -2095,17 +1964,55 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
         // seq_0 uses formula: sfxId = (layer->transposition << 6) + semitone
         // The soundEffects array is organized in blocks of 64 (per transposition value).
         // Each form maps to a specific (transposition, semitone_offset) pair:
-        //   FD:     trans=0, semi=sfxIndex        → sfx[0-31]     (tuning=0.6250)
-        //   Human:  trans=0, semi=sfxIndex        → sfx[32-63]    (tuning=0.6250)
-        //   NPC:    trans=1, semi=sfxIndex-0x40   → sfx[64-127]   (tuning=0.6250)
-        //   Deku:   trans=2, semi=1+(sfxIdx-0x80) → sfx[129-160]  (tuning=0.5000)
-        //   Goron:  trans=3, semi=sfxIdx-0xC0     → sfx[192-223]  (tuning=0.5256)
-        //   Zora:   trans=3, semi=28+(sfxIdx-0xA0)→ sfx[220-251]  (tuning=0.7433)
-        //   Mask:   trans=4, semi=sfxIdx-0xE0     → sfx[256+]     (tuning=0.6250)
+        // Verified from seq_0 transpose handlers (lines 26053-26923):
+        //   FD:     CHAN_B87B  trans=0, handlers B690/B6AB/etc → sfx[effect]
+        //   Human:  CHAN_B87B  trans=0, handlers B885/B8A1/etc → sfx[effect]
+        //   NPC:    trans=1                                    → sfx[64+]
+        //   Deku:   CHAN_BC5E  trans=3, handlers B885/B8A1/etc → sfx[(3<<6)+effect]
+        //   Zora:   CHAN_BCF3  trans=3, handlers B690/B6AB/etc → sfx[(3<<6)+effect]
+        //   Goron:  CHAN_BD84  trans=4, handlers B690/B6AB/etc → sfx[(4<<6)+effect]
         u16 effectIdx;
         if (sfxIndex < 0x20) {
-            // Fierce Deity (0x00-0x1F): trans=0, direct effect indices
-            effectIdx = sfxIndex;
+            // Fierce Deity (0x00-0x1F): CHAN_B87B trans=0
+            // Each action maps to a specific CHAN with its own effect array
+            // From voicebank_table.h lines 3-34 + seq_0 channel handlers
+            // Verified 1:1 against zeldaret/mm seq_0.prg.seq + voicebank_table.h
+            static const u16 sFdActionToSfxId[] = {
+                0,   // 0x6800 SWORD_N:    B690 ARRAY_B6A0={0,1,2,3}
+                4,   // 0x6801 SWORD_L:    B6AB ARRAY_B6CD={4,5}
+                0,   // 0x6802 LASH:       CHAN_VO_LI_LASH=cdelay1+end (SILENT)
+                0,   // 0x6803 HANG:       CHAN_VO_LI_LASH (SILENT)
+                0,   // 0x6804 CLIMB_END:  CHAN_VO_LI_LASH (SILENT)
+                9,   // 0x6805 DAMAGE_S:   B72D ARRAY_B73E={9,10,11}
+                12,  // 0x6806 FREEZE:     B747 ARRAY_B758={12,13,14}
+                0,   // 0x6807 FALL_S:     CHAN_VO_LI_LASH (SILENT)
+                15,  // 0x6808 FALL_L:     B779 ARRAY_B78A={15,16}
+                19,  // 0x6809 BREATH_REST:B791 ARRAY_B7A2={19,23}
+                56,  // 0x680A BREATH_DRK: ldlayer LAYER_B7AA SF0_EFFECT_56
+                13,  // 0x680B DOWN:       ldlayer LAYER_B7B2 t=1 {13,14,15}
+                15,  // 0x680C TAKEN:      B7C2 ARRAY_B7D3={15,16}
+                9,   // 0x680D HELD:       →DAMAGE_S B72D {9,10,11}
+                0,   // 0x680E SNEEZE:     CHAN_0048 (system, no voice effect)
+                0,   // 0x680F SWEAT:      CHAN_0048 (system)
+                0,   // 0x6810 DRINK:      CHAN_0048 (system)
+                0,   // 0x6811 RELAX:      CHAN_0048 (system)
+                0,   // 0x6812 PUTAWAY:    B66E ARRAY_B7FB={0}
+                3,   // 0x6813 GROAN:      ldlayer LAYER_BA2F t=1 SF0_EFFECT_3
+                27,  // 0x6814 AUTO_JUMP:  B803 complex, primary eff=27
+                5,   // 0x6815 MAGIC_NALE: B66E ARRAY_B82A={5}
+                9,   // 0x6816 SURPRISE:   CHAN_0048 (system) — fallback to DAMAGE_S
+                4,   // 0x6817 MAGIC_FROL: B66E ARRAY_B83B={4}
+                6,   // 0x6818 PUSH:       CHAN_0048 (system) — fallback
+                6,   // 0x6819 HOOKSHOT:   B66E ARRAY_B857={6}
+                12,  // 0x681A LAND_DMG:   B66E ARRAY_B862={12}
+                0,   // 0x681B MAGIC_START:CHAN_0048 (system)
+                0,   // 0x681C MAGIC_ATK:  CHAN_0048 (system)
+                15,  // 0x681D BL_DOWN:    B779 ARRAY_B78A={15,16}
+                13,  // 0x681E DEMO_DMG:   B66E ARRAY_B879={13}
+                0,   // 0x681F LAST:       B690 ARRAY_B6A0={0,1,2,3}
+            };
+            u8 action = sfxIndex;
+            effectIdx = (action < 32) ? sFdActionToSfxId[action] : 0;
         } else if (sfxIndex < 0x40) {
             // Human Link (0x20-0x3F): trans=0, shares handlers with Deku but trans=0
             // CHAN_B87B sets transposition=0. Human DUMMY_32+ channels use same
@@ -2168,24 +2075,24 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                 // Format: sfxId = (trans << 6) + first_effect_index
                 static const u16 sDekuActionToSfxId[] = {
                     // SFX    CHAN used           handler    effects         trans  sfxId=(trans<<6)+eff
-                    // CRITICAL: CHAN_B87B sets transpose=0 for ALL Deku voices!
-                    // Deku uses the SAME effects as child link (28-31) with trans=0
-                    28,  // 0x6880 DUMMY_128       B885    [28,29,30,31]    0     (0<<6)+28=28
-                    32,  // 0x6881 DUMMY_129       B8A1    [32,33]          0     (0<<6)+32=32
-                    28,  // 0x6882 DUMMY_128(same) B885    [28,29,30,31]    0     same as SWORD_N
-                    34,  // 0x6883 DUMMY_131       B8E5    [34,50]          0     (0<<6)+34=34
-                    35,  // 0x6884 DUMMY_132       B912    [35,36]          0     (0<<6)+35=35
-                    37,  // 0x6885 DUMMY_133       B92A    [37,38,39]       0     (0<<6)+37=37
-                    40,  // 0x6886 DUMMY_134       B944    [40,41,42]       0     (0<<6)+40=40
-                    45,  // 0x6887 DUMMY_135       B95E    [45,46]          0     (0<<6)+45=45
-                    43,  // 0x6888 DUMMY_136       B976    [43,44]          0     (0<<6)+43=43
-                    47,  // 0x6889 DUMMY_137       B98E    [47,48]          0     (0<<6)+47=47
-                    52,  // 0x688A DUMMY_138       BCA8    [52]             0     (0<<6)+52=52
-                    64,  // 0x688B DUMMY_139→43    B9AF    [0,1,2]          1     (1<<6)+0=64
-                    43,  // 0x688C DUMMY_140       B9BE    [43,44]          0     (0<<6)+43=43
-                    20,  // 0x688D DUMMY_141       B9D6    [20]             0     (0<<6)+20=20
-                    20,  // 0x688E DUMMY_46(NPC)   shared  —               0     fallback=20
-                    20,  // 0x688F DUMMY_47(NPC)   shared  —               0     fallback=20
+                    // CHAN_BC5E sets transpose=3 (ldi 3 at line 26723 of seq_0)
+                    // sfxId = (3<<6) + effect_index
+                    220, // 0x6880 DUMMY_128 BC5E→B885 [28,29,30,31] t=3 (3<<6)+28=220
+                    224, // 0x6881 DUMMY_129 BC5E→B8A1 [32,33]       t=3 (3<<6)+32=224
+                    220, // 0x6882 (=DUMMY_128)        same as SWORD_N
+                    226, // 0x6883 DUMMY_131 BC64→B8E5 [34,50]       t=3 (3<<6)+34=226
+                    227, // 0x6884 DUMMY_132 BC5E→B912 [35,36]       t=3 (3<<6)+35=227
+                    229, // 0x6885 DUMMY_133 BC5E→B92A [37,38,39]    t=3 (3<<6)+37=229
+                    232, // 0x6886 DUMMY_134 BC5E→B944 [40,41,42]    t=3 (3<<6)+40=232
+                    237, // 0x6887 DUMMY_135 BC5E→B95E [45,46]       t=3 (3<<6)+45=237
+                    235, // 0x6888 DUMMY_136 BC5E→B976 [43,44]       t=3 (3<<6)+43=235
+                    239, // 0x6889 DUMMY_137 BC5E→B98E [47,48]       t=3 (3<<6)+47=239
+                    244, // 0x688A DUMMY_138 BC64→BCA8 [52]          t=3 (3<<6)+52=244
+                     64, // 0x688B DUMMY_139 BC5E→VO43 [0,1,2]      t=1 (1<<6)+0=64
+                    235, // 0x688C DUMMY_140 BC5E→B9BE [43,44]       t=3 (3<<6)+43=235
+                    212, // 0x688D DUMMY_141 BC5E→B9D6 [20]          t=3 (3<<6)+20=212
+                     20, // 0x688E DUMMY_46  B87B shared             t=0 fallback
+                     20, // 0x688F DUMMY_47  - shared                t=0 fallback
                     243, // 0x6890 DUMMY_144       BCC7    [51]             3     (3<<6)+51=243
                     20,  // 0x6891 DUMMY_49(NPC)   shared  —               0     fallback=20
                     20,  // 0x6892 DUMMY_50(NPC)   shared  —               0     fallback=20
@@ -2203,17 +2110,89 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                     20,  // 0x689E DUMMY_62(NPC)   shared  —               0     fallback=20
                     28,  // 0x689F LI_SWORD_N(FD)  shared  —               0     fallback=28
                 };
-                effectIdx = (action < 32) ? sDekuActionToSfxId[action] : 28;
+                effectIdx = (action < 32) ? sDekuActionToSfxId[action] : 220;
             }
         } else if (sfxIndex < 0xC0) {
-            // Zora (0xA0-0xBF) → transposition=3, sfx[192+]
-            // Zora shares transposition=3 with Deku but uses same handlers as FD
-            effectIdx = 192 + (sfxIndex - 0xA0);
+            // Zora (0xA0-0xBF) → CHAN_BCF3 sets transpose=3 (line 26824)
+            // Uses same handlers as FD (B690, B6AB, etc.) with trans=3
+            // sfxId = (3<<6) + effect_index
+            u8 action = sfxIndex - 0xA0;
+            static const u16 sZoraActionToSfxId[] = {
+                // From seq_0 lines 26832-26904: each DUMMY_160+ calls BCF3 then jumps
+                192, // 0x68A0 DUMMY_160 BCF3→B690 [0,1,2,3]   t=3 (3<<6)+0=192
+                196, // 0x68A1 DUMMY_161 BCF3→B6AB [4,5]        t=3 (3<<6)+4=196
+                202, // 0x68A2 DUMMY_162 BCF3→B6D4 [10,11]      t=3 (3<<6)+10=202
+                198, // 0x68A3 DUMMY_163 BCF3→B6FD [6,25]       t=3 (3<<6)+6=198
+                199, // 0x68A4 DUMMY_164 BCF3→B715 [7,8]        t=3 (3<<6)+7=199
+                201, // 0x68A5 DUMMY_165 BCF3→B72D [9,10,11]    t=3 (3<<6)+9=201
+                204, // 0x68A6 DUMMY_166 BCF3→B747 [12,13,14]   t=3 (3<<6)+12=204
+                209, // 0x68A7 DUMMY_167 BCF3→B761 [17,18]      t=3 (3<<6)+17=209
+                207, // 0x68A8 DUMMY_168 BCF3→B779 [15,16]      t=3 (3<<6)+15=207
+                211, // 0x68A9 DUMMY_169 BCF3→B791 [19,23]      t=3 (3<<6)+19=211
+                192, // 0x68AA DUMMY_170 BCF9→ldlayer BD41       special (fallback)
+                192, // 0x68AB DUMMY_171 BCF3→ldlayer BD4E       special (fallback)
+                207, // 0x68AC DUMMY_172 BCF3→B7C2 [15,16]      t=3 (3<<6)+15=207
+                201, // 0x68AD DUMMY_173 BCF3→B72D [9,10,11]    t=3 (3<<6)+9=201
+                192, // 0x68AE fallback
+                192, // 0x68AF fallback
+                192, // 0x68B0 DUMMY_176 BCF3→VO_LI_DRINK       special (fallback)
+                192, // 0x68B1 fallback
+                192, // 0x68B2 fallback
+                192, // 0x68B3 fallback
+                192, // 0x68B4 DUMMY_180 BCF9→special            special (fallback)
+                192, // 0x68B5 fallback
+                192, // 0x68B6 fallback
+                192, // 0x68B7 fallback
+                199, // 0x68B8 DUMMY_184 BCF3→B846 [7]           t=3 (3<<6)+7=199
+                192, // 0x68B9 fallback
+                204, // 0x68BA DUMMY_186 BCF3→B85C [12]          t=3 (3<<6)+12=204
+                192, // 0x68BB fallback
+                192, // 0x68BC fallback
+                192, // 0x68BD fallback
+                192, // 0x68BE fallback
+                192, // 0x68BF fallback
+            };
+            effectIdx = (action < 32) ? sZoraActionToSfxId[action] : 192;
         } else if (sfxIndex < 0xE0) {
             // Goron (0xC0-0xDF) → transposition=4, sfx[256+]
             // From seq_0: CHAN_BD84 sets layer transposition=4
-            // sfxId = (4 << 6) + semitone = 256 + semitone
-            effectIdx = 256 + (sfxIndex - 0xC0);
+            // Uses SAME handlers as FD (B690, B6AB, B72D etc.) so same effect indices
+            // effectIdx = (4<<6) + effect = 256 + effect
+            {
+                u8 action = sfxIndex - 0xC0;
+                // Same effect mapping as FD — both use B690/B6AB/B72D handlers
+                static const u16 sGoronActionToSfxId[] = {
+                    256, // action 0 SWORD_N: B690 {0,1,2,3} → 256
+                    260, // action 1 SWORD_L: B6AB {4,5} → 260
+                    266, // action 2 LASH:    B6D4 {10,11} → 266
+                    262, // action 3 HANG:    B6FD {6,25} → 262
+                    263, // action 4 CLIMB_END: B715 {7,8} → 263
+                    265, // action 5 DAMAGE_S: B72D {9,10,11} → 265
+                    268, // action 6 FREEZE:  B747 {12,13,14} → 268
+                    273, // action 7 FALL_S:  B761 {17,18} → 273
+                    271, // action 8 FALL_L:  B779 {15,16} → 271
+                    275, // action 9 BREATH_REST: B791 {19,23} → 275
+                    279, // action 10: ldlayer SF0_EFFECT_23 t=4 → 256+23=279
+                    276, // action 11: ldlayer SF0_EFFECT_20 t=4 → 256+20=276
+                    271, // action 12: B7C2 {15,16} → 271 (=FALL_L)
+                    265, // action 13: B72D {9,10,11} → 265 (=DAMAGE_S)
+                    256, // action 14: B66E {0} → 256
+                    259, // action 15: ldlayer SF0_EFFECT_3 t=4+1 → 256+3=259
+                    283, // action 16: B803 eff=27 → 256+27=283
+                    261, // action 17: B66E {5} → 256+5=261
+                    265, // action 18: fallback
+                    260, // action 19: B66E {4} → 256+4=260
+                    262, // action 20: fallback
+                    262, // action 21: B66E {6} → 256+6=262
+                    268, // action 22: B66E {12} → 256+12=268
+                    256, // action 23: fallback
+                    256, // action 24: fallback
+                    271, // action 25: B779 {15,16} → 271
+                    256, // action 26-31: fallback
+                    256, 256, 256, 256, 256,
+                };
+                effectIdx = (action < 32) ? sGoronActionToSfxId[action] : 256;
+            }
         } else {
             // Mask of Scents (0xE0-0xFF)
             effectIdx = 256 + (sfxIndex - 0xE0);
@@ -2362,184 +2341,7 @@ static void MmWav_GenerateTriangle(void) {
     MMSFX_LOG("[MmWav] Generated triangle wave: %d samples", TRIANGLE_TOTAL_SAMPLES);
 }
 
-// =============================================================================
-// Decomp WAV Cache + Loader
-// =============================================================================
-// Loads 16-bit PCM WAV files from the MM decomp's extracted SampleBank_0.
-// Results are cached permanently (samples are small, <100KB each).
-
-#define MM_WAV_CACHE_SIZE 96
-
-typedef struct {
-    const char* filename; // Key: pointer to static string in mapping table
-    s16* pcmData;         // Cached PCM data (owned by cache, never freed during gameplay)
-    u32 pcmLength;        // Number of samples
-    u32 sampleRate;       // From WAV header
-} MmWavCacheEntry;
-
-static MmWavCacheEntry sWavCache[MM_WAV_CACHE_SIZE];
-static s32 sWavCacheCount = 0;
-static bool sWavPathValid = false;
-static bool sWavPathChecked = false;
-
-// Load a WAV file from decomp SampleBank_0. Returns cached PCM data (caller must NOT free).
-static s16* MmWav_Load(const char* filename, u32* outLength, u32* outSampleRate) {
-    if (!filename)
-        return nullptr;
-
-    // Check if decomp path exists (once)
-    if (!sWavPathChecked) {
-        sWavPathChecked = true;
-        FILE* test = fopen(MM_DECOMP_SAMPLEBANK_PATH "step_ground.wav", "rb");
-        if (test) {
-            fclose(test);
-            sWavPathValid = true;
-            MMSFX_LOG("[MmWav] Decomp SampleBank_0 found at %s", MM_DECOMP_SAMPLEBANK_PATH);
-        } else {
-            MMSFX_LOG("[MmWav] Decomp SampleBank_0 NOT found - WAV loading disabled");
-        }
-    }
-    if (!sWavPathValid)
-        return nullptr;
-
-    // Check cache
-    for (s32 i = 0; i < sWavCacheCount; i++) {
-        if (sWavCache[i].filename == filename || strcmp(sWavCache[i].filename, filename) == 0) {
-            if (sWavCache[i].pcmData) {
-                *outLength = sWavCache[i].pcmLength;
-                *outSampleRate = sWavCache[i].sampleRate;
-                return sWavCache[i].pcmData;
-            }
-            return nullptr; // Previously failed to load
-        }
-    }
-
-    // Build path and open file
-    char path[512];
-    snprintf(path, sizeof(path), "%s%s", MM_DECOMP_SAMPLEBANK_PATH, filename);
-
-    FILE* f = fopen(path, "rb");
-    if (!f) {
-        MMSFX_LOG("[MmWav] Failed to open: %s", filename);
-        // Cache the failure
-        if (sWavCacheCount < MM_WAV_CACHE_SIZE) {
-            sWavCache[sWavCacheCount].filename = filename;
-            sWavCache[sWavCacheCount].pcmData = nullptr;
-            sWavCache[sWavCacheCount].pcmLength = 0;
-            sWavCache[sWavCacheCount].sampleRate = 0;
-            sWavCacheCount++;
-        }
-        return nullptr;
-    }
-
-    // Read RIFF header
-    u8 hdr[12];
-    if (fread(hdr, 1, 12, f) != 12 || memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0) {
-        MMSFX_LOG("[MmWav] Invalid RIFF header: %s", filename);
-        fclose(f);
-        return nullptr;
-    }
-
-    // Parse chunks to find fmt and data
-    u32 sampleRate = 0;
-    s16* pcmData = nullptr;
-    u32 pcmLength = 0;
-
-    while (!feof(f)) {
-        u8 chunkHdr[8];
-        if (fread(chunkHdr, 1, 8, f) != 8)
-            break;
-
-        u32 chunkSize;
-        memcpy(&chunkSize, chunkHdr + 4, 4);
-
-        if (memcmp(chunkHdr, "fmt ", 4) == 0) {
-            u8 fmt[16];
-            if (chunkSize < 16 || fread(fmt, 1, 16, f) != 16)
-                break;
-            u16 audioFormat;
-            memcpy(&audioFormat, fmt, 2);
-            memcpy(&sampleRate, fmt + 4, 4);
-            if (audioFormat != 1) { // Not PCM
-                MMSFX_LOG("[MmWav] Not PCM format (%d): %s", audioFormat, filename);
-                break;
-            }
-            if (chunkSize > 16)
-                fseek(f, chunkSize - 16, SEEK_CUR);
-        } else if (memcmp(chunkHdr, "data", 4) == 0) {
-            pcmLength = chunkSize / 2; // 16-bit samples → sample count
-            pcmData = (s16*)malloc(chunkSize);
-            if (!pcmData || fread(pcmData, 1, chunkSize, f) != chunkSize) {
-                if (pcmData) {
-                    free(pcmData);
-                    pcmData = nullptr;
-                }
-                break;
-            }
-        } else {
-            // Skip unknown chunks (fact, etc.)
-            fseek(f, chunkSize, SEEK_CUR);
-        }
-    }
-
-    fclose(f);
-
-    if (!pcmData || pcmLength == 0 || sampleRate == 0) {
-        if (pcmData)
-            free(pcmData);
-        MMSFX_LOG("[MmWav] Failed to parse: %s", filename);
-        return nullptr;
-    }
-
-    // Cache the loaded WAV
-    if (sWavCacheCount < MM_WAV_CACHE_SIZE) {
-        sWavCache[sWavCacheCount].filename = filename;
-        sWavCache[sWavCacheCount].pcmData = pcmData;
-        sWavCache[sWavCacheCount].pcmLength = pcmLength;
-        sWavCache[sWavCacheCount].sampleRate = sampleRate;
-        sWavCacheCount++;
-    }
-
-    MMSFX_LOG("[MmWav] Loaded %s: %u samples, %u Hz", filename, pcmLength, sampleRate);
-    *outLength = pcmLength;
-    *outSampleRate = sampleRate;
-    return pcmData;
-}
-
-// Look up WAV for an instrument index + MIDI note (handles range splits)
-static s16* MmWav_GetForInstrument(u8 instIdx, u8 midiNote, u32* outLength, u32* outSampleRate, u8* outBaseNote) {
-    for (s32 i = 0; i < sMmInstWavMapSize; i++) {
-        if (sMmInstWavMap[i].instrumentIdx == instIdx && midiNote <= sMmInstWavMap[i].rangeSplitNote) {
-            *outBaseNote = sMmInstWavMap[i].baseNote;
-            return MmWav_Load(sMmInstWavMap[i].wavFile, outLength, outSampleRate);
-        }
-    }
-    return nullptr;
-}
-
-// Look up WAV for a voice effect index
-static s16* MmWav_GetForEffect(u8 effectIdx, u32* outLength, u32* outSampleRate, u8* outBaseNote) {
-    for (s32 i = 0; i < sMmEffectWavMapSize; i++) {
-        if (sMmEffectWavMap[i].effectIdx == effectIdx) {
-            *outBaseNote = sMmEffectWavMap[i].baseNote;
-            return MmWav_Load(sMmEffectWavMap[i].wavFile, outLength, outSampleRate);
-        }
-    }
-    return nullptr;
-}
-
-// Look up WAV for a drum index
-static s16* MmWav_GetForDrum(u8 drumIdx, u32* outLength, u32* outSampleRate, u8* outBaseNote) {
-    for (s32 i = 0; i < sMmDrumWavMapSize; i++) {
-        if (sMmDrumWavMap[i].drumIdx == drumIdx) {
-            *outBaseNote = sMmDrumWavMap[i].baseNote;
-            return MmWav_Load(sMmDrumWavMap[i].wavFile, outLength, outSampleRate);
-        }
-    }
-    return nullptr;
-}
-
-// Play pre-loaded PCM data (from WAV cache) into a slot. Does NOT own the PCM data.
+// Play pre-loaded PCM data (e.g. synthetic triangle wave) into a slot. Does NOT own the PCM data.
 static s32 MmDirectAudio_PlaySinglePCM(s16* pcm, u32 pcmLength, f32 advance, u16 mmSfxId, f32 volume, f32 pan,
                                        f32 vibratoRate, f32 vibratoDepth) {
     if (!pcm || pcmLength == 0)
@@ -2778,19 +2580,26 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
     // Goron/Zora/Deku/FD/HL all have their own samples in mm.o2r
     // =========================================================================
     if (bank == 6) {
-        // Vibrato parameters (from MM seq_0)
+        // Vibrato parameters (from MM seq_0 channel handlers)
+        // NOTE: transpose values (3 for Deku/Zora, 4 for Goron) are LAYER transposition
+        // that select which soundEffect block to use, NOT pitch multipliers.
+        // The selected soundEffects already have correct tuning values for each form.
         f32 vibRate = 0.0f, vibDepth = 0.0f;
+        f32 voiceTranspose = 1.0f; // no pitch transpose — tuning handles it
         if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
-            vibRate = 128.0f * (1.0f / 16.0f);
-            vibDepth = 88.0f / 256.0f * 0.03f;
+            // CHAN_BC5E: vibdepth=88, vibfreq=128
+            vibRate = 128.0f * (1.0f / 16.0f);   // 8 Hz
+            vibDepth = 88.0f / 256.0f * 0.03f;    // ~1% pitch modulation
         } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
-            vibRate = 240.0f * (1.0f / 16.0f);
-            vibDepth = 32.0f / 256.0f * 0.03f;
+            // CHAN_BCF3: vibdepth=32, vibfreq=240
+            vibRate = 240.0f * (1.0f / 16.0f);    // 15 Hz
+            vibDepth = 32.0f / 256.0f * 0.03f;     // ~0.4% pitch modulation
         }
+        // Goron (CHAN_BD84): no vibrato, no pitch transpose
 
         // Use ADPCM from mm.o2r Soundfont_0 (real MM voice recordings)
         SoundFontSound* sfxSound = MmDirectAudio_GetSound(mmSfxId);
-        f32 pitchScale = sMmLastPitchScale;
+        f32 pitchScale = sMmLastPitchScale * voiceTranspose;
         if (sfxSound && sfxSound->sample) {
             return MmDirectAudio_PlaySingle(sfxSound, pitchScale, freqScale, mmSfxId, vol, pan, vibRate, vibDepth);
         }
@@ -2799,7 +2608,7 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
     }
 
     // =========================================================================
-    // Non-voice banks: multi-layer, try WAV per layer then ADPCM fallback
+    // Non-voice banks: multi-layer ADPCM from mm.o2r
     // =========================================================================
 
     // One-time diagnostic: dump ALL referenced instruments' tuning from SF0
@@ -2846,10 +2655,28 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
         if (instIdx == FONTANY_INSTR_TRIANGLE) {
             // Built-in triangle wave (used by Deku hops)
             MmWav_GenerateTriangle();
-            f32 advance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
+            f32 targetAdvance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
                           powf(2.0f, ((f32)note - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
-            played += MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, advance, mmSfxId, vol * 0.6f,
+            s32 triSlot = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, targetAdvance, mmSfxId, vol * 0.6f,
                                                   pan, 0.0f, 0.0f);
+            // Apply portamento if specified (sweep from low to target note)
+            if (triSlot > 0 && portaNote > 0 && portaSpeed > 0) {
+                for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
+                    if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
+                        sPlayingSounds[s].lifeSamples == 0) {
+                        f32 portaStartAdv = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
+                                           powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+                        f32 durationSamples = (f32)portaSpeed * 64.0f;
+                        sPlayingSounds[s].portaStartAdv = portaStartAdv;
+                        sPlayingSounds[s].portaEndAdv = targetAdvance;
+                        sPlayingSounds[s].portaProgress = 0.0f;
+                        sPlayingSounds[s].portaRate = 1.0f / durationSamples;
+                        sPlayingSounds[s].advance = portaStartAdv;
+                        break;
+                    }
+                }
+            }
+            played += (triSlot > 0) ? 1 : 0;
             continue;
         } else if (instIdx == 127) { // FONTANY_INSTR_DRUM
             // ADPCM from mm.o2r Soundfont_0 (real MM drum samples)
@@ -2862,8 +2689,12 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
             // ADPCM from mm.o2r Soundfont_0 (real MM instrument samples)
             SoundFont* font0 = MmSfx_LoadFont(0);
             if (font0) {
-                // Apply transpose to note — used for BOTH sample selection AND pitch (like MM's seqplayer)
+                // Transpose: used for SAMPLE SELECTION only (range-split instruments).
+                // Apply transpose to both sample selection AND pitch (matches MM seqplayer)
                 s32 effectiveNote = (s32)note + (s32)transpose;
+                // Clamp to valid MIDI range
+                if (effectiveNote < 0) effectiveNote = 0;
+                if (effectiveNote > 127) effectiveNote = 127;
                 SoundFontSound* sound = MmDirectAudio_GetInstrumentSoundDirect(font0, instIdx, (u8)effectiveNote);
                 if (sound && sound->sample) {
                     f32 pitchScale = powf(2.0f, ((f32)effectiveNote - 60.0f) / 12.0f);
@@ -2878,7 +2709,10 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                         for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
                             if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
                                 sPlayingSounds[s].lifeSamples == 0) {
+                                // Portamento start pitch: portaNote + transpose (same as target)
                                 s32 portaEffNote = (s32)portaNote + (s32)transpose;
+                                if (portaEffNote < 0) portaEffNote = 0;
+                                if (portaEffNote > 127) portaEffNote = 127;
                                 f32 portaStartPitch = powf(2.0f, ((f32)portaEffNote - 60.0f) / 12.0f);
                                 f32 portaStartAdv = sound->tuning * portaStartPitch * freqScale;
                                 // Duration: portaSpeed maps to samples (higher = slower)
@@ -2892,7 +2726,24 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                                 sPlayingSounds[s].advance = portaStartAdv;
                                 MMSFX_LOG(
                                     "[MmDirectAudio] Porta 0x%04X: startNote=%d→endNote=%d adv=%.4f→%.4f dur=%.0f",
-                                    mmSfxId, portaEffNote, effectiveNote, portaStartAdv, advance, durationSamples);
+                                    mmSfxId, (s32)portaNote, (s32)note, portaStartAdv, advance, durationSamples);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Set max duration for one-shot SFX that use INST_47 (explosion1)
+                    // INST_47 samples are long. In MM, seq_0 uses short note durations + releaserate
+                    // to cut them. Without that, they ring forever in our system.
+                    // 1 seq tick ≈ 20ms, 32kHz → 640 samples/tick
+                    if (slot > 0 && instIdx == 47 && !MmDirectAudio_IsContinuous(mmSfxId)) {
+                        u32 maxLife = 35200; // default 55 ticks = 1.1s for INST_47
+                        if (mmSfxId == 0x08E7) maxLife = 22400;  // BALL_TO_GORON: 35 ticks
+                        if (mmSfxId == 0x08EF) maxLife = 22400;  // SQUAT: 35 ticks
+                        for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
+                            if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
+                                sPlayingSounds[s].lifeSamples == 0) {
+                                sPlayingSounds[s].maxLifeSamples = maxLife;
                                 break;
                             }
                         }
@@ -3017,6 +2868,9 @@ void MmGakki_PlayNote(s32 form, u8 buttonIndex, Vec3f* pos) {
 void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
     sMmAudioFrame++;
 
+    // Apply SoH master volume (gSettings.Volume.Master, 0-100, default 40)
+    f32 masterVol = (f32)CVarGetInteger("gSettings.Volume.Master", 40) / 100.0f;
+
     // Auto-stop continuous sounds that haven't been refreshed by game code.
     // In MM, continuous SFX must be re-triggered every frame via Audio_PlaySfxGeneral.
     // If the game stops calling it (e.g., player stops rolling), the sound stops.
@@ -3074,8 +2928,8 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
             if (!snd->active)
                 break;
 
-            // Effective volume = base volume × envelope
-            f32 effVol = snd->volume * snd->envVolume;
+            // Effective volume = base volume × envelope × master volume
+            f32 effVol = snd->volume * snd->envVolume * masterVol;
             f32 volL = effVol * (1.0f - snd->pan);
             f32 volR = effVol * snd->pan;
 
@@ -3145,6 +2999,13 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
 
         // Update lifetime counter after processing this buffer
         snd->lifeSamples += numSamples;
+
+        // Auto-stop after maxLifeSamples (triggers release fade-out)
+        if (snd->maxLifeSamples > 0 && snd->lifeSamples >= snd->maxLifeSamples &&
+            snd->envPhase < ADSR_PHASE_RELEASE) {
+            snd->envPhase = ADSR_PHASE_RELEASE;
+            snd->envReleaseRate = 1.0f / 640.0f; // ~20ms fade-out
+        }
     }
 }
 

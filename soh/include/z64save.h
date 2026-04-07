@@ -243,6 +243,11 @@ typedef struct ShipSaveContextData {
     // TODO: Move non-rando specific flags to a new sohInf and move the remaining randomizerInf to
     // ShipRandomizerSaveContextData
     u16 randomizerInf[(RAND_INF_MAX + 15) / 16];
+    u8 lanternFireType; // Lantern fire: 0=none, 1=regular, 2=blue, 3=poe, 4=green
+    u8 extEquipSword;  // Currently equipped ext sword (0=none, 1-3)
+    u8 extEquipShield; // Currently equipped ext shield (0=none, 1-3)
+    u8 extEquipTunic;  // Currently equipped ext tunic (0=none, 1-3)
+    u8 extEquipBoots;  // Currently equipped ext boots (0=none, 1-3)
 } ShipSaveContextData;
 
 #pragma endregion

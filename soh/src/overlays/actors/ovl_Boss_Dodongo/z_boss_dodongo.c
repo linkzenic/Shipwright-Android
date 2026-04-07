@@ -1507,14 +1507,23 @@ void BossDodongo_UpdateDamage(BossDodongo* this, PlayState* play) {
         if (this->collider.elements->info.bumperFlags & 2) {
             this->collider.elements->info.bumperFlags &= ~2;
             item1 = this->collider.elements[0].info.acHitInfo;
-            if ((this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown)) {
-                swordDamage = damage = CollisionCheck_GetSwordDamage(item1->toucher.dmgFlags, play);
+            lusprintf(__FILE__, __LINE__, 2, "DODONGO HIT: dmgFlags=0x%08X\n", item1->toucher.dmgFlags);
+            {
+                // Gigantamax Pikachu: bypass state check, force damage
+                extern u8 gPikaGigantamaxActive;
+                u8 isVulnerable = (this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown);
+                u8 isGigaHit = (item1->toucher.dmgFlags & DMG_UNBLOCKABLE) != 0;
 
-                if (damage != 0) {
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);
-                    BossDodongo_SetupDamaged(this);
-                    this->unk_1C0 = 5;
-                    this->health -= swordDamage;
+                if (isVulnerable || isGigaHit) {
+                    swordDamage = damage = CollisionCheck_GetSwordDamage(item1->toucher.dmgFlags, play);
+                    if (isGigaHit && damage < 4) damage = swordDamage = 4; /* clamp handled by boss death check */
+
+                    if (damage != 0) {
+                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);
+                        BossDodongo_SetupDamaged(this);
+                        this->unk_1C0 = 5;
+                        this->health -= swordDamage;
+                    }
                 }
             }
         }

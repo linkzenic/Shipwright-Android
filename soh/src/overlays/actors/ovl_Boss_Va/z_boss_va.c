@@ -1392,6 +1392,26 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
 
     if (this->colliderBody.base.acFlags & AC_HIT) {
         this->colliderBody.base.acFlags &= ~AC_HIT;
+        {
+            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+            u8 isGigaHit = this->colliderBody.info.acHitInfo &&
+                           (this->colliderBody.info.acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
+            if (isGigaHit) {
+                sPhase4HP -= 4;
+                if (sPhase4HP <= 0) {
+                    sFightPhase = PHASE_DEATH;
+                    BossVa_SetupBodyDeath(this, play);
+                    Enemy_StartFinishingBlow(play, &this->actor);
+                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                    return;
+                }
+                this->invincibilityTimer = 8;
+                this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_DAMAGE);
+                Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 12);
+                return;
+            }
+        }
         this->skelAnime.curFrame = 0.0f;
         if (this->timer >= 0) {
             if (this->invincibilityTimer == 0) {

@@ -14,10 +14,14 @@
 // Include behavior implementations
 // ---------------------------------------------------------------------------
 #include "behaviors/equip_byrna.c"
+#include "behaviors/equip_ikaxe.c"
 #include "behaviors/equip_pegasus.c"
 #include "behaviors/equip_dragonscale.c"
 #include "behaviors/equip_ikana.c"
 #include "behaviors/equip_magiccape.c"
+#include "behaviors/equip_breastplate.c"
+#include "behaviors/equip_pendant.c"
+#include "behaviors/equip_divine_shield.c"
 
 // ---------------------------------------------------------------------------
 // Sword behaviors
@@ -32,16 +36,14 @@ static void ExtEquip_Behavior_Sword2(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Sword3(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    IKAxe_Behavior(player, play);
 }
 
 // ---------------------------------------------------------------------------
 // Shield behaviors (stubs)
 // ---------------------------------------------------------------------------
 static void ExtEquip_Behavior_Shield1(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    DivineShield_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Shield2(Player* player, PlayState* play) {
@@ -61,8 +63,7 @@ static void ExtEquip_Behavior_Tunic1(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Tunic2(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    Breastplate_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Tunic3(Player* player, PlayState* play) {
@@ -78,8 +79,7 @@ static void ExtEquip_Behavior_Boots1(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Boots2(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    Pendant_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Boots3(Player* player, PlayState* play) {
@@ -122,6 +122,14 @@ static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
     // Byrna cleanup: restore original sword when Byrna is no longer active
     if (gExtEquipState.currentExtSword != 1) {
         Byrna_Cleanup();
+    }
+    // IK Axe cleanup: restore original sword when IK Axe is no longer active
+    if (gExtEquipState.currentExtSword != 3) {
+        IKAxe_Cleanup();
+    }
+    // Pegasus cleanup: disable collider when Pegasus boots are no longer active
+    if (gExtEquipState.currentExtBoots != 1) {
+        Pegasus_Cleanup();
     }
 
     if (gExtEquipState.currentExtSword > 0 && gExtEquipState.currentExtSword <= 3) {

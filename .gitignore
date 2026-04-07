@@ -460,3 +460,8 @@ soh/properties.h
 /clang-format
 /clang-format.exe
 *.o2r
+/mm_pc_port_tested_ver
+
+# Private Harpoon multiplayer
+/claude
+/references

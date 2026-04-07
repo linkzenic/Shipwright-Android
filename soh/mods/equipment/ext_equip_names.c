@@ -19,13 +19,13 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
         case ITEM_EXT_SWORD_2:
             return (void*)gFourSwordNameTex;
         case ITEM_EXT_SWORD_3:
-            return (void*)gDrillshaftNameTex;
+            return (void*)gIronKnuckleAxeNameTex;
 
         // Shields
         case ITEM_EXT_SHIELD_1:
             return (void*)gDivineShieldNameTex;
         case ITEM_EXT_SHIELD_2:
-            return (void*)gGerudoScimitarNameTex;
+            return (void*)gSheikahShieldNameTex;
         case ITEM_EXT_SHIELD_3:
             return (void*)gShieldOfIkanaNameTex;
 
@@ -33,7 +33,7 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
         case ITEM_EXT_TUNIC_1:
             return (void*)gMagicCapeNameTex;
         case ITEM_EXT_TUNIC_2:
-            return (void*)gPending4NameTex;
+            return (void*)gSpiritBreastplateNameTex;
         case ITEM_EXT_TUNIC_3:
             return (void*)gChampionsTunicNameTex;
 

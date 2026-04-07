@@ -194,7 +194,7 @@ typedef enum PlayerItemAction {
     /* 0x57 */ PLAYER_IA_BEETLE,
     /* 0x58 */ PLAYER_IA_SHOVEL,
     /* 0x59 */ PLAYER_IA_MINISH_CAP,
-    /* 0x5A */ PLAYER_IA_PENDING_2,
+    /* 0x5A */ PLAYER_IA_LANTERN,
     /* 0x5B */ PLAYER_IA_UNUSED_5B,
     /* 0x5C */ PLAYER_IA_PENDING_3,
 

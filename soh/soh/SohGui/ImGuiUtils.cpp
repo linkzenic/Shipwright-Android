@@ -170,7 +170,7 @@ std::map<uint32_t, ItemMapEntry> customItemMapping = {
     { ITEM_BEETLE, { ITEM_BEETLE, "ITEM_BEETLE", "ITEM_BEETLE_Faded", (char*)gItemIconBeetleTex } },
     { ITEM_SHOVEL, { ITEM_SHOVEL, "ITEM_SHOVEL", "ITEM_SHOVEL_Faded", (char*)gItemIconShovelTex } },
     { ITEM_MINISH_CAP, { ITEM_MINISH_CAP, "ITEM_MINISH_CAP", "ITEM_MINISH_CAP_Faded", (char*)gItemIconMinishCapTex } },
-    { ITEM_PENDING_2, { ITEM_PENDING_2, "ITEM_PENDING_2", "ITEM_PENDING_2_Faded", (char*)gItemIconPending2Tex } },
+    { ITEM_LANTERN, { ITEM_LANTERN, "ITEM_LANTERN", "ITEM_LANTERN_Faded", (char*)gItemIconPending2Tex } },
     { ITEM_CHATEAU_ROMANI,
       { ITEM_CHATEAU_ROMANI, "ITEM_CHATEAU_ROMANI", "ITEM_CHATEAU_ROMANI_Faded", (char*)gItemIconChateauRomaniTex } },
     { ITEM_PENDING_3, { ITEM_PENDING_3, "ITEM_PENDING_3", "ITEM_PENDING_3_Faded", (char*)gItemIconPending3Tex } },

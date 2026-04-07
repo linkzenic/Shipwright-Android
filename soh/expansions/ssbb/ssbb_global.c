@@ -9,6 +9,7 @@
 #include "expansions/ssbb/characters/pikachu_ssbb_all_anims.c"
 #include "expansions/ssbb/characters/pikachu_ssbb_dl.c"
 #include "expansions/ssbb/characters/pikachu_ssbb_skin.c"
+#include "expansions/ssbb/characters/pikachu_ssbb_shadow.c"
 
 // Register helper (defined as static inline in header — expose as non-static for C++ linkage)
 #include "expansions/ssbb/characters/pikachu_ssbb_register.h"

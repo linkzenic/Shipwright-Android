@@ -27,7 +27,7 @@ const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,       ITE
                                   ITEM_SWITCH_HOOK,         ITEM_ROD_ICE,    ITEM_ZONAI_PERMAFROST,
                                   ITEM_MOGMA_MITTS,         ITEM_GUST_JAR,   ITEM_BALL_AND_CHAIN,
                                   ITEM_DESIRE_SENSOR,       ITEM_ROD_LIGHT,  ITEM_HYLIAS_GRACE,
-                                  ITEM_PENDING_2,           ITEM_MINISH_CAP, ITEM_PENDING_3,
+                                  ITEM_LANTERN,           ITEM_MINISH_CAP, ITEM_PENDING_3,
                                   ITEM_CANE_OF_SOMARIA,     ITEM_SHOVEL,     ITEM_DOMINION_ROD };
 
 // Age requirements for page 2 items
@@ -279,8 +279,8 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return (void*)gShovelNameTex;
         case ITEM_MINISH_CAP: // 0xB3
             return (void*)gMinishCapNameTex;
-        case ITEM_PENDING_2: // 0xB4
-            return (void*)gPending2NameTex;
+        case ITEM_LANTERN: // 0xB4
+            return (void*)gLanternNameTex;
         case ITEM_PENDING_3: // 0xB6
             return (void*)gPending3NameTex;
         default:
@@ -386,8 +386,16 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return (void*)gItemIconShovelTex;
         case ITEM_MINISH_CAP: // 0xB3
             return (void*)gItemIconMinishCapTex;
-        case ITEM_PENDING_2: // 0xB4
-            return (void*)gItemIconPending2Tex;
+        case ITEM_LANTERN: { // 0xB4
+            extern u8 Lantern_GetFireType(void);
+            switch (Lantern_GetFireType()) {
+                case 1: return (void*)gItemIconLanternFireTex;   // Regular (orange)
+                case 2: return (void*)gItemIconLanternBlueTex;   // Blue
+                case 3: return (void*)gItemIconLanternPoeTex;    // Poe (purple)
+                case 4: return (void*)gItemIconLanternGreenTex;  // Green
+                default: return (void*)gItemIconLanternTex;      // Unlit
+            }
+        }
         case ITEM_PENDING_3: // 0xB6
             return (void*)gItemIconPending3Tex;
 

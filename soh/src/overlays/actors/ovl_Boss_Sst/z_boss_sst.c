@@ -2569,6 +2569,27 @@ void BossSst_HandCollisionCheck(BossSst* this, PlayState* play) {
 void BossSst_HeadCollisionCheck(BossSst* this, PlayState* play) {
     if (this->colliderCyl.base.acFlags & AC_HIT) {
         this->colliderCyl.base.acFlags &= ~AC_HIT;
+        {
+            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+            u8 isGigaHit = this->colliderCyl.info.acHitInfo &&
+                           (this->colliderCyl.info.acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
+            if (isGigaHit) {
+                s32 gigaDmg = CollisionCheck_GetSwordDamage(this->colliderCyl.info.acHitInfo->toucher.dmgFlags, play);
+                if (gigaDmg < 4) gigaDmg = 4;
+                this->actor.colChkInfo.health -= gigaDmg;
+                if ((s8)this->actor.colChkInfo.health <= 0) {
+                    this->actor.colChkInfo.health = 0;
+                    Enemy_StartFinishingBlow(play, &this->actor);
+                    BossSst_HeadSetupDeath(this, play);
+                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                } else {
+                    BossSst_HeadSetupDamage(this);
+                }
+                BossSst_HandSetupDamage(sHands[LEFT]);
+                BossSst_HandSetupDamage(sHands[RIGHT]);
+                return;
+            }
+        }
         if ((this->actor.colChkInfo.damageEffect != 0) || (this->actor.colChkInfo.damage != 0)) {
             if (this->actionFunc == BossSst_HeadVulnerable) {
                 if (Actor_ApplyDamage(&this->actor) == 0) {

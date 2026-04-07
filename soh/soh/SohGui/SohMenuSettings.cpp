@@ -582,6 +582,25 @@ void SohMenu::AddMenuSettings() {
                      .Tooltip("Choose which button switches inventory pages in the pause menu.\n"
                               "Applies to all inventory pages (vanilla, custom items, MM masks)."));
 
+    AddWidget(path, "Mask Transformations", WIDGET_SEPARATOR_TEXT);
+
+    AddWidget(path, "Kafei Mask Transform", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.KafeiMaskTransform")
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            if (!std::filesystem::exists("custom_items_resources/N64_Kafei.pak")) {
+                CVarSetInteger("gMods.KafeiMaskTransform", 0);
+                info.options->disabled = true;
+                info.options->disabledTooltip =
+                    "Requires N64_Kafei.pak in custom_items_resources/ folder.";
+            }
+        })
+        .Options(CheckboxOptions().Tooltip(
+            "Wearing the Kafei Mask transforms Link into Kafei.\n"
+            "Adult Link becomes Adult Kafei, Child Link becomes Child Kafei.\n"
+            "Remove the mask to revert.\n\n"
+            "REQUIRES: custom_items_resources/N64_Kafei.pak"));
+
     // ===================== COLUMN 2: MM Masks =====================
     path.column = SECTION_COLUMN_2;
 
@@ -688,15 +707,25 @@ void SohMenu::AddMenuSettings() {
 
     AddWidget(path, "Custom Models (.pak)", WIDGET_SEPARATOR_TEXT);
 
-    // Build the model combobox map (triggers lazy init of PakLoader)
+    // Build model combobox maps per age (triggers lazy init of PakLoader)
     {
-        std::map<int32_t, const char*> pakModelMap;
         s32 pakCount = PakLoader_GetModelCount();
-        if (pakCount == 0) {
-            pakModelMap[0] = "No models found";
-        } else {
-            for (s32 i = 0; i < pakCount; i++) {
-                pakModelMap[i] = PakLoader_GetModelName(i);
+
+        // Adult models
+        std::map<int32_t, const char*> adultModelMap;
+        adultModelMap[-1] = "Default Link";
+        for (s32 i = 0; i < pakCount; i++) {
+            if (PakLoader_ModelHasAdult(i)) {
+                adultModelMap[i] = PakLoader_GetModelName(i);
+            }
+        }
+
+        // Child models
+        std::map<int32_t, const char*> childModelMap;
+        childModelMap[-1] = "Default Link";
+        for (s32 i = 0; i < pakCount; i++) {
+            if (PakLoader_ModelHasChild(i)) {
+                childModelMap[i] = PakLoader_GetModelName(i);
             }
         }
 
@@ -713,39 +742,85 @@ void SohMenu::AddMenuSettings() {
             })
             .PostFunc([](WidgetInfo& info) {
                 if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
-                    s32 savedIdx = CVarGetInteger("gMods.PakLoader.SelectedModel", 0);
-                    if (savedIdx >= 0 && savedIdx < PakLoader_GetModelCount()) {
-                        PakLoader_SelectModel(savedIdx);
-                    }
+                    s32 adultIdx = CVarGetInteger("gMods.PakLoader.AdultModel", -1);
+                    s32 childIdx = CVarGetInteger("gMods.PakLoader.ChildModel", -1);
+                    PakLoader_SelectAdultModel(adultIdx);
+                    PakLoader_SelectChildModel(childIdx);
                 } else {
-                    PakLoader_SelectModel(-1);
+                    PakLoader_SelectAdultModel(-1);
+                    PakLoader_SelectChildModel(-1);
                 }
             })
             .Options(CheckboxOptions().Tooltip("Replaces Link's model with a custom model from a .pak file.\n"
                                                "Place ModLoader64 zzplayas .pak files in the mods/ folder.\n"
-                                               "Compatible with OOT animations (same 21-limb skeleton)."));
+                                               "You can choose different models for Adult and Child Link."));
 
-        AddWidget(path, "Select Model", WIDGET_CVAR_COMBOBOX)
-            .CVar("gMods.PakLoader.SelectedModel")
+        AddWidget(path, "Adult Link Model", WIDGET_CVAR_COMBOBOX)
+            .CVar("gMods.PakLoader.AdultModel")
             .RaceDisable(false)
             .PreFunc([](WidgetInfo& info) {
                 if (PakLoader_GetModelCount() == 0 || !CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
                     info.options->disabled = true;
-                    info.options->disabledTooltip = PakLoader_GetModelCount() == 0
-                                                        ? "No .pak files found in mods/ folder."
-                                                        : "Enable 'Custom Player Model' first.";
                 }
             })
             .PostFunc([](WidgetInfo& info) {
                 if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
-                    s32 selectedIdx = CVarGetInteger("gMods.PakLoader.SelectedModel", 0);
-                    PakLoader_SelectModel(selectedIdx);
+                    PakLoader_SelectAdultModel(CVarGetInteger("gMods.PakLoader.AdultModel", -1));
                 }
             })
             .Options(ComboboxOptions()
-                         .ComboMap(pakModelMap)
-                         .DefaultIndex(0)
-                         .Tooltip("Choose which .pak model to use as Link's replacement."));
+                         .ComboMap(adultModelMap)
+                         .DefaultIndex(-1)
+                         .Tooltip("Choose a custom model for Adult Link."));
+
+        AddWidget(path, "Child Link Model", WIDGET_CVAR_COMBOBOX)
+            .CVar("gMods.PakLoader.ChildModel")
+            .RaceDisable(false)
+            .PreFunc([](WidgetInfo& info) {
+                if (PakLoader_GetModelCount() == 0 || !CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                    info.options->disabled = true;
+                }
+            })
+            .PostFunc([](WidgetInfo& info) {
+                if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                    PakLoader_SelectChildModel(CVarGetInteger("gMods.PakLoader.ChildModel", -1));
+                }
+            })
+            .Options(ComboboxOptions()
+                         .ComboMap(childModelMap)
+                         .DefaultIndex(-1)
+                         .Tooltip("Choose a custom model for Child Link."));
+
+        // Equipment-only paks
+        std::map<int32_t, const char*> equipModelMap;
+        equipModelMap[-1] = "Default Equipment";
+        for (s32 i = 0; i < pakCount; i++) {
+            if (PakLoader_ModelIsEquipmentOnly(i)) {
+                equipModelMap[i] = PakLoader_GetModelName(i);
+            }
+        }
+
+        if (equipModelMap.size() > 1) { // More than just "Default"
+            AddWidget(path, "Equipment Pack", WIDGET_CVAR_COMBOBOX)
+                .CVar("gMods.PakLoader.Equipment")
+                .RaceDisable(false)
+                .PreFunc([](WidgetInfo& info) {
+                    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                        info.options->disabled = true;
+                    }
+                })
+                .PostFunc([](WidgetInfo& info) {
+                    if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+                        PakLoader_SelectEquipment(CVarGetInteger("gMods.PakLoader.Equipment", -1));
+                    }
+                })
+                .Options(ComboboxOptions()
+                             .ComboMap(equipModelMap)
+                             .DefaultIndex(-1)
+                             .Tooltip("Choose a custom equipment pack.\n"
+                                      "Replaces swords, shields, and other items.\n"
+                                      "Overrides equipment from the body model."));
+        }
     }
 
     // ===================== COLUMN 3: Randomizer =====================

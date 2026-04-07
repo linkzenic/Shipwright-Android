@@ -59,18 +59,19 @@ void Randomizer_DrawZonaiPermafrost(PlayState* play, GetItemEntry* getItemEntry)
 void Randomizer_DrawDemiseDestruction(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawMagnesis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawStasis(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawLantern(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawDesireSensor(PlayState* play, GetItemEntry* getItemEntry);
 
 // Extended Equipment Get-Item 3D Models
 void Randomizer_DrawExtCaneOfByrna(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry);
-void Randomizer_DrawExtDrillshaft(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtIronKnuckleAxe(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtDivineShield(PlayState* play, GetItemEntry* getItemEntry);
-void Randomizer_DrawExtGerudoScimitar(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtSheikahShield(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtShieldOfIkana(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtMagicCape(PlayState* play, GetItemEntry* getItemEntry);
-void Randomizer_DrawExtPendingTunic(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawExtSpiritBreastplate(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtChampionsTunic(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtPegasusAnklet(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtPendantOfMemories(PlayState* play, GetItemEntry* getItemEntry);

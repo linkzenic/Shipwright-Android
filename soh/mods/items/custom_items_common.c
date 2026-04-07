@@ -419,6 +419,9 @@ void CustomItems_Update(Player* p, PlayState* play) {
             case ITEM_MINISH_CAP:
                 Handle_MinishCap(p, play);
                 break;
+            case ITEM_LANTERN:
+                Handle_Lantern(p, play);
+                break;
             default:
                 break;
         }
@@ -463,6 +466,14 @@ s32 CustomItems_OverrideDraw(Player* p, PlayState* play) {
     if (gCustomItemState.switchHookActive) {
         CustomItems_DrawSwitchHookInHand(p, play);
         CustomItems_DrawSwitchHook(p, play);
+    }
+    // Lantern draws in hand ONLY when lantern is the active held item or no item held.
+    // Hides when ANY other item is in use (sword, hookshot, bow, etc.).
+    if (gCustomItemState.lanternEquipped || gCustomItemState.lanternSwinging) {
+        s32 heldIA = p->heldItemAction;
+        if (heldIA == PLAYER_IA_NONE || heldIA == PLAYER_IA_LANTERN) {
+            CustomItems_DrawLantern(p, play);
+        }
     }
 
     // Draw reticle for items using first-person aiming mode

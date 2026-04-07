@@ -40,6 +40,8 @@ extern u64 rspAspMainDataEnd[];
 
 // MM Direct Audio hook: mix MM sounds into output after OOT audio generation
 extern void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples);
+// Pikachu voice sample mixer
+extern void PikaSfx_MixInto(s16* outBuf, u32 numSamples);
 
 void AudioMgr_CreateNextAudioBuffer(s16* samples, u32 num_samples) {
     OSMesg sp4C;
@@ -74,6 +76,8 @@ void AudioMgr_CreateNextAudioBuffer(s16* samples, u32 num_samples) {
 
     // Mix MM direct audio sounds into the output buffer
     MmDirectAudio_MixInto(samples, num_samples);
+    // Mix Pikachu voice samples
+    PikaSfx_MixInto(samples, num_samples);
 
     gAudioContext.audioRandom = (gAudioContext.audioRandom + gAudioContext.totalTaskCnt) * osGetCount();
 }

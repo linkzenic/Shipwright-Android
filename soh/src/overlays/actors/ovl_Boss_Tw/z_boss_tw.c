@@ -2894,13 +2894,36 @@ void BossTw_Update(Actor* thisx, PlayState* play) {
         this->collider.dim.height = 120;
         this->collider.dim.yShift = -30;
 
+        // ALWAYS register AC (even with INVINC_TIMER) so Gigantamax can hit
+        Collider_UpdateCylinder(&this->actor, &this->collider);
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
+
+        // Gigantamax: bypass INVINC_TIMER for DMG_UNBLOCKABLE hits on witches
+        {
+            Player* pl = GET_PLAYER(play);
+            f32 dx = pl->actor.world.pos.x - this->actor.world.pos.x;
+            f32 dy = pl->actor.world.pos.y - this->actor.world.pos.y;
+            f32 dz = pl->actor.world.pos.z - this->actor.world.pos.z;
+            f32 dist = sqrtf(dx*dx + dz*dz);
+            lusprintf(__FILE__, __LINE__, 2, "WITCH: acHit=%d hp=%d p=%d dist=%.0f dy=%.0f af=0x%X\n",
+                (this->collider.base.acFlags & AC_HIT) != 0, this->actor.colChkInfo.health,
+                this->actor.params, dist, dy, this->collider.base.acFlags);
+        }
+        if (this->collider.base.acFlags & AC_HIT) {
+            ColliderInfo* wInfo = this->collider.info.acHitInfo;
+            if (wInfo && (wInfo->toucher.dmgFlags & DMG_UNBLOCKABLE)) {
+                this->collider.base.acFlags &= ~AC_HIT;
+                this->actor.colChkInfo.health -= 4;
+                if ((s8)this->actor.colChkInfo.health <= 0) this->actor.colChkInfo.health = 0;
+                this->work[INVINC_TIMER] = 0;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
+            }
+        }
+
         if (this->work[INVINC_TIMER] == 0) {
             if (this->collider.base.acFlags & AC_HIT) {
                 this->collider.base.acFlags &= ~AC_HIT;
             }
-
-            Collider_UpdateCylinder(&this->actor, &this->collider);
-            CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
             CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
         }
 
@@ -2954,6 +2977,29 @@ void BossTw_Update(Actor* thisx, PlayState* play) {
                 accel.z = Rand_CenteredFloat(0.5f);
                 BossTw_AddDotEffect(play, &pos, &velocity, &accel, (s16)Rand_ZeroFloat(2.0f) + 8, this->actor.params,
                                     37);
+            }
+        }
+    }
+
+    // Gigantamax: register AC and check for DMG_UNBLOCKABLE
+    // Witches merge when colChkInfo.health sum >= 4 (BossTw_Wait checks this)
+    // Each beam absorbed increments health. We do the same on Pikachu hit.
+    {
+        Collider_UpdateCylinder(&this->actor, &this->collider);
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->collider.base);
+        CollisionCheck_SetOC(play, &play->colChkCtx, &this->collider.base);
+        if (this->collider.base.acFlags & AC_HIT) {
+            ColliderInfo* wInfo = this->collider.info.acHitInfo;
+            if (wInfo && (wInfo->toucher.dmgFlags & DMG_UNBLOCKABLE)) {
+                this->collider.base.acFlags &= ~AC_HIT;
+                // Increment health counter (merge triggers at sum >= 4)
+                this->actor.colChkInfo.health++;
+                Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 12);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
+                // Force witch into FlyTo state (required for merge check)
+                if (this->actionFunc != BossTw_FlyTo) {
+                    this->actionFunc = BossTw_FlyTo;
+                }
             }
         }
     }
@@ -3077,6 +3123,27 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
     this->collider.dim.yShift = -60;
     Collider_UpdateCylinder(&this->actor, &this->collider);
 
+    // Gigantamax bypass for combined Twinrova (phase 2 only — NOT during Wait/phase 1)
+    {
+        extern u8 gPikaGigantamaxActive;
+        if (gPikaGigantamaxActive && this->actionFunc != BossTw_Wait && this->actionFunc != BossTw_TwinrovaMergeCS) {
+            Player* pl = GET_PLAYER(play);
+            f32 dx = pl->actor.world.pos.x - this->actor.world.pos.x;
+            f32 dz = pl->actor.world.pos.z - this->actor.world.pos.z;
+            f32 distXZ = sqrtf(dx*dx + dz*dz);
+            static s32 sTwGigaCD = 0;
+            if (distXZ < 400.0f && sTwGigaCD <= 0) {
+                this->actor.colChkInfo.health -= 4;
+                if ((s8)this->actor.colChkInfo.health <= 0) this->actor.colChkInfo.health = 0;
+                this->work[INVINC_TIMER] = 0;
+                BossTw_TwinrovaDamage(this, play, 4);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
+                sTwGigaCD = 15;
+            }
+            if (sTwGigaCD > 0) sTwGigaCD--;
+        }
+    }
+
     if (this->work[INVINC_TIMER] == 0) {
         if (this->actionFunc != BossTw_TwinrovaStun) {
             if (this->twinrovaStun != 0) {
@@ -3089,6 +3156,22 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
 
                 this->collider.base.acFlags &= ~AC_HIT;
                 if (info->toucher.dmgFlags & (DMG_SLINGSHOT | DMG_ARROW)) {}
+                {
+                    // G-Max Volt Crash: Gigantamax Pikachu force-stuns AND damages Twinrova
+                    extern u8 gPikaGigantamaxActive;
+                    if ((info->toucher.dmgFlags & DMG_UNBLOCKABLE)) {
+                        s32 gigaDmg = CollisionCheck_GetSwordDamage(info->toucher.dmgFlags, play);
+                        if (gigaDmg < 4) gigaDmg = 4;
+                        this->timers[0] = 80;
+                        this->csState1 = 10;
+                        sShieldFireCharge = 0;
+                        sShieldIceCharge = 0;
+                        this->actor.colChkInfo.health -= gigaDmg;
+                        if ((s8)this->actor.colChkInfo.health <= 0) this->actor.colChkInfo.health = 0;
+                        func_800AA000(0.0f, 150, 10, 5);
+                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
+                    }
+                }
             }
         } else if (this->collider.base.acFlags & AC_HIT) {
             u8 damage;

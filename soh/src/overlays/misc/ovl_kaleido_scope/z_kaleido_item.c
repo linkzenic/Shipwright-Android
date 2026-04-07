@@ -350,6 +350,36 @@ bool CanMaskSelect() {
 
 extern void* ExtInv_GetItemIcon(uint16_t itemId);
 
+// ── Lantern Kaleido Extinguish ───────────────────────────────────────────────
+static s32 sLanternHoldTimer = 0;
+
+static void Lantern_HandleKaleidoExtinguish(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_LANTERN || gCustomItemState.lanternFireType == 0) {
+        sLanternHoldTimer = 0;
+        return;
+    }
+
+    u8 cHeld = CHECK_BTN_ANY(input->cur.button, BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT);
+    if (cHeld) {
+        sLanternHoldTimer++;
+        if (sLanternHoldTimer >= 20) {
+            // Extinguish!
+            gCustomItemState.lanternFireType = 0;
+            sLanternHoldTimer = 0;
+            Audio_PlaySoundGeneral(NA_SE_EV_FIRE_PILLAR, &gSfxDefaultPos, 4,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultReverb);
+        }
+    } else {
+        sLanternHoldTimer = 0;
+    }
+}
+
+// ── Gust Jar Kaleido Element Cycle ──────────────────────────────────────────
 // Available elements based on owned medallions
 static u8 sGustAvailElems[6];
 static u8 sGustAvailCount = 0;
@@ -574,6 +604,9 @@ void KaleidoScope_HandleItemCycles(PlayState* play) {
 
     // Handle Gust Jar element cycle
     GustJar_HandleElementCycle(play);
+
+    // Handle Lantern extinguish (long-press C while cursor on lantern)
+    Lantern_HandleKaleidoExtinguish(play);
 }
 
 void KaleidoScope_DrawItemCycles(PlayState* play) {

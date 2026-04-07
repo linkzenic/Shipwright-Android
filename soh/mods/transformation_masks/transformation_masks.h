@@ -184,6 +184,10 @@ u8 TransformMasks_IsEnabled(void);
 u8 TransformMasks_IsTransformed(void);
 u8 TransformMasks_HasSkeleton(void);
 
+// Redirect OOT voice SFX to MM equivalent voice for current form.
+// Called from Player_PlayVoiceSfx when transformed, instead of suppressing.
+void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos);
+
 // FD skin mode: returns true when FD is active (OOT handles gameplay, only DLs swapped)
 u8 TransformMasks_IsFDSkinMode(void);
 

@@ -842,6 +842,33 @@ void BossFd2_CollisionCheck(BossFd2* this, PlayState* play) {
         this->collider.elements[0].info.bumperFlags &= ~BUMP_HIT;
 
         hurtbox = this->collider.elements[0].info.acHitInfo;
+        {
+            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+            extern u8 gPikaGigantamaxActive;
+            u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
+            if (isGigaHit) {
+                s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
+                if (gigaDmg < 4) gigaDmg = 4;
+                bossFd->actor.colChkInfo.health -= gigaDmg;
+                if ((s8)bossFd->actor.colChkInfo.health <= 0) {
+                    bossFd->actor.colChkInfo.health = 0;
+                    BossFd2_SetupDeath(this, play);
+                    this->work[FD2_DAMAGE_FLASH_TIMER] = 10;
+                    this->work[FD2_INVINC_TIMER] = 30000;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_VALVAISA_DEAD);
+                    Enemy_StartFinishingBlow(play, &this->actor);
+                    return;
+                }
+                if (!bossFd->faceExposed) {
+                    bossFd->faceExposed = true;
+                }
+                BossFd2_SetupVulnerable(this, play);
+                this->work[FD2_INVINC_TIMER] = 30;
+                this->work[FD2_DAMAGE_FLASH_TIMER] = 5;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_VALVAISA_MAHI1);
+                return;
+            }
+        }
         if (!bossFd->faceExposed) {
             if (hurtbox->toucher.dmgFlags & 0x40000040) {
                 bossFd->actor.colChkInfo.health -= 2;

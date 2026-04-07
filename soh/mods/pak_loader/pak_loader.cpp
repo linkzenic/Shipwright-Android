@@ -7,6 +7,7 @@
  */
 
 #include "pak_loader.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #include <libultraship/libultra.h>
 #include "global.h"
@@ -146,6 +147,7 @@ struct PakModel {
     u8 hasChild;
     u8 adultReady;
     u8 childReady;
+    u8 isEquipmentOnly; // 1 = zzequipment pak (no body, only equipment items)
 };
 
 // ============================================================================
@@ -153,8 +155,23 @@ struct PakModel {
 // ============================================================================
 
 static std::vector<PakModel> sModels;
-static s32 sSelectedIndex = -1;
+static s32 sSelectedAdultIndex = -1;
+static s32 sSelectedChildIndex = -1;
+static s32 sSelectedEquipIndex = -1;
 static u8 sInitialized = 0;
+
+// Forced model (from custom items like Kafei Mask)
+static s32 sForcedModelIndex = -1;
+static std::string sForcedModelPath;
+
+// Helper: get active model index for current Link age
+// Forced model takes priority over user selection
+static inline s32 sGetActiveIndex(void) {
+    if (sForcedModelIndex >= 0 && sForcedModelIndex < (s32)sModels.size()) {
+        return sForcedModelIndex;
+    }
+    return (LINK_AGE_IN_YEARS == YEARS_ADULT) ? sSelectedAdultIndex : sSelectedChildIndex;
+}
 
 // ============================================================================
 // PAK File Entry
@@ -1009,6 +1026,341 @@ static void ZobjParseAliasTable(u8* zobjData, u32 zobjSize, std::map<u32, Gfx*>&
 }
 
 // ============================================================================
+// Equipment Manifest Slot Name → Z64O Alias Offset
+// ============================================================================
+
+struct EquipSlotMapping {
+    const char* slotName;
+    u32 z64oAlias;
+};
+
+static const EquipSlotMapping sEquipSlotMap[] = {
+    // Swords
+    {"sword0_blade", 0x50F0},  // DL_SWORD_BLADE_1 (Kokiri)
+    {"sword0_hilt", 0x50D8},   // DL_SWORD_HILT_1
+    {"sword0_sheath", 0x50C0}, // DL_SWORD_SHEATH_1 (Kokiri sheath)
+    {"sword1_blade", 0x50F8},  // DL_SWORD_BLADE_2 (Master)
+    {"sword1_hilt", 0x50E0},   // DL_SWORD_HILT_2
+    {"sword1_sheath", 0x50C0}, // DL_SWORD_SHEATH_1
+    {"sword2_blade", 0x5100},  // DL_SWORD_BLADE_3 (Biggoron)
+    {"sword2_hilt", 0x50E8},   // DL_SWORD_HILT_3
+    // Shields
+    {"shield0_held", 0x5108},  // DL_SHIELD_1 (Deku)
+    {"shield1_held", 0x5110},  // DL_SHIELD_2 (Hylian)
+    {"shield2_held", 0x5118},  // DL_SHIELD_3 (Mirror)
+    // Ranged
+    {"bow", 0x5138},           // DL_BOW
+    {"hookshot", 0x5148},      // DL_HOOKSHOT
+    {"boomerang", 0x5178},     // DL_BOOMERANG
+    {"slingshot", 0x5180},     // DL_SLINGSHOT
+    // Items
+    {"deku_stick", 0x5130},    // DL_DEKU_STICK
+    {"bottle", 0x5120},        // DL_BOTTLE
+    {"ocarina_0", 0x5190},     // DL_OCARINA_FAIRY
+    {"ocarina_1_a", 0x5128},   // DL_OCARINA_2 (adult OoT)
+    {"ocarina_1", 0x5128},     // DL_OCARINA_2 (alternate name)
+    {"hammer", 0x51F0},        // DL_HAMMER
+    // Sentinel
+    {NULL, 0}
+};
+
+static u32 EquipSlotNameToAlias(const char* slotName) {
+    for (const EquipSlotMapping* m = sEquipSlotMap; m->slotName != NULL; m++) {
+        if (strcmp(slotName, m->slotName) == 0) return m->z64oAlias;
+    }
+    return 0;
+}
+
+/**
+ * Load a single equipment zobj from a zzequipment pak.
+ * Reads the EQUIPMANIFEST JSON, translates DLs, stores in equipDLs maps.
+ */
+static void LoadEquipmentZobj(u8* zobjData, u32 zobjSize, PakModel& model) {
+    // Find EQUIPMANIFEST marker
+    const char* marker = "EQUIPMANIFEST";
+    u8* found = NULL;
+    for (u32 i = 0; i + 13 <= zobjSize; i++) {
+        if (memcmp(zobjData + i, marker, 13) == 0) {
+            found = zobjData + i;
+            break;
+        }
+    }
+    if (!found) {
+        PAK_LOG("Equipment zobj has no EQUIPMANIFEST");
+        return;
+    }
+
+    // Find JSON start (skip null bytes after marker)
+    u8* jsonStart = found + 13;
+    while (jsonStart < zobjData + zobjSize && *jsonStart == 0) jsonStart++;
+    if (jsonStart >= zobjData + zobjSize || *jsonStart != '{') return;
+
+    // Extract JSON string
+    s32 depth = 0;
+    u8* jsonEnd = jsonStart;
+    for (u8* p = jsonStart; p < zobjData + zobjSize; p++) {
+        if (*p == '{') depth++;
+        else if (*p == '}') { depth--; if (depth == 0) { jsonEnd = p + 1; break; } }
+    }
+    std::string json((char*)jsonStart, jsonEnd - jsonStart);
+
+    // Find MODLOADER64 header to get DL pointers
+    u8* ml64 = NULL;
+    for (u32 i = 0; i + 11 <= zobjSize; i++) {
+        if (memcmp(zobjData + i, "MODLOADER64", 11) == 0) {
+            ml64 = zobjData + i;
+            break;
+        }
+    }
+    if (!ml64) return;
+
+    // DL count is at ml64+12 as u32 BE (after "MODLOADER64" + version byte)
+    u32 headerOff = (u32)(ml64 - zobjData);
+    // DL entries start after: magic(11) + version(1) + count(4) = offset +16
+    // But the actual format has the count at +12 and DLs at +16... let me check
+    // From analysis: after "R64i" at +12, count at +12+4=+16? No.
+    // Let's just scan for DE entries after the magic
+    u32 dlEntryStart = headerOff + 16; // After MODLOADER64(11) + version(1) + padding(4)
+
+    // Collect DL offsets (each is {0xDE010000, 0x06XXXXXX})
+    std::vector<u32> dlOffsets;
+    for (u32 off = dlEntryStart; off + 8 <= zobjSize; off += 8) {
+        u32 de = BE_U32(zobjData + off);
+        u32 ptr = BE_U32(zobjData + off + 4);
+        if ((de >> 24) == 0xDE && (ptr >> 24) == 0x06) {
+            dlOffsets.push_back(ptr & 0x00FFFFFF);
+        } else {
+            break; // End of DL entries
+        }
+    }
+
+    if (dlOffsets.empty()) {
+        PAK_LOG("Equipment zobj has no DL entries");
+        return;
+    }
+
+    // Set up swap context for translating DLs
+    SwapContext ctx;
+    ctx.data = zobjData;
+    ctx.size = zobjSize;
+    ctx.lastTexFmt = 0;
+    ctx.lastTexSiz = 0;
+    ctx.lastTexAddr = 0;
+    ctx.lastTexWidth = 0;
+    ctx.lastTexHeight = 0;
+
+    // Parse the JSON to find slot assignments
+    // Format: {"OOT":{"adult":{"0":"sword1_blade","1":"sword1_hilt"},"child":{...}}}
+    // Simple parser: find "adult":{...} and "child":{...} sections
+    auto parseAge = [&](const char* ageName, std::map<u32, Gfx*>& equipDLs,
+                         std::map<u32, Gfx*>& translatedDLs) {
+        std::string ageKey = std::string("\"") + ageName + "\":{";
+        size_t agePos = json.find(ageKey);
+        if (agePos == std::string::npos) return;
+        agePos += ageKey.length();
+
+        // Find matching close brace
+        s32 d = 1;
+        size_t ageEnd = agePos;
+        for (size_t i = agePos; i < json.length() && d > 0; i++) {
+            if (json[i] == '{') d++;
+            else if (json[i] == '}') { d--; if (d == 0) ageEnd = i; }
+        }
+
+        std::string ageSection = json.substr(agePos, ageEnd - agePos);
+        if (ageSection.empty() || ageSection == "}") return;
+
+        // Parse "index":"slotname" pairs
+        size_t pos = 0;
+        while (pos < ageSection.length()) {
+            // Find "N":"name"
+            size_t q1 = ageSection.find('"', pos);
+            if (q1 == std::string::npos) break;
+            size_t q2 = ageSection.find('"', q1 + 1);
+            if (q2 == std::string::npos) break;
+            std::string indexStr = ageSection.substr(q1 + 1, q2 - q1 - 1);
+
+            size_t q3 = ageSection.find('"', q2 + 1);
+            if (q3 == std::string::npos) break;
+            size_t q4 = ageSection.find('"', q3 + 1);
+            if (q4 == std::string::npos) break;
+            std::string slotName = ageSection.substr(q3 + 1, q4 - q3 - 1);
+
+            pos = q4 + 1;
+
+            // Convert index to DL offset
+            s32 dlIdx = atoi(indexStr.c_str());
+            if (dlIdx < 0 || dlIdx >= (s32)dlOffsets.size()) continue;
+
+            // Map slot name to Z64O alias
+            u32 alias = EquipSlotNameToAlias(slotName.c_str());
+            if (alias == 0) {
+                PAK_LOG("Unknown equipment slot: '%s'", slotName.c_str());
+                continue;
+            }
+
+            // Translate the DL
+            Gfx* translated = TranslateDL(ctx, dlOffsets[dlIdx], translatedDLs);
+            if (translated) {
+                equipDLs[alias] = translated;
+                PAK_LOG("Equipment: '%s' (DL %d @ 0x%X) -> alias 0x%04X",
+                        slotName.c_str(), dlIdx, dlOffsets[dlIdx], alias);
+            }
+        }
+    };
+
+    parseAge("adult", model.adultEquipDLs, model.adultTranslatedDLs);
+    parseAge("child", model.childEquipDLs, model.childTranslatedDLs);
+
+    // Generate combined DLs from individual pieces.
+    // Z64O generates these at load time: DL_LFIST_SWORD1 = hilt + blade + lfist, etc.
+    // For back-mounted items (sheath, shield), Z64O uses positioning matrices.
+    // We don't have those matrices for equipment-only paks, so those items may not
+    // be positioned perfectly. The vanilla limb positioning handles most of it.
+    auto generateCombined = [](std::map<u32, Gfx*>& eq) {
+        auto makeCombinedDL = [](std::vector<Gfx*> subDLs) -> Gfx* {
+            if (subDLs.empty()) return NULL;
+            Gfx* dl = (Gfx*)calloc(subDLs.size() + 1, sizeof(Gfx));
+            for (size_t i = 0; i < subDLs.size(); i++) {
+                dl[i].words.w0 = (uintptr_t)(0xDE000000); // G_DL push
+                dl[i].words.w1 = (uintptr_t)subDLs[i];
+            }
+            dl[subDLs.size()].words.w0 = (uintptr_t)(0xDF000000); // G_ENDDL
+            dl[subDLs.size()].words.w1 = 0;
+            return dl;
+        };
+
+        // Standard shield-back matrix: rotates 180° around Y + translates to back position
+        // Extracted from vanilla object_link_boy (same in all zzplayas models)
+        // Matrix = {-1,0,0,0, 0,-1,0,0, 0,0,1,0, 935,94,29,1} in fixed-point
+        static u8 sShieldBackMtxBE[64] = {
+            0xFF,0xFF,0x00,0x00, 0x00,0x00,0x00,0x00,
+            0x00,0x00,0xFF,0xFF, 0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00, 0x00,0x01,0x00,0x00,
+            0x03,0xA7,0x00,0x5E, 0x00,0x1D,0x00,0x01,
+            0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+            0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,
+        };
+        static u8 sShieldBackMtxSwapped = 0;
+        static Mtx* sShieldBackMtx = NULL;
+        if (!sShieldBackMtxSwapped) {
+            sShieldBackMtx = (Mtx*)malloc(64);
+            memcpy(sShieldBackMtx, sShieldBackMtxBE, 64);
+            // Byte-swap from BE to native (16 x s32)
+            for (int mi = 0; mi < 16; mi++) {
+                u8* p = (u8*)sShieldBackMtx + mi * 4;
+                u8 t;
+                t = p[0]; p[0] = p[3]; p[3] = t;
+                t = p[1]; p[1] = p[2]; p[2] = t;
+            }
+            sShieldBackMtxSwapped = 1;
+        }
+
+        // Create a DL that: push matrix → draw DL → pop matrix
+        auto makeMtxWrappedDL = [](Mtx* mtx, Gfx* innerDL) -> Gfx* {
+            if (!innerDL) return NULL;
+            // G_MTX push + G_DL push + G_POPMTX + G_ENDDL = 4 commands
+            Gfx* dl = (Gfx*)calloc(4, sizeof(Gfx));
+            dl[0].words.w0 = (uintptr_t)(0xDA380000); // gSPMatrix(mtx, PUSH|LOAD|MODELVIEW)
+            dl[0].words.w1 = (uintptr_t)mtx;
+            dl[1].words.w0 = (uintptr_t)(0xDE000000); // G_DL push
+            dl[1].words.w1 = (uintptr_t)innerDL;
+            dl[2].words.w0 = (uintptr_t)(0xD8380002); // gSPPopMatrix(MODELVIEW)
+            dl[2].words.w1 = (uintptr_t)(0x00000040);
+            dl[3].words.w0 = (uintptr_t)(0xDF000000); // G_ENDDL
+            dl[3].words.w1 = 0;
+            return dl;
+        };
+
+        struct CombinedDef { u32 result; u32 pieces[4]; };
+
+        CombinedDef combos[] = {
+            // Held weapons (weapon pieces only — fist comes from body pak via merge)
+            { 0x5448, { 0x50D8, 0x50F0, 0, 0 } }, // DL_LFIST_SWORD1 = hilt1 + blade1
+            { 0x5450, { 0x50E0, 0x50F8, 0, 0 } }, // DL_LFIST_SWORD2 = hilt2 + blade2
+            { 0x5458, { 0x50E8, 0x5100, 0, 0 } }, // DL_LFIST_SWORD3 = hilt3 + blade3
+            { 0x5460, { 0x51F0, 0, 0, 0 } },       // DL_LFIST_HAMMER = hammer
+            { 0x5500, { 0x5178, 0, 0, 0 } },       // DL_LFIST_BOOMERANG = boomerang
+            // Held shields/items (item only — fist comes from body pak)
+            { 0x5468, { 0x5108, 0, 0, 0 } },       // DL_RFIST_SHIELD_1 = shield1
+            { 0x5470, { 0x5110, 0, 0, 0 } },       // DL_RFIST_SHIELD_2 = shield2
+            { 0x5478, { 0x5118, 0, 0, 0 } },       // DL_RFIST_SHIELD_3 = shield3
+            { 0x5480, { 0x5138, 0, 0, 0 } },       // DL_RFIST_BOW = bow
+            { 0x5488, { 0x5148, 0, 0, 0 } },       // DL_RFIST_HOOKSHOT = hookshot
+            { 0x5508, { 0x5180, 0, 0, 0 } },       // DL_RFIST_SLINGSHOT = slingshot
+            { 0x5510, { 0x5190, 0, 0, 0 } },       // DL_RHAND_OCARINA_FAIRY
+            { 0x5490, { 0x5128, 0, 0, 0 } },       // DL_RHAND_OCARINA_TIME
+            // Sheathed swords on back (hilt + sheath)
+            { 0x53D0, { 0x50D8, 0x50C0, 0, 0 } },  // DL_SWORD1_SHEATHED
+            { 0x53D8, { 0x50E0, 0x50C0, 0, 0 } },  // DL_SWORD2_SHEATHED
+            { 0x53E0, { 0x50E8, 0x50C0, 0, 0 } },  // DL_SWORD3_SHEATHED
+            // Shields on back
+            { 0x53E8, { 0x5108, 0, 0, 0 } },        // DL_SHIELD1_BACK
+            { 0x53F0, { 0x5110, 0, 0, 0 } },        // DL_SHIELD2_BACK
+            { 0x53F8, { 0x5118, 0, 0, 0 } },        // DL_SHIELD3_BACK
+            // Sword+Shield on back
+            { 0x5400, { 0x53D0, 0x53E8, 0, 0 } },   // DL_SWORD1_SHIELD1
+            { 0x5408, { 0x53D0, 0x53F0, 0, 0 } },   // DL_SWORD1_SHIELD2
+            { 0x5410, { 0x53D0, 0x53F8, 0, 0 } },   // DL_SWORD1_SHIELD3
+            { 0x5418, { 0x53D8, 0x53E8, 0, 0 } },   // DL_SWORD2_SHIELD1
+            { 0x5420, { 0x53D8, 0x53F0, 0, 0 } },   // DL_SWORD2_SHIELD2
+            { 0x5428, { 0x53D8, 0x53F8, 0, 0 } },   // DL_SWORD2_SHIELD3
+            { 0x5430, { 0x53E0, 0x53E8, 0, 0 } },   // DL_SWORD3_SHIELD1
+            { 0x5438, { 0x53E0, 0x53F0, 0, 0 } },   // DL_SWORD3_SHIELD2
+            { 0x5440, { 0x53E0, 0x53F8, 0, 0 } },   // DL_SWORD3_SHIELD3
+            // Sword+Shield sheathed
+            { 0x55C0, { 0x53E8, 0x53D0, 0, 0 } },   // DL_SWORD1_SHIELD1_SHEATHED
+            { 0x55C8, { 0x53F0, 0x53D0, 0, 0 } },   // DL_SWORD1_SHIELD2_SHEATHED
+            { 0x55D0, { 0x53F8, 0x53D0, 0, 0 } },   // DL_SWORD1_SHIELD3_SHEATHED
+            { 0x55D8, { 0x53E8, 0x53D8, 0, 0 } },   // DL_SWORD2_SHIELD1_SHEATHED
+            { 0x55E0, { 0x53F0, 0x53D8, 0, 0 } },   // DL_SWORD2_SHIELD2_SHEATHED
+            { 0x55E8, { 0x53F8, 0x53D8, 0, 0 } },   // DL_SWORD2_SHIELD3_SHEATHED
+            { 0x55F0, { 0x53E8, 0x53E0, 0, 0 } },   // DL_SWORD3_SHIELD1_SHEATHED
+            { 0x55F8, { 0x53F0, 0x53E0, 0, 0 } },   // DL_SWORD3_SHIELD2_SHEATHED
+            { 0x5600, { 0x53F8, 0x53E0, 0, 0 } },   // DL_SWORD3_SHIELD3_SHEATHED
+            { 0, { 0, 0, 0, 0 } }
+        };
+
+        // Multiple passes for combos that reference other generated combos
+        for (s32 pass = 0; pass < 3; pass++) {
+            for (CombinedDef* c = combos; c->result != 0; c++) {
+                if (eq.count(c->result)) continue;
+                if (!eq.count(c->pieces[0])) continue;
+
+                std::vector<Gfx*> subDLs;
+                for (int p = 0; c->pieces[p] != 0; p++) {
+                    auto it = eq.find(c->pieces[p]);
+                    if (it != eq.end() && it->second != NULL && it->second != PAK_DL_STUB) {
+                        subDLs.push_back(it->second);
+                    }
+                }
+                if (!subDLs.empty()) {
+                    // Shield-back entries need matrix wrapping for correct orientation
+                    bool isShieldBack = (c->result == 0x53E8 || c->result == 0x53F0 || c->result == 0x53F8);
+                    Gfx* combined;
+                    if (isShieldBack && subDLs.size() == 1 && sShieldBackMtx) {
+                        combined = makeMtxWrappedDL(sShieldBackMtx, subDLs[0]);
+                    } else {
+                        combined = makeCombinedDL(subDLs);
+                    }
+                    if (combined) {
+                        eq[c->result] = combined;
+                    }
+                }
+            }
+        }
+    };
+
+    generateCombined(model.adultEquipDLs);
+    generateCombined(model.childEquipDLs);
+
+    PAK_LOG("Equipment after generation: adult=%d DLs, child=%d DLs",
+            (int)model.adultEquipDLs.size(), (int)model.childEquipDLs.size());
+}
+
+// ============================================================================
 // PAK Model Loading
 // ============================================================================
 
@@ -1066,6 +1418,80 @@ static bool LoadPakModel(PakModel& model) {
     std::string name = JsonFindString(packageJson, "name");
     if (!name.empty()) {
         snprintf(model.displayName, sizeof(model.displayName), "%s", name.c_str());
+    }
+
+    // Check if this is a zzequipment pak (equipment-only, no body model)
+    if (packageJson.find("\"zzequipment\"") != std::string::npos) {
+        model.isEquipmentOnly = 1;
+        PAK_LOG("Loading equipment pak: '%s'", model.displayName);
+
+        // Find the equipment array in JSON: "equipment": ["file1.zobj", "file2.zobj"]
+        size_t eqPos = packageJson.find("\"equipment\"");
+        if (eqPos == std::string::npos) {
+            PAK_LOG("No equipment array found");
+            return false;
+        }
+        size_t arrStart = packageJson.find('[', eqPos);
+        size_t arrEnd = packageJson.find(']', arrStart);
+        if (arrStart == std::string::npos || arrEnd == std::string::npos) return false;
+
+        std::string arr = packageJson.substr(arrStart + 1, arrEnd - arrStart - 1);
+
+        // Parse filenames from array
+        std::vector<std::string> equipFiles;
+        size_t pos = 0;
+        while (pos < arr.length()) {
+            size_t q1 = arr.find('"', pos);
+            if (q1 == std::string::npos) break;
+            size_t q2 = arr.find('"', q1 + 1);
+            if (q2 == std::string::npos) break;
+            std::string fname = arr.substr(q1 + 1, q2 - q1 - 1);
+            if (!fname.empty()) equipFiles.push_back(fname);
+            pos = q2 + 1;
+        }
+
+        // Load each equipment zobj
+        s32 loadedCount = 0;
+        for (auto& equipFile : equipFiles) {
+            // Extract the zobj from the pak
+            for (auto& entry : entries) {
+                if (entry.name.find(equipFile) == std::string::npos) continue;
+
+                u32 compSize = entry.dataEnd - entry.dataStart;
+                if (compSize == 0 || entry.dataStart + compSize > (u32)fileSize) continue;
+
+                u8* zobjData = NULL;
+                u32 zobjSize = 0;
+
+                if (entry.compressed) {
+                    uLongf decompSize = compSize * 8;
+                    zobjData = (u8*)malloc(decompSize);
+                    if (!zobjData) continue;
+                    if (uncompress(zobjData, &decompSize, pakData.data() + entry.dataStart, compSize) != Z_OK) {
+                        free(zobjData);
+                        continue;
+                    }
+                    zobjSize = (u32)decompSize;
+                } else {
+                    zobjData = (u8*)malloc(compSize);
+                    if (!zobjData) continue;
+                    memcpy(zobjData, pakData.data() + entry.dataStart, compSize);
+                    zobjSize = compSize;
+                }
+
+                PAK_LOG("Loading equipment item: '%s' (%u bytes)", equipFile.c_str(), zobjSize);
+                LoadEquipmentZobj(zobjData, zobjSize, model);
+                // Do NOT free zobjData — translated DLs have direct pointers into it
+                // (vertex data, texture data). The buffer lives for the model's lifetime.
+                loadedCount++;
+                break;
+            }
+        }
+
+        PAK_LOG("Equipment pak loaded: %d items, %d adult DLs, %d child DLs",
+                loadedCount, (int)model.adultEquipDLs.size(), (int)model.childEquipDLs.size());
+
+        return !model.adultEquipDLs.empty() || !model.childEquipDLs.empty();
     }
 
     // Parse model file references from zzplayas manifest
@@ -1176,10 +1602,10 @@ static void** sSavedSkeleton = NULL;
 static s32 sSavedDListCount = 0;
 
 extern "C" void PakLoader_SwapSkeleton(Player* player) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
+    if (sGetActiveIndex() < 0 || sGetActiveIndex() >= (s32)sModels.size())
         return;
 
-    PakModel& model = sModels[sSelectedIndex];
+    PakModel& model = sModels[sGetActiveIndex()];
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
 
     void** pakSkeleton = NULL;
@@ -1242,17 +1668,38 @@ static Gfx* FindEquip(std::map<u32, Gfx*>& equipDLs, u32 primary, u32 fb1 = 0, u
     return NULL;
 }
 
+// Helper: get the merged equipment DLs map (equipment pak overrides body pak)
+static std::map<u32, Gfx*>* sGetEquipDLs(void) {
+    static std::map<u32, Gfx*> sMerged;
+    sMerged.clear();
+    u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
+
+    // Start with body model's equipment DLs
+    s32 bodyIdx = sGetActiveIndex();
+    if (bodyIdx >= 0 && bodyIdx < (s32)sModels.size()) {
+        auto& bodyEq = isAdult ? sModels[bodyIdx].adultEquipDLs : sModels[bodyIdx].childEquipDLs;
+        sMerged.insert(bodyEq.begin(), bodyEq.end());
+    }
+
+    // Equipment pak overrides body pak
+    if (sSelectedEquipIndex >= 0 && sSelectedEquipIndex < (s32)sModels.size()) {
+        auto& equipEq = isAdult ? sModels[sSelectedEquipIndex].adultEquipDLs
+                                : sModels[sSelectedEquipIndex].childEquipDLs;
+        for (auto& [k, v] : equipEq) {
+            sMerged[k] = v; // Override
+        }
+    }
+
+    return sMerged.empty() ? NULL : &sMerged;
+}
+
 extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
-        return NULL;
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
         return NULL;
 
-    PakModel& model = sModels[sSelectedIndex];
-    u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
-    std::map<u32, Gfx*>& eq = isAdult ? model.adultEquipDLs : model.childEquipDLs;
-    if (eq.empty())
-        return NULL;
+    std::map<u32, Gfx*>* eqPtr = sGetEquipDLs();
+    if (!eqPtr) return NULL;
+    std::map<u32, Gfx*>& eq = *eqPtr;
 
     Gfx* result = NULL;
 
@@ -1331,19 +1778,31 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
                 break;
         }
     } else if (limbIndex == PLAYER_LIMB_SHEATH) {
-        s32 hasSword =
-            (player->sheathType == PLAYER_MODELTYPE_SHEATH_16 || player->sheathType == PLAYER_MODELTYPE_SHEATH_18);
+        // Vanilla sheath logic:
+        // SHEATH_16 = sword+sheath on back (sSwordAndSheathDLs) — NO shield
+        // SHEATH_17 = sheath only (sSheathDLs) — NO shield
+        // SHEATH_18 = sword sheathed + shield on back (sSheathWithSwordDLs + shield offset)
+        // SHEATH_19 = sheath + shield on back, no sword (sSheathWithoutSwordDLs + shield offset)
+        s32 sheathType = player->sheathType;
         s32 shield = player->currentShield;
+        s32 hasShieldOnBack = (sheathType == PLAYER_MODELTYPE_SHEATH_18 ||
+                               sheathType == PLAYER_MODELTYPE_SHEATH_19);
+        s32 hasSword = (sheathType == PLAYER_MODELTYPE_SHEATH_16 ||
+                        sheathType == PLAYER_MODELTYPE_SHEATH_18);
 
-        if (hasSword && shield > 0) {
+        if (hasSword && hasShieldOnBack && shield > 0) {
+            // Sword sheathed + shield on back
             u32 ca[] = { 0x55C0, 0x55C8, 0x55D0 };
             result = FindEquip(eq, ca[shield - 1], 0x53D0, 0x50C0);
         } else if (hasSword) {
+            // Sword sheathed, no shield on back
             result = FindEquip(eq, 0x53D0, 0x50C0);
-        } else if (shield > 0) {
+        } else if (hasShieldOnBack && shield > 0) {
+            // Shield on back, no sword
             u32 sba[] = { 0x53E8, 0x53F0, 0x53F8 };
             result = FindEquip(eq, sba[shield - 1], 0x53E8);
         } else {
+            // Just sheath or nothing
             result = FindEquip(eq, 0x50C8, 0x50C0);
         }
     } else if (limbIndex == PLAYER_LIMB_WAIST) {
@@ -1447,16 +1906,12 @@ static const OtrAliasEntry sStandaloneOtrTable[] = {
 };
 
 extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
-        return NULL;
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
         return NULL;
 
-    PakModel& model = sModels[sSelectedIndex];
-    u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
-    std::map<u32, Gfx*>& eq = isAdult ? model.adultEquipDLs : model.childEquipDLs;
-    if (eq.empty())
-        return NULL;
+    std::map<u32, Gfx*>* eqPtr = sGetEquipDLs();
+    if (!eqPtr) return NULL;
+    std::map<u32, Gfx*>& eq = *eqPtr;
 
     // Debug: log calls matching object_link_boy
     static u32 sHookCallCount = 0;
@@ -1492,14 +1947,14 @@ static const u32 sEyeTextureOffsets[] = { 0x0000, 0x0800, 0x1000, 0x1800, 0x2000
 static const u32 sMouthTextureOffsets[] = { 0x4000, 0x4400, 0x4800, 0x4C00 };
 
 static void* PakLoader_GetFaceTexture(const u32* offsets, s32 index, s32 maxIndex, u32 texSize) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size())
+    if (sGetActiveIndex() < 0 || sGetActiveIndex() >= (s32)sModels.size())
         return NULL;
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
         return NULL;
     if (index < 0 || index > maxIndex)
         index = 0;
 
-    PakModel& model = sModels[sSelectedIndex];
+    PakModel& model = sModels[sGetActiveIndex()];
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
     u8* zobjData = isAdult ? model.adultZobj : model.childZobj;
     u32 zobjSize = isAdult ? model.adultZobjSize : model.childZobjSize;
@@ -1690,31 +2145,86 @@ extern "C" void PakLoader_Init(void) {
     }
 
     PAK_LOG("Initialization complete: %d models available", (int)sModels.size());
+
+    // Sanitize saved CVars to prevent out-of-range crashes
+    s32 savedAdult = CVarGetInteger("gMods.PakLoader.AdultModel", -1);
+    s32 savedChild = CVarGetInteger("gMods.PakLoader.ChildModel", -1);
+    s32 savedEquip = CVarGetInteger("gMods.PakLoader.Equipment", -1);
+    s32 count = (s32)sModels.size();
+
+    if (savedAdult >= count || (savedAdult >= 0 && sModels[savedAdult].isEquipmentOnly)) {
+        CVarSetInteger("gMods.PakLoader.AdultModel", -1);
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+    if (savedChild >= count || (savedChild >= 0 && sModels[savedChild].isEquipmentOnly)) {
+        CVarSetInteger("gMods.PakLoader.ChildModel", -1);
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+    if (savedEquip >= count || (savedEquip >= 0 && !sModels[savedEquip].isEquipmentOnly)) {
+        CVarSetInteger("gMods.PakLoader.Equipment", -1);
+        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+}
+
+// Auto-force model based on worn MM mask (called per-frame)
+static void PakLoader_CheckMaskForce(void) {
+    // Kafei Mask Transform
+    if (CVarGetInteger("gMods.KafeiMaskTransform", 0)) {
+        s32 wornMask = TransformMasks_WearGetCurrent();
+
+        if (wornMask == ITEM_MM_MASK_KAFEI) {
+            if (sForcedModelIndex < 0 || sForcedModelPath != "custom_items_resources/N64_Kafei.pak") {
+                PakLoader_ForceModel("custom_items_resources/N64_Kafei.pak");
+            }
+        } else {
+            if (sForcedModelIndex >= 0 && sForcedModelPath == "custom_items_resources/N64_Kafei.pak") {
+                PakLoader_ClearForcedModel();
+            }
+        }
+    } else {
+        // CVar disabled — clear kafei forced model if active
+        if (sForcedModelIndex >= 0 && sForcedModelPath == "custom_items_resources/N64_Kafei.pak") {
+            PakLoader_ClearForcedModel();
+        }
+    }
 }
 
 extern "C" u8 PakLoader_HasActiveModel(void) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) {
-        return 0;
+    // Check if worn mask should auto-force a model
+    PakLoader_CheckMaskForce();
+
+    // Forced model bypasses the Enabled CVar
+    if (sForcedModelIndex >= 0 && sForcedModelIndex < (s32)sModels.size()) {
+        PakModel& fm = sModels[sForcedModelIndex];
+        if (LINK_AGE_IN_YEARS == YEARS_ADULT && fm.adultReady) return 1;
+        if (LINK_AGE_IN_YEARS != YEARS_ADULT && fm.childReady) return 1;
     }
 
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
         return 0;
     }
 
-    PakModel& model = sModels[sSelectedIndex];
-
-    if (LINK_AGE_IN_YEARS == YEARS_ADULT) {
-        return model.adultReady;
-    } else {
-        return model.childReady;
+    // Check body model
+    s32 bodyIdx = sGetActiveIndex();
+    if (bodyIdx >= 0 && bodyIdx < (s32)sModels.size()) {
+        PakModel& model = sModels[bodyIdx];
+        if (LINK_AGE_IN_YEARS == YEARS_ADULT && model.adultReady) return 1;
+        if (LINK_AGE_IN_YEARS != YEARS_ADULT && model.childReady) return 1;
     }
+
+    // Check equipment pak (active even without body model)
+    if (sSelectedEquipIndex >= 0 && sSelectedEquipIndex < (s32)sModels.size()) {
+        return 1;
+    }
+
+    return 0;
 }
 
 #if 0  // Legacy DrawPlayer - disabled, using skeleton swap instead
 extern "C" void PakLoader_DrawPlayer(PlayState* play, Player* player) {
-    if (sSelectedIndex < 0 || sSelectedIndex >= (s32)sModels.size()) return;
+    if (sGetActiveIndex() < 0 || sGetActiveIndex() >= (s32)sModels.size()) return;
 
-    PakModel& model = sModels[sSelectedIndex];
+    PakModel& model = sModels[sGetActiveIndex()];
 
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
     void** skeleton;
@@ -1807,33 +2317,148 @@ extern "C" const char* PakLoader_GetModelName(s32 index) {
     return sModels[index].displayName;
 }
 
-extern "C" void PakLoader_SelectModel(s32 index) {
-    if (index < -1 || index >= (s32)sModels.size()) {
-        index = -1;
-    }
-    if (index == sSelectedIndex)
-        return; // No change, skip log spam
-    sSelectedIndex = index;
-
+extern "C" void PakLoader_SelectAdultModel(s32 index) {
+    if (index < -1 || index >= (s32)sModels.size()) index = -1;
+    if (index >= 0 && sModels[index].isEquipmentOnly) index = -1; // Can't use equipment pak as body
+    if (index == sSelectedAdultIndex) return;
+    sSelectedAdultIndex = index;
     if (index >= 0) {
-        PAK_LOG("Selected model: '%s'", sModels[index].displayName);
+        PAK_LOG("Selected adult model: '%s'", sModels[index].displayName);
     } else {
-        PAK_LOG("Deselected model (using default Link)");
+        PAK_LOG("Deselected adult model");
     }
 }
 
+extern "C" void PakLoader_SelectChildModel(s32 index) {
+    if (index < -1 || index >= (s32)sModels.size()) index = -1;
+    if (index >= 0 && sModels[index].isEquipmentOnly) index = -1;
+    if (index == sSelectedChildIndex) return;
+    sSelectedChildIndex = index;
+    if (index >= 0) {
+        PAK_LOG("Selected child model: '%s'", sModels[index].displayName);
+    } else {
+        PAK_LOG("Deselected child model");
+    }
+}
+
+extern "C" s32 PakLoader_GetSelectedAdultIndex(void) { return sSelectedAdultIndex; }
+extern "C" s32 PakLoader_GetSelectedChildIndex(void) { return sSelectedChildIndex; }
+
+extern "C" u8 PakLoader_ModelHasAdult(s32 index) {
+    if (index < 0 || index >= (s32)sModels.size()) return 0;
+    if (sModels[index].isEquipmentOnly) return 0; // Equipment paks don't have body models
+    return sModels[index].adultReady;
+}
+
+extern "C" u8 PakLoader_ModelHasChild(s32 index) {
+    if (index < 0 || index >= (s32)sModels.size()) return 0;
+    if (sModels[index].isEquipmentOnly) return 0;
+    return sModels[index].childReady;
+}
+
+// Legacy: select for both ages
+extern "C" void PakLoader_SelectModel(s32 index) {
+    PakLoader_SelectAdultModel(index);
+    PakLoader_SelectChildModel(index);
+}
+
 extern "C" s32 PakLoader_GetSelectedIndex(void) {
-    return sSelectedIndex;
+    return sGetActiveIndex();
+}
+
+extern "C" void PakLoader_SelectEquipment(s32 index) {
+    if (index < -1 || index >= (s32)sModels.size()) index = -1;
+    if (index == sSelectedEquipIndex) return;
+    sSelectedEquipIndex = index;
+    if (index >= 0) {
+        PAK_LOG("Selected equipment: '%s'", sModels[index].displayName);
+    } else {
+        PAK_LOG("Deselected equipment");
+    }
+}
+
+extern "C" s32 PakLoader_GetSelectedEquipIndex(void) { return sSelectedEquipIndex; }
+
+extern "C" u8 PakLoader_ModelIsEquipmentOnly(s32 index) {
+    if (index < 0 || index >= (s32)sModels.size()) return 0;
+    return sModels[index].isEquipmentOnly;
+}
+
+// ============================================================================
+// Forced Model API (for custom items like Kafei Mask)
+// ============================================================================
+
+// Forward declare LoadPakModel
+static bool LoadPakModel(PakModel& model);
+
+extern "C" void PakLoader_ForceModel(const char* pakPath) {
+    if (!pakPath || !pakPath[0]) return;
+
+    // Already forcing this same model?
+    if (sForcedModelIndex >= 0 && sForcedModelPath == pakPath) return;
+
+    // Check if this pak is already loaded in sModels
+    for (s32 i = 0; i < (s32)sModels.size(); i++) {
+        if (sModels[i].pakPath == pakPath) {
+            sForcedModelIndex = i;
+            sForcedModelPath = pakPath;
+            PAK_LOG("Forced model (cached): '%s' (index %d)", sModels[i].displayName, i);
+            return;
+        }
+    }
+
+    // Lazy-load: parse and load the pak file
+    if (!std::filesystem::exists(pakPath)) {
+        PAK_LOG("Forced model file not found: %s", pakPath);
+        return;
+    }
+
+    PakModel model = {};
+    model.pakPath = pakPath;
+    snprintf(model.displayName, sizeof(model.displayName), "Forced");
+
+    if (LoadPakModel(model)) {
+        sModels.push_back(std::move(model));
+        sForcedModelIndex = (s32)sModels.size() - 1;
+        sForcedModelPath = pakPath;
+
+        // Fix up limb table pointers after move
+        PakModel& m = sModels.back();
+        for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
+            if (m.adultLimbTable[j]) m.adultLimbTable[j] = &m.adultLimbs[j];
+            if (m.childLimbTable[j]) m.childLimbTable[j] = &m.childLimbs[j];
+        }
+
+        PAK_LOG("Forced model loaded: '%s' (adult=%d, child=%d)",
+                m.displayName, m.adultReady, m.childReady);
+    } else {
+        if (model.adultZobj) free(model.adultZobj);
+        if (model.childZobj) free(model.childZobj);
+        PAK_LOG("Failed to load forced model: %s", pakPath);
+    }
+}
+
+extern "C" void PakLoader_ClearForcedModel(void) {
+    if (sForcedModelIndex < 0) return;
+    PAK_LOG("Cleared forced model");
+    sForcedModelIndex = -1;
+    sForcedModelPath.clear();
+}
+
+extern "C" u8 PakLoader_HasForcedModel(void) {
+    return (sForcedModelIndex >= 0 && sForcedModelIndex < (s32)sModels.size()) ? 1 : 0;
 }
 
 extern "C" void PakLoader_Shutdown(void) {
     for (auto& model : sModels) {
-        if (model.adultZobj)
-            free(model.adultZobj);
-        if (model.childZobj)
-            free(model.childZobj);
+        if (model.adultZobj) free(model.adultZobj);
+        if (model.childZobj) free(model.childZobj);
     }
     sModels.clear();
-    sSelectedIndex = -1;
+    sSelectedAdultIndex = -1;
+    sSelectedChildIndex = -1;
+    sSelectedEquipIndex = -1;
+    sForcedModelIndex = -1;
+    sForcedModelPath.clear();
     sInitialized = 0;
 }

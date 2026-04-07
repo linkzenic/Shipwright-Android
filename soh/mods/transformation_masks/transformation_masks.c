@@ -117,6 +117,33 @@ u8 TransformMasks_IsTransformed(void) {
     return MmForm_IsTransformed();
 }
 
+// Redirect OOT voice SFX to MM equivalent for current form.
+// OOT voice base = 0x6800 (NA_SE_VO_LI_SWORD_N).
+// MM voiceSfxIdOffset per form (from 2Ship z_player.c sPlayerAgeProperties):
+//   FD=0x00, Human=0x20, Deku=0x80, Zora=0xA0, Goron=0xC0
+void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos) {
+    if (!MmSfx_IsAvailable()) return;
+
+    // Compute action index: ootVoiceSfxId is the BASE sfxId (before OOT age offset)
+    // e.g., NA_SE_VO_LI_DAMAGE_S = 0x6805, action = 5
+    u16 action = ootVoiceSfxId - 0x6800;
+    if (action >= 0x20) return; // Out of range
+
+    // Get MM voice offset for current form
+    u16 mmOffset;
+    MmPlayerTransformation form = MmForm_GetCurrentForm();
+    switch (form) {
+        case MM_PLAYER_FORM_GORON:        mmOffset = 0xC0; break;
+        case MM_PLAYER_FORM_ZORA:         mmOffset = 0xA0; break;
+        case MM_PLAYER_FORM_DEKU:         mmOffset = 0x80; break;
+        case MM_PLAYER_FORM_FIERCE_DEITY: mmOffset = 0x00; break;
+        default: return;
+    }
+
+    u16 mmSfxId = 0x6800 + mmOffset + action;
+    MmSfx_PlayAtPos(mmSfxId, pos);
+}
+
 u8 TransformMasks_HasSkeleton(void) {
     return MmForm_HasSkeleton();
 }

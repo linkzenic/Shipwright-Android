@@ -435,10 +435,10 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Du hast %pThe Minish Cap%w!&Schnellreise zwischen Pod Soils.",
       "Vous obtenez %pPending Item 1%w!&Cet objet n'est pas encore implémenté." },
 
-    { RG_PENDING_2, static_cast<ItemID>(ITEM_PENDING_2),
-      "You got %yPending Item 2%w!&This item is not yet implemented.",
-      "Du hast %yPending Item 2%w!&Dieses Item ist noch nicht implementiert.",
-      "Vous obtenez %yPending Item 2%w!&Cet objet n'est pas encore implémenté." },
+    { RG_LANTERN, static_cast<ItemID>(ITEM_LANTERN),
+      "You got the %yLantern%w!&Catch fire from torches and&use it to light your way!",
+      "Du hast die %yLaterne%w erhalten!&Fang Feuer von Fackeln und&nutze es um deinen Weg zu erleuchten!",
+      "Vous obtenez la %yLanterne%w!&Capturez le feu des torches et&utilisez-le pour éclairer votre chemin!" },
 
     { RG_PENDING_3, static_cast<ItemID>(ITEM_PENDING_3),
       "You got %cPending Item 3%w!&This item is not yet implemented.",
@@ -4448,8 +4448,8 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
         case RG_HYLIAS_GRACE:
             ExtInv_SetItemById(ITEM_HYLIAS_GRACE);
             break;
-        case RG_PENDING_2:
-            ExtInv_SetItemById(ITEM_PENDING_2);
+        case RG_LANTERN:
+            ExtInv_SetItemById(ITEM_LANTERN);
             break;
         case RG_PENDING_1:
             ExtInv_SetItemById(ITEM_MINISH_CAP);
@@ -4473,13 +4473,13 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
         case RG_EXT_FOUR_SWORD:
             ExtEquip_GiveItem(EQUIP_TYPE_SWORD, 2);
             break;
-        case RG_EXT_DRILLSHAFT:
+        case RG_EXT_IRON_KNUCKLE_AXE:
             ExtEquip_GiveItem(EQUIP_TYPE_SWORD, 3);
             break;
         case RG_EXT_DIVINE_SHIELD:
             ExtEquip_GiveItem(EQUIP_TYPE_SHIELD, 1);
             break;
-        case RG_EXT_GERUDO_SCIMITAR:
+        case RG_EXT_SHEIKAH_SHIELD:
             ExtEquip_GiveItem(EQUIP_TYPE_SHIELD, 2);
             break;
         case RG_EXT_SHIELD_OF_IKANA:
@@ -4488,7 +4488,7 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
         case RG_EXT_MAGIC_CAPE:
             ExtEquip_GiveItem(EQUIP_TYPE_TUNIC, 1);
             break;
-        case RG_EXT_PENDING_TUNIC:
+        case RG_EXT_SPIRIT_BREASTPLATE:
             ExtEquip_GiveItem(EQUIP_TYPE_TUNIC, 2);
             break;
         case RG_EXT_CHAMPIONS_TUNIC:

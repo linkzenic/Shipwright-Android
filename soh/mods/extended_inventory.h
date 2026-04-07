@@ -159,7 +159,7 @@ extern const uint8_t gPage2ItemAgeReqs[24];
 #define SLOT_DESIRE_SENSOR 39
 #define SLOT_LIGHT_ROD 40
 #define SLOT_HYLIAS_GRACE 41
-#define SLOT_PENDING_2 42
+#define SLOT_LANTERN 42
 #define SLOT_MINISH_CAP 43
 #define SLOT_PENDING_3 44
 #define SLOT_CANE_OF_SOMARIA 45

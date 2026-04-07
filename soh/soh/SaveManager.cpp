@@ -798,6 +798,11 @@ void SaveManager::InitFileNormal() {
     gSaveContext.ship.pendingSaleMod = MOD_NONE;
     gSaveContext.ship.pendingIceTrapCount = 0;
     gSaveContext.ship.maskMemory = PLAYER_MASK_NONE;
+    gSaveContext.ship.lanternFireType = 0;
+    gSaveContext.ship.extEquipSword = 0;
+    gSaveContext.ship.extEquipShield = 0;
+    gSaveContext.ship.extEquipTunic = 0;
+    gSaveContext.ship.extEquipBoots = 0;
 
     // Init with normal quest unless only an MQ rom is provided
     gSaveContext.ship.quest.id = OTRGlobals::Instance->HasOriginal() ? QUEST_NORMAL : QUEST_MASTER;
@@ -2159,6 +2164,11 @@ void SaveManager::LoadBaseVersion4() {
     SaveManager::Instance->LoadData("dogParams", gSaveContext.dogParams);
     SaveManager::Instance->LoadData("filenameLanguage", gSaveContext.ship.filenameLanguage);
     SaveManager::Instance->LoadData("maskMemory", gSaveContext.ship.maskMemory);
+    SaveManager::Instance->LoadData("lanternFireType", gSaveContext.ship.lanternFireType);
+    SaveManager::Instance->LoadData("extEquipSword", gSaveContext.ship.extEquipSword);
+    SaveManager::Instance->LoadData("extEquipShield", gSaveContext.ship.extEquipShield);
+    SaveManager::Instance->LoadData("extEquipTunic", gSaveContext.ship.extEquipTunic);
+    SaveManager::Instance->LoadData("extEquipBoots", gSaveContext.ship.extEquipBoots);
 }
 
 void SaveManager::SaveBase(SaveContext* saveContext, int sectionID, bool fullSave) {
@@ -2327,6 +2337,11 @@ void SaveManager::SaveBase(SaveContext* saveContext, int sectionID, bool fullSav
     SaveManager::Instance->SaveData("dogParams", saveContext->dogParams);
     SaveManager::Instance->SaveData("filenameLanguage", saveContext->ship.filenameLanguage);
     SaveManager::Instance->SaveData("maskMemory", saveContext->ship.maskMemory);
+    SaveManager::Instance->SaveData("lanternFireType", saveContext->ship.lanternFireType);
+    SaveManager::Instance->SaveData("extEquipSword", saveContext->ship.extEquipSword);
+    SaveManager::Instance->SaveData("extEquipShield", saveContext->ship.extEquipShield);
+    SaveManager::Instance->SaveData("extEquipTunic", saveContext->ship.extEquipTunic);
+    SaveManager::Instance->SaveData("extEquipBoots", saveContext->ship.extEquipBoots);
 }
 
 // Load a string into a char array based on size and ensuring it is null terminated when overflowed

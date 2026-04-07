@@ -2759,6 +2759,32 @@ void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
         this->collider.base.acFlags &= ~2;
         acHitInfo = this->collider.info.acHitInfo;
 
+        {
+            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+            extern u8 gPikaGigantamaxActive;
+            u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
+            if (isGigaHit) {
+                s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
+                if (gigaDmg < 4) gigaDmg = 4;
+                this->actor.colChkInfo.health -= gigaDmg;
+                if ((s8)this->actor.colChkInfo.health <= 0) {
+                    BossGanon_SetupDeathCutscene(this, play);
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DEAD);
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DD_THUNDER);
+                    Sfx_PlaySfxAtPos(&sZeroVec, NA_SE_EN_LAST_DAMAGE);
+                    Audio_QueueSeqCmd(0x100100FF);
+                    this->screenFlashTimer = 4;
+                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                } else {
+                    BossGanon_SetupVulnerable(this, play);
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CUTBODY);
+                    this->unk_1A6 = 15;
+                }
+                return;
+            }
+        }
+
         if ((this->actionFunc == BossGanon_HitByLightBall) || (this->actionFunc == BossGanon_ChargeBigMagic)) {
             if (acHitInfo->toucher.dmgFlags & 0x2000) {
                 BossGanon_SetupVulnerable(this, play);

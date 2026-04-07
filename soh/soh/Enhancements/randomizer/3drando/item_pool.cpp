@@ -99,7 +99,7 @@ const std::array<RandomizerGet, 84> alwaysItems = {
     RG_PROGRESSIVE_ROCS, // Second progressive Roc's item
     RG_LIGHT_ROD,
     RG_HYLIAS_GRACE,
-    RG_PENDING_2,
+    RG_LANTERN,
     RG_PENDING_1,
     RG_PENDING_3,
     RG_CANE_OF_SOMARIA,
@@ -766,7 +766,7 @@ void GenerateItemPool() {
         AddItemToPool(RG_BALL_AND_CHAIN, 2, 1, 1, 1);
         AddItemToPool(RG_LIGHT_ROD, 2, 1, 1, 1);
         AddItemToPool(RG_HYLIAS_GRACE, 2, 1, 1, 1);
-        AddItemToPool(RG_PENDING_2, 2, 1, 1, 1);
+        AddItemToPool(RG_LANTERN, 2, 1, 1, 1);
         AddItemToPool(RG_PENDING_1, 2, 1, 1, 1);
         AddItemToPool(RG_PENDING_3, 2, 1, 1, 1);
         AddItemToPool(RG_CANE_OF_SOMARIA, 2, 1, 1, 1);
@@ -779,12 +779,12 @@ void GenerateItemPool() {
     if (CVarGetInteger("gCheats.ExtEquip.Enabled", 0)) {
         AddItemToPool(RG_EXT_CANE_OF_BYRNA, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_FOUR_SWORD, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_DRILLSHAFT, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_IRON_KNUCKLE_AXE, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_DIVINE_SHIELD, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_GERUDO_SCIMITAR, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_SHEIKAH_SHIELD, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_SHIELD_OF_IKANA, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_MAGIC_CAPE, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_PENDING_TUNIC, 2, 1, 1, 1);
+        AddItemToPool(RG_EXT_SPIRIT_BREASTPLATE, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_CHAMPIONS_TUNIC, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_PEGASUS_ANKLET, 2, 1, 1, 1);
         AddItemToPool(RG_EXT_PENDANT_OF_MEMORIES, 2, 1, 1, 1);

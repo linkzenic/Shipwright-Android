@@ -21,10 +21,6 @@ extern "C" {
 // CVar keys
 // ---------------------------------------------------------------------------
 #define CVAR_EXT_EQUIP_ENABLED "gCheats.ExtEquip.Enabled"
-#define CVAR_EXT_EQUIP_SWORD "gCheats.ExtEquip.Sword"
-#define CVAR_EXT_EQUIP_SHIELD "gCheats.ExtEquip.Shield"
-#define CVAR_EXT_EQUIP_TUNIC "gCheats.ExtEquip.Tunic"
-#define CVAR_EXT_EQUIP_BOOTS "gCheats.ExtEquip.Boots"
 // Extended equipment ownership bits in upper 16 of inventory.equipment
 // Bit = 16 + equipType*3 + (index-1)
 #define EXT_EQUIP_OWNED_SHIFT 16
@@ -160,6 +156,26 @@ void ExtEquip_ToggleFromCButton(u16 itemId);
 void* ExtEquip_GetNameTex(u16 itemId, u8 language);
 
 // ---------------------------------------------------------------------------
+// Transform integration
+// ---------------------------------------------------------------------------
+
+/** Backup current ext equip state and unequip all. Called on transformation. */
+void ExtEquip_UnequipForTransform(void);
+
+/** Restore ext equip from backup. Called on detransformation to human. */
+void ExtEquip_RestoreFromTransform(void);
+
+/** Discard backup without restoring. Called on reset/reload/death. */
+void ExtEquip_ClearTransformBackup(void);
+
+// ---------------------------------------------------------------------------
+// Divine Shield helpers (called from z_player_lib.c and z_player.c)
+// ---------------------------------------------------------------------------
+u8 DivineShield_IsWoodType(void);
+u8 DivineShield_IsFireproof(void);
+void DivineShield_OnShieldBlock(Player* player, PlayState* play);
+
+// ---------------------------------------------------------------------------
 // Behavior state
 // ---------------------------------------------------------------------------
 
@@ -194,6 +210,11 @@ typedef struct {
     s16 dragonScalePitch; // swim pitch angle
     s16 dragonScaleMagicTick;
     u8 dragonScaleColInit;
+
+    // Iron Knuckle Axe (Ext Sword 3)
+    u8 ikAxeSavedSwordEquip;
+    u8 ikAxeSavedButtonItem;
+    u8 ikAxeActive;
 } ExtEquipBehaviorState;
 
 extern ExtEquipBehaviorState gExtEquipBehavior;
@@ -275,6 +296,17 @@ void ExtEquip_CaptureCapeShoulderPos(s32 limbIndex);
  * When set to 1, ExtInv_GetItemIcon won't replace sword/shield icons.
  */
 extern u8 gExtEquipSuppressIconOverride;
+
+// ---------------------------------------------------------------------------
+// Shield of Ikana: Death Save
+// ---------------------------------------------------------------------------
+
+/** Check if Shield of Ikana should revive player instead of dying */
+u8 ExtEquip_IkanaDeathSave(void* play);
+
+/** Draw Spirit Breastplate (Iron Knuckle armor) on Link's torso.
+ *  Called from PostLimbDraw for PLAYER_LIMB_UPPER. */
+void ExtEquip_DrawBreastplate(void* play);
 
 #ifdef __cplusplus
 }

@@ -1949,6 +1949,28 @@ void func_80902524(BossGanon2* this, PlayState* play) {
             if (this->unk_424.elements[0].info.bumperFlags & 2) {
                 this->unk_424.elements[0].info.bumperFlags &= ~2;
                 acHitInfo = this->unk_424.elements[0].info.acHitInfo;
+                {
+                    // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+                    extern u8 gPikaGigantamaxActive;
+                    u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
+                    if (isGigaHit) {
+                        s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
+                        if (gigaDmg < 4) gigaDmg = 4;
+                        this->actor.colChkInfo.health -= gigaDmg;
+                        if ((s8)this->actor.colChkInfo.health <= 1) this->actor.colChkInfo.health = 1;
+                        this->unk_316 = 60;
+                        this->unk_342 = 5;
+                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
+                        Audio_StopSfxById(NA_SE_EN_MGANON_UNARI);
+                        temp_v0_4 = this->actor.colChkInfo.health;
+                        if (temp_v0_4 <= 0) {
+                            func_80901020(this, play);
+                        } else {
+                            func_809000A0(this, play);
+                        }
+                        return;
+                    }
+                }
                 if ((acHitInfo->toucher.dmgFlags & 0x2000) && (this->actionFunc != func_80900890)) {
                     func_809000A0(this, play);
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
@@ -1980,6 +2002,28 @@ void func_80902524(BossGanon2* this, PlayState* play) {
         if (this->unk_424.elements[15].info.bumperFlags & 2) {
             this->unk_424.elements[15].info.bumperFlags &= ~2;
             acHitInfo = this->unk_424.elements[15].info.acHitInfo;
+            {
+                // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+                extern u8 gPikaGigantamaxActive;
+                u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
+                if (isGigaHit) {
+                    s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
+                    if (gigaDmg < 4) gigaDmg = 4;
+                    this->actor.colChkInfo.health -= gigaDmg;
+                    if ((s8)this->actor.colChkInfo.health <= 1) this->actor.colChkInfo.health = 1;
+                    this->unk_316 = 60;
+                    this->unk_342 = 5;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
+                    Audio_StopSfxById(NA_SE_EN_MGANON_UNARI);
+                    temp_v0_4 = this->actor.colChkInfo.health;
+                    if (temp_v0_4 <= 0) {
+                        func_80901020(this, play);
+                    } else {
+                        func_80900210(this, play);
+                    }
+                    return;
+                }
+            }
             this->unk_316 = 60;
             this->unk_344 = 0x32;
             this->unk_342 = 5;

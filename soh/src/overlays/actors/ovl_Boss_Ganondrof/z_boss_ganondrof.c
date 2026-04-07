@@ -1203,6 +1203,27 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
             if (acHit) {
                 this->colliderBody.base.acFlags &= ~AC_HIT;
                 hurtbox = this->colliderBody.info.acHitInfo;
+                {
+                    // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+                    extern u8 gPikaGigantamaxActive;
+                    u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
+                    if (isGigaHit) {
+                        s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
+                        if (gigaDmg < 4) gigaDmg = 4;
+                        this->actor.colChkInfo.health -= gigaDmg;
+                        if ((s8)this->actor.colChkInfo.health <= 0) {
+                            BossGanondrof_SetupDeath(this, play);
+                            Enemy_StartFinishingBlow(play, &this->actor);
+                            GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                        } else {
+                            BossGanondrof_SetupStunned(this, play);
+                            this->work[GND_INVINC_TIMER] = 10;
+                            horse->hitTimer = 20;
+                            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_DAMAGE);
+                        }
+                        return;
+                    }
+                }
             }
             if (this->flyMode != GND_FLY_PAINTING) {
                 if (acHit && (this->actionFunc != BossGanondrof_Stunned) && (hurtbox->toucher.dmgFlags & 0x0001F8A4)) {

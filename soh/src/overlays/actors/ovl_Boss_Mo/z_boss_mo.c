@@ -1777,6 +1777,38 @@ void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
         // "hit!!"
         osSyncPrintf("Core_Damage_check 当り！！\n");
         this->coreCollider.base.acFlags &= ~AC_HIT;
+        {
+            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+            u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
+            if (isGigaHit) {
+                s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
+                if (gigaDmg < 4) gigaDmg = 4;
+                this->actor.colChkInfo.health -= gigaDmg;
+                this->work[MO_TENT_ACTION_STATE] = MO_CORE_STUNNED;
+                this->timers[0] = 25;
+                this->actor.speedXZ = 15.0f;
+                this->actor.world.rot.y = this->actor.yawTowardsPlayer + 0x8000;
+                this->work[MO_CORE_DMG_FLASH_TIMER] = 15;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MOFER_CORE_DAMAGE);
+                this->hitCount++;
+                if ((s8)this->actor.colChkInfo.health <= 0) {
+                    if (((sMorphaTent1->csCamera == 0) && (sMorphaTent2 == NULL)) ||
+                        ((sMorphaTent1->csCamera == 0) && (sMorphaTent2 != NULL) && (sMorphaTent2->csCamera == 0))) {
+                        Enemy_StartFinishingBlow(play, &this->actor);
+                        GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                        Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
+                        this->csState = MO_DEATH_START;
+                        sMorphaTent1->drawActor = false;
+                        sMorphaTent1->work[MO_TENT_ACTION_STATE] = MO_TENT_DEATH_START;
+                        sMorphaTent1->baseAlpha = 0.0f;
+                        if (sMorphaTent2 != NULL) {
+                            sMorphaTent2->tent2KillTimer = 1;
+                        }
+                    }
+                }
+                return;
+            }
+        }
         if ((hurtbox->toucher.dmgFlags & 0x00020000) && (this->work[MO_TENT_ACTION_STATE] == MO_CORE_ATTACK)) {
             this->work[MO_TENT_ACTION_STATE] = MO_CORE_RETREAT;
         }

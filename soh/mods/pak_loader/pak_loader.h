@@ -97,17 +97,67 @@ s32 PakLoader_GetModelCount(void);
 const char* PakLoader_GetModelName(s32 index);
 
 /**
- * Select a model by index. -1 to deselect (use default Link).
- * Loads the .zobj if not already loaded.
- * @param index Model index, or -1 for default
+ * Check if a model has an adult or child zobj.
+ * @param index Model index
+ * @return 1 if the model has that age's zobj ready
+ */
+u8 PakLoader_ModelHasAdult(s32 index);
+u8 PakLoader_ModelHasChild(s32 index);
+
+/**
+ * Select models per age. -1 to deselect (use default Link).
+ * Allows different models for adult and child Link.
+ */
+void PakLoader_SelectAdultModel(s32 index);
+void PakLoader_SelectChildModel(s32 index);
+
+/**
+ * Get currently selected model indices per age.
+ * @return Selected index, or -1 if none
+ */
+s32 PakLoader_GetSelectedAdultIndex(void);
+s32 PakLoader_GetSelectedChildIndex(void);
+
+/**
+ * Legacy: Select a model by index for both ages. -1 to deselect.
  */
 void PakLoader_SelectModel(s32 index);
 
 /**
- * Get currently selected model index.
- * @return Selected index, or -1 if none
+ * Legacy: Get currently selected model index (adult).
  */
 s32 PakLoader_GetSelectedIndex(void);
+
+/**
+ * Select equipment pak by index. -1 to deselect.
+ * Equipment pak DLs override body pak equipment DLs.
+ */
+void PakLoader_SelectEquipment(s32 index);
+s32 PakLoader_GetSelectedEquipIndex(void);
+
+/**
+ * Check if a model is an equipment-only pak (zzequipment).
+ */
+u8 PakLoader_ModelIsEquipmentOnly(s32 index);
+
+/**
+ * Force a specific .pak model by file path (lazy-loaded).
+ * Used by custom items (e.g., Kafei Mask) to transform Link's appearance.
+ * Has priority over user-selected models from the menu.
+ * @param pakPath Path to the .pak file (relative to exe dir)
+ */
+void PakLoader_ForceModel(const char* pakPath);
+
+/**
+ * Clear the forced model, returning to user-selected or vanilla Link.
+ */
+void PakLoader_ClearForcedModel(void);
+
+/**
+ * Check if a forced model is currently active.
+ * @return 1 if a forced model override is active
+ */
+u8 PakLoader_HasForcedModel(void);
 
 /**
  * Cleanup and free all loaded model data.

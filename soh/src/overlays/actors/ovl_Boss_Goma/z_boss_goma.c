@@ -1830,6 +1830,27 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
         if (this->eyeClosedTimer == 0 && this->actionFunc != BossGoma_CeilingSpawnGohmas &&
             (this->collider.elements[0].info.bumperFlags & BUMP_HIT)) {
             this->collider.elements[0].info.bumperFlags &= ~BUMP_HIT;
+            {
+                // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
+                extern u8 gPikaGigantamaxActive;
+                u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
+                if (isGigaHit) {
+                    s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
+                    if (gigaDmg < 4) gigaDmg = 4;
+                    this->actor.colChkInfo.health -= gigaDmg;
+                    if ((s8)this->actor.colChkInfo.health <= 0) {
+                        BossGoma_SetupDefeated(this, play);
+                        Enemy_StartFinishingBlow(play, &this->actor);
+                        GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                    } else {
+                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM1);
+                        BossGoma_SetupFloorDamaged(this);
+                        EffectSsSibuki_SpawnBurst(play, &this->actor.focus.pos);
+                    }
+                    this->invincibilityFrames = 10;
+                    return;
+                }
+            }
 
             if (this->actionFunc == BossGoma_CeilingMoveToCenter || this->actionFunc == BossGoma_CeilingIdle ||
                 this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas) {

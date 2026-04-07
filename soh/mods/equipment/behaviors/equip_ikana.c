@@ -1,103 +1,130 @@
 /**
  * equip_ikana.c - Shield of Ikana (Extended Shield Slot 3)
  *
- * Behavior: MM Mirror Shield model + rupee-cost damage immunity.
- * - Uses OOT's Mirror Shield model (EQUIP_VALUE_SHIELD_MIRROR)
- * - Makes Link immune to all damage
- * - Each 1 HP of damage received costs 1 rupee instead
- * - No rupees = Jynxed: inverted stick, swapped A/B, slower movement
- * - No passive rupee drain — only costs on damage
+ * Behavior: MM Mirror Shield model + Soul Drain + Death Save.
+ * - Uses OOT's Mirror Shield model (EQUIP_VALUE_SHIELD_MIRROR) — unchanged
+ * - Soul Drain: if you raise shield and get hit within 12 frames, drain enemy HP
+ * - Death Save: when you die with this shield, revive with darkness aura (like fairy)
  *
  * Included by ext_equip_behavior.c (unity build).
  */
 
 // No extra includes — unity-built from ext_equip_behavior.c
-extern void Rupees_ChangeBy(s16 rupeeChange);
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define IKANA_RUPEE_INTERVAL 30 // Passive drain: 1 rupee every N frames
-#define IKANA_JYNXED_SPEED_MULT 0.5f
+#define IKANA_PERFECT_GUARD_WINDOW 12 // Frames after raising shield for "perfect guard"
+#define IKANA_SOUL_DRAIN_DAMAGE 4     // Quarter hearts drained from enemy per perfect guard
+#define IKANA_REVIVE_HEARTS 3         // Hearts restored on death save (3 full hearts = 48 HP)
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-static s16 sIkanaRupeeTick = 0;
+static s16 sIkanaGuardTimer = 0;       // Counts frames since shield was raised
+static u8 sIkanaGuardActive = 0;       // Whether shield is currently raised
+static u8 sIkanaDeathSaveUsed = 0;     // Prevent double-revive per life
+static u8 sIkanaDeathSaveAvailable = 1; // Reset on scene change or respawn
 
 // ---------------------------------------------------------------------------
-// Jynxed effect: invert controls when out of rupees
+// Soul Drain: perfect guard detection
 // ---------------------------------------------------------------------------
-static void Ikana_ApplyJynxed(Player* p, PlayState* play) {
-    Input* input = &play->state.input[0];
+static void Ikana_UpdateSoulDrain(Player* player, PlayState* play) {
+    // Detect shield raise: player is in guard state (R button held)
+    u8 isGuarding = (player->stateFlags1 & PLAYER_STATE1_SHIELDING) != 0;
 
-    // Invert stick X and Y
-    input->rel.stick_x = -input->rel.stick_x;
-    input->rel.stick_y = -input->rel.stick_y;
-    input->cur.stick_x = -input->cur.stick_x;
-    input->cur.stick_y = -input->cur.stick_y;
+    if (isGuarding && !sIkanaGuardActive) {
+        // Just started guarding — start the perfect guard window
+        sIkanaGuardActive = 1;
+        sIkanaGuardTimer = 0;
+    } else if (isGuarding) {
+        sIkanaGuardTimer++;
+    } else {
+        sIkanaGuardActive = 0;
+        sIkanaGuardTimer = 0;
+    }
 
-    // Swap A and B buttons (both press and cur)
-    u16 pressA = input->press.button & BTN_A;
-    u16 pressB = input->press.button & BTN_B;
-    input->press.button &= ~(BTN_A | BTN_B);
-    if (pressA)
-        input->press.button |= BTN_B;
-    if (pressB)
-        input->press.button |= BTN_A;
+    // Check for shield bounce within the perfect guard window
+    if (sIkanaGuardActive && sIkanaGuardTimer <= IKANA_PERFECT_GUARD_WINDOW) {
+        if (player->shieldQuad.base.acFlags & AC_BOUNCED) {
+            // Perfect guard! Get the attacking actor directly
+            Actor* attacker = player->shieldQuad.base.ac;
+            if (attacker != NULL && attacker != &player->actor) {
+                // Drain HP from the attacker
+                if (attacker->colChkInfo.health > IKANA_SOUL_DRAIN_DAMAGE) {
+                    attacker->colChkInfo.health -= IKANA_SOUL_DRAIN_DAMAGE;
+                } else {
+                    attacker->colChkInfo.health = 0;
+                }
 
-    u16 curA = input->cur.button & BTN_A;
-    u16 curB = input->cur.button & BTN_B;
-    input->cur.button &= ~(BTN_A | BTN_B);
-    if (curA)
-        input->cur.button |= BTN_B;
-    if (curB)
-        input->cur.button |= BTN_A;
+                // Visual/audio feedback: dark drain sound
+                Audio_PlaySoundGeneral(NA_SE_EN_GANON_AT_RETURN, &player->actor.world.pos, 4,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultReverb);
 
-    // Slow movement
-    p->linearVelocity *= IKANA_JYNXED_SPEED_MULT;
-    p->actor.speedXZ *= IKANA_JYNXED_SPEED_MULT;
+                // Heal player slightly (soul absorbed)
+                Health_ChangeBy(play, 8); // Half heart
+            }
+        }
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Death Save: check if we should revive instead of dying
+// Called from z_player.c death handler via hook
+// ---------------------------------------------------------------------------
+u8 Ikana_ShouldRevive(void) {
+    if (!ExtEquip_IsEnabled())
+        return 0;
+    if (gExtEquipState.currentExtShield != 3)
+        return 0;
+    if (sIkanaDeathSaveUsed)
+        return 0;
+
+    return 1;
+}
+
+void Ikana_ConsumeDeathSave(PlayState* play) {
+    sIkanaDeathSaveUsed = 1;
+
+    // Restore hearts
+    gSaveContext.health = IKANA_REVIVE_HEARTS * 16;
+
+    // Dark flash effect (purple/black)
+    play->envCtx.screenFillColor[0] = 80;  // R (dark purple)
+    play->envCtx.screenFillColor[1] = 0;   // G
+    play->envCtx.screenFillColor[2] = 120; // B
+    play->envCtx.screenFillColor[3] = 200; // A
+
+    Audio_PlaySoundGeneral(NA_SE_EN_FANTOM_LAUGH, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+}
+
+// Reset death save (called on scene change / re-equip)
+static void Ikana_ResetDeathSave(void) {
+    sIkanaDeathSaveUsed = 0;
+    sIkanaDeathSaveAvailable = 1;
+}
+
+// Track scene to detect transitions (reset death save on new scene)
+static s16 sIkanaLastScene = -1;
 
 // ---------------------------------------------------------------------------
 // Main Behavior
 // ---------------------------------------------------------------------------
 static void Ikana_Behavior(Player* player, PlayState* play) {
+    // Reset death save on scene change (respawn, warp, new area)
+    if (play->sceneNum != sIkanaLastScene) {
+        sIkanaLastScene = play->sceneNum;
+        Ikana_ResetDeathSave();
+    }
+
     // Skip during cutscenes, dying, etc.
     if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
                                PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM)) {
         return;
     }
 
-    // Passive rupee drain: 1 rupee per 30 frames
-    sIkanaRupeeTick++;
-    if (sIkanaRupeeTick >= IKANA_RUPEE_INTERVAL) {
-        sIkanaRupeeTick = 0;
-        if (gSaveContext.rupees > 0) {
-            Rupees_ChangeBy(-1);
-        }
-    }
-
-    // Check if broke → apply Jynxed effect
-    if (gSaveContext.rupees <= 0) {
-        Ikana_ApplyJynxed(player, play);
-    }
-
-    // Invincibility: -1 = permanent (like Nayru's Love)
-    player->invincibilityTimer = -1;
-
-    // Damage → rupee conversion: 1 HP damage = 1 rupee
-    if (player->cylinder.base.acFlags & AC_HIT) {
-        s32 damage = player->actor.colChkInfo.damage;
-        if (damage > 0 && gSaveContext.rupees > 0) {
-            s16 rupeeCost = (s16)damage;
-            if (rupeeCost > gSaveContext.rupees) {
-                rupeeCost = (s16)gSaveContext.rupees;
-            }
-            Rupees_ChangeBy(-rupeeCost);
-
-            Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_BOUND, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-        }
-    }
+    // Soul Drain on perfect guard
+    Ikana_UpdateSoulDrain(player, play);
 }

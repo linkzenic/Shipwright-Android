@@ -37,7 +37,7 @@
 #include "item_rod_fire.c"
 #include "item_rod_ice.c"
 #include "item_rod_light.c"
-#include "item_pending_2.c"
+#include "item_lantern.c"
 #include "item_pending_3.c"
 #include "item_hylias_grace.c"
 #include "item_demise_destruction.c"

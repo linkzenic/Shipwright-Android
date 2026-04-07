@@ -48,8 +48,11 @@ ALL_ITEMS = [
     ("gBeetleNameTex", "Beetle"),
     ("gShovelNameTex", "Shovel"),
     ("gMinishCapNameTex", "Minish Cap"),
-    ("gPending2NameTex", "Pending 2"),
+    ("gLanternNameTex", "Lantern"),
     ("gPending3NameTex", "Pending 3"),
+    ("gIronKnuckleAxeNameTex", "Iron Knuckle Axe"),
+    ("gSheikahShieldNameTex", "Sheikah Shield"),
+    ("gSpiritBreastplateNameTex", "Spirit Breastplate"),
 ]
 
 

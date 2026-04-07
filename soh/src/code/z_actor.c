@@ -2261,20 +2261,14 @@ void Player_PlaySfx(Actor* actor, u16 sfxId) {
         if (sfxId >= NA_SE_VO_LI_SWORD_N && sfxId <= NA_SE_VO_LI_ELECTRIC_SHOCK_LV_KID) {
             return;
         }
-        // Block specific combat/body PL SFX that MM handles itself
+        // Block only combat SFX that MM handles via its own system.
+        // Keep body sounds (BODY_HIT, DAMAGE) — they're form-neutral impacts.
         switch (sfxId) {
-            case NA_SE_PL_DAMAGE:
-            case NA_SE_PL_BODY_HIT:
-            case NA_SE_PL_BODY_BOUND:
-            case NA_SE_PL_ROLL:
-            case NA_SE_PL_SKIP:
             case NA_SE_PL_THROW:
             case NA_SE_PL_CHANGE_ARMS:
             case NA_SE_PL_CATCH_BOOMERANG:
             case NA_SE_PL_KNOCK:
             case NA_SE_PL_SPARK:
-            case NA_SE_PL_SWIM:
-            case NA_SE_PL_DIVE_BUBBLE:
                 return;
         }
     }

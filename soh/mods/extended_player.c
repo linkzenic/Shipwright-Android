@@ -37,7 +37,7 @@ extern void Player_InitWhipIA(PlayState* play, Player* this);
 extern void Player_InitDominionRodIA(PlayState* play, Player* this);
 extern void Player_InitTimeGateIA(PlayState* play, Player* this);
 extern void Player_InitMinishCapIA(PlayState* play, Player* this);
-extern void Player_InitPending2IA(PlayState* play, Player* this);
+extern void Player_InitLanternIA(PlayState* play, Player* this);
 extern void Player_InitPending3IA(PlayState* play, Player* this);
 
 /**
@@ -119,8 +119,8 @@ int8_t ExtPlayer_GetItemAction(int32_t item) {
             return PLAYER_IA_SHOVEL;
         case ITEM_MINISH_CAP:
             return PLAYER_IA_MINISH_CAP;
-        case ITEM_PENDING_2:
-            return PLAYER_IA_PENDING_2;
+        case ITEM_LANTERN:
+            return PLAYER_IA_LANTERN;
         case ITEM_PENDING_3:
             return PLAYER_IA_PENDING_3;
 
@@ -273,7 +273,7 @@ uint8_t ExtPlayer_GetActionModelGroup(int32_t itemAction) {
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_MINISH_CAP:
             return PLAYER_MODELGROUP_DEFAULT;
-        case PLAYER_IA_PENDING_2:
+        case PLAYER_IA_LANTERN:
             return PLAYER_MODELGROUP_DEFAULT;
         case PLAYER_IA_UNUSED_5B:
             return PLAYER_MODELGROUP_DEFAULT;
@@ -371,7 +371,7 @@ ItemActionUpdateFunc ExtPlayer_GetItemActionUpdateFunc(int32_t itemAction) {
             return Player_UpperAction_Shovel;
         case PLAYER_IA_MINISH_CAP:
             return func_8083485C;
-        case PLAYER_IA_PENDING_2:
+        case PLAYER_IA_LANTERN:
             return func_8083485C;
         case PLAYER_IA_UNUSED_5B:
             return func_8083485C;
@@ -468,8 +468,8 @@ ItemActionInitFunc ExtPlayer_GetItemActionInitFunc(int32_t itemAction) {
             return Player_InitDefaultIA;
         case PLAYER_IA_MINISH_CAP:
             return Player_InitMinishCapIA;
-        case PLAYER_IA_PENDING_2:
-            return Player_InitPending2IA;
+        case PLAYER_IA_LANTERN:
+            return Player_InitLanternIA;
         case PLAYER_IA_UNUSED_5B:
             return Player_InitDefaultIA;
         case PLAYER_IA_PENDING_3:

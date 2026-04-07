@@ -86,6 +86,18 @@ static void Pegasus_Stop(Player* p) {
     sPegasusCol.base.atFlags &= ~AT_ON;
 }
 
+// Full cleanup when Pegasus boots are unequipped (disables collider completely)
+static void Pegasus_Cleanup(void) {
+    if (gExtEquipBehavior.pegasusColInit) {
+        sPegasusCol.base.atFlags &= ~(AT_ON | AT_TYPE_PLAYER);
+        sPegasusCol.base.acFlags = AC_NONE;
+        sPegasusCol.base.ocFlags1 = OC1_NONE;
+    }
+    gExtEquipBehavior.pegasusState = PEGASUS_IDLE;
+    gExtEquipBehavior.pegasusTimer = 0;
+    gExtEquipBehavior.pegasusMagicTick = 0;
+}
+
 // ---------------------------------------------------------------------------
 // Apply sword-forward limb pose
 // ---------------------------------------------------------------------------
@@ -326,14 +338,8 @@ static Vtx sPegasusConeFrontVtx[] = {
     VTX(2828, 8000, -2828, 1792, 0, 0xFF, 0xFF, 0xFF, 0x00),
 };
 
-static Gfx gfx_pegasus_cone[] = {
-    gsDPPipeSync(),
-    gsDPSetTextureLUT(G_TT_NONE),
-    gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON),
-    gsDPLoadTextureBlock(sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0, G_TX_NOMIRROR | G_TX_WRAP,
-                         G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD),
-    gsDPLoadMultiBlock(sWindEffTexture, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0, G_TX_NOMIRROR | G_TX_WRAP,
-                       G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 14, 14),
+// Cone DL without texture load (texture loaded at runtime to avoid OTR path resolution crash)
+static Gfx gfx_pegasus_cone_geo[] = {
     gsDPSetCombineLERP(TEXEL1, PRIMITIVE, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0, PRIMITIVE,
                        ENVIRONMENT, COMBINED, ENVIRONMENT, COMBINED, 0, SHADE, 0),
     gsDPSetRenderMode(G_RM_PASS, G_RM_AA_ZB_XLU_SURF2),
@@ -380,13 +386,22 @@ static void Pegasus_Draw(Player* p, PlayState* play) {
 
     gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
+    // Load texture at runtime (can't be in static DL — SOH interprets raw pointers as OTR paths)
+    gDPPipeSync(POLY_XLU_DISP++);
+    gDPSetTextureLUT(POLY_XLU_DISP++, G_TT_NONE);
+    gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPLoadTextureBlock(POLY_XLU_DISP++, sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
+                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
+    gDPLoadMultiBlock(POLY_XLU_DISP++, sWindEffTexture, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
+                      G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 14, 14);
+
     // Animated texture scroll (same as wind spell)
     u32 frames = play->gameplayFrames;
     gSPSegment(POLY_XLU_DISP++, 0x08,
                Gfx_TwoTexScroll(play->state.gfxCtx, 0, -(s32)(frames * 1), (s32)(frames * 20), 0x40, 0x40, 1,
                                 -(s32)(frames * 2), (s32)(frames * 10), 0x40, 0x40));
 
-    gSPDisplayList(POLY_XLU_DISP++, gfx_pegasus_cone);
+    gSPDisplayList(POLY_XLU_DISP++, gfx_pegasus_cone_geo);
 
     Matrix_Pop();
 
@@ -493,9 +508,7 @@ static Gfx gfx_anklet_wing[] = {
 static void Pegasus_DrawAnklet(PlayState* play, s32 isRightFoot) {
     OPEN_DISPS(play->state.gfxCtx);
 
-    // === Golden ring at ankle ===
-    // Use Golden Goddess Light Ring DL from gameplay
-    // Mirror Z offset for left foot to center the ring
+    // === Golden ring at ankle (inline torus — avoids segment 6 dependency on object_light_ring) ===
     f32 zOffset = isRightFoot ? 0.0f : -50.0f;
     Matrix_Push();
     Matrix_Translate(0.0f, -300.0f, zOffset, MTXMODE_APPLY);
@@ -503,8 +516,7 @@ static void Pegasus_DrawAnklet(PlayState* play, s32 isRightFoot) {
     Matrix_Scale(0.015f, 0.015f, 0.015f, MTXMODE_APPLY);
 
     gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++,
-                   ResourceMgr_LoadGfxByName("__OTR__objects/object_light_ring/gGoldenGoddessLightRingDL"));
+    gSPDisplayList(POLY_XLU_DISP++, gfx_anklet_torus);
     Matrix_Pop();
 
     // === Golden wings (inline geometry, pendulum physics) ===

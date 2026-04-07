@@ -45,7 +45,7 @@ extern "C" {
 #define ITEM_BEETLE 0xB1
 #define ITEM_SHOVEL 0xB2
 #define ITEM_MINISH_CAP 0xB3
-#define ITEM_PENDING_2 0xB4
+// ITEM_LANTERN = 0xB4 (defined in z64item.h enum)
 #define ITEM_CHATEAU_ROMANI 0xB5
 #define ITEM_PENDING_3 0xB6
 
@@ -369,6 +369,15 @@ typedef struct {
     u8 minishCapShrinking; // 1 = shrinking player during departure fade
     u8 minishCapGrowing;   // 1 = snap to start scale, 2 = growing to normal
 
+    // ── Lantern ──────────────────────────────────────────────────────────
+    u8  lanternFireType;      // LanternFireType enum (0-4)
+    u8  lanternSwinging;      // 1 = in swing animation
+    u8  lanternEquipped;      // 1 = lantern is on a C-button (draw in hand always)
+    s16 lanternSwingFrame;    // Current swing anim frame
+    u8  lanternCatchWindow;   // 1 = catch frames active this frame
+    u8  lanternCatchState;    // 0=none, 1=playing catch anim, 2=showing message
+    s16 lanternHealTimer;     // Green fire regen countdown (150 frames)
+
     // Shared (reused by items that never run simultaneously)
     Vec3f sharedProjectilePos;
     Actor* sharedTargetActor; // Used by spinner, etc.
@@ -550,6 +559,7 @@ void Handle_Whip(Player* player, PlayState* play);
 void Handle_DesireSensor(Player* player, PlayState* play);
 void Handle_SwitchHook(Player* player, PlayState* play);
 void Handle_MinishCap(Player* player, PlayState* play);
+void Handle_Lantern(Player* player, PlayState* play);
 
 // Draw functions
 void CustomItems_DrawDekuLeaf(Player* player, PlayState* play);
@@ -576,6 +586,7 @@ void CustomItems_DrawTimeGatePortal(Player* player, PlayState* play);
 void CustomItems_DrawSwitchHook(Player* player, PlayState* play);
 void CustomItems_DrawSwitchHookInHand(Player* player, PlayState* play);
 void CustomItems_DrawSwitchHookReticle(Player* player, PlayState* play);
+void CustomItems_DrawLantern(Player* player, PlayState* play);
 
 // External display lists
 extern Gfx* gFireRodBodyDL;

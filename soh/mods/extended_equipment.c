@@ -21,7 +21,6 @@
 
 extern SaveContext gSaveContext;
 extern s32 CVarGetInteger(const char* name, s32 defaultValue);
-extern void CVarSetInteger(const char* name, s32 value);
 
 // Somaria cane DL for Byrna draw
 #include "items/objects/somaria_cane_DL/header.h"
@@ -37,6 +36,10 @@ extern void CVarSetInteger(const char* name, s32 value);
 ExtendedEquipmentState gExtEquipState;
 u8 gExtEquipSuppressIconOverride = 0;
 
+// Transform backup: stores equipped ext equipment indices before transformation
+static u8 sTransformBackup[4] = {0}; // [EQUIP_TYPE_SWORD..BOOTS]
+static u8 sTransformBackupValid = 0;
+
 #define EXT_EQUIP_PAGE_SWITCH_COOLDOWN 15
 
 // ---------------------------------------------------------------------------
@@ -47,11 +50,22 @@ void ExtEquip_Init(void) {
     memset(&gExtEquipState, 0, sizeof(gExtEquipState));
     memset(&gExtEquipBehavior, 0, sizeof(gExtEquipBehavior));
 
-    // Load persisted equipped state from CVars (ownership is in gSaveContext.inventory.equipment upper bits)
-    gExtEquipState.currentExtSword = (u8)CVarGetInteger(CVAR_EXT_EQUIP_SWORD, 0);
-    gExtEquipState.currentExtShield = (u8)CVarGetInteger(CVAR_EXT_EQUIP_SHIELD, 0);
-    gExtEquipState.currentExtTunic = (u8)CVarGetInteger(CVAR_EXT_EQUIP_TUNIC, 0);
-    gExtEquipState.currentExtBoots = (u8)CVarGetInteger(CVAR_EXT_EQUIP_BOOTS, 0);
+    // Clear reserved bits 28-31 (may contain garbage from old saves where equipment was u16 + padding)
+    gSaveContext.inventory.equipment &= 0x0FFFFFFF;
+
+    // Migrate C-button items from old ext equipment IDs (0xD0-0xDB) to new (0xE0-0xEB)
+    for (int i = 0; i < ARRAY_COUNT(gSaveContext.equips.buttonItems); i++) {
+        u8 btn = gSaveContext.equips.buttonItems[i];
+        if (btn >= 0xD0 && btn <= 0xDB) {
+            gSaveContext.equips.buttonItems[i] = btn + 0x10; // 0xD0→0xE0, etc.
+        }
+    }
+
+    // Load equipped state from save data (per-file, persisted only on game save)
+    gExtEquipState.currentExtSword  = gSaveContext.ship.extEquipSword;
+    gExtEquipState.currentExtShield = gSaveContext.ship.extEquipShield;
+    gExtEquipState.currentExtTunic  = gSaveContext.ship.extEquipTunic;
+    gExtEquipState.currentExtBoots  = gSaveContext.ship.extEquipBoots;
 
     // Clamp to valid range
     if (gExtEquipState.currentExtSword > 3)
@@ -116,31 +130,20 @@ static void ExtEquip_SetCurrentByType(s16 equipType, u8 index) {
     switch (equipType) {
         case EQUIP_TYPE_SWORD:
             gExtEquipState.currentExtSword = index;
+            gSaveContext.ship.extEquipSword = index;
             break;
         case EQUIP_TYPE_SHIELD:
             gExtEquipState.currentExtShield = index;
+            gSaveContext.ship.extEquipShield = index;
             break;
         case EQUIP_TYPE_TUNIC:
             gExtEquipState.currentExtTunic = index;
+            gSaveContext.ship.extEquipTunic = index;
             break;
         case EQUIP_TYPE_BOOTS:
             gExtEquipState.currentExtBoots = index;
+            gSaveContext.ship.extEquipBoots = index;
             break;
-    }
-}
-
-static const char* ExtEquip_GetCVarKey(s16 equipType) {
-    switch (equipType) {
-        case EQUIP_TYPE_SWORD:
-            return CVAR_EXT_EQUIP_SWORD;
-        case EQUIP_TYPE_SHIELD:
-            return CVAR_EXT_EQUIP_SHIELD;
-        case EQUIP_TYPE_TUNIC:
-            return CVAR_EXT_EQUIP_TUNIC;
-        case EQUIP_TYPE_BOOTS:
-            return CVAR_EXT_EQUIP_BOOTS;
-        default:
-            return NULL;
     }
 }
 
@@ -189,14 +192,8 @@ void ExtEquip_Equip(s16 equipType, u8 index) {
         return;
     }
 
-    // Set extended equipment
+    // Set extended equipment (also syncs to gSaveContext.ship)
     ExtEquip_SetCurrentByType(equipType, index);
-
-    // Persist to CVar
-    const char* cvarKey = ExtEquip_GetCVarKey(equipType);
-    if (cvarKey) {
-        CVarSetInteger(cvarKey, index);
-    }
 
     // Set vanilla equipment base for ext equipment
     // Ext swords use Kokiri Sword as base (model + IA), ext shields use Mirror Shield
@@ -230,11 +227,47 @@ void ExtEquip_Unequip(s16 equipType) {
     }
 
     ExtEquip_SetCurrentByType(equipType, 0);
+}
 
-    const char* cvarKey = ExtEquip_GetCVarKey(equipType);
-    if (cvarKey) {
-        CVarSetInteger(cvarKey, 0);
+// ---------------------------------------------------------------------------
+// Transform integration
+// ---------------------------------------------------------------------------
+
+void ExtEquip_UnequipForTransform(void) {
+    if (!ExtEquip_IsEnabled()) return;
+    if (sTransformBackupValid) return; // Already backed up (form-to-form switch)
+
+    sTransformBackup[EQUIP_TYPE_SWORD]  = gExtEquipState.currentExtSword;
+    sTransformBackup[EQUIP_TYPE_SHIELD] = gExtEquipState.currentExtShield;
+    sTransformBackup[EQUIP_TYPE_TUNIC]  = gExtEquipState.currentExtTunic;
+    sTransformBackup[EQUIP_TYPE_BOOTS]  = gExtEquipState.currentExtBoots;
+    sTransformBackupValid = 1;
+
+    for (s16 t = EQUIP_TYPE_SWORD; t <= EQUIP_TYPE_BOOTS; t++) {
+        if (ExtEquip_GetCurrent(t) != 0) {
+            ExtEquip_Unequip(t);
+        }
     }
+}
+
+void ExtEquip_RestoreFromTransform(void) {
+    if (!sTransformBackupValid) return;
+    if (!ExtEquip_IsEnabled()) {
+        sTransformBackupValid = 0;
+        return;
+    }
+
+    for (s16 t = EQUIP_TYPE_SWORD; t <= EQUIP_TYPE_BOOTS; t++) {
+        if (sTransformBackup[t] != 0 && ExtEquip_HasItem(t, sTransformBackup[t])) {
+            ExtEquip_Equip(t, sTransformBackup[t]);
+        }
+    }
+    sTransformBackupValid = 0;
+}
+
+void ExtEquip_ClearTransformBackup(void) {
+    sTransformBackupValid = 0;
+    memset(sTransformBackup, 0, sizeof(sTransformBackup));
 }
 
 void ExtEquip_ToggleFromCButton(u16 itemId) {
@@ -365,6 +398,9 @@ void ExtEquip_DrawSwordDL(void* playVoid) {
         OPEN_DISPS(play->state.gfxCtx);
         gSPDisplayList(POLY_OPA_DISP++, g_byrna_cane_dl);
         CLOSE_DISPS(play->state.gfxCtx);
+    } else if (gExtEquipState.currentExtSword == 3) {
+        // IK Axe: draw Iron Knuckle Axe DL
+        IKAxe_DrawAxe(play);
     }
 }
 
@@ -374,6 +410,10 @@ u8 ExtEquip_ShouldHideSwordDL(void) {
 
     // Cane of Byrna replaces the sword model with its own draw
     if (gExtEquipState.currentExtSword == 1)
+        return 1;
+
+    // IK Axe replaces the sword model with axe DL
+    if (gExtEquipState.currentExtSword == 3)
         return 1;
 
     return 0;
@@ -486,4 +526,23 @@ void ExtEquip_CaptureCapeShoulderPos(s32 limbIndex) {
         return;
 
     MagicCape_CaptureShoulderPos(limbIndex);
+}
+
+void ExtEquip_DrawBreastplate(void* playVoid) {
+    if (!ExtEquip_IsEnabled())
+        return;
+    if (gExtEquipState.currentExtTunic != 2)
+        return;
+
+    PlayState* play = (PlayState*)playVoid;
+    Breastplate_Draw(play);
+}
+
+u8 ExtEquip_IkanaDeathSave(void* playVoid) {
+    if (!Ikana_ShouldRevive())
+        return 0;
+
+    PlayState* play = (PlayState*)playVoid;
+    Ikana_ConsumeDeathSave(play);
+    return 1;
 }

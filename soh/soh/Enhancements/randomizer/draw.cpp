@@ -45,6 +45,7 @@ extern "C" {
 #include "mods/mm_sources/objects/object_gi_bottle_21.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
 
+#include "objects/object_poh/object_poh.h"
 #include "mods/items/objects/rocs_cape_giveDL/header.h"
 #include "mods/items/objects/rocs_cape_giveDL/model.inc.c"
 #include "mods/items/objects/rocs_feather_giveDL/header.h"
@@ -1770,6 +1771,11 @@ void Randomizer_DrawStasis(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoStasisDL, 2.5f);
 }
 
+void Randomizer_DrawLantern(PlayState* play, GetItemEntry* getItemEntry) {
+    // Poe Lantern model from object_poh
+    DrawCustomItemDiamond(play, (Gfx*)gPoeLanternDL, 1.5f);
+}
+
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoCryonisDL, 2.5f);
 }
@@ -1787,7 +1793,7 @@ void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 
-void Randomizer_DrawExtDrillshaft(PlayState* play, GetItemEntry* getItemEntry) {
+void Randomizer_DrawExtIronKnuckleAxe(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 
@@ -1795,7 +1801,7 @@ void Randomizer_DrawExtDivineShield(PlayState* play, GetItemEntry* getItemEntry)
     DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 
-void Randomizer_DrawExtGerudoScimitar(PlayState* play, GetItemEntry* getItemEntry) {
+void Randomizer_DrawExtSheikahShield(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 
@@ -1816,7 +1822,7 @@ void Randomizer_DrawExtMagicCape(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 
-void Randomizer_DrawExtPendingTunic(PlayState* play, GetItemEntry* getItemEntry) {
+void Randomizer_DrawExtSpiritBreastplate(PlayState* play, GetItemEntry* getItemEntry) {
     DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
 }
 

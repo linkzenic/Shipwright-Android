@@ -7,6 +7,7 @@
 #include "z_en_boom.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/equipment/objects/ikaxe_DL/header.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -67,8 +68,29 @@ void EnBoom_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
 
+    // IK Axe tomahawk (params 99): orange/red trail + hammer damage
+    if (this->actor.params == 99) {
+        blure.p1StartColor[0] = 255;
+        blure.p1StartColor[1] = 150;
+        blure.p1StartColor[2] = 50;
+        blure.p1StartColor[3] = 255;
+
+        blure.p2StartColor[0] = 255;
+        blure.p2StartColor[1] = 80;
+        blure.p2StartColor[2] = 20;
+        blure.p2StartColor[3] = 64;
+
+        blure.p1EndColor[0] = 200;
+        blure.p1EndColor[1] = 60;
+        blure.p1EndColor[2] = 10;
+        blure.p1EndColor[3] = 0;
+
+        blure.p2EndColor[0] = 200;
+        blure.p2EndColor[1] = 60;
+        blure.p2EndColor[2] = 10;
+        blure.p2EndColor[3] = 0;
     // Zora fin boomerangs (params 1=left, 2=right) use cyan trail
-    if (this->actor.params == 1 || this->actor.params == 2) {
+    } else if (this->actor.params == 1 || this->actor.params == 2) {
         blure.p1StartColor[0] = 100;
         blure.p1StartColor[1] = 220;
         blure.p1StartColor[2] = 255;
@@ -120,6 +142,11 @@ void EnBoom_Init(Actor* thisx, PlayState* play) {
     Collider_InitQuad(play, &this->collider);
     Collider_SetQuad(play, &this->collider, &this->actor, &sQuadInit);
 
+    // IK Axe tomahawk: hammer damage type
+    if (this->actor.params == 99) {
+        this->collider.info.toucher.dmgFlags = 0x00000002; // DMG_HAMMER
+    }
+
     EnBoom_SetupAction(this, EnBoom_Fly);
 }
 
@@ -128,6 +155,95 @@ void EnBoom_Destroy(Actor* thisx, PlayState* play) {
 
     Effect_Delete(play, this->effectIndex);
     Collider_DestroyQuad(play, &this->collider);
+}
+
+// IK Axe tomahawk: parabolic arc out, then home back to Link
+static void EnBoom_FlyTomahawk(EnBoom* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s32 shouldReturn = 0;
+
+    // ---- PHASE 1: Outgoing arc (returnTimer > 0) ----
+    if (this->returnTimer > 0) {
+        // First frame: set initial velocity from spawn angles
+        if (this->activeTimer <= 1) {
+            f32 speed = 14.0f;
+            f32 cosX = Math_CosS(this->actor.world.rot.x);
+            this->actor.velocity.x = Math_SinS(this->actor.world.rot.y) * cosX * speed;
+            this->actor.velocity.y = -Math_SinS(this->actor.world.rot.x) * speed;
+            this->actor.velocity.z = Math_CosS(this->actor.world.rot.y) * cosX * speed;
+        }
+
+        // Gravity for parabolic arc
+        this->actor.velocity.y -= 1.2f;
+
+        // Move by velocity
+        this->actor.world.pos.x += this->actor.velocity.x;
+        this->actor.world.pos.y += this->actor.velocity.y;
+        this->actor.world.pos.z += this->actor.velocity.z;
+
+        // Check AT hit (enemy)
+        if (this->collider.base.atFlags & AT_HIT) {
+            Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &this->actor.world.pos, 4,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultReverb);
+            Math_Vec3f_Copy(&this->actor.world.pos, &this->actor.prevPos);
+            shouldReturn = 1;
+        }
+
+        // Check wall/floor collision
+        Vec3f hitPoint;
+        s32 hitDynaID;
+        if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.prevPos, &this->actor.world.pos, &hitPoint,
+                                     &this->actor.wallPoly, true, true, true, true, &hitDynaID)) {
+            CollisionCheck_SpawnShieldParticlesMetal(play, &hitPoint);
+            Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &this->actor.world.pos, 4,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultReverb);
+            Math_Vec3f_Copy(&this->actor.world.pos, &hitPoint);
+            shouldReturn = 1;
+        }
+
+        // Timeout
+        if (DECR(this->returnTimer) == 0) {
+            shouldReturn = 1;
+        }
+
+        // Trigger return phase
+        if (shouldReturn) {
+            this->returnTimer = 0;
+            this->moveTo = &player->actor;
+            // Set rot toward player for return flight
+            this->actor.world.rot.y = Actor_WorldYawTowardActor(&this->actor, &player->actor);
+            this->actor.world.rot.x = Actor_WorldPitchTowardPoint(&this->actor, &player->actor.focus.pos);
+        }
+    }
+    // ---- PHASE 2: Return to Link (returnTimer == 0, moveTo == player) ----
+    else {
+        // Home toward player
+        s16 yawTarget = Actor_WorldYawTowardActor(&this->actor, &player->actor);
+        s16 pitchTarget = Actor_WorldPitchTowardPoint(&this->actor, &player->actor.focus.pos);
+
+        Math_ScaledStepToS(&this->actor.world.rot.y, yawTarget, 0x1000);
+        Math_ScaledStepToS(&this->actor.world.rot.x, pitchTarget, 0x1000);
+
+        Actor_SetProjectileSpeed(&this->actor, 16.0f);
+        Actor_MoveXZGravity(&this->actor);
+
+        // Close enough to catch
+        f32 dist = Math_Vec3f_DistXYZ(&this->actor.world.pos, &player->actor.focus.pos);
+        if (dist < 40.0f || player->boomerangQuickRecall) {
+            player->stateFlags1 &= ~PLAYER_STATE1_BOOMERANG_THROWN;
+            player->boomerangQuickRecall = false;
+            Actor_Kill(&this->actor);
+            return;
+        }
+    }
+
+    // Spinning rotation
+    this->actor.shape.rot.y += 0x1800;
+
+    // Sound: heavy whoosh
+    func_8002F974(&this->actor, NA_SE_IT_SWORD_SWING_HARD - SFX_FLAG);
 }
 
 void EnBoom_Fly(EnBoom* this, PlayState* play) {
@@ -147,6 +263,13 @@ void EnBoom_Fly(EnBoom* this, PlayState* play) {
     s32 pad2;
 
     player = GET_PLAYER(play);
+
+    // IK Axe tomahawk: separate flight path
+    if (this->actor.params == 99) {
+        EnBoom_FlyTomahawk(this, play);
+        return;
+    }
+
     target = this->moveTo;
 
     // If the boomerang is moving toward a targeted actor, handle setting the proper x and y angle to fly toward it.
@@ -293,17 +416,29 @@ void EnBoom_Draw(Actor* thisx, PlayState* play) {
     }
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_RotateY((this->activeTimer * 12000) * (M_PI / 0x8000), MTXMODE_APPLY);
 
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-
-    // Zora fin boomerangs: use MM fin DLs instead of OOT boomerang
-    if (this->actor.params == 1 && gZoraFinBoomerangLDL != NULL) {
-        gSPDisplayList(POLY_OPA_DISP++, gZoraFinBoomerangLDL);
-    } else if (this->actor.params == 2 && gZoraFinBoomerangRDL != NULL) {
-        gSPDisplayList(POLY_OPA_DISP++, gZoraFinBoomerangRDL);
+    if (this->actor.params == 99) {
+        // IK Axe tomahawk: slower spin, axe DL on XLU
+        Matrix_RotateY((this->activeTimer * 4000) * (M_PI / 0x8000), MTXMODE_APPLY);
+        Matrix_Scale(0.15f, 0.15f, 0.15f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gIKAxeInlineDL);
     } else {
-        gSPDisplayList(POLY_OPA_DISP++, gBoomerangRefDL);
+        // Zora fins (params 1/2): flat arc flight, no spin. Normal boomerang: fast spin.
+        if (this->actor.params != 1 && this->actor.params != 2) {
+            Matrix_RotateY((this->activeTimer * 12000) * (M_PI / 0x8000), MTXMODE_APPLY);
+        }
+
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+        // Zora fin boomerangs: use MM fin DLs instead of OOT boomerang
+        if (this->actor.params == 1 && gZoraFinBoomerangLDL != NULL) {
+            gSPDisplayList(POLY_OPA_DISP++, gZoraFinBoomerangLDL);
+        } else if (this->actor.params == 2 && gZoraFinBoomerangRDL != NULL) {
+            gSPDisplayList(POLY_OPA_DISP++, gZoraFinBoomerangRDL);
+        } else {
+            gSPDisplayList(POLY_OPA_DISP++, gBoomerangRefDL);
+        }
     }
 
     CLOSE_DISPS(play->state.gfxCtx);

@@ -13,6 +13,7 @@
 #include "mods/items/custom_items.h"
 #include "mods/extended_player.h"
 #include "mods/extended_equipment.h"
+#include "mods/equipment/objects/ikaxe_DL/header.h"
 #include "mods/items/logic/item_mitts.h"
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/pak_loader/pak_loader.h"
@@ -502,6 +503,64 @@ void Player_SetBootData(PlayState* play, Player* this) {
     if (play->roomCtx.curRoom.behaviorType1 == ROOM_BEHAVIOR_TYPE1_2) {
         REG(45) = 500;
     }
+
+    // MM transformation boot data override.
+    // Each MM form has unique boot physics (from 2Ship z_player_lib.c D_801BFE14).
+    // MM boot data mapped to OOT's REG layout (17 entries, same order as sBootData).
+    // Key differences from Human/Hylian (OOT default):
+    //   FD: R_RUN_SPEED_LIMIT=1000 (vs 550), faster accel curve
+    //   Goron: R_RUN_SPEED_LIMIT=600, REG(68)=-140 (heavier gravity)
+    //   Zora/Deku: R_RUN_SPEED_LIMIT=600
+    if (TransformMasks_IsTransformed()) {
+        extern s32 MmForm_GetCurrentForm(void);
+        s32 form = MmForm_GetCurrentForm();
+
+        // OOT sBootData format: REG(19,30,32,34,35,36,37,38), REG(43), REG(45),
+        //                       REG(68,69), IREG(66,67,68,69), MREG(95)
+        static const s16 sMmBootData[][17] = {
+            // FIERCE_DEITY (form 0) — from MM PLAYER_BOOTS_FIERCE_DEITY
+            { 200, 666, 200, 700, 366, 200, 600, 175, 60, 800, -100, 600, 590, 800, 125, 300, 65 },
+            // GORON (form 1) — from MM PLAYER_BOOTS_GORON
+            { 200, 1000, 300, 700, 550, 270, 700, 200, 120, 800, -140, 600, 590, 750, 125, 200, 130 },
+            // ZORA (form 2) — from MM PLAYER_BOOTS_ZORA_LAND
+            { 200, 1000, 300, 700, 550, 270, 700, 300, 120, 800, -100, 600, 590, 750, 125, 200, 130 },
+            // DEKU (form 3) — from MM PLAYER_BOOTS_DEKU
+            { 200, 1000, 300, 700, 550, 270, 600, 1000, 120, 800, -100, 600, 590, 750, 125, 200, 130 },
+            // HUMAN (form 4) — no override needed, uses OOT defaults
+            { 200, 1000, 300, 700, 550, 270, 600, 350, 800, 600, -100, 600, 590, 750, 125, 200, 130 },
+            // PIKACHU (form 5) — same as FD (fast movement)
+            { 200, 666, 200, 700, 366, 200, 600, 175, 60, 800, -100, 600, 590, 800, 125, 300, 65 },
+        };
+
+        if (form >= 0 && form <= 5 && form != 4) {
+            const s16* bd = sMmBootData[form];
+            REG(19) = bd[0];
+            REG(30) = bd[1];
+            REG(32) = bd[2];
+            REG(34) = bd[3];
+            REG(35) = bd[4];
+            REG(36) = bd[5];
+            REG(37) = bd[6];
+            REG(38) = bd[7];
+            REG(43) = bd[8];
+            REG(45) = bd[9];
+            REG(68) = bd[10];
+            REG(69) = bd[11];
+            IREG(66) = bd[12];
+            IREG(67) = bd[13];
+            IREG(68) = bd[14];
+            IREG(69) = bd[15];
+            MREG(95) = bd[16];
+        }
+
+        // R_RUN_SPEED_LIMIT: MM stores separately, OOT doesn't have a boot-data entry.
+        // Override it here based on form.
+        if (form == 0 || form == 5) {
+            R_RUN_SPEED_LIMIT = 1000; // FD and Pikachu
+        } else if (form >= 1 && form <= 3) {
+            R_RUN_SPEED_LIMIT = 600;  // Goron, Zora, Deku
+        }
+    }
 }
 
 // Custom method used to determine if we're using a custom model for link
@@ -883,6 +942,11 @@ s32 Player_ActionToMeleeWeapon(s32 actionParam) {
         return sword;
     }
 
+    // IK Axe: HAMMER on B-button — treat as BGS melee weapon (index 3)
+    if (actionParam == PLAYER_IA_HAMMER && ExtEquip_IsEnabled() && gExtEquipState.currentExtSword == 3) {
+        return 3; // Same as PLAYER_IA_SWORD_BIGGORON
+    }
+
     // Custom melee weapons (Fire Rod, Ice Rod, Light Rod) - treated as Deku Stick (4)
     if (actionParam == PLAYER_IA_ROD_FIRE || actionParam == PLAYER_IA_ROD_ICE || actionParam == PLAYER_IA_ROD_LIGHT) {
         return 4; // Same as PLAYER_IA_DEKU_STICK
@@ -1146,6 +1210,8 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
         sTemp.b = 241;
         color = &sTemp;
     }
+
+    // Spirit Breastplate (Ext Tunic 2): armor drawn separately in PostLimbDraw, tunic color unchanged
 
     if (GameInteractor_Should(VB_APPLY_TUNIC_COLOR, true, data, color)) {
         gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);
@@ -1462,9 +1528,10 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
     Player* this = (Player*)thisx;
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
-        // PAK Loader: When a custom .pak model is active, use equipment DLs from the alias table
-        if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
-                                           limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
+        // PAK Loader: When a custom model or equipment pak is active, use equipment DLs.
+        if (PakLoader_HasActiveModel() &&
+            (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
+             limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
             Gfx* pakDL = PakLoader_GetEquipDL(this, limbIndex);
             if (pakDL == PAK_DL_STUB) {
                 *dList = NULL; // Stub: model intentionally hides this
@@ -1661,6 +1728,11 @@ void Player_UpdateShieldCollider(PlayState* play, Player* this, ColliderQuad* co
         Vec3f quadDest[4];
 
         this->shieldQuad.base.colType = shieldColTypes[this->currentShield];
+
+        // Divine Shield (Ext Shield 1): force COLTYPE_WOOD regardless of vanilla shield
+        if (DivineShield_IsWoodType()) {
+            this->shieldQuad.base.colType = COLTYPE_WOOD;
+        }
 
         Matrix_MultVec3f(&quadSrc[0], &quadDest[0]);
         Matrix_MultVec3f(&quadSrc[1], &quadDest[1]);
@@ -1980,6 +2052,12 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             if (this->meleeWeaponState != 0) {
                 Vec3f spE4_byrna[3];
                 D_80126080.x = sMeleeWeaponLengths[Player_GetMeleeWeaponHeld(this)];
+
+                // IK Axe: double the hitbox reach
+                if (ExtEquip_IsEnabled() && gExtEquipState.currentExtSword == 3) {
+                    D_80126080.x = 8000.0f; // 2x normal hammer reach (~4000)
+                }
+
                 EffectBlure_ChangeType(Effect_GetByIndex(this->meleeWeaponEffectIndex),
                                        sSwordTypes[Player_GetMeleeWeaponHeld(this)]);
                 func_80090A28(this, spE4_byrna);
@@ -2201,12 +2279,31 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                 // Shield of Ikana: draw MM Mirror Shield on back
                 ExtEquip_DrawShieldBackDL(play);
             }
+
+            // IK Axe on back when sheathed (weapon NOT drawn)
+            if (ExtEquip_IsEnabled() && gExtEquipState.currentExtSword == 3 &&
+                this->heldItemAction == PLAYER_IA_NONE) {
+                OPEN_DISPS(play->state.gfxCtx);
+                Matrix_Push();
+                Matrix_Translate(-50.0f, -500.0f, -100.0f, MTXMODE_APPLY);
+                Matrix_RotateZYX(0x4000, 0x0000, 0x0000, MTXMODE_APPLY);
+                Matrix_Scale(0.15f, 0.15f, 0.15f, MTXMODE_APPLY);
+                Gfx_SetupDL_25Opa(play->state.gfxCtx);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gIKAxeInlineDL);
+                Matrix_Pop();
+                CLOSE_DISPS(play->state.gfxCtx);
+            }
         } else if (limbIndex == PLAYER_LIMB_HEAD) {
             Matrix_MultVec3f(&D_801260D4, &this->actor.focus.pos);
 
             // Draw worn MM mask on Link's head (matrix is in head limb space)
             TransformMasks_WearDraw(play, this);
 
+        } else if (limbIndex == PLAYER_LIMB_UPPER) {
+            // Spirit Breastplate: draw Iron Knuckle armor on torso
+            ExtEquip_DrawBreastplate(play);
         } else if (limbIndex == PLAYER_LIMB_L_SHOULDER || limbIndex == PLAYER_LIMB_R_SHOULDER) {
             // Magic Cape + Champion's Scarf: capture shoulder world positions
             ExtEquip_CaptureCapeShoulderPos(limbIndex);

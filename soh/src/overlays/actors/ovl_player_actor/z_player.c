@@ -616,6 +616,8 @@ static s16 sFloorShapePitch = 0;
 static s32 sUseHeldItem = false; // When true, the current held item is used. Is reset to false every frame.
 static s32 sHeldItemButtonIsHeldDown = false; // Indicates if the button for the current held item is held down.
 static s32 sSw97SpellActive = false;          // True only when the active magic spell came from a SW97 medallion item.
+static u8 sZoraBoomerangActive = 0;          // When true, BTN_B returns ITEM_BOOMERANG for Zora fin boomerang.
+static u8 sDekuBubbleActive = 0;             // When true, BTN_B returns ITEM_SLINGSHOT for Deku bubble attack.
 
 extern u8 gMogmaMittsClimbActive; // Mogma Mitts climb-any-wall flag (defined in item_mitts.c)
 
@@ -1791,9 +1793,11 @@ void Player_RequestRumble(Player* this, s32 sourceStrength, s32 duration, s32 de
 }
 
 void Player_PlayVoiceSfx(Player* this, u16 sfxId) {
-    // Suppress ALL OOT voice SFX when in MM transformation form
-    // (MM forms play their own voices via MmSfx_PlayAtPos)
-    if (TransformMasks_IsTransformed()) {
+    // Redirect OOT voice to MM equivalent when transformed (including FD skin mode)
+    // Uses IsTransformedAny to include FD which has IsTransformed()=false for gameplay hooks
+    if (TransformMasks_IsTransformedAny()) {
+        extern void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos);
+        TransformMasks_PlayMmVoice(sfxId, &this->actor.projectedPos);
         return;
     }
 
@@ -2545,6 +2549,14 @@ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
     } else if (play->bombchuBowlingStatus != 0) {
         return (play->bombchuBowlingStatus > 0) ? ITEM_BOMBCHU : ITEM_NONE;
     } else if (index == 0) {
+        // Zora boomerang / Deku bubble: BTN_B returns the appropriate item
+        // so OOT's pipeline (aim, sHeldItemButtonIsHeldDown, throw/fire) works
+        if (sZoraBoomerangActive) {
+            return ITEM_BOOMERANG;
+        }
+        if (sDekuBubbleActive) {
+            return ITEM_SLINGSHOT;
+        }
         return B_BTN_ITEM;
     } else if (index == 1) {
         return C_BTN_ITEM(0);
@@ -2618,8 +2630,13 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             }
             if (!Player_ItemIsInUse(this, B_BTN_ITEM) && !Player_ItemIsInUse(this, C_BTN_ITEM(0)) &&
                 !Player_ItemIsInUse(this, C_BTN_ITEM(1)) && !Player_ItemIsInUse(this, C_BTN_ITEM(2)) && !hasOnDpad) {
-                Player_UseItem(play, this, ITEM_NONE);
-                return;
+                // Zora boomerang / Deku bubble: don't put away — active via B hold, not on any button
+                if (sZoraBoomerangActive || sDekuBubbleActive) {
+                    // Skip Player_UseItem(ITEM_NONE) — keep boomerang active
+                } else {
+                    Player_UseItem(play, this, ITEM_NONE);
+                    return;
+                }
             }
         }
 
@@ -2786,9 +2803,12 @@ s32 func_8083442C(Player* this, PlayState* play) {
         this->unk_834 = 14;
 
         if (this->unk_860 >= 0) {
+            // Deku bubble: skip draw SFX and arrow spawn (bubble charges visually instead)
+            if (!sDekuBubbleActive) {
             Player_PlaySfx(this, D_80854398[ABS(this->unk_860) - 1]);
+            }
 
-            if (!Player_HoldsHookshot(this) && (func_80834380(play, this, &item, &arrowType) > 0)) {
+            if (!sDekuBubbleActive && !Player_HoldsHookshot(this) && (func_80834380(play, this, &item, &arrowType) > 0)) {
                 magicArrowType = arrowType - ARROW_FIRE;
 
                 if (this->unk_860 >= 0) {
@@ -3018,7 +3038,12 @@ s32 func_80834D2C(Player* this, PlayState* play) {
     } else {
         Player_SetUpperActionFunc(this, func_80835884);
         this->unk_834 = 10;
-        LinkAnimation_PlayOnce(play, &this->upperSkelAnime, &gPlayerAnim_link_boom_throw_wait2waitR);
+        {
+            extern LinkAnimationHeader* MmForm_GetZoraBoomerangAnim(s32 phase);
+            LinkAnimationHeader* formAnim = TransformMasks_IsTransformed() ? MmForm_GetZoraBoomerangAnim(0) : NULL;
+            LinkAnimation_PlayOnce(play, &this->upperSkelAnime,
+                                   formAnim ? formAnim : &gPlayerAnim_link_boom_throw_wait2waitR);
+        }
     }
 
     if (this->stateFlags1 & PLAYER_STATE1_ON_HORSE) {
@@ -3170,7 +3195,16 @@ s32 func_808351D4(Player* this, PlayState* play) {
     if ((this->unk_836 > 0) && ((this->unk_860 < 0) || (!sHeldItemButtonIsHeldDown && !func_80834E7C(play)))) {
         Player_SetUpperActionFunc(this, func_808353D8);
         if (this->unk_860 >= 0) {
-            if (sp2C == 0) {
+            if (sDekuBubbleActive) {
+                // Deku bubble: fire bubble projectile and clean up slingshot pipeline
+                extern void MmForm_FireDekuBubble(Player* player, PlayState* play);
+                MmForm_FireDekuBubble(this, play);
+                sDekuBubbleActive = 0;
+                this->stateFlags1 &= ~PLAYER_STATE1_ITEM_IN_HAND;
+                this->stateFlags1 &= ~PLAYER_STATE1_READY_TO_FIRE;
+                this->heldItemAction = PLAYER_IA_SWORD_MASTER;
+                this->itemAction = PLAYER_IA_SWORD_MASTER;
+            } else if (sp2C == 0) {
                 if (!func_808350A4(play, this)) {
                     Player_PlaySfx(this, D_808543DC[ABS(this->unk_860) - 1]);
                 }
@@ -3321,7 +3355,12 @@ s32 func_80835800(Player* this, PlayState* play) {
 s32 func_80835884(Player* this, PlayState* play) {
     if (LinkAnimation_Update(play, &this->upperSkelAnime)) {
         Player_SetUpperActionFunc(this, func_808358F0);
-        LinkAnimation_PlayLoop(play, &this->upperSkelAnime, &gPlayerAnim_link_boom_throw_waitR);
+        {
+            extern LinkAnimationHeader* MmForm_GetZoraBoomerangAnim(s32 phase);
+            LinkAnimationHeader* formAnim = TransformMasks_IsTransformed() ? MmForm_GetZoraBoomerangAnim(0) : NULL;
+            LinkAnimation_PlayLoop(play, &this->upperSkelAnime,
+                                   formAnim ? formAnim : &gPlayerAnim_link_boom_throw_waitR);
+        }
     }
 
     func_80834EB8(this, play);
@@ -3350,37 +3389,99 @@ s32 func_808358F0(Player* this, PlayState* play) {
         Player_SetUpperActionFunc(this, func_808359FC);
         LinkAnimation_PlayOnce(play, &this->upperSkelAnime,
                                (this->unk_870 < 0.5f) ? &gPlayerAnim_link_boom_throwR : &gPlayerAnim_link_boom_throwL);
+        // Override throw anim for Zora
+        {
+            extern LinkAnimationHeader* MmForm_GetZoraBoomerangAnim(s32 phase);
+            LinkAnimationHeader* formThrow = TransformMasks_IsTransformed() ? MmForm_GetZoraBoomerangAnim(1) : NULL;
+            if (formThrow) {
+                LinkAnimation_PlayOnce(play, &this->upperSkelAnime, formThrow);
+            }
+        }
     }
 
     return true;
 }
 
 s32 func_808359FC(Player* this, PlayState* play) {
+    extern s32 MmForm_GetCurrentForm(void);
     if (LinkAnimation_Update(play, &this->upperSkelAnime)) {
         Player_SetUpperActionFunc(this, func_80835B60);
         this->unk_834 = 0;
     } else if (LinkAnimation_OnFrame(&this->upperSkelAnime, 6.0f)) {
-        f32 posX = (Math_SinS(this->actor.shape.rot.y) * 10.0f) + this->actor.world.pos.x;
-        f32 posZ = (Math_CosS(this->actor.shape.rot.y) * 10.0f) + this->actor.world.pos.z;
-        s32 yaw = (this->focusActor != NULL) ? this->actor.shape.rot.y + 14000 : this->actor.shape.rot.y;
-        EnBoom* boomerang =
-            (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posX, this->actor.world.pos.y + 30.0f, posZ,
-                                 this->actor.focus.rot.x, yaw, 0, 0, true);
+        // Zora: spawn 2 fins from hand positions (MM z_player.c:14053-14088)
+        if (TransformMasks_IsTransformed() && MmForm_GetCurrentForm() == 2 /* ZORA */) {
+            s16 untargetedRotY;
 
-        this->boomerangActor = &boomerang->actor;
+            // Left fin: spawn from left hand body part position (MM line 14053)
+            Vec3f leftPos = this->bodyPartsPos[PLAYER_BODYPART_L_HAND];
+            leftPos.y = this->actor.world.pos.y + 50.0f;
+            untargetedRotY = this->actor.shape.rot.y - 0x190;
 
-        if (boomerang != NULL) {
-            boomerang->moveTo = this->focusActor;
-            boomerang->returnTimer = 20;
-            this->stateFlags1 |= PLAYER_STATE1_BOOMERANG_THROWN;
+            EnBoom* leftBoom = (EnBoom*)Actor_Spawn(
+                &play->actorCtx, play, ACTOR_EN_BOOM,
+                leftPos.x, leftPos.y, leftPos.z,
+                this->actor.focus.rot.x,
+                (this->focusActor != NULL) ? this->actor.shape.rot.y + 0x36B0 : untargetedRotY,
+                0, 1, true);
 
-            if (!Player_CheckHostileLockOn(this)) {
-                Player_SetParallel(this);
+            if (leftBoom != NULL) {
+                leftBoom->moveTo = this->focusActor;
+                leftBoom->returnTimer = 20;
+
+                // Right fin: spawn from right hand body part position (MM line 14071)
+                Vec3f rightPos = this->bodyPartsPos[PLAYER_BODYPART_R_HAND];
+                rightPos.y = this->actor.world.pos.y + 50.0f;
+                untargetedRotY = this->actor.shape.rot.y + 0x190;
+
+                EnBoom* rightBoom = (EnBoom*)Actor_Spawn(
+                    &play->actorCtx, play, ACTOR_EN_BOOM,
+                    rightPos.x, rightPos.y, rightPos.z,
+                    this->actor.focus.rot.x,
+                    (this->focusActor != NULL) ? this->actor.shape.rot.y - 0x36B0 : untargetedRotY,
+                    0, 2, true);
+
+                if (rightBoom != NULL) {
+                    rightBoom->moveTo = this->focusActor;
+                    rightBoom->returnTimer = 20;
+                    leftBoom->actor.child = &rightBoom->actor;
+                    rightBoom->actor.parent = &leftBoom->actor;
+                }
+
+                this->boomerangActor = &leftBoom->actor;
+                this->stateFlags1 |= PLAYER_STATE1_BOOMERANG_THROWN;
+
+                if (!Player_CheckHostileLockOn(this)) {
+                    Player_SetParallel(this);
+                }
+
+                this->unk_A73 = 4;
+                Player_PlaySfx(this, NA_SE_IT_BOOMERANG_THROW);
+                Player_PlayVoiceSfx(this, NA_SE_VO_LI_SWORD_N);
             }
+        } else {
+            // Vanilla: 1 boomerang
+            f32 posX = (Math_SinS(this->actor.shape.rot.y) * 10.0f) + this->actor.world.pos.x;
+            f32 posZ = (Math_CosS(this->actor.shape.rot.y) * 10.0f) + this->actor.world.pos.z;
+            s32 yaw = (this->focusActor != NULL) ? this->actor.shape.rot.y + 14000 : this->actor.shape.rot.y;
+            EnBoom* boomerang =
+                (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posX, this->actor.world.pos.y + 30.0f, posZ,
+                                     this->actor.focus.rot.x, yaw, 0, 0, true);
 
-            this->unk_A73 = 4;
-            Player_PlaySfx(this, NA_SE_IT_BOOMERANG_THROW);
-            Player_PlayVoiceSfx(this, NA_SE_VO_LI_SWORD_N);
+            this->boomerangActor = &boomerang->actor;
+
+            if (boomerang != NULL) {
+                boomerang->moveTo = this->focusActor;
+                boomerang->returnTimer = 20;
+                this->stateFlags1 |= PLAYER_STATE1_BOOMERANG_THROWN;
+
+                if (!Player_CheckHostileLockOn(this)) {
+                    Player_SetParallel(this);
+                }
+
+                this->unk_A73 = 4;
+                Player_PlaySfx(this, NA_SE_IT_BOOMERANG_THROW);
+                Player_PlayVoiceSfx(this, NA_SE_VO_LI_SWORD_N);
+            }
         }
     }
 
@@ -3394,7 +3495,12 @@ s32 func_80835B60(Player* this, PlayState* play) {
 
     if (!(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN)) {
         Player_SetUpperActionFunc(this, func_80835C08);
-        LinkAnimation_PlayOnce(play, &this->upperSkelAnime, &gPlayerAnim_link_boom_catch);
+        {
+            extern LinkAnimationHeader* MmForm_GetZoraBoomerangAnim(s32 phase);
+            LinkAnimationHeader* zoraCatch = TransformMasks_IsTransformed() ? MmForm_GetZoraBoomerangAnim(2) : NULL;
+            LinkAnimation_PlayOnce(play, &this->upperSkelAnime,
+                                   zoraCatch ? zoraCatch : &gPlayerAnim_link_boom_catch);
+        }
         func_808357E8(this, gPlayerLeftHandBoomerangDLs);
         Player_PlaySfx(this, NA_SE_PL_CATCH_BOOMERANG);
         Player_PlayVoiceSfx(this, NA_SE_VO_LI_SWORD_N);
@@ -3701,7 +3807,11 @@ void func_80836448(PlayState* play, Player* this, LinkAnimationHeader* anim) {
     if (this->actor.category == ACTORCAT_PLAYER) {
         func_800F47BC();
 
-        if (Inventory_ConsumeFairy(play)) {
+        if (ExtEquip_IkanaDeathSave(play)) {
+            // Shield of Ikana death save: revive with darkness aura
+            play->gameOverCtx.state = GAMEOVER_REVIVE_START;
+            this->av1.actionVar1 = 1;
+        } else if (Inventory_ConsumeFairy(play)) {
             play->gameOverCtx.state = GAMEOVER_REVIVE_START;
             this->av1.actionVar1 = 1;
         } else {
@@ -4603,6 +4713,18 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
     this->meleeWeaponAnimation = arg2;
 
     Player_AnimPlayOnceAdjusted(play, this, D_80854190[arg2].unk_00);
+
+    // Zora/FD/Pikachu: override jump slash animations with form-specific ones.
+    // OOT plays Link's sword animations; we replace with Zora's kick/fin animations.
+    if (TransformMasks_IsTransformed() &&
+        (arg2 >= PLAYER_MWA_FLIPSLASH_START) && (arg2 <= PLAYER_MWA_JUMPSLASH_FINISH)) {
+        extern LinkAnimationHeader* MmForm_GetJumpSlashAnim(s32 phase);
+        LinkAnimationHeader* formAnim = MmForm_GetJumpSlashAnim(arg2);
+        if (formAnim != NULL) {
+            Player_AnimPlayOnceAdjusted(play, this, formAnim);
+        }
+    }
+
     if ((arg2 != PLAYER_MWA_FLIPSLASH_START) && (arg2 != PLAYER_MWA_JUMPSLASH_START)) {
         Player_StartAnimMovement(play, this, 0x209);
     }
@@ -4883,6 +5005,9 @@ int func_8083816C(s32 arg0) {
 }
 
 void func_8083819C(Player* this, PlayState* play) {
+    // Divine Shield: fireproof — skip fire destruction
+    if (DivineShield_IsFireproof()) return;
+
     if (this->currentShield == PLAYER_SHIELD_DEKU && (CVarGetInteger(CVAR_CHEAT("FireproofDekuShield"), 0) == 0)) {
         Actor_Spawn(&play->actorCtx, play, ACTOR_ITEM_SHIELD, this->actor.world.pos.x, this->actor.world.pos.y,
                     this->actor.world.pos.z, 0, 0, 0, 1, true);
@@ -4991,6 +5116,9 @@ s32 func_808382DC(Player* this, PlayState* play) {
                          (this->cylinder.info.atHit != NULL) && (this->cylinder.info.atHit->atFlags & 0x20000000))) {
 
                 Player_RequestRumble(this, 180, 20, 100, 0);
+
+                // Signal that a shield block just occurred this frame
+                DivineShield_OnShieldBlock(this, play);
 
                 if (!Player_IsChildWithHylianShield(this)) {
                     if (this->invincibilityTimer >= 0) {
@@ -5129,7 +5257,9 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
         sp3C = 0;
 
         if (func_808332B8(this)) {
-            if (this->actor.yDistToWater < 50.0f) {
+            // MM: FD can climb out from deeper water (80.0f vs 50.0f for others)
+            f32 waterClimbDepth = (TransformMasks_IsFDSkinMode()) ? 80.0f : 50.0f;
+            if (this->actor.yDistToWater < waterClimbDepth) {
                 if ((this->ledgeClimbType < 2) || (this->yDistToLedge > this->ageProperties->unk_10)) {
                     return 0;
                 }
@@ -5200,6 +5330,14 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
             return 1;
         }
     } else if ((this->actor.bgCheckFlags & 1) && (this->ledgeClimbType == 1) && (this->ledgeClimbDelayTimer >= 3)) {
+        // Goron rolling: don't auto-hop off ledges — roll off naturally with momentum
+        if (TransformMasks_IsTransformed()) {
+            extern s32 MmForm_GetCurrentForm(void);
+            extern u8 MmForm_IsGoronRolling(void);
+            if (MmForm_GetCurrentForm() == 1 /* GORON */ && MmForm_IsGoronRolling()) {
+                return 0;
+            }
+        }
         temp = (this->yDistToLedge * 0.08f) + 5.5f;
         func_808389E8(this, &gPlayerAnim_link_normal_jump, temp, play);
         this->linearVelocity = 2.5f;
@@ -5890,10 +6028,14 @@ void func_8083A5C4(PlayState* play, Player* this, CollisionPoly* arg2, f32 arg3,
 }
 
 s32 func_8083A6AC(Player* this, PlayState* play) {
-    // Transformation masks: Goron/Deku cannot grab ledges or climb from edge slip
-    // From 2Ship z_player.c line 15227: this->transformation != PLAYER_FORM_GORON
+    // Block edge slip ONLY during active goron roll or deku spin attack.
+    // All forms use vanilla edge slip when walking/running normally.
     if (TransformMasks_IsTransformed()) {
-        return 0;
+        extern u8 MmForm_IsGoronRolling(void);
+        extern u8 MmForm_IsDekuSpinning(void);
+        if (MmForm_IsGoronRolling() || MmForm_IsDekuSpinning()) {
+            return 0;
+        }
     }
 
     //! @bug `floorPitch` and `floorPitchAlt` are cleared to 0 before this function is called, because the player
@@ -6488,10 +6630,17 @@ void func_8083BA90(PlayState* play, Player* this, s32 arg2, f32 xzVelocity, f32 
 }
 
 s32 func_8083BB20(Player* this) {
-    if (!(this->stateFlags1 & PLAYER_STATE1_SHIELDING) && (Player_GetMeleeWeaponHeld(this) != 0)) {
-        if (sUseHeldItem ||
-            ((this->actor.category != ACTORCAT_PLAYER) && CHECK_BTN_ALL(sControlInput->press.button, BTN_B))) {
-            return 1;
+    if (!(this->stateFlags1 & PLAYER_STATE1_SHIELDING)) {
+        // Transformed forms: treat as having master sword (enables jump slash/flip slash)
+        u8 hasWeapon = (Player_GetMeleeWeaponHeld(this) != 0);
+        if (!hasWeapon && TransformMasks_IsTransformedAny()) {
+            hasWeapon = 1;
+        }
+        if (hasWeapon) {
+            if (sUseHeldItem ||
+                ((this->actor.category != ACTORCAT_PLAYER) && CHECK_BTN_ALL(sControlInput->press.button, BTN_B))) {
+                return 1;
+            }
         }
     }
 
@@ -6508,6 +6657,23 @@ s32 func_8083BBA0(Player* this, PlayState* play) {
 }
 
 void Player_SetupRoll(Player* this, PlayState* play) {
+    // Deku: redirect ALL rolls to spin attack (from MM func_80839A84)
+    // Deku cannot roll in MM — A while moving always does spin attack.
+    if (TransformMasks_IsTransformed()) {
+        extern s32 MmForm_GetCurrentForm(void);
+        extern void MmForm_StartDekuSpinFromOot(Player* player, PlayState* play);
+        extern void MmForm_StartGoronCurlFromOot(Player* player, PlayState* play);
+        if (MmForm_GetCurrentForm() == 3 /* MM_PLAYER_FORM_DEKU */) {
+            MmForm_StartDekuSpinFromOot(this, play);
+            return;
+        }
+        // Goron: redirect rolls to curl (from MM func_80839F98)
+        if (MmForm_GetCurrentForm() == 1 /* MM_PLAYER_FORM_GORON */) {
+            MmForm_StartGoronCurlFromOot(this, play);
+            return;
+        }
+    }
+
     Player_SetupAction(play, this, Player_Action_Roll, 0);
     LinkAnimation_PlayOnceSetSpeed(play, &this->skelAnime,
                                    GET_PLAYER_ANIM(PLAYER_ANIMGROUP_landing_roll, this->modelAnimType),
@@ -6542,14 +6708,154 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
     Player_PlaySfx(this, ((controlStickDirection << 0xE) == 0x8000) ? NA_SE_PL_ROLL : NA_SE_PL_SKIP);
 }
 
+// Public hook: allows transformation masks to trigger sidehop/backflip/jump slash
+// from their z-target handler when OOT's Handler_10 isn't in the active handler list.
+void Player_TransformZTargetAction(Player* this, PlayState* play, s32 controlStickDirection) {
+    if (controlStickDirection <= PLAYER_STICK_DIR_FORWARD) {
+        // Forward or no direction → jump slash
+        extern s32 MmForm_GetCurrentForm(void);
+        s32 form = MmForm_GetCurrentForm();
+        if (form == 2 /* ZORA */) {
+            // MM Zora: linearVelocity=3.0*1.1=3.3, velocity.y=4.5*0.9=4.05
+            // Gravity set to -0.8f by airborne detection in mm_player_form.cpp
+            func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 3.3f, 4.05f);
+        } else {
+            // FD/Pikachu/others: OOT master sword values
+            func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
+        }
+    } else {
+        // Left/Back/Right → sidehop/backflip
+        func_8083BCD0(this, play, controlStickDirection);
+    }
+}
+
+// =============================================================================
+// Zora Boomerang — Uses OOT's vanilla boomerang pipeline with minimal hooks.
+// Hook 1: Entry (force heldItemAction = BOOMERANG, call func_80834D2C)
+// Hook 2: BTN_B = item button (in C-button loop, line ~2647)
+// Hook 3: Spawn 2 fins (in func_808359FC, line ~3368)
+// =============================================================================
+
+// Entry point: called from mm_player_form.cpp when B is held long enough.
+// Entry point: activates Zora boomerang mode.
+// Player_GetItemOnButton returns ITEM_BOOMERANG for BTN_B when active.
+// OOT's vanilla pipeline handles EVERYTHING (aim, camera, throw, catch).
+// Calls the EXACT same functions OOT calls when you have boomerang equipped and press C.
+void Player_StartZoraBoomerang(Player* this, PlayState* play) {
+    if (sZoraBoomerangActive) {
+        return;
+    }
+    sZoraBoomerangActive = 1;
+
+    // Make OOT think boomerang is the current held item
+    this->heldItemAction = PLAYER_IA_BOOMERANG;
+    this->itemAction = PLAYER_IA_BOOMERANG;
+
+    // CRITICAL: Set USING_BOOMERANG flag so Player_UpdateCommon line 13725
+    // calls Player_UpdateUpperBody when unk_6AD == 2 (boomerang aim camera).
+    // Without this, func_808332E4 returns false → upper body never updates.
+    this->stateFlags1 |= PLAYER_STATE1_USING_BOOMERANG;
+
+    // CRITICAL: Clear PAUSE so OOT's actionFunc runs Player_UpdateUpperBody next frame.
+    // Our trigger runs from mm_player_form (after Player_UpdateCommon). The current frame's
+    // actionFunc already ran (possibly with PAUSE from PunchEnd). Without clearing PAUSE,
+    // OOT's actionFunc won't run next frame → Player_UpdateUpperBody won't call func_80835884.
+    this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+
+    // Call the EXACT same function chain as vanilla boomerang use
+    func_80834D2C(this, play);
+    func_80834EB8(this, play);
+
+    // Signal that the item button is being held (B = item button for Zora boomerang)
+    sUseHeldItem = sHeldItemButtonIsHeldDown = true;
+}
+
+// Called each frame from mm_player_form.cpp — deactivates when boomerang action ends.
+void Player_ZoraBoomerangCleanup(Player* this) {
+    if (!sZoraBoomerangActive) return;
+
+    // Phase 1: When thrown, exit aim camera but keep boomerang flags for catch
+    if ((this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) && this->unk_6AD == 2) {
+        this->unk_6AD = 0;
+    }
+
+    // Phase 2: Fully deactivate when pipeline is done (fins returned + catch finished)
+    if (!(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) &&
+        !CHECK_BTN_ALL(sControlInput->cur.button, BTN_B) &&
+        this->upperActionFunc == func_80835800) {
+        goto cleanup;
+    }
+
+    // Failsafe: if damaged, in cutscene, or OOT left boomerang IA for any reason,
+    // force cleanup to prevent softlock (B never throws → stuck in boomerang mode)
+    if ((this->stateFlags1 & PLAYER_STATE1_DAMAGED) ||
+        (this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) ||
+        (this->stateFlags1 & PLAYER_STATE1_DEAD) ||
+        (this->heldItemAction != PLAYER_IA_BOOMERANG &&
+         !(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN))) {
+        goto cleanup;
+    }
+
+    return;
+
+cleanup:
+    sZoraBoomerangActive = 0;
+    this->unk_6AD = 0;
+    this->stateFlags1 &= ~PLAYER_STATE1_USING_BOOMERANG;
+    this->heldItemAction = PLAYER_IA_SWORD_MASTER;
+    this->itemAction = PLAYER_IA_SWORD_MASTER;
+}
+
+// Deku bubble: hijack OOT's slingshot pipeline for first-person aim.
+// B press → first-person camera (CAM_MODE_SLINGSHOT), hold to charge, release to fire.
+// Slingshot pipeline: func_8083501C → func_8083442C → func_808351D4 (aim) → fire → end.
+void Player_StartDekuBubble(Player* this, PlayState* play) {
+    if (sDekuBubbleActive) return;
+    sDekuBubbleActive = 1;
+
+    this->heldItemAction = PLAYER_IA_SLINGSHOT;
+    this->itemAction = PLAYER_IA_SLINGSHOT;
+    this->stateFlags1 |= PLAYER_STATE1_ITEM_IN_HAND;
+    this->unk_860 = -2; // slingshot mode
+    this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+
+    func_80834D2C(this, play);
+    func_80834EB8(this, play);
+    sUseHeldItem = sHeldItemButtonIsHeldDown = true;
+}
+
+// Called each frame from mm_player_form.cpp — deactivates on failsafe conditions.
+void Player_DekuBubbleCleanup(Player* this) {
+    if (!sDekuBubbleActive) return;
+
+    // Failsafe: damage, cutscene, dead, or OOT dropped slingshot IA
+    if ((this->stateFlags1 & PLAYER_STATE1_DAMAGED) ||
+        (this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) ||
+        (this->stateFlags1 & PLAYER_STATE1_DEAD) ||
+        (this->heldItemAction != PLAYER_IA_SLINGSHOT)) {
+        goto cleanup;
+    }
+
+    return;
+
+cleanup:
+    sDekuBubbleActive = 0;
+    this->unk_6AD = 0;
+    this->stateFlags1 &= ~PLAYER_STATE1_ITEM_IN_HAND;
+    this->stateFlags1 &= ~PLAYER_STATE1_READY_TO_FIRE;
+    this->heldItemAction = PLAYER_IA_SWORD_MASTER;
+    this->itemAction = PLAYER_IA_SWORD_MASTER;
+}
+
+u8 TransformMasks_IsDekuBubbleActive(void) {
+    return sDekuBubbleActive;
+}
+
 s32 Player_ActionHandler_10(Player* this, PlayState* play) {
     s32 controlStickDirection;
 
-    // Transformation masks: form handles its own A-button actions (jump/sidehop/backflip/roll)
-    // From 2Ship Player_ActionHandler_10: Goron can't jump slash, curls to roll instead
-    if (TransformMasks_IsTransformed()) {
-        return 0;
-    }
+    // Transformation masks: ALL forms can use Handler_10 (jump/sidehop/backflip).
+    // Only the ROLL handler (Handler_Roll) is blocked for Goron/Deku.
 
     if (CHECK_BTN_ALL(sControlInput->press.button, BTN_A) &&
         (play->roomCtx.curRoom.behaviorType1 != ROOM_BEHAVIOR_TYPE1_2) && (sFloorType != 7) &&
@@ -6567,6 +6873,22 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
                 } else {
                     if ((Player_GetMeleeWeaponHeld(this) != 0) && Player_CanUpdateItems(this)) {
                         func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
+                    } else if (TransformMasks_IsTransformed()) {
+                        extern s32 MmForm_GetCurrentForm(void);
+                        s32 form = MmForm_GetCurrentForm();
+                        if (form == 2 /* ZORA */ || form == 0 /* FD */ || form == 5 /* PIKACHU */) {
+                            // OOT handles jump slash entirely. Anim overrides via MmForm_GetJumpSlashAnim.
+                            // Zora: MM velocities (5.0*1.1=5.5, 5.0*0.9=4.5), gravity -0.8f set per-frame.
+                            // FD/Pikachu: OOT master sword velocities.
+                            if (form == 2) {
+                                func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.5f, 4.5f);
+                            } else {
+                                func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
+                            }
+                        } else {
+                            // Goron → curl, Deku → spin (via Player_SetupRoll redirects)
+                            Player_SetupRoll(this, play);
+                        }
                     } else {
                         Player_SetupRoll(this, play);
                     }
@@ -6660,10 +6982,16 @@ void func_8083C148(Player* this, PlayState* play) {
  * even if they occur.
  */
 s32 Player_ActionHandler_Roll(Player* this, PlayState* play) {
-    // Transformation masks: form handles its own A-button actions (roll/curl/spin)
-    // Without this, OOT's roll fires simultaneously with form actions, causing forward momentum conflicts
+    // Transformation masks: Goron/Deku handle their own A-button (curl/spin).
+    // Zora/FD use OOT's vanilla roll.
     if (TransformMasks_IsTransformed()) {
-        return 0;
+        extern s32 MmForm_GetCurrentForm(void);
+        s32 form = MmForm_GetCurrentForm();
+        // Goron = curl, Deku = spin — handled by form code, block OOT roll
+        if (form == 1 /* GORON */ || form == 3 /* DEKU */) {
+            return 0;
+        }
+        // Zora (2), FD (0), Pikachu (5) — use OOT's vanilla roll
     }
 
     if (!Player_UpdateHostileLockOn(this) && !sUpperBodyIsBusy && !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE) &&
@@ -6863,10 +7191,16 @@ s32 func_8083C910(PlayState* play, Player* this, f32 arg2) {
         0) {
         sp28 -= this->actor.world.pos.y;
         if (this->ageProperties->unk_24 <= sp28) {
-            // Transformation masks: MM form handles water entry
+            // Transformation masks: Goron/Deku handle water entry (void/hop).
+            // Zora/FD/Pikachu use OOT's vanilla swim entry.
             if (TransformMasks_IsTransformed()) {
-                this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
-                return 0;
+                extern s32 MmForm_GetCurrentForm(void);
+                s32 wForm = MmForm_GetCurrentForm();
+                if (wForm == 1 /* GORON */ || wForm == 3 /* DEKU */) {
+                    this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
+                    return 0;
+                }
+                // Zora/FD/Pikachu: fall through to OOT swim setup
             }
             Player_SetupAction(play, this, Player_Action_8084D7C4, 0);
             Player_AnimChangeLoopSlowMorph(play, this, &gPlayerAnim_link_swimer_swim);
@@ -12559,6 +12893,17 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
         sUseHeldItem = sHeldItemButtonIsHeldDown = 0;
         sSavedCurrentMask = this->currentMask;
 
+        // Transformation masks: PAUSE is only set during custom actions (goron roll, fast swim,
+        // shield, jump kick, etc). Ground idle/walk/run do NOT set PAUSE — OOT handles those.
+        // Only need bypass for ledge grab during custom actions with PAUSE.
+        if ((this->stateFlags3 & PLAYER_STATE3_PAUSE_ACTION_FUNC) && TransformMasks_IsTransformedAny()) {
+            extern void MmForm_YieldToOot(void);
+            if (Player_ActionHandler_12(this, play)) {
+                this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+                MmForm_YieldToOot();
+            }
+        }
+
         if (GameInteractor_Should(VB_EXECUTE_PLAYER_ACTION_FUNC, !(this->stateFlags3 & PLAYER_STATE3_PAUSE_ACTION_FUNC),
                                   this, input)) {
             this->actionFunc(this, play);
@@ -12987,8 +13332,8 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
 
     if (thisx == &GET_PLAYER(play2)->actor && (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode())) {
         if (TransformMasks_HasSkeleton()) {
-            if (this->unk_6AD == 0) {
-                // Normal gameplay: draw MM form, skip OOT Link skeleton.
+            // Always draw transformed forms (no invincibility blink — use color flash instead)
+            {
                 TransformMasks_Draw(play, this);
 
                 // Update hookshot anchor position (unk_3C8) since Player_PostLimbDrawGameplay
@@ -13478,7 +13823,7 @@ void Player_Action_8084B1D8(Player* this, PlayState* play) {
     }
     if ((this->csAction != 0) || (this->unk_6AD == 0) || (this->unk_6AD >= 4) || Player_UpdateHostileLockOn(this) ||
         (this->focusActor != NULL) || !func_8083AD4C(play, this) ||
-        (((this->unk_6AD == 2) &&
+        (((this->unk_6AD == 2) && (!sZoraBoomerangActive || Player_IsZTargeting(this)) &&
           (CHECK_BTN_ANY(sControlInput->press.button, BTN_A | BTN_B | BTN_R) || Player_FriendlyLockOnOrParallel(this) ||
            (!func_8002DD78(this) && !func_808334B4(this)))) ||
          ((this->unk_6AD == 1) && CHECK_BTN_ANY(sControlInput->press.button, buttonsToCheck)))) {
@@ -15184,6 +15529,67 @@ void Player_Action_SwingBottle(Player* this, PlayState* play) {
     }
 }
 
+// ── Lantern Swing Action (1:1 with Player_Action_SwingBottle) ────────────────
+// Called via Player_StartLanternSwing from item_lantern.c.
+// Uses av1.actionVar1 as catch state (0=none, 1=caught), av2.actionVar2 as textbox started flag.
+
+// Lantern functions are visible via unity build (custom_items.c → item_lantern.c)
+
+void Player_Action_SwingLantern(Player* this, PlayState* play) {
+    Player_DecelerateToZero(this);
+
+    if (LinkAnimation_Update(play, &this->skelAnime)) {
+        // Animation finished
+        if (this->av1.actionVar1 != 0) {
+            // Caught fire — show message (exactly like bottle catch textbox flow)
+            if (!this->av2.actionVar2) {
+                gLanternCatchPending = Lantern_GetFireType();
+                Message_StartTextbox(play, 0x00F9, &this->actor);
+                Audio_PlayFanfare(NA_BGM_ITEM_GET | 0x900);
+                this->av2.actionVar2 = 1;
+            } else if (Message_GetState(&play->msgCtx) == TEXT_STATE_CLOSING) {
+                this->av1.actionVar1 = 0;
+                gLanternCatchPending = 0;
+                func_8005B1A4(Play_GetCamera(play, 0));
+                func_8083C0E8(this, play); // Return to idle (like bottle)
+            }
+        } else {
+            // No catch — return to idle (like bottle)
+            func_8083C0E8(this, play);
+        }
+    } else if (this->av1.actionVar1 == 0) {
+        // During swing — check active catch frames (firstActiveFrame=2, numActiveFrames=3)
+        s32 activeFrame = (s32)this->skelAnime.curFrame - 2;
+
+        if (activeFrame >= 0 && activeFrame <= 3) {
+            if (Lantern_GetFireType() == 0) {
+                // Unlit: try to catch fire
+                if (Lantern_TryCatch(this, play)) {
+                    this->av1.actionVar1 = 1;   // caught!
+                    this->av2.actionVar2 = 0;   // textbox not started yet
+                    this->stateFlags1 |= PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE;
+                    Player_AnimPlayOnceAdjusted(play, this, &gPlayerAnim_link_bottle_bug_in);
+                    func_80835EA4(play, 4); // Camera zoom (like bottle)
+                }
+            } else if (activeFrame == 0) {
+                // Lit: apply fire effects ONCE
+                Lantern_ApplyFireEffects(this, play);
+            }
+        }
+    }
+
+    if (this->skelAnime.curFrame <= 7.0f) {
+        this->stateFlags1 |= PLAYER_STATE1_SWINGING_BOTTLE;
+    }
+}
+
+void Player_StartLanternSwing(Player* this, PlayState* play) {
+    Player_SetupAction(play, this, Player_Action_SwingLantern, 0);
+    Player_AnimPlayOnceAdjusted(play, this, &gPlayerAnim_link_bottle_bug_miss);
+    Player_PlaySfx(this, NA_SE_IT_SWORD_SWING);
+    gCustomItemState.lanternEquipped = 1; // Show lantern in hand during swing
+}
+
 static Vec3f D_80854A1C = { 0.0f, 0.0f, 5.0f };
 
 void Player_Action_8084EED8(Player* this, PlayState* play) {
@@ -15740,6 +16146,17 @@ void Player_Action_808502D0(Player* this, PlayState* play) {
                 if ((sp3C == &gPlayerAnim_link_fighter_Lpower_jump_kiru_end) &&
                     (this->modelAnimType != PLAYER_ANIMTYPE_3)) {
                     sp3C = &gPlayerAnim_link_fighter_power_jump_kiru_end;
+                }
+
+                // Transformation masks: override jump slash recovery animation
+                if (TransformMasks_IsTransformed() &&
+                    (this->meleeWeaponAnimation >= PLAYER_MWA_FLIPSLASH_FINISH) &&
+                    (this->meleeWeaponAnimation <= PLAYER_MWA_JUMPSLASH_FINISH)) {
+                    extern LinkAnimationHeader* MmForm_GetJumpSlashAnim(s32 phase);
+                    LinkAnimationHeader* formAnim = MmForm_GetJumpSlashAnim(this->meleeWeaponAnimation);
+                    if (formAnim != NULL) {
+                        sp3C = formAnim;
+                    }
                 }
 
                 func_8083A098(this, sp3C, play);

@@ -15,7 +15,9 @@
                 "-T",
                 "v143",
                 "-A",
-                "x64"
+                "x64",
+                "-DBUILD_REMOTE_CONTROL=ON",
+                "-DCMAKE_PREFIX_PATH=C:/vcpkg/installed/x64-windows"
             ],
             "group": "build",
             "problemMatcher": []
@@ -41,15 +43,18 @@
                 "--build",
                 "./build/x64"
             ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "dependsOn": ["Generate SOH OTR"],
+            "group": "build",
+            "dependsOn": [
+                "Generate SOH OTR"
+            ],
             "problemMatcher": []
         },
         {
             "label": "Build All",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
             "dependsOrder": "sequence",
             "dependsOn": [
                 "Setup CMake Project",
