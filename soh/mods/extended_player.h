@@ -21,8 +21,8 @@ extern "C" {
 #define VANILLA_PLAYER_IA_COUNT 67   // PLAYER_IA 0x00-0x42 (67 actions)
 
 // Custom item range in ITEM_xxx enum
-#define CUSTOM_ITEM_START 0x9D // ITEM_ROCS_FEATHER_SKIJER
-#define CUSTOM_ITEM_END 0xCE   // ITEM_MM_MASK_FIERCE_DEITY
+#define CUSTOM_ITEM_START ITEM_ROCS_FEATHER_SKIJER
+#define CUSTOM_ITEM_END ITEM_MM_MASK_FIERCE_DEITY
 
 // Custom PLAYER_IA range
 #define CUSTOM_PLAYER_IA_START 0x43 // PLAYER_IA_ROCS_FEATHER_SKIJER
@@ -101,7 +101,7 @@ static inline bool ExtPlayer_IsCustomItem(int32_t item) {
  * Check if an item ID is an MM mask item.
  */
 static inline bool ExtPlayer_IsMmMaskItem(int32_t item) {
-    return (item >= 0xB7 && item <= 0xCE); // ITEM_MM_MASK_POSTMAN .. ITEM_MM_MASK_FIERCE_DEITY
+    return (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY);
 }
 
 /**

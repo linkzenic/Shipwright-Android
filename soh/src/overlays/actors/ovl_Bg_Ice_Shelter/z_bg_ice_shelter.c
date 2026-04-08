@@ -563,3 +563,12 @@ void BgIceShelter_Draw(Actor* thisx, PlayState* play2) {
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
+
+// Aliases for upstream-renamed functions (used by Anchor HookHandlers.cpp)
+void BgIceShelter_Idle(BgIceShelter* this, PlayState* play) {
+    func_8089107C(this, play);
+}
+
+void BgIceShelter_SetupMelt(BgIceShelter* this) {
+    func_808911BC(this);
+}

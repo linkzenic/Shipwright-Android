@@ -49,9 +49,9 @@ void BuildBeanGuyMessage(uint16_t* textId, bool* loadFromMessageTable) {
             "I never thought I'd say this, but I'm selling the last %rMagic Bean%w.^%y99 Rupees%w, no "
             "less.\x1B%gYes&No%w",
             "Ich hätte nie gedacht, daß ich das sage, aber ich verkaufe die letzte^%rWundererbse%w für %y99 "
-            "Rubine%w.\x1B&%gJa&Nein%w",
-            "Je te vends mon dernier %rHaricot&magique%g pour %y99 Rubis%w.\x1B&%gAcheterNe pas acheter%w");
-        msg.Format();
+            "Rubine%w.\x1B%gJa&Nein%w",
+            "Je te vends mon dernier %rHaricot&magique%w pour %y99 Rubis%w.\x1B%gAcheter&Ne pas acheter%w");
+        msg.AutoFormat();
     } else if (*textId == TEXT_BEAN_SALESMAN_BUY_FOR_10) {
         msg = CustomMessage("Want to buy [[color]][[1]]%w for %y[[2]] Rupees%w?\x1B%gYes&No%w",
                             "Möchten Sie [[color]][[1]]%w für %y[[2]] Rubin%w kaufen?\x1B%gJa&Nein%w",
@@ -146,7 +146,7 @@ void BuildScrubMessage(uint16_t* textId, bool* loadFromMessageTable) {
             "J'abandonne! Tu veux bien m'acheter un [[color]][[1]]%w? Ça fera %y[[2]] Rubis%w!\x07\x10\xA3");
     }
     BuildMerchantMessage(msg, rc,
-                         !RAND_GET_OPTION(RSK_MERCHANT_TEXT_HINT) ||
+                         !RAND_GET_OPTION(RSK_SCRUB_TEXT_HINT) ||
                              CVarGetInteger(CVAR_RANDOMIZER_ENHANCEMENT("MysteriousShuffle"), 0));
     msg.AutoFormat();
     msg.LoadIntoFont();

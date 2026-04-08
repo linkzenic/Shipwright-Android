@@ -35,6 +35,11 @@ void RegionTable_Init_ZorasDomain() {
         LOCATION(RC_ZD_NEAR_SHOP_POT_3,                     logic->CanBreakPots()),
         LOCATION(RC_ZD_NEAR_SHOP_POT_4,                     logic->CanBreakPots()),
         LOCATION(RC_ZD_NEAR_SHOP_POT_5,                     logic->CanBreakPots()),
+        LOCATION(RC_ZD_SHOP_RECTANGLE_SIGN,                 logic->CanRead()),
+        LOCATION(RC_ZD_ENTRANCE_RECTANGLE_SIGN,             logic->CanRead()),
+        LOCATION(RC_ZD_KING_ZORA_PATH_ARROW_SIGN,           logic->CanRead()),
+        LOCATION(RC_ZD_NEAR_KING_ZORA_RECTANGLE_SIGN,       logic->CanRead()),
+        LOCATION(RC_ZD_NEAR_KING_ZORA_ARROW_SIGN,           logic->CanRead()),
     }, {
         //Exits
         ENTRANCE(RR_ZR_BEHIND_WATERFALL, true),
@@ -46,7 +51,7 @@ void RegionTable_Init_ZorasDomain() {
 
     areaTable[RR_ZORAS_DOMAIN_ISLAND] = Region("Zoras Domain Island", SCENE_ZORAS_DOMAIN, {}, {}, {
         //Exits
-        ENTRANCE(RR_ZORAS_DOMAIN,     logic->IsAdult || logic->HasItem(RG_BRONZE_SCALE)),
+        ENTRANCE(RR_ZORAS_DOMAIN,     logic->IsAdult || logic->HasItem(RG_BRONZE_SCALE) || logic->CanUse(RG_LONGSHOT) || (logic->CanUse(RG_HOOKSHOT) && ctx->GetTrickOption(RT_HOOKSHOT_LADDERS))),
         ENTRANCE(RR_ZD_STORMS_GROTTO, logic->CanOpenStormsGrotto()),
     });
 

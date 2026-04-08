@@ -25,7 +25,6 @@
 #include "item_location.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "z64item.h"
-#include "randomizerTypes.h"
 #include "fishsanity.h"
 
 extern "C" {
@@ -80,11 +79,17 @@ bool showOverworldCrates;
 bool showDungeonCrates;
 bool showTrees;
 bool showBushes;
+bool showOverworldSigns;
+bool showDungeonSigns;
+bool showOverworldWonderItems;
+bool showDungeonWonderItems;
+bool showBeggar;
 bool showFrogSongRupees;
 bool showFountainFairies;
 bool showStoneFairies;
 bool showBeanFairies;
 bool showSongFairies;
+bool showButterflyFairies;
 bool showStartingMapsCompasses;
 bool showKeysanity;
 bool showGerudoFortressKeys;
@@ -262,6 +267,7 @@ Color_RGBA8 Color_Saved_Extra = { 0, 185, 0, 255 };               // Green
 static ImGuiTextFilter checkSearch;
 static bool recalculateAvailable = false;
 static RandomizerRegion availableChecksStartingRegion = RR_ROOT;
+static RandoAgeTime availableChecksStartingAgeTime = RAT_NONE;
 static int16_t previousEntrance = 0;
 std::array<bool, RCAREA_INVALID> filterAreasHidden = { 0 };
 std::array<bool, RC_MAX> filterChecksHidden = { 0 };
@@ -565,7 +571,7 @@ void CheckTrackerLoadGame(int32_t fileNum) {
                   static_cast<RandomizerSettingKey>(RSK_MQ_DEKU_TREE + (i - RCAREA_DEKU_TREE))) != RO_MQ_SET_RANDOM) ||
              (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_RANDOM) ==
                   RO_MQ_DUNGEONS_SET_NUMBER &&
-              (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_COUNT) == 12 ||
+              (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_COUNT) == MAX_MQ_DUNGEON_COUNT ||
                OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_COUNT) == 0)))) {
             SetAreaSpoiled(static_cast<RandomizerCheckArea>(i));
         }
@@ -595,7 +601,7 @@ void CheckTrackerLoadGame(int32_t fileNum) {
         (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_RANDOM) ==
              RO_MQ_DUNGEONS_RANDOM_NUMBER ||
          (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_RANDOM) == RO_MQ_DUNGEONS_SET_NUMBER &&
-          OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_COUNT) < 12));
+          OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_MQ_DUNGEON_COUNT) < MAX_MQ_DUNGEON_COUNT));
     initialized = true;
     UpdateAllOrdering();
     UpdateInventoryChecks();
@@ -945,7 +951,7 @@ void SetAreaSpoiled(RandomizerCheckArea rcArea) {
     SaveManager::Instance->SaveSection(gSaveContext.fileNum, sectionId, true);
 }
 
-void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion);
+void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion, RandoAgeTime startingAgeTime);
 
 void CheckTrackerWindow::DrawElement() {
     Color_Background = CVarGetColor(CVAR_TRACKER_CHECK("BgColor.Value"), Color_Bg_Default);
@@ -1024,8 +1030,9 @@ void CheckTrackerWindow::DrawElement() {
 
         if (recalculateAvailable) {
             recalculateAvailable = false;
-            InternalRecalculateAvailableChecks(availableChecksStartingRegion);
+            InternalRecalculateAvailableChecks(availableChecksStartingRegion, availableChecksStartingAgeTime);
             availableChecksStartingRegion = RR_ROOT;
+            availableChecksStartingAgeTime = RAT_NONE;
         }
 
         // Quick Options
@@ -1081,13 +1088,21 @@ void CheckTrackerWindow::DrawElement() {
         }
         UIWidgets::PushStyleCombobox(THEME_COLOR);
         if (CVarGetInteger(CVAR_TRACKER_CHECK("SearchInputVisible"), 1)) {
-            if (checkSearch.Draw("", ImGui::GetContentRegionAvail().x - 6)) {
+            if (checkSearch.Draw("", ImGui::GetContentRegionAvail().x - 42)) {
                 UpdateFilters();
             }
-            std::string checkSearchText = "";
-            checkSearchText = checkSearch.InputBuf;
+            std::string checkSearchText = checkSearch.InputBuf;
             checkSearchText.erase(std::remove(checkSearchText.begin(), checkSearchText.end(), ' '),
                                   checkSearchText.end());
+            ImGui::SameLine();
+            if (UIWidgets::Button(ICON_FA_ERASER, UIWidgets::ButtonOptions()
+                                                      .Size(UIWidgets::Sizes::Inline)
+                                                      .Color(THEME_COLOR)
+                                                      .Padding(ImVec2(10.f, 6.f)))) {
+                checkSearch.Clear();
+                UpdateFilters();
+                doAreaScroll = true;
+            }
             if (checkSearchText.length() < 1) {
                 ImGui::SameLine(20.0f);
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.4f), "Search...");
@@ -1244,12 +1259,12 @@ void CheckTrackerWindow::DrawElement() {
 
         ImGui::EndTable(); // Checks Lead-out
         ImGui::EndTable(); // Quick Options Lead-out
-        Trackers::EndFloatWindows();
         if (doingCollapseOrExpand) {
             optCollapseAll = false;
             optExpandAll = false;
         }
     }
+    Trackers::EndFloatWindows();
 }
 
 bool UpdateFilters() {
@@ -1352,6 +1367,10 @@ void LoadSettings() {
     showSongFairies =
         IS_RANDO ? OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_SONG_FAIRIES) == RO_GENERIC_YES
                  : false;
+    showButterflyFairies =
+        IS_RANDO
+            ? OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_BUTTERFLY_FAIRIES) == RO_GENERIC_YES
+            : false;
     showStartingMapsCompasses = IS_RANDO ? OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(
                                                RSK_SHUFFLE_MAPANDCOMPASS) != RO_DUNGEON_ITEM_LOC_VANILLA
                                          : false;
@@ -1454,8 +1473,47 @@ void LoadSettings() {
                 showDungeonCrates = false;
                 break;
         }
+
+        switch (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_SIGNS)) {
+            case RO_SHUFFLE_SIGNS_ALL:
+                showOverworldSigns = true;
+                showDungeonSigns = true;
+                break;
+            case RO_SHUFFLE_SIGNS_OVERWORLD:
+                showOverworldSigns = true;
+                showDungeonSigns = false;
+                break;
+            case RO_SHUFFLE_SIGNS_DUNGEONS:
+                showOverworldSigns = false;
+                showDungeonSigns = true;
+                break;
+            default:
+                showOverworldSigns = false;
+                showDungeonSigns = false;
+                break;
+        }
         showTrees = OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_TREES);
         showBushes = OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_BUSHES);
+
+        switch (OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_WONDER_ITEMS)) {
+            case RO_SHUFFLE_WONDER_ITEMS_ALL:
+                showOverworldWonderItems = true;
+                showDungeonWonderItems = true;
+                break;
+            case RO_SHUFFLE_WONDER_ITEMS_OVERWORLD:
+                showOverworldWonderItems = true;
+                showDungeonWonderItems = false;
+                break;
+            case RO_SHUFFLE_WONDER_ITEMS_DUNGEONS:
+                showOverworldWonderItems = false;
+                showDungeonWonderItems = true;
+                break;
+            default:
+                showOverworldWonderItems = false;
+                showDungeonWonderItems = false;
+                break;
+        }
+        showBeggar = OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_SHUFFLE_BEGGAR);
     } else { // Vanilla
         showOverworldTokens = true;
         showDungeonTokens = true;
@@ -1465,8 +1523,13 @@ void LoadSettings() {
         showDungeonGrass = false;
         showOverworldCrates = false;
         showDungeonCrates = false;
+        showOverworldSigns = false;
+        showDungeonSigns = false;
         showTrees = false;
         showBushes = false;
+        showOverworldWonderItems = false;
+        showDungeonWonderItems = false;
+        showBeggar = false;
     }
 
     fortressFast = false;
@@ -1557,6 +1620,7 @@ bool IsCheckShuffled(RandomizerCheck rc) {
                 (showMajorScrubs && (rc == RC_LW_DEKU_SCRUB_NEAR_BRIDGE || // The 3 scrubs that are always randomized
                                      rc == RC_HF_DEKU_SCRUB_GROTTO || rc == RC_LW_DEKU_SCRUB_GROTTO_FRONT))) &&
                (loc->GetRCType() != RCTYPE_MERCHANT || showMerchants) &&
+               (loc->GetRCType() != RCTYPE_BEGGAR || showBeggar) &&
                (loc->GetRCType() != RCTYPE_SONG_LOCATION || showSongs) &&
                (loc->GetRCType() != RCTYPE_BEEHIVE || showBeehives) &&
                (loc->GetRCType() != RCTYPE_OCARINA || showOcarinas) &&
@@ -1584,6 +1648,12 @@ bool IsCheckShuffled(RandomizerCheck rc) {
                 (showTrees &&
                  OTRGlobals::Instance->gRandomizer->GetRandoSettingValue(RSK_LOGIC_RULES) == RO_LOGIC_NO_LOGIC)) &&
                (loc->GetRCType() != RCTYPE_BUSH || showBushes) && (loc->GetRCType() != RCTYPE_COW || showCows) &&
+               (loc->GetRCType() != RCTYPE_SIGN ||
+                (showOverworldSigns && RandomizerCheckObjects::AreaIsOverworld(loc->GetArea())) ||
+                (showDungeonSigns && RandomizerCheckObjects::AreaIsDungeon(loc->GetArea()))) &&
+               (loc->GetRCType() != RCTYPE_WONDER_ITEM ||
+                (showOverworldWonderItems && RandomizerCheckObjects::AreaIsOverworld(loc->GetArea())) ||
+                (showDungeonWonderItems && RandomizerCheckObjects::AreaIsDungeon(loc->GetArea()))) &&
                (loc->GetRCType() != RCTYPE_FISH ||
                 OTRGlobals::Instance->gRandoContext->GetFishsanity()->GetFishLocationIncluded(loc)) &&
                (loc->GetRCType() != RCTYPE_FREESTANDING ||
@@ -1602,6 +1672,7 @@ bool IsCheckShuffled(RandomizerCheck rc) {
                (loc->GetRCType() != RCTYPE_STONE_FAIRY || showStoneFairies) &&
                (loc->GetRCType() != RCTYPE_BEAN_FAIRY || showBeanFairies) &&
                (loc->GetRCType() != RCTYPE_SONG_FAIRY || showSongFairies) &&
+               (loc->GetRCType() != RCTYPE_BUTTERFLY_FAIRY || showButterflyFairies) &&
                (loc->GetRCType() != RCTYPE_SMALL_KEY || showKeysanity) &&
                (loc->GetRCType() != RCTYPE_BOSS_KEY || showBossKeysanity) &&
                (loc->GetRCType() != RCTYPE_GANON_BOSS_KEY || showGanonBossKey) &&
@@ -2017,7 +2088,7 @@ void ImGuiDrawTwoColorPickerSection(const char* text, const char* cvarMainName, 
     UIWidgets::PopStyleCombobox();
 }
 
-void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion) {
+void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion, RandoAgeTime startingAgeTime) {
     if (!enableAvailableChecks || !GameInteractor::IsSaveLoaded()) {
         return;
     }
@@ -2042,6 +2113,18 @@ void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion) {
         }
     }
 
+    if (startingAgeTime == RAT_NONE) {
+        if (LINK_IS_CHILD && IS_DAY) {
+            startingAgeTime = RAT_CHILD_DAY;
+        } else if (LINK_IS_CHILD && IS_NIGHT) {
+            startingAgeTime = RAT_CHILD_NIGHT;
+        } else if (LINK_IS_ADULT && IS_DAY) {
+            startingAgeTime = RAT_ADULT_DAY;
+        } else if (LINK_IS_ADULT && IS_NIGHT) {
+            startingAgeTime = RAT_ADULT_NIGHT;
+        }
+    }
+
     std::vector<RandomizerCheck> targetLocations;
     targetLocations.reserve(RC_MAX);
     for (auto& location : Rando::StaticData::GetLocationTable()) {
@@ -2053,7 +2136,8 @@ void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion) {
         }
     }
 
-    std::vector<RandomizerCheck> availableChecks = ReachabilitySearch(targetLocations, RG_NONE, true, startingRegion);
+    std::vector<RandomizerCheck> availableChecks =
+        ReachabilitySearch(targetLocations, RG_NONE, true, startingRegion, startingAgeTime);
     for (auto& rc : availableChecks) {
         const auto& itemLocation = ctx->GetItemLocation(rc);
         itemLocation->SetAvailable(true);
@@ -2076,9 +2160,11 @@ void InternalRecalculateAvailableChecks(RandomizerRegion startingRegion) {
                 GetPerformanceTimer(PT_RECALCULATE_AVAILABLE_CHECKS).count());
 }
 
-void RecalculateAvailableChecks(RandomizerRegion startingRegion /* = RR_ROOT */) {
+void RecalculateAvailableChecks(RandomizerRegion startingRegion /* = RR_ROOT */,
+                                RandoAgeTime startingAgeTime /* = RAT_NONE */) {
     recalculateAvailable = true;
     availableChecksStartingRegion = startingRegion;
+    availableChecksStartingAgeTime = startingAgeTime;
 }
 
 void LoadFromPreset(nlohmann::json info) {

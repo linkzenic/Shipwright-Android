@@ -135,7 +135,7 @@ static void IKAxe_UpdateThrow(Player* player, PlayState* play) {
                 EnBoom* axe = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM,
                     posX, player->actor.world.pos.y + 40.0f, posZ,
                     pitch, yaw, 0,
-                    IKAXE_THROW_PARAMS, true);
+                    IKAXE_THROW_PARAMS);
 
                 if (axe != NULL) {
                     axe->moveTo = NULL;  // No homing — straight arc

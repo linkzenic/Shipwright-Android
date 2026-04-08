@@ -251,10 +251,10 @@ static void Lantern_SpawnFireActor(Player* p, PlayState* play) {
     Actor* flame = NULL;
     if (fireType == LANTERN_FIRE_BLUE) {
         flame = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ICE_HONO,
-            fx, fy, fz, 0, 0, 0, 1, true);
+            fx, fy, fz, 0, 0, 0, 1);
     } else {
         flame = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHT,
-            fx, fy, fz, 0, 0, 0, sLanternFlameParam[fireType], true);
+            fx, fy, fz, 0, 0, 0, sLanternFlameParam[fireType]);
     }
 
     // Scale to 1/3 of default size + track for timed despawn
@@ -327,7 +327,7 @@ static void Lantern_UpdateBurning(PlayState* play) {
         if (sBurning[i].timer == LANTERN_BURN_TIME - 1) {
             Actor* grassFlame = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHT,
                 actor->world.pos.x, actor->world.pos.y, actor->world.pos.z,
-                0, 0, 0, 0x0000, true);
+                0, 0, 0, 0x0000);
             if (grassFlame != NULL) {
                 grassFlame->scale.x *= 0.33f;
                 grassFlame->scale.y *= 0.33f;

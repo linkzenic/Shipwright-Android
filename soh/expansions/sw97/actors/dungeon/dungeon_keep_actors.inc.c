@@ -763,7 +763,7 @@ void DungeonKeep_Init(Actor* thisx, PlayState* play) {
 
         case DK_ROLLING_BOULDER:
             Actor_Spawn(&play->actorCtx, play, ACTOR_EN_GOROIWA, thisx->world.pos.x, thisx->world.pos.y,
-                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0x0000, false);
+                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0x0000);
             Actor_Kill(thisx);
             break;
 
@@ -778,52 +778,52 @@ void DungeonKeep_Init(Actor* thisx, PlayState* play) {
 
         case DK_CRYSTAL_SWITCH_18:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_SWITCH, thisx->world.pos.x, thisx->world.pos.y,
-                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0x3F13, false);
+                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0x3F13);
             Actor_Kill(thisx);
             break;
 
         case DK_CRYSTAL_SWITCH:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_SWITCH, thisx->world.pos.x, thisx->world.pos.y,
-                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0x3F03, false);
+                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0x3F03);
             Actor_Kill(thisx);
             break;
 
         case DK_EYE_SWITCH:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_SWITCH, thisx->world.pos.x, thisx->world.pos.y,
                         thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z,
-                        (thisx->params & 0x3F00) | 0x0002, false);
+                        (thisx->params & 0x3F00) | 0x0002);
             Actor_Kill(thisx);
             break;
 
         case DK_EYE_SWITCH_1B:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_SWITCH, thisx->world.pos.x, thisx->world.pos.y,
                         thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z,
-                        (thisx->params & 0x3F00) | 0x0012, false);
+                        (thisx->params & 0x3F00) | 0x0012);
             Actor_Kill(thisx);
             break;
 
         case DK_EYE_SWITCH_1E:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_SWITCH, thisx->world.pos.x, thisx->world.pos.y,
                         thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z,
-                        (thisx->params & 0x3F00) | 0x0082, false);
+                        (thisx->params & 0x3F00) | 0x0082);
             Actor_Kill(thisx);
             break;
 
         case DK_EYE_SWITCH_1F:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_SWITCH, thisx->world.pos.x, thisx->world.pos.y,
                         thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z,
-                        (thisx->params & 0x3F00) | 0x0092, false);
+                        (thisx->params & 0x3F00) | 0x0092);
             Actor_Kill(thisx);
             break;
 
         case DK_PUSH_BLOCK:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_OSHIHIKI, thisx->world.pos.x, thisx->world.pos.y,
-                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0xFF02, false);
+                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0xFF02);
             break;
 
         case DK_PUSH_BLOCK_SMALL:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_OSHIHIKI, thisx->world.pos.x, thisx->world.pos.y,
-                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0xFF00, false);
+                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 0xFF00);
             break;
 
         case DK_FLOATER:

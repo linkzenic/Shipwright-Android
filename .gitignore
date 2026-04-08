@@ -461,7 +461,10 @@ soh/properties.h
 /clang-format.exe
 *.o2r
 /mm_pc_port_tested_ver
+rebuild_soh_otr.bat
+run-clang-format.sh
+run-clang-format.ps1
 
-# Private Harpoon multiplayer
-/claude
+# Local config
+/.claude/
 /references

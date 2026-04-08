@@ -28,7 +28,7 @@ PriceSettingsStruct::PriceSettingsStruct(RandomizerSettingKey _main, RandomizerS
 }
 
 static std::array<std::vector<Text>, RG_MAX> trickNameTable; // Table of trick names for ice traps
-bool initTrickNames = false; // Indicates if trick ice trap names have been initialized yet
+static bool initTrickNames = false;
 
 // Set vanilla shop item locations before potentially shuffling
 void PlaceVanillaShopItems() {

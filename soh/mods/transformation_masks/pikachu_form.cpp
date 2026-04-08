@@ -883,7 +883,7 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                 Vec3f spawnPos = { player->actor.world.pos.x + sinf(pyaw) * 25.0f, player->actor.world.pos.y + 30.0f,
                                    player->actor.world.pos.z + cosf(pyaw) * 25.0f };
                 Actor* nut = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, spawnPos.x, spawnPos.y, spawnPos.z,
-                                         0x4000, player->actor.shape.rot.y, 0, 0x0002, true); // params=2 for nut behavior
+                                         0x4000, player->actor.shape.rot.y, 0, 0x0002); // params=2 for nut behavior
                 if (nut) {
                     nut->world.rot.y = player->actor.shape.rot.y;
                     nut->speedXZ = 15.0f;
@@ -908,7 +908,7 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                 s32 ammoItem = (sPika.bombPending == 2) ? ITEM_BOMBCHU : ITEM_BOMB;
 
                 Actor* projectile = Actor_Spawn(&play->actorCtx, play, actorId, spawnPos.x, spawnPos.y, spawnPos.z, 0,
-                                                player->actor.shape.rot.y, 0, 0, true);
+                                                player->actor.shape.rot.y, 0, 0);
                 if (projectile) {
                     projectile->world.rot.y = player->actor.shape.rot.y;
                     projectile->speedXZ = 12.0f;

@@ -619,6 +619,10 @@ void AudioEditor::DrawElement() {
             Draw_SfxTab("battleMusic", SEQ_BGM_BATTLE, "Battle Music");
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Ending")) {
+            Draw_SfxTab("ending", SEQ_ENDING, "Ending");
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Ocarina")) {
             Draw_SfxTab("instrument", SEQ_INSTRUMENT, "Instruments");
             Draw_SfxTab("ocarina", SEQ_OCARINA, "Ocarina");
@@ -931,7 +935,7 @@ void RegisterAudioWidgets() {
                     "- On New Scene : Randomizes when you enter a new scene.\n"
                     "- On Rando Gen Only: Randomizes only when you generate a new randomizer.\n"
                     "- On File Load: Randomizes on File Load.\n"
-                    "- On File Load (Seeded): Randomizes on file load based on the current randomizer seed/file.\n"));
+                    "- On File Load (Seeded): Randomizes on file load based on the current randomizer seed/file."));
     SohGui::mSohMenu->AddSearchWidget({ randomAudioGenModes, "Enhancements", "Audio Editor", "Audio Options" });
 
     lowerOctaves = { .name = "Lower Octaves of Unplayable High Notes", .type = WidgetType::WIDGET_CVAR_CHECKBOX };

@@ -14,7 +14,6 @@
 #include "objects/object_cne/object_cne.h"
 #include "objects/object_cob/object_cob.h"
 #include "objects/object_os_anime/object_os_anime.h"
-#include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
@@ -611,7 +610,9 @@ s16 func_80A70058(PlayState* play, Actor* thisx) {
                 case 0x70F1:
                 case 0x70F2:
                 case 0x70F3:
-                    Rupees_ChangeBy(beggarRewards[this->actor.textId - 0x70F0]);
+                    if (GameInteractor_Should(VB_BEGGAR_GIVE_ITEM, true, this)) {
+                        Rupees_ChangeBy(beggarRewards[this->actor.textId - 0x70F0]);
+                    }
                     Animation_ChangeByInfo(&this->skelAnime, sAnimationInfo, ENHY_ANIM_17);
                     Player_UpdateBottleHeld(play, GET_PLAYER(play), ITEM_BOTTLE, PLAYER_IA_BOTTLE);
                     break;

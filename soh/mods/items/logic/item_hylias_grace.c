@@ -740,8 +740,8 @@ static void HGrace_StateIvan(Player* p, PlayState* play) {
     // First frame: spawn Ivan at Link's position, hide Link
     if (sIvanActor == NULL) {
         sIvanActor = Actor_Spawn(&play->actorCtx, play, gEnPartnerId, p->actor.world.pos.x,
-                                 p->actor.world.pos.y + Player_GetHeight(p) + 5.0f, p->actor.world.pos.z, 0, 0, 0, 0,
-                                 true); // params=0 → reads input[0] (Player 1)
+                                 p->actor.world.pos.y + Player_GetHeight(p) + 5.0f, p->actor.world.pos.z, 0, 0, 0,
+                                 0); // params=0 → reads input[0] (Player 1)
         gIvanPossessActive = 1;
         p->actor.draw = NULL;
 

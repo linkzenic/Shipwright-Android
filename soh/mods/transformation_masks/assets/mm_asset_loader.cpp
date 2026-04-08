@@ -3346,8 +3346,8 @@ static bool sMaskIconLoaded[24] = { false };
 static void* sCachedMaskNames[24] = { 0 };
 static bool sMaskNameLoaded[24] = { false };
 
-// ITEM_MM_MASK_POSTMAN = 0xB7, so index = itemId - 0xB7
-#define MM_MASK_ITEM_BASE 0xB7
+// Index = itemId - ITEM_MM_MASK_POSTMAN
+#define MM_MASK_ITEM_BASE ITEM_MM_MASK_POSTMAN
 
 void* MmMasks_LoadIcon(uint16_t itemId) {
     if (!MmAssets_IsAvailable())

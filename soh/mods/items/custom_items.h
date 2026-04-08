@@ -21,33 +21,8 @@ extern "C" {
 
 // (GUSTJAR_MAX_TRACKED removed — no scale cache system)
 
-// Item IDs (custom items start at 0x9D, develop's ITEM_ROCS_FEATHER is at 0x9C)
-#define ITEM_ROCS_FEATHER_SKIJER 0x9D
-#define ITEM_ROCS_CAPE 0x9E
-#define ITEM_DESIRE_SENSOR 0x9F
-#define ITEM_HYLIAS_GRACE 0xA0
-#define ITEM_ZONAI_PERMAFROST 0xA1
-#define ITEM_DEMISE_DESTRUCTION 0xA2
-#define ITEM_DEKU_LEAF 0xA3
-#define ITEM_SWITCH_HOOK 0xA4
-#define ITEM_MOGMA_MITTS 0xA5
-#define ITEM_GUST_JAR 0xA6
-#define ITEM_BALL_AND_CHAIN 0xA7
-#define ITEM_WHIP 0xA8
-#define ITEM_SPINNER 0xA9
-#define ITEM_CANE_OF_SOMARIA 0xAA
-#define ITEM_DOMINION_ROD 0xAB
-#define ITEM_TIME_GATE 0xAC
-#define ITEM_BOMB_ARROWS 0xAD
-#define ITEM_ROD_FIRE 0xAE
-#define ITEM_ROD_ICE 0xAF
-#define ITEM_ROD_LIGHT 0xB0
-#define ITEM_BEETLE 0xB1
-#define ITEM_SHOVEL 0xB2
-#define ITEM_MINISH_CAP 0xB3
-// ITEM_LANTERN = 0xB4 (defined in z64item.h enum)
-#define ITEM_CHATEAU_ROMANI 0xB5
-#define ITEM_PENDING_3 0xB6
+// Item IDs are defined in z64item.h enum (ITEM_ROCS_FEATHER_SKIJER through ITEM_PENDING_3)
+// No #defines needed — the enum values are authoritative
 
 /**
  * Global state for all custom items.

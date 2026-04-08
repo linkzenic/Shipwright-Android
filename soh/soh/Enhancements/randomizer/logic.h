@@ -45,7 +45,7 @@ class Logic {
     bool CanOpenOverworldDoor(RandomizerGet itemName);
     bool SmallKeys(s16 scene, uint8_t requiredAmount);
     bool CanGroundJump(bool hasBombflower = false);
-    bool CanGroundJumpJumpSlash(bool hasBombflower = false);
+    bool CanGroundJumpslash(bool hasBombflower = false);
     bool CanMiddairGroundJump(bool hasBombflower = false);
     bool CanOpenUnderwaterChest();
     bool CanDoGlitch(GlitchType glitch);
@@ -105,6 +105,7 @@ class Logic {
     bool CanBreakCrates();
     bool CanBreakSmallCrates();
     bool CanBonkTrees();
+    bool CanRead();
     bool HasFireSource();
     bool HasFireSourceWithTorch();
     bool SunlightArrows();
@@ -117,6 +118,8 @@ class Logic {
     bool IsFireLoopLocked();
     bool ReachScarecrow();
     bool ReachDistantScarecrow();
+    bool CanClimbLadder();
+    bool CanClimbHighLadder();
     bool SummonEpona();
     void Reset(bool resetSaveContext = true);
     void SetContext(std::shared_ptr<Context> _ctx);
@@ -153,6 +156,9 @@ class Logic {
     static std::map<RandomizerGet, uint32_t> RandoGetToEquipFlag;
     static std::map<RandomizerGet, uint32_t> RandoGetToRandInf;
     bool IsReverseAccessPossible();
+    bool DMCUpperToPots();
+    bool DMCPotsToPad();
+    bool DMCPadToPots();
     bool SpiritEastToSwitch();
     bool SpiritWestToSkull();
     bool SpiritSunBlockSouthLedge();

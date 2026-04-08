@@ -7,6 +7,7 @@
 #include "pool_functions.hpp"
 #include "random.hpp"
 #include "spoiler_log.hpp"
+#include "soh/Enhancements/randomizer/Traps.h"
 #include "z64item.h"
 #include <spdlog/spdlog.h>
 #include "soh/OTRGlobals.h" // CVarGetInteger
@@ -374,11 +375,10 @@ void AddFixedItemToPool(RandomizerGet item, int count = 1, bool iceTrapModel = t
 }
 
 RandomizerGet GetJunkItem() {
-    auto ctx = Rando::Context::GetInstance();
-    if (ctx->GetOption(RSK_ICE_TRAP_PERCENT).IsNot(0) &&
-        (ctx->GetOption(RSK_ICE_TRAP_PERCENT).Is(100) || Random(0, 100) < ctx->GetOption(RSK_ICE_TRAP_PERCENT).Get())) {
+    if (Rando::Traps::ShouldJunkItemBeTrap()) {
         return RG_ICE_TRAP;
     }
+
     return RandomElement(JunkPoolItems);
 }
 
@@ -455,6 +455,7 @@ static void PlaceItemsForType(RandomizerCheckType rctype, bool overworldActive =
 void GenerateItemPool() {
     // RANDOTODO proper removal of items not in pool or logically relevant instead of dummy checks.
     auto ctx = Rando::Context::GetInstance();
+    ctx->possibleIceTrapModels.clear();
     itemPool.clear();
     junkPool.clear();
     plentifulPool.clear();
@@ -475,8 +476,8 @@ void GenerateItemPool() {
     AddItemToPool(RG_ICE_ARROWS, 2, 1, 1, 1);
     AddItemToPool(RG_LIGHT_ARROWS, 2, 1, 1, 1);
     AddItemToPool(RG_DINS_FIRE, 2, 1, 1, 1);
-    AddItemToPool(RG_FARORES_WIND, 2, 1, 0, 0);
-    AddItemToPool(RG_NAYRUS_LOVE, 2, 1, 0, 0);
+    AddItemToPool(RG_FARORES_WIND, 2, 1, 1, 0);
+    AddItemToPool(RG_NAYRUS_LOVE, 2, 1, 1, 0);
     AddItemToPool(RG_GREG_RUPEE, 1, 1, 1, 1);
     AddItemToPool(RG_PROGRESSIVE_HOOKSHOT, 2, 2, 2, 2);
     AddItemToPool(RG_HYLIAN_SHIELD, 1, 1, 1, 1);
@@ -837,6 +838,13 @@ void GenerateItemPool() {
     bool bushesActive = (bool)ctx->GetOption(RSK_SHUFFLE_BUSHES);
     PlaceItemsForType(RCTYPE_BUSH, bushesActive, false);
 
+    // Shuffle Wonder Items
+    bool overworldWonderItemsActive = ctx->GetOption(RSK_SHUFFLE_WONDER_ITEMS).Is(RO_SHUFFLE_WONDER_ITEMS_OVERWORLD) ||
+                               ctx->GetOption(RSK_SHUFFLE_WONDER_ITEMS).Is(RO_SHUFFLE_WONDER_ITEMS_ALL);
+    bool dungeonWonderItemsActive = ctx->GetOption(RSK_SHUFFLE_WONDER_ITEMS).Is(RO_SHUFFLE_WONDER_ITEMS_DUNGEONS) ||
+                             ctx->GetOption(RSK_SHUFFLE_WONDER_ITEMS).Is(RO_SHUFFLE_WONDER_ITEMS_ALL);
+    PlaceItemsForType(RCTYPE_WONDER_ITEM, overworldWonderItemsActive, dungeonWonderItemsActive);
+
     // Shuffle Crates
     bool overworldCratesActive = ctx->GetOption(RSK_SHUFFLE_CRATES).Is(RO_SHUFFLE_CRATES_OVERWORLD) ||
                                  ctx->GetOption(RSK_SHUFFLE_CRATES).Is(RO_SHUFFLE_CRATES_ALL);
@@ -879,6 +887,10 @@ void GenerateItemPool() {
         ctx->PlaceItemInLocation(RC_GC_MEDIGORON, RG_GIANTS_KNIFE, false, true);
         ctx->PlaceItemInLocation(RC_WASTELAND_BOMBCHU_SALESMAN, RG_BOMBCHU_10, false, true);
     }
+
+    // Shuffle Beggar
+    bool beggarActive = (bool)ctx->GetOption(RSK_SHUFFLE_BEGGAR);
+    PlaceItemsForType(RCTYPE_BEGGAR, beggarActive, false);
 
     if (ctx->GetOption(RSK_SHUFFLE_FROG_SONG_RUPEES)) {
         AddFixedItemToPool(RG_PURPLE_RUPEE, 5);
@@ -941,7 +953,7 @@ void GenerateItemPool() {
     }
 
     if (ctx->GetOption(RSK_SHUFFLE_BEAN_SOULS)) {
-        ctx->possibleIceTrapModels.insert(RG_DEATH_MOUNTAIN_CRATER_BEAN_SOUL); // ice traps reroll this into a random bean soul
+        ctx->possibleIceTrapModels.insert(RG_DEATH_MOUNTAIN_CRATER_BEAN_SOUL); // ice traps reroll this into a random bean soul in Rando::Traps::GetTrapTrickModel
         AddItemToPool(RG_DEATH_MOUNTAIN_CRATER_BEAN_SOUL, 2, 1, 1, 1, false);
         AddItemToPool(RG_DEATH_MOUNTAIN_TRAIL_BEAN_SOUL, 2, 1, 1, 1, false);
         AddItemToPool(RG_DESERT_COLOSSUS_BEAN_SOUL, 2, 1, 1, 1, false);
@@ -1026,7 +1038,7 @@ void GenerateItemPool() {
     // Keys
     if (ctx->GetOption(RSK_LOCK_OVERWORLD_DOORS)) {
         // only 1 is added to the ice trap pool, to avoid the pool being filled with them.
-        // a random one is chosen in CreateItemOverrides
+        // a random one is chosen in Rando::Traps::GetTrapTrickModel
         AddItemToPool(RG_GUARD_HOUSE_KEY, 2, 1, 1, 1);
         AddItemToPool(RG_MARKET_BAZAAR_KEY, 2, 1, 1, 1, false);
         AddItemToPool(RG_MARKET_POTION_SHOP_KEY, 2, 1, 1, 1, false);
@@ -1210,7 +1222,7 @@ void GenerateItemPool() {
         bottleCount--;
     }
 
-    ctx->possibleIceTrapModels.insert(RG_EMPTY_BOTTLE); // ice traps reroll this into a random normal bottle
+    ctx->possibleIceTrapModels.insert(RG_EMPTY_BOTTLE); // ice traps reroll this into a random normal bottle in Rando::Traps::GetTrapTrickModel
     for (uint8_t i = 0; i < bottleCount; i++) {
         AddFixedItemToPool(RandomElement(Rando::StaticData::normalBottles), 1, false);
     }
@@ -1262,7 +1274,7 @@ void GenerateItemPool() {
                     break;
                 case RO_ITEM_POOL_BALANCED: {
                     int heartsToPlace = maxHearts - startingHearts;
-                    int halfHearts = maxHearts >> 2;
+                    int halfHearts = heartsToPlace / 2;
                     AddFixedItemToPool(RG_HEART_CONTAINER, heartsToPlace - halfHearts, false);
                     AddFixedItemToPool(RG_PIECE_OF_HEART, halfHearts * 4, false);
                     break;

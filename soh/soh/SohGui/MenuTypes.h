@@ -267,6 +267,9 @@ struct MainMenuEntry {
 static const std::map<Ship::AudioBackend, const char*> audioBackendsMap = {
     { Ship::AudioBackend::WASAPI, "Windows Audio Session API" },
     { Ship::AudioBackend::SDL, "SDL" },
+#ifdef __APPLE__
+    { Ship::AudioBackend::COREAUDIO, "Core Audio" },
+#endif
     { Ship::AudioBackend::NUL, "Null" },
 };
 

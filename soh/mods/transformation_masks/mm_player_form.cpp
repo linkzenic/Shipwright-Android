@@ -7795,7 +7795,7 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
             s16 yawL = hasTarget ? (rotY + 0x36B0) : (rotY - 0x190);
 
             EnBoom* leftBoom = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posLX, posLY, posLZ, pitchX,
-                                                    yawL, 0, 1, true); // params=1: left Zora fin
+                                                    yawL, 0, 1); // params=1: left Zora fin
 
             if (leftBoom != NULL) {
                 // From MM: unk_1CC = unk_1CF(16) + 0x24(36) = 52 frames flight time
@@ -7811,7 +7811,7 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
             s16 yawR = hasTarget ? (rotY - 0x36B0) : (rotY + 0x190);
 
             EnBoom* rightBoom = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM, posRX, posRY, posRZ, pitchX,
-                                                     yawR, 0, 2, true); // params=2: right Zora fin
+                                                     yawR, 0, 2); // params=2: right Zora fin
 
             if (rightBoom != NULL) {
                 rightBoom->returnTimer = 20; // Vanilla OOT boomerang distance

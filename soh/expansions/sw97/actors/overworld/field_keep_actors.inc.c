@@ -6433,7 +6433,7 @@ void FieldKeep_Init(Actor* thisx, PlayState* play) {
         } break;
         case 0x19:
             Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_BOMBIWA, thisx->world.pos.x, thisx->world.pos.y,
-                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 8, true);
+                        thisx->world.pos.z, thisx->world.rot.x, thisx->world.rot.y, thisx->world.rot.z, 8);
             Actor_Kill(thisx);
             return;
         case 0x16:

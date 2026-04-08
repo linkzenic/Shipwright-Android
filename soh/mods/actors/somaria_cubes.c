@@ -358,7 +358,7 @@ static void SomariaCube_DestroyFunc(Actor* thisx, PlayState* play) {
 // ============================================================================
 
 Actor* SomariaCube_Spawn(PlayState* play, Vec3f* pos, s16 yaw) {
-    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX, pos->x, pos->y, pos->z, 0, yaw, 0, 0, true);
+    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX, pos->x, pos->y, pos->z, 0, yaw, 0, 0);
 
     if (cube == NULL)
         return NULL;
@@ -435,7 +435,7 @@ u8 SomariaCube_IsRemoteCube(Actor* actor) {
 }
 
 Actor* SomariaCube_SpawnRemote(PlayState* play, Vec3f* pos, s16 yaw, u8 form) {
-    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX, pos->x, pos->y, pos->z, 0, yaw, 0, 0, true);
+    Actor* cube = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_LIGHTBOX, pos->x, pos->y, pos->z, 0, yaw, 0, 0);
     if (cube == NULL)
         return NULL;
 

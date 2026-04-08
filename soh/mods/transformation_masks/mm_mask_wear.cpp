@@ -774,7 +774,7 @@ static void AllNightMask_SpawnNightGs(PlayState* play) {
         if (IS_DAY && gs->forChild == (bool)LINK_IS_CHILD && gs->scene == play->sceneNum &&
             gs->room == play->roomCtx.curRoom.num) {
             Actor_Spawn(&play->actorCtx, play, gs->id, gs->pos.x, gs->pos.y, gs->pos.z, gs->rot.x, gs->rot.y, gs->rot.z,
-                        gs->params, false);
+                        gs->params);
         }
     }
 }
@@ -988,7 +988,7 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     Vec3f bombPos = player->actor.world.pos;
 
                     EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, bombPos.x, bombPos.y,
-                                                      bombPos.z, 0, 0, 0, BOMB_BODY, true);
+                                                      bombPos.z, 0, 0, 0, BOMB_BODY);
 
                     if (bomb != NULL) {
                         // Timer=1: decrements to 0 on first update → triggers explosion
@@ -1406,11 +1406,11 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 if (LINK_IS_ADULT) {
                     // Adult: Stalfos
                     spawned = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_TEST, spawnX, spawnY, spawnZ, 0, (s16)angle,
-                                          0, 0, true);
+                                          0, 0);
                 } else {
                     // Child: Giant Stalchild (params=10 → 2x scale, 2x speed)
                     spawned = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_SKB, spawnX, spawnY, spawnZ, 0, (s16)angle, 0,
-                                          10, true);
+                                          10);
                 }
 
                 if (spawned != NULL) {

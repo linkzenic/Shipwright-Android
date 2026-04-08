@@ -3,7 +3,6 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/object_oF1d_map/object_oF1d_map.h"
 #include "soh/frame_interpolation.h"
-#include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
@@ -1377,7 +1376,7 @@ void EnGo2_StopRolling(EnGo2* this, PlayState* play) {
     if (((this->actor.params & 0x1F) != GORON_CITY_ROLLING_BIG) && ((this->actor.params & 0x1F) != GORON_CITY_LINK)) {
         if ((this->actor.params & 0x1F) == GORON_DMT_ROLLING_SMALL) {
             bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, this->actor.world.pos.x,
-                                       this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0, true);
+                                       this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0);
             if (bomb != NULL) {
                 bomb->timer = 0;
             }

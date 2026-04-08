@@ -69,7 +69,7 @@ static Actor* Sw97_TrySpawnMagicSpell(PlayState* play, Player* player, s32 spell
     }
 
     return Actor_Spawn(&play->actorCtx, play, actorId, player->actor.world.pos.x, player->actor.world.pos.y,
-                       player->actor.world.pos.z, 0, 0, 0, 0, false);
+                       player->actor.world.pos.z, 0, 0, 0, 0);
 }
 
 /**

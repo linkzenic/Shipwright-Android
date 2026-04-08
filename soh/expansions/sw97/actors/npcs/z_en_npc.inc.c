@@ -635,7 +635,7 @@ extern s16 gSw97ActorId_EnOE2;
 void SpawnOE2(EnNpc* this, PlayState* play, s16 npcType) {
     Actor_Spawn(&play->actorCtx, play, gSw97ActorId_EnOE2, this->actor.world.pos.x, this->actor.world.pos.y,
                 this->actor.world.pos.z, this->actor.world.rot.x, this->actor.world.rot.y, this->actor.world.rot.z,
-                (npcType << 11) | (this->actor.params >> 8), false);
+                (npcType << 11) | (this->actor.params >> 8));
     Actor_Kill(&this->actor);
 }
 

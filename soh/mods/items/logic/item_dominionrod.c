@@ -379,7 +379,7 @@ static void DomRod_ControlArmos(Player* p, PlayState* play, Actor* actor) {
     // C-button = Self-destruct (explode)
     if (CHECK_BTN_ALL(input->press.button, domRodButtonMask)) {
         Actor* bomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, actor->world.pos.x, actor->world.pos.y,
-                                  actor->world.pos.z, 0, 0, 0x6FF, BOMB_BODY, true);
+                                  actor->world.pos.z, 0, 0, 0x6FF, BOMB_BODY);
         if (bomb != NULL) {
             EnBom* bombActor = (EnBom*)bomb;
             bombActor->timer = 0;
@@ -419,8 +419,7 @@ static void DomRod_ControlAnubis(Player* p, PlayState* play, Actor* actor) {
         firePos.y = actor->world.pos.y + 30.0f;
         firePos.z = actor->world.pos.z + Math_CosS(fireYaw) * 30.0f;
 
-        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ANUBICE_FIRE, firePos.x, firePos.y, firePos.z, 0, fireYaw, 0, 0,
-                    true);
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ANUBICE_FIRE, firePos.x, firePos.y, firePos.z, 0, fireYaw, 0, 0);
         DomRod_PlaySound(&actor->world.pos, NA_SE_EN_ANUBIS_FIRE);
         domRodAttackCooldown = DOMROD_ANUBIS_FIRE_COOLDOWN;
     }
