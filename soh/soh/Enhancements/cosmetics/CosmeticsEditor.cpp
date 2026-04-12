@@ -1889,11 +1889,11 @@ void DrawSillyTab() {
 
     UIWidgets::Separator(true, true, 2.0f, 2.0f);
 
-    UIWidgets::CVarCheckbox("Let It Snow", CVAR_GENERAL("LetItSnow"),
-                            UIWidgets::CheckboxOptions()
-                                .Color(THEME_COLOR)
-                                .Tooltip("Makes snow fall, changes chest texture colors to red and green, etc, for "
-                                         "December holidays.\nWill reset on restart outside of December 23-25."));
+    UIWidgets::CVarCheckbox(
+        "Let It Snow", CVAR_GENERAL("LetItSnow"),
+        UIWidgets::CheckboxOptions()
+            .Color(THEME_COLOR)
+            .Tooltip("Makes snow fall for December holidays.\nWill reset on restart outside of December 23-25."));
 
     UIWidgets::Separator(true, true, 2.0f, 2.0f);
 
