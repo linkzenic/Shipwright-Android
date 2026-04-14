@@ -1,6 +1,5 @@
 #include "location.h"
 #include "static_data.h"
-#include <algorithm>
 #include <assert.h>
 #include "option.h"
 
