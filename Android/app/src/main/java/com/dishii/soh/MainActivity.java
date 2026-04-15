@@ -501,10 +501,10 @@ public class MainActivity extends SDLActivity{
         addTouchListener(buttonX, ControllerButtons.BUTTON_X);
         addTouchListener(buttonY, ControllerButtons.BUTTON_Y);
 
-        setupCButtons(buttonDpadUp, ControllerButtons.AXIS_RY, 1, ControllerButtons.BUTTON_DPAD_UP);
-        setupCButtons(buttonDpadDown, ControllerButtons.AXIS_RY, -1, ControllerButtons.BUTTON_DPAD_DOWN);
-        setupCButtons(buttonDpadLeft, ControllerButtons.AXIS_RX, 1, ControllerButtons.BUTTON_DPAD_LEFT);
-        setupCButtons(buttonDpadRight, ControllerButtons.AXIS_RX, -1, ControllerButtons.BUTTON_DPAD_RIGHT);
+        setupCButtons(buttonDpadUp, ControllerButtons.BUTTON_DPAD_UP);
+        setupCButtons(buttonDpadDown, ControllerButtons.BUTTON_DPAD_DOWN);
+        setupCButtons(buttonDpadLeft, ControllerButtons.BUTTON_DPAD_LEFT);
+        setupCButtons(buttonDpadRight, ControllerButtons.BUTTON_DPAD_RIGHT);
 
         addTouchListener(buttonLB, ControllerButtons.BUTTON_LB);
         addTouchListener(buttonRB, ControllerButtons.BUTTON_RB);
@@ -596,25 +596,22 @@ public class MainActivity extends SDLActivity{
         });
     }
 
-    private void setupCButtons(Button button, int axisNum, int direction, int dpadButton) {
+    private void setupCButtons(Button button, int dpadButton) {
         button.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        setAxis(axisNum, direction<0 ? Short.MAX_VALUE : Short.MIN_VALUE);
                         setButton(dpadButton, true);
                         nativeMenuNavKey(dpadButton - 11, true);
                         button.setPressed(true);
                         return true;
                     case MotionEvent.ACTION_UP:
-                        setAxis(axisNum, (short) 0);
                         setButton(dpadButton, false);
                         nativeMenuNavKey(dpadButton - 11, false);
                         button.setPressed(false);
                         return true;
                     case MotionEvent.ACTION_CANCEL:
-                        setAxis(axisNum, (short) 0);
                         setButton(dpadButton, false);
                         nativeMenuNavKey(dpadButton - 11, false);
                         return true;
