@@ -2569,7 +2569,6 @@ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
         // sees B_BTN_ITEM=sword → starts sword swing before our code can intercept.
         // Return ITEM_NONE so OOT ignores B entirely; our form code handles it.
         if (TransformMasks_IsTransformed()) {
-            extern s32 MmForm_GetCurrentForm(void);
             if (MmForm_GetCurrentForm() == 3 /* DEKU */) {
                 return ITEM_NONE;
             }
