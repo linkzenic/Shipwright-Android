@@ -141,23 +141,42 @@ s32 PakLoader_GetSelectedEquipIndex(void);
 u8 PakLoader_ModelIsEquipmentOnly(s32 index);
 
 /**
- * Force a specific .pak model by file path (lazy-loaded).
- * Used by custom items (e.g., Kafei Mask) to transform Link's appearance.
+ * Force a specific .pak body model by file path (lazy-loaded).
+ * Used by custom items (e.g., Kafei Mask, Champion's Tunic).
  * Has priority over user-selected models from the menu.
  * @param pakPath Path to the .pak file (relative to exe dir)
  */
 void PakLoader_ForceModel(const char* pakPath);
 
 /**
- * Clear the forced model, returning to user-selected or vanilla Link.
+ * Clear the forced body model, returning to user-selected or vanilla Link.
  */
 void PakLoader_ClearForcedModel(void);
 
 /**
- * Check if a forced model is currently active.
+ * Check if a forced body model is currently active.
  * @return 1 if a forced model override is active
  */
 u8 PakLoader_HasForcedModel(void);
+
+/**
+ * Force a specific equipment .pak by file path (lazy-loaded).
+ * Used by custom items (e.g., Four Sword).
+ * Has priority over user-selected equipment from the menu.
+ * @param pakPath Path to the equipment .pak file (relative to exe dir)
+ */
+void PakLoader_ForceEquipment(const char* pakPath);
+
+/**
+ * Clear the forced equipment, returning to user-selected or vanilla.
+ */
+void PakLoader_ClearForcedEquipment(void);
+
+/**
+ * Called once per frame at the start of Player_Draw.
+ * Frees GbiWrap combined DLs from the previous frame.
+ */
+void PakLoader_FrameBegin(void);
 
 /**
  * Cleanup and free all loaded model data.

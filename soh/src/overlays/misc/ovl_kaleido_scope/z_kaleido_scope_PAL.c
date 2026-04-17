@@ -21,6 +21,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/SaveManager.h"
 #include "soh/Enhancements/kaleido.h"
+#include "soh/Enhancements/custom-message/PauseItemDescriptions.h"
 #include <soh_assets.h>
 
 #include "mods/extended_inventory.h"
@@ -2062,7 +2063,8 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
                     D_8082ADD8[gSaveContext.language] << 5;
 
                 if (!(CHECK_OWNED_EQUIP(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP] - 1)) &&
-                    (pauseCtx->pageIndex == PAUSE_EQUIP) && (pauseCtx->cursorX[PAUSE_EQUIP] != 0)) {
+                    (pauseCtx->pageIndex == PAUSE_EQUIP) && (pauseCtx->cursorX[PAUSE_EQUIP] != 0) &&
+                    !(ExtEquip_GetPage() == 1)) {
                     return;
                 }
 
@@ -2102,7 +2104,8 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
 
         if (pauseAnyCursor &&
             ((pauseCtx->pageIndex == PAUSE_EQUIP && pauseCtx->cursorX[PAUSE_EQUIP] != 0 &&
-              !CHECK_OWNED_EQUIP(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP] - 1)) ||
+              !CHECK_OWNED_EQUIP(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP] - 1) &&
+              !(ExtEquip_GetPage() == 1)) ||
              (pauseCtx->pageIndex == PAUSE_ITEM &&
               gSaveContext.inventory.items[ExtInv_GetInventorySlot(pauseCtx->cursorPoint[PAUSE_ITEM])] == ITEM_NONE))) {
             pauseCtx->namedItem = PAUSE_ITEM_NONE;
@@ -2134,7 +2137,7 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                 u16 originalItemId = sp2A;
 
                 // Custom items: use OTR name textures like vanilla
-                if (originalItemId >= ITEM_ROCS_FEATHER_SKIJER && originalItemId <= ITEM_PENDING_3) {
+                if (originalItemId >= ITEM_ROCS_FEATHER_SKIJER && originalItemId <= ITEM_POKEBALL) {
                     textureName = (const char*)ExtInv_GetCustomItemNameTex(originalItemId, gSaveContext.language);
                     if (textureName == NULL) {
                         textureName = iconNameTextures[0];
@@ -3965,11 +3968,19 @@ void KaleidoScope_Update(PlayState* play) {
                         Interface_ChangeAlpha(50);
                         pauseCtx->unk_1EC = 0;
                         pauseCtx->state = 7;
-                    } else if (IS_RANDO && CHECK_BTN_ALL(input->press.button, BTN_CUP) &&
-                               pauseCtx->pageIndex == PAUSE_QUEST) {
-                        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-                        pauseCtx->randoQuestMode ^= 1;
+                    } else if (CHECK_BTN_ALL(input->press.button, BTN_CUP) && pauseCtx->cursorSpecialPos == 0) {
+                        u16 descTextId =
+                            PauseItemDesc_GetTextId(pauseCtx->cursorItem[pauseCtx->pageIndex], pauseCtx->pageIndex);
+                        if (descTextId != 0) {
+                            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                            Message_StartTextbox(play, descTextId, NULL);
+                            pauseCtx->unk_1E4 = 10;
+                        } else if (IS_RANDO && pauseCtx->pageIndex == PAUSE_QUEST) {
+                            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                            pauseCtx->randoQuestMode ^= 1;
+                        }
                     }
                     break;
 
@@ -4075,6 +4086,16 @@ void KaleidoScope_Update(PlayState* play) {
                     break;
 
                 case 9:
+                    break;
+
+                case 10: // C-Up item description textbox active
+                    // Message_Update doesn't run during pause, so drive it manually
+                    Message_Update(play);
+                    if (CHECK_BTN_ALL(input->press.button, BTN_B) || CHECK_BTN_ALL(input->press.button, BTN_A) ||
+                        play->msgCtx.msgMode == MSGMODE_NONE) {
+                        Message_CloseTextbox(play);
+                        pauseCtx->unk_1E4 = 0;
+                    }
                     break;
 
                 default:

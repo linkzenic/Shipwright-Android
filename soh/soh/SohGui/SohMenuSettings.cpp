@@ -610,15 +610,13 @@ void SohMenu::AddMenuSettings() {
             if (!std::filesystem::exists("custom_items_resources/N64_Kafei.pak")) {
                 CVarSetInteger("gMods.KafeiMaskTransform", 0);
                 info.options->disabled = true;
-                info.options->disabledTooltip =
-                    "Requires N64_Kafei.pak in custom_items_resources/ folder.";
+                info.options->disabledTooltip = "Requires N64_Kafei.pak in custom_items_resources/ folder.";
             }
         })
-        .Options(CheckboxOptions().Tooltip(
-            "Wearing the Kafei Mask transforms Link into Kafei.\n"
-            "Adult Link becomes Adult Kafei, Child Link becomes Child Kafei.\n"
-            "Remove the mask to revert.\n\n"
-            "REQUIRES: custom_items_resources/N64_Kafei.pak"));
+        .Options(CheckboxOptions().Tooltip("Wearing the Kafei Mask transforms Link into Kafei.\n"
+                                           "Adult Link becomes Adult Kafei, Child Link becomes Child Kafei.\n"
+                                           "Remove the mask to revert.\n\n"
+                                           "REQUIRES: custom_items_resources/N64_Kafei.pak"));
 
     // ===================== COLUMN 2: MM Masks =====================
     path.column = SECTION_COLUMN_2;
@@ -692,37 +690,7 @@ void SohMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip("Removes the cooldown on Blast Mask.\n"
                                            "Normally there is a 310-frame (~5 second) cooldown between uses."));
 
-    AddWidget(path, "Pikachu Transformation (Keaton Mask)", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.Pikachu.FormEnabled")
-        .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Equipping the Keaton Mask transforms Link into Pikachu.\n"
-                                           "Full SSBB Brawl moveset with 322 animations.\n\n"
-                                           "Controls:\n"
-                                           "  A = Attack combo (Jab > Up Tilt > Up Smash)\n"
-                                           "  A + Stick = Forward Tilt\n"
-                                           "  Flick + A = Forward Smash\n"
-                                           "  L + A = Down Tilt / Down Smash\n"
-                                           "  A in air = Aerial attacks (Fair/Bair/Nair/Dair)\n"
-                                           "  B still = Thunder Jolt\n"
-                                           "  B + Stick = Skull Bash\n"
-                                           "  R = Bubble Shield (mash to escape stun)\n"
-                                           "  R + dir = Roll Dodge\n\n"
-                                           "C-Button Items:\n"
-                                           "  Roc's Feather = Jump (required!)\n"
-                                           "  Boomerang/Beetle = Quick Attack (2-phase dash)\n"
-                                           "  Din's Fire/Demise = Thunder (lightning column)\n"
-                                           "  Hookshot/Whip = Grab + Pummel + Throw\n"
-                                           "  Hammer = Brawl Hammer attacks\n"
-                                           "  Elemental Rods = Auto-aim projectiles\n\n"
-                                           "Can complete the entire game!"));
-
-    AddWidget(path, "SSBB Pikachu Companion", WIDGET_CVAR_COMBOBOX)
-        .CVar("gExpansions.SSBB.Pikachu")
-        .RaceDisable(false)
-        .Options(ComboboxOptions()
-                     .ComboMap({ { 0, "Off" }, { 1, "Static Model" }, { 2, "Animated (Skinned)" } })
-                     .Tooltip("Spawns a Pikachu companion next to Link.\n"
-                              "Mode 2 uses SSBB weighted skinning with Brawl animations."));
+    // Pikachu Transformation is always enabled — use Pokeball item to transform
 
     AddWidget(path, "Custom Models (.pak)", WIDGET_SEPARATOR_TEXT);
 

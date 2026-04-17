@@ -15,16 +15,16 @@
 typedef enum {
     PENDANT_IDLE,
     // Mortal Draw (TP)
-    PENDANT_DRAW_SLASH,       // Draw-and-cut in one motion
-    PENDANT_DRAW_HITSTOP,     // Dramatic freeze on hit
-    PENDANT_DRAW_RECOVERY,    // Brief recovery, sword stays out
+    PENDANT_DRAW_SLASH,    // Draw-and-cut in one motion
+    PENDANT_DRAW_HITSTOP,  // Dramatic freeze on hit
+    PENDANT_DRAW_RECOVERY, // Brief recovery, sword stays out
     // Ground Pound (Smash)
-    PENDANT_GPOUND_STALL,     // Pause in air before falling
-    PENDANT_GPOUND_FALLING,   // Fast falling with sword down
-    PENDANT_GPOUND_LANDING,   // Impact + shockwave recovery
+    PENDANT_GPOUND_STALL,   // Pause in air before falling
+    PENDANT_GPOUND_FALLING, // Fast falling with sword down
+    PENDANT_GPOUND_LANDING, // Impact + shockwave recovery
     // Parry Leap (WW)
-    PENDANT_PARRY_ARC,        // Parabolic arc over enemy
-    PENDANT_PARRY_LANDING,    // Landing recovery
+    PENDANT_PARRY_ARC,     // Parabolic arc over enemy
+    PENDANT_PARRY_LANDING, // Landing recovery
 } PendantState;
 
 static PendantState sPendantState = PENDANT_IDLE;
@@ -32,29 +32,30 @@ static s16 sPendantTimer = 0;
 static Actor* sPendantTarget = NULL;
 
 // --- Mortal Draw constants ---
-#define MORTAL_DRAW_RANGE       200.0f  // Close combat range
-#define MORTAL_DRAW_MIN_RANGE   20.0f
-#define MORTAL_DRAW_HITSTOP     10      // Freeze frames on hit
-#define MORTAL_DRAW_RECOVERY    15      // Recovery frames (sword stays drawn)
-#define MORTAL_DRAW_SLASH_FRAMES 12     // Max slash duration before recovery
-#define MORTAL_DRAW_DAMAGE      0xFF    // One-hit kill (255 quarter-hearts)
+#define MORTAL_DRAW_RANGE 200.0f // Close combat range
+#define MORTAL_DRAW_MIN_RANGE 20.0f
+#define MORTAL_DRAW_HITSTOP 10      // Freeze frames on hit
+#define MORTAL_DRAW_RECOVERY 15     // Recovery frames (sword stays drawn)
+#define MORTAL_DRAW_SLASH_FRAMES 12 // Max slash duration before recovery
+#define MORTAL_DRAW_DAMAGE 0xFF     // One-hit kill (255 quarter-hearts)
 
 // --- Ground Pound constants ---
-#define GPOUND_STALL_FRAMES     4       // Stall in air before falling
-#define GPOUND_FALL_VELOCITY    -18.0f  // Fast fall initial velocity
-#define GPOUND_FALL_GRAVITY     -2.5f   // Fast fall gravity
-#define GPOUND_LANDING_FRAMES   25      // Landing recovery
-#define GPOUND_BOUNCE_VEL       8.0f    // Pogo bounce velocity
+#define GPOUND_STALL_FRAMES 4       // Stall in air before falling
+#define GPOUND_FALL_VELOCITY -18.0f // Fast fall initial velocity
+#define GPOUND_FALL_GRAVITY -2.5f   // Fast fall gravity
+#define GPOUND_LANDING_FRAMES 25    // Landing recovery
+#define GPOUND_BOUNCE_VEL 8.0f      // Pogo bounce velocity
 
 // --- Parry Leap constants ---
-#define PARRY_ARC_FRAMES        22      // Total frames for the arc
-#define PARRY_ARC_HEIGHT        200.0f  // Peak height above ground
-#define PARRY_LAND_DIST         120.0f  // Distance behind enemy to land
-#define PARRY_LANDING_FRAMES    12      // Landing recovery
+#define PARRY_ARC_FRAMES 22     // Total frames for the arc
+#define PARRY_ARC_HEIGHT 80.0f  // Just above enemy head, skim over
+#define PARRY_LAND_DIST 120.0f  // Distance behind enemy to land
+#define PARRY_LANDING_FRAMES 12 // Landing recovery
 
 // Parry Leap arc data
 static Vec3f sPendantArcStart;
 static Vec3f sPendantArcEnd;
+static u8 sPendantParryHit = 0; // Only deal damage once per leap
 
 // Side hop tracking (Parry Leap trigger)
 static u8 sPendantSideHopCount;
@@ -87,9 +88,8 @@ static void Pendant_UpdateAtkCol(PlayState* play, Player* player) {
     CollisionCheck_SetAT(play, &play->colChkCtx, &sPendantAtkCol.base);
 
     if (sPendantAtkCol.base.atFlags & AT_HIT) {
-        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         sPendantAtkCol.base.atFlags &= ~AT_HIT;
     }
 }
@@ -101,22 +101,29 @@ static void Pendant_UpdateAtkCol(PlayState* play, Player* player) {
 // → face enemy, devastating in-place draw slash, hitstop on hit
 // ===================================================================
 static u8 Pendant_CheckMortalDraw(Player* player, PlayState* play) {
-    if (sPendantState != PENDANT_IDLE) return 0;
+    if (sPendantState != PENDANT_IDLE)
+        return 0;
 
     // B pressed
-    if (!CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) return 0;
+    if (!CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B))
+        return 0;
 
     // Sword must be sheathed
-    if (Player_GetMeleeWeaponHeld(player) != 0) return 0;
+    if (Player_GetMeleeWeaponHeld(player) != 0)
+        return 0;
 
     // Must NOT be Z-targeting (TP risk/reward: no lock-on)
-    if (player->stateFlags1 & PLAYER_STATE1_Z_TARGETING) return 0;
+    if (player->stateFlags1 & PLAYER_STATE1_Z_TARGETING)
+        return 0;
 
     // On ground, standing still or barely moving
-    if (!(player->actor.bgCheckFlags & 1)) return 0;
-    if (player->linearVelocity > 1.0f) return 0;
-    if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
-                                PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS)) return 0;
+    if (!(player->actor.bgCheckFlags & 1))
+        return 0;
+    if (player->linearVelocity > 1.0f)
+        return 0;
+    if (player->stateFlags1 &
+        (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS))
+        return 0;
 
     // Scan for closest enemy within Mortal Draw range
     Actor* enemy = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
@@ -130,7 +137,8 @@ static u8 Pendant_CheckMortalDraw(Player* player, PlayState* play) {
         }
         enemy = enemy->next;
     }
-    if (best == NULL) return 0;
+    if (best == NULL)
+        return 0;
 
     sPendantTarget = best;
     return 1;
@@ -151,20 +159,16 @@ static void Pendant_StartMortalDraw(Player* player, PlayState* play) {
     player->actor.velocity.z = 0.0f;
 
     // Fast iaijutsu draw slash animation
-    LinkAnimation_Change(play, &player->skelAnime,
-                         &gPlayerAnim_link_fighter_power_kiru_start,
-                         2.0f, 0.0f,
-                         Animation_GetLastFrame(&gPlayerAnim_link_fighter_power_kiru_start),
-                         ANIMMODE_ONCE, -3.0f);
+    LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_fighter_power_kiru_start, 2.0f, 0.0f,
+                         Animation_GetLastFrame(&gPlayerAnim_link_fighter_power_kiru_start), ANIMMODE_ONCE, -3.0f);
 
     // Devastating damage — one-hit kill on most enemies
     func_80837948(play, player, PLAYER_MWA_JUMPSLASH_START);
     player->meleeWeaponQuads[0].info.toucher.damage = MORTAL_DRAW_DAMAGE;
     player->meleeWeaponQuads[1].info.toucher.damage = MORTAL_DRAW_DAMAGE;
 
-    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4,
-                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                           &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Pendant_UpdateMortalDraw(Player* player, PlayState* play) {
@@ -173,8 +177,10 @@ static void Pendant_UpdateMortalDraw(Player* player, PlayState* play) {
 
     // Check for sword quad hit → enter hitstop
     u8 hit = 0;
-    if (player->meleeWeaponQuads[0].base.atFlags & AT_HIT) hit = 1;
-    if (player->meleeWeaponQuads[1].base.atFlags & AT_HIT) hit = 1;
+    if (player->meleeWeaponQuads[0].base.atFlags & AT_HIT)
+        hit = 1;
+    if (player->meleeWeaponQuads[1].base.atFlags & AT_HIT)
+        hit = 1;
 
     if (hit) {
         sPendantState = PENDANT_DRAW_HITSTOP;
@@ -190,9 +196,8 @@ static void Pendant_UpdateMortalDraw(Player* player, PlayState* play) {
         func_800AA000(180.0f, 14, 100, 0);
 
         // Heavy impact sound
-        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
@@ -236,10 +241,14 @@ static void Pendant_UpdateDrawRecovery(Player* player, PlayState* play) {
 // In air + B + sword held → stall → fast fall → pogo bounce / shockwave
 // ===================================================================
 static u8 Pendant_CheckGroundPound(Player* player, PlayState* play) {
-    if (sPendantState != PENDANT_IDLE) return 0;
-    if (!(player->stateFlags3 & PLAYER_STATE3_MIDAIR)) return 0;
-    if (Player_GetMeleeWeaponHeld(player) == 0) return 0;
-    if (!CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) return 0;
+    if (sPendantState != PENDANT_IDLE)
+        return 0;
+    if (!(player->stateFlags3 & PLAYER_STATE3_MIDAIR))
+        return 0;
+    if (Player_GetMeleeWeaponHeld(player) == 0)
+        return 0;
+    if (!CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B))
+        return 0;
     return 1;
 }
 
@@ -255,18 +264,14 @@ static void Pendant_StartGroundPound(Player* player, PlayState* play) {
     player->actor.velocity.z = 0.0f;
 
     // Master Sword pedestal plant anim — frozen at frame 0 during stall (sword raised)
-    LinkAnimation_Change(play, &player->skelAnime,
-                         &gPlayerAnim_link_demo_return_to_past,
-                         0.0f, 0.0f,
-                         Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past),
-                         ANIMMODE_ONCE, -3.0f);
+    LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_demo_return_to_past, 0.0f, 0.0f,
+                         Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past), ANIMMODE_ONCE, -3.0f);
 
     // Init collider for pogo bounce
     Pendant_InitAtkCol(play, player);
 
-    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4,
-                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                           &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Pendant_UpdateGPoundStall(Player* player, PlayState* play) {
@@ -289,11 +294,8 @@ static void Pendant_UpdateGPoundStall(Player* player, PlayState* play) {
         func_80837948(play, player, PLAYER_MWA_JUMPSLASH_START);
 
         // Sword slams down — force pedestal plant anim AFTER func_80837948
-        LinkAnimation_Change(play, &player->skelAnime,
-                             &gPlayerAnim_link_demo_return_to_past,
-                             2.0f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past),
-                             ANIMMODE_ONCE, 0.0f);
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_demo_return_to_past, 2.0f, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past), ANIMMODE_ONCE, 0.0f);
     }
 }
 
@@ -304,11 +306,8 @@ static void Pendant_UpdateGPoundFalling(Player* player, PlayState* play) {
 
     // Force pedestal plant anim every frame (OOT's melee action tries to override)
     if (player->skelAnime.animation != &gPlayerAnim_link_demo_return_to_past) {
-        LinkAnimation_Change(play, &player->skelAnime,
-                             &gPlayerAnim_link_demo_return_to_past,
-                             2.0f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past),
-                             ANIMMODE_ONCE, 0.0f);
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_demo_return_to_past, 2.0f, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past), ANIMMODE_ONCE, 0.0f);
     }
 
     // --- Pogo bounce: check AT_HIT from previous frame BEFORE re-registering ---
@@ -319,9 +318,8 @@ static void Pendant_UpdateGPoundFalling(Player* player, PlayState* play) {
         sPendantState = PENDANT_IDLE;
         sPendantAtkCol.base.atFlags &= ~(AT_HIT | AT_ON);
 
-        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
 
@@ -347,16 +345,12 @@ static void Pendant_UpdateGPoundFalling(Player* player, PlayState* play) {
         Quake_SetQuakeValues(quakeIdx, 14, 2, 100, 0);
         Quake_SetCountdown(quakeIdx, 16);
 
-        Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &player->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
         // Landing animation
-        LinkAnimation_Change(play, &player->skelAnime,
-                             &gPlayerAnim_link_normal_landing,
-                             1.0f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_normal_landing),
-                             ANIMMODE_ONCE, -6.0f);
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_normal_landing, 1.0f, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_normal_landing), ANIMMODE_ONCE, -6.0f);
 
         player->actor.gravity = -1.0f;
     }
@@ -388,7 +382,8 @@ static void Pendant_UpdateGPoundLanding(Player* player, PlayState* play) {
 // Z-target + 3 consecutive side hops → B → parabolic arc over enemy
 // ===================================================================
 static u8 Pendant_CheckParryLeap(Player* player, PlayState* play) {
-    if (sPendantState != PENDANT_IDLE) return 0;
+    if (sPendantState != PENDANT_IDLE)
+        return 0;
 
     // Must be Z-targeting
     if (!(player->stateFlags1 & PLAYER_STATE1_Z_TARGETING)) {
@@ -417,7 +412,8 @@ static u8 Pendant_CheckParryLeap(Player* player, PlayState* play) {
             sPendantSpinReady = 0;
             sPendantSideHopCount = 0;
 
-            if (player->focusActor == NULL) return 0;
+            if (player->focusActor == NULL)
+                return 0;
             return 1;
         }
     }
@@ -436,6 +432,7 @@ static void Pendant_StartParryLeap(Player* player, PlayState* play) {
     sPendantState = PENDANT_PARRY_ARC;
     sPendantTimer = 0;
     sPendantTarget = player->focusActor;
+    sPendantParryHit = 0;
 
     // Arc start: current position
     sPendantArcStart = player->actor.world.pos;
@@ -444,7 +441,8 @@ static void Pendant_StartParryLeap(Player* player, PlayState* play) {
     f32 dx = sPendantTarget->world.pos.x - player->actor.world.pos.x;
     f32 dz = sPendantTarget->world.pos.z - player->actor.world.pos.z;
     f32 distXZ = sqrtf(dx * dx + dz * dz);
-    if (distXZ < 1.0f) distXZ = 1.0f;
+    if (distXZ < 1.0f)
+        distXZ = 1.0f;
     f32 dirX = dx / distXZ;
     f32 dirZ = dz / distXZ;
 
@@ -471,18 +469,14 @@ static void Pendant_StartParryLeap(Player* player, PlayState* play) {
     player->yaw = yawToEnemy;
 
     // Spinning roll animation (WW parry spin)
-    LinkAnimation_Change(play, &player->skelAnime,
-                         &gPlayerAnim_link_normal_landing_roll,
-                         3.0f, 0.0f,
-                         Animation_GetLastFrame(&gPlayerAnim_link_normal_landing_roll),
-                         ANIMMODE_LOOP, -3.0f);
+    LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_normal_landing_roll, 3.0f, 0.0f,
+                         Animation_GetLastFrame(&gPlayerAnim_link_normal_landing_roll), ANIMMODE_LOOP, -3.0f);
 
     // Init attack collider
     Pendant_InitAtkCol(play, player);
 
-    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4,
-                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                           &gSfxDefaultReverb);
+    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }
 
 static void Pendant_UpdateParryArc(Player* player, PlayState* play) {
@@ -490,16 +484,14 @@ static void Pendant_UpdateParryArc(Player* player, PlayState* play) {
 
     // Force roll animation (OOT's action system tries to override)
     if (player->skelAnime.animation != &gPlayerAnim_link_normal_landing_roll) {
-        LinkAnimation_Change(play, &player->skelAnime,
-                             &gPlayerAnim_link_normal_landing_roll,
-                             3.0f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_normal_landing_roll),
-                             ANIMMODE_LOOP, -3.0f);
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_normal_landing_roll, 3.0f, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_normal_landing_roll), ANIMMODE_LOOP, -3.0f);
     }
 
     // --- Parabolic arc interpolation ---
     f32 t = (f32)sPendantTimer / (f32)PARRY_ARC_FRAMES;
-    if (t > 1.0f) t = 1.0f;
+    if (t > 1.0f)
+        t = 1.0f;
 
     // XZ: linear interpolation from start to end
     player->actor.world.pos.x = sPendantArcStart.x + (sPendantArcEnd.x - sPendantArcStart.x) * t;
@@ -520,8 +512,8 @@ static void Pendant_UpdateParryArc(Player* player, PlayState* play) {
     // Disable body collision
     player->cylinder.base.ocFlags1 &= ~OC1_ON;
 
-    // Attack collider at ENEMY position (Link is high above, collider at his pos would miss)
-    if (sPendantTarget != NULL) {
+    // Attack collider at ENEMY position — one hit only
+    if (sPendantTarget != NULL && !sPendantParryHit) {
         sPendantAtkCol.dim.pos.x = sPendantTarget->world.pos.x;
         sPendantAtkCol.dim.pos.y = sPendantTarget->world.pos.y;
         sPendantAtkCol.dim.pos.z = sPendantTarget->world.pos.z;
@@ -529,11 +521,24 @@ static void Pendant_UpdateParryArc(Player* player, PlayState* play) {
         CollisionCheck_SetAT(play, &play->colChkCtx, &sPendantAtkCol.base);
 
         if (sPendantAtkCol.base.atFlags & AT_HIT) {
-            Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
-            sPendantAtkCol.base.atFlags &= ~AT_HIT;
+            sPendantParryHit = 1;
+            sPendantAtkCol.base.atFlags &= ~(AT_HIT | AT_ON);
+
+            // Kill sword quads too — prevent multi-hit from melee system
+            player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+            player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+            player->meleeWeaponState = 0;
+
+            Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         }
+    }
+
+    // Also suppress sword quads if already hit (melee system re-enables them each frame)
+    if (sPendantParryHit) {
+        player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+        player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+        player->meleeWeaponState = 0;
     }
 
     // Face enemy throughout the arc
@@ -549,15 +554,11 @@ static void Pendant_UpdateParryArc(Player* player, PlayState* play) {
         sPendantTimer = 0;
         player->actor.gravity = -1.2f;
 
-        LinkAnimation_Change(play, &player->skelAnime,
-                             &gPlayerAnim_link_normal_landing,
-                             1.5f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_normal_landing),
-                             ANIMMODE_ONCE, -3.0f);
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_normal_landing, 1.5f, 0.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_link_normal_landing), ANIMMODE_ONCE, -3.0f);
 
-        Audio_PlaySoundGeneral(NA_SE_PL_WALK_GROUND, &player->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_PL_WALK_GROUND, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 
     // Wall abort

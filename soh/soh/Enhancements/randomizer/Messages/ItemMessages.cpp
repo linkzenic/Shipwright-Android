@@ -611,42 +611,54 @@ void BuildLanternCatchMessage(uint16_t* textId, bool* loadFromMessageTable) {
     CustomMessage msg;
 
     // \x13\xB4 = item icon for ITEM_LANTERN (0xB4)
-    // OOT textbox: ~35 chars/line, 4 lines/page max
+    // All fire types: swing lights torches, burns grass (updraft + spread)
     switch (fireType) {
         case 1: // REGULAR (orange)
             msg = CustomMessage(
-                "\x13\xB4" "You caught %rRegular Fire%w!&Swing to %rlight torches%w and&%rburn grass%w into updrafts.",
-                "\x13\xB4" "Du hast %rnormales Feuer%w!&Schwinge um %rFackeln%w und&%rGras zu verbrennen%w.",
-                "\x13\xB4" "Vous avez le %rFeu Normal%w!&Agitez pour %rallumer%w et&%rbruler l'herbe%w.",
+                "\x13\xB4"
+                "You caught %rRegular Fire%w!&Swing to %rlight torches%w,&%rburn grass%w and spawn flames.",
+                "\x13\xB4"
+                "Du hast %rnormales Feuer%w!&Schwinge um %rFackeln%w und&%rGras zu verbrennen%w.",
+                "\x13\xB4"
+                "Vous avez le %rFeu Normal%w!&Agitez pour %rallumer%w et&%rbruler l'herbe%w.",
                 TEXTBOX_TYPE_BLUE);
             break;
         case 2: // BLUE
-            msg = CustomMessage(
-                "\x13\xB4" "You caught %bBlue Fire%w!&Swing to release %bblue fire%w&that %cmelts red ice%w.",
-                "\x13\xB4" "Du hast %bblaues Feuer%w!&Schwinge um %crotes Eis%w&%bzu schmelzen%w.",
-                "\x13\xB4" "Vous avez le %bFeu Bleu%w!&Agitez pour %cfondre la&glace rouge%w.",
-                TEXTBOX_TYPE_BLUE);
+            msg = CustomMessage("\x13\xB4"
+                                "You caught %bBlue Fire%w!&Swing to release %bblue fire%w&that %cmelts red ice%w.",
+                                "\x13\xB4"
+                                "Du hast %bblaues Feuer%w!&Schwinge um %crotes Eis%w&%bzu schmelzen%w.",
+                                "\x13\xB4"
+                                "Vous avez le %bFeu Bleu%w!&Agitez pour %cfondre la&glace rouge%w.",
+                                TEXTBOX_TYPE_BLUE);
             break;
         case 3: // POE (purple)
-            msg = CustomMessage(
-                "\x13\xB4" "You caught %pPoe Fire%w!&%pReveals invisible Poes%w.&Swing to %pdestroy Poes%w&on contact.",
-                "\x13\xB4" "Du hast %pIrrlichterfeuer%w!&%pEnthullt unsichtbare Geister%w.&Schwinge um %pGeister%w&%pzu zerstoren%w.",
-                "\x13\xB4" "Vous avez le %pFeu Spectral%w!&%pRevele les Esprits%w.&Agitez pour %pdetruire%w&%ples Esprits%w.",
-                TEXTBOX_TYPE_BLUE);
+            msg = CustomMessage("\x13\xB4"
+                                "You caught %pPoe Fire%w!&%pReveals hidden spirits%w&and invisible actors.",
+                                "\x13\xB4"
+                                "Du hast %pIrrlichterfeuer%w!&%pEnthullt verborgene Geister%w&und unsichtbare Akteure.",
+                                "\x13\xB4"
+                                "Vous avez le %pFeu Spectral%w!&%pRevele les esprits caches%w&et acteurs invisibles.",
+                                TEXTBOX_TYPE_BLUE);
             break;
         case 4: // GREEN
             msg = CustomMessage(
-                "\x13\xB4" "You caught %gGreen Fire%w!&While lit you slowly&%gregenerate health%w.",
-                "\x13\xB4" "Du hast %ggruenes Feuer%w!&Solange aktiv %gregenerierst&du langsam Leben%w.",
-                "\x13\xB4" "Vous avez le %gFeu Vert%w!&Tant qu'allume vous&%gregenerez de la vie%w.",
+                "\x13\xB4"
+                "You caught %gGreen Fire%w!&%gReveals hidden spirits%w.&Slowly %gregenerates health%w.",
+                "\x13\xB4"
+                "Du hast %ggruenes Feuer%w!&%gEnthullt verborgene Geister%w.&%gRegeneriert langsam Leben%w.",
+                "\x13\xB4"
+                "Vous avez le %gFeu Vert%w!&%gRevele les esprits caches%w.&%gRegene lentement la vie%w.",
                 TEXTBOX_TYPE_BLUE);
             break;
         default:
-            msg = CustomMessage(
-                "\x13\xB4" "The lantern is empty.",
-                "\x13\xB4" "Die Laterne ist leer.",
-                "\x13\xB4" "La lanterne est vide.",
-                TEXTBOX_TYPE_BLUE);
+            msg = CustomMessage("\x13\xB4"
+                                "The lantern is empty.",
+                                "\x13\xB4"
+                                "Die Laterne ist leer.",
+                                "\x13\xB4"
+                                "La lanterne est vide.",
+                                TEXTBOX_TYPE_BLUE);
             break;
     }
 
@@ -659,8 +671,8 @@ void RegisterLanternCatchMessage() {
     // Always available — not randomizer-dependent
     static HOOK_ID hookId = 0;
     GameInteractor::Instance->UnregisterGameHookForID<GameInteractor::OnOpenText>(hookId);
-    hookId = GameInteractor::Instance->RegisterGameHookForID<GameInteractor::OnOpenText>(
-        TEXT_LANTERN_CATCH, BuildLanternCatchMessage);
+    hookId = GameInteractor::Instance->RegisterGameHookForID<GameInteractor::OnOpenText>(TEXT_LANTERN_CATCH,
+                                                                                         BuildLanternCatchMessage);
 }
 
 // Time Gate message registration (always available, not rando-dependent)

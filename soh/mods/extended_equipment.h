@@ -192,6 +192,11 @@ typedef enum {
 } DragonScaleState;
 
 typedef struct {
+    Vec3f offset; // relative offset from player world pos (set at spawn, Y = 0 keeps same ground height)
+    u8 alive;     // 1 = active, 0 = dead / not spawned
+} FourSwordClone;
+
+typedef struct {
     // Cane of Byrna (Ext Sword 1)
     u8 byrnaSavedSwordEquip; // Original equips.equipment sword nibble
     u8 byrnaSavedButtonItem; // Original equips.buttonItems[0]
@@ -215,9 +220,28 @@ typedef struct {
     u8 ikAxeSavedSwordEquip;
     u8 ikAxeSavedButtonItem;
     u8 ikAxeActive;
+    u8 ikAxeDrawing; // 1 when hammer is out (hide vanilla sword DL), 0 in free mode
+
+    // Four Sword (Ext Sword 2)
+    u8 fourSwordActive;                // pak loader is live
+    s16 fourSwordBHoldTimer;           // frames B has been held while shielding
+    u8 fourSwordCharging;              // 1 while charge is armed (B+shield >= threshold)
+    u8 fourSwordCloneCount;            // number of currently alive clones (0-3)
+    FourSwordClone fourSwordClones[3]; // per-clone data
+    u8 fourSwordColInit;               // bitmask: bit i = colliders for clone i are initialised
+
+    // Four Sword: rising-edge detection for Ivan-style item spawn
+    u8 fourSwordPrevA73;       // previous player->unk_A73 (arrow/boomerang fire)
+    u8 fourSwordPrevCarrying;  // previous PLAYER_STATE1_CARRYING_ACTOR bit
+    u8 fourSwordPrevBoomerang; // previous (player->boomerangActor != NULL)
+    s16 fourSwordItemCooldown; // global cooldown prevents actor spam (10 frames)
 } ExtEquipBehaviorState;
 
 extern ExtEquipBehaviorState gExtEquipBehavior;
+
+// Champion's Tunic slow factor — 1.0f normal, 0.15f during Flurry Rush / Bullet Time
+// Used in z_actor.c Actor_UpdatePos to scale non-player actor movement.
+extern f32 gChampionSlowFactor;
 
 // ---------------------------------------------------------------------------
 // Behavior

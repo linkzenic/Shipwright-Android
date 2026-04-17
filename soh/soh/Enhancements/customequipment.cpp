@@ -10,6 +10,7 @@
 extern "C" {
 #include "variables.h"
 #include "macros.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 extern SaveContext gSaveContext;
 extern PlayState* gPlayState;
@@ -79,6 +80,11 @@ static void UpdateCustomEquipment() {
 static void RefreshCustomEquipment() {
     if (!GameInteractor::IsSaveLoaded() || gPlayState == nullptr || GET_PLAYER(gPlayState) == nullptr ||
         IsDummyPlayer(GET_PLAYER(gPlayState))) {
+        return;
+    }
+
+    // Skip custom equipment DL patches when transformed (form uses own skeleton, not Link's)
+    if (TransformMasks_IsTransformedAny()) {
         return;
     }
 

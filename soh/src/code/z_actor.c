@@ -93,6 +93,9 @@ f32 iceTrapScale;
 // For Link's voice pitch SFX modifier
 static f32 freqMultiplier = 1;
 
+// Champion's Tunic slow factor (defined in extended_equipment.c)
+extern f32 gChampionSlowFactor;
+
 void ActorShape_Init(ActorShape* shape, f32 yOffset, ActorShadowFunc shadowDraw, f32 shadowScale) {
     shape->yOffset = yOffset;
     shape->shadowDraw = shadowDraw;
@@ -1284,6 +1287,11 @@ void Actor_Destroy(Actor* actor, PlayState* play) {
 
 void Actor_UpdatePos(Actor* actor) {
     f32 speedRate = R_UPDATE_RATE * 0.5f;
+
+    // Champion's Tunic: Flurry Rush / Bullet Time world slowdown
+    if (gChampionSlowFactor < 1.0f && actor->category != ACTORCAT_PLAYER) {
+        speedRate *= gChampionSlowFactor;
+    }
 
     actor->world.pos.x += (actor->velocity.x * speedRate) + actor->colChkInfo.displacement.x;
     actor->world.pos.y += (actor->velocity.y * speedRate) + actor->colChkInfo.displacement.y;
@@ -2560,6 +2568,7 @@ void func_80030488(PlayState* play) {
 void Actor_DisableLens(PlayState* play) {
     if (play->actorCtx.lensActive) {
         play->actorCtx.lensActive = false;
+        play->actorCtx.lensFromLantern = 0;
         Magic_Reset(play);
     }
 }
@@ -2732,6 +2741,16 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                     if (GameInteractor_ShouldActorUpdate(actor)) {
                         actor->update(actor, play);
                         GameInteractor_ExecuteOnActorUpdate(actor);
+                        // Champion's Tunic: after update, freeze non-player actors
+                        // for several frames to produce slow-mo effect.
+                        // freezeTimer is decremented by DECR() above (line 2725);
+                        // when it hits 0 the actor updates once, then we re-freeze.
+                        // 5 frames frozen + 1 update = 1/6 speed ≈ 17% (close to 0.15).
+                        // Exclude ACTORCAT_PLAYER (Link) and ACTORCAT_ITEM_ACTION
+                        // (arrows, seeds, hookshot, boomerang — player projectiles).
+                        if (gChampionSlowFactor < 1.0f && i != ACTORCAT_PLAYER && i != ACTORCAT_ITEMACTION) {
+                            actor->freezeTimer = 5;
+                        }
                     }
                     func_8003F8EC(play, &play->colCtx.dyna, actor);
                 }
@@ -2904,6 +2923,15 @@ void Actor_DrawLensActors(PlayState* play, s32 numInvisibleActors, Actor** invis
     Actor** invisibleActor;
     GraphicsContext* gfxCtx;
     s32 i;
+
+    // Poe lantern: draw lens actors without any overlay (no red tint, no mask)
+    if (play->actorCtx.lensFromLantern) {
+        invisibleActor = &invisibleActors[0];
+        for (i = 0; i < numInvisibleActors; i++) {
+            Actor_Draw(play, *(invisibleActor++));
+        }
+        return;
+    }
 
     gfxCtx = play->state.gfxCtx;
 

@@ -1836,7 +1836,8 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                 u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
                 if (isGigaHit) {
                     s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                    if (gigaDmg < 4) gigaDmg = 4;
+                    if (gigaDmg < 4)
+                        gigaDmg = 4;
                     this->actor.colChkInfo.health -= gigaDmg;
                     if ((s8)this->actor.colChkInfo.health <= 0) {
                         BossGoma_SetupDefeated(this, play);

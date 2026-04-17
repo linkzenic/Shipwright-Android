@@ -22,6 +22,8 @@
 #include "behaviors/equip_breastplate.c"
 #include "behaviors/equip_pendant.c"
 #include "behaviors/equip_divine_shield.c"
+#include "behaviors/equip_champion.c"
+#include "behaviors/equip_foursword.c"
 
 // ---------------------------------------------------------------------------
 // Sword behaviors
@@ -31,8 +33,7 @@ static void ExtEquip_Behavior_Sword1(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Sword2(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    FourSword_Behavior(player, play);
 }
 
 static void ExtEquip_Behavior_Sword3(Player* player, PlayState* play) {
@@ -67,8 +68,7 @@ static void ExtEquip_Behavior_Tunic2(Player* player, PlayState* play) {
 }
 
 static void ExtEquip_Behavior_Tunic3(Player* player, PlayState* play) {
-    (void)player;
-    (void)play;
+    Champion_Behavior(player, play);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +131,14 @@ static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
     if (gExtEquipState.currentExtBoots != 1) {
         Pegasus_Cleanup();
     }
+    // Four Sword cleanup: clear forced equipment when sword slot 2 is no longer active
+    if (gExtEquipState.currentExtSword != 2) {
+        FourSword_Cleanup();
+    }
+    // Champion's Tunic cleanup: clear forced model + screen tint when slot 3 is lost
+    if (gExtEquipState.currentExtTunic != 3) {
+        Champion_Cleanup(play);
+    }
 
     if (gExtEquipState.currentExtSword > 0 && gExtEquipState.currentExtSword <= 3) {
         sExtSwordBehaviors[gExtEquipState.currentExtSword - 1](player, play);
@@ -154,6 +162,10 @@ static void ExtEquip_OnMeleeHitDispatch(Player* player, PlayState* play) {
     if (gExtEquipState.currentExtSword == 1) {
         Byrna_OnMeleeHit(player, play);
     }
+    // Champion's Tunic: count hits during Flurry Rush window
+    if (gExtEquipState.currentExtTunic == 3) {
+        Champion_OnMeleeHit(player, play);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -172,5 +184,13 @@ static void ExtEquip_DrawDispatch(Player* player, PlayState* play) {
     // Magic Cape: Ganondorf cloth physics cape
     if (gExtEquipState.currentExtTunic == 1) {
         MagicCape_Draw(player, play);
+    }
+    // IK Axe: tomahawk aim reticle
+    if (gExtEquipState.currentExtSword == 3) {
+        IKAxe_DrawReticle(player, play);
+    }
+    // Four Sword: ghost clone Links
+    if (gExtEquipState.currentExtSword == 2) {
+        FourSword_Draw(player, play);
     }
 }

@@ -21,9 +21,9 @@
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-static s16 sIkanaGuardTimer = 0;       // Counts frames since shield was raised
-static u8 sIkanaGuardActive = 0;       // Whether shield is currently raised
-static u8 sIkanaDeathSaveUsed = 0;     // Prevent double-revive per life
+static s16 sIkanaGuardTimer = 0;        // Counts frames since shield was raised
+static u8 sIkanaGuardActive = 0;        // Whether shield is currently raised
+static u8 sIkanaDeathSaveUsed = 0;      // Prevent double-revive per life
 static u8 sIkanaDeathSaveAvailable = 1; // Reset on scene change or respawn
 
 // ---------------------------------------------------------------------------
@@ -59,8 +59,7 @@ static void Ikana_UpdateSoulDrain(Player* player, PlayState* play) {
 
                 // Visual/audio feedback: dark drain sound
                 Audio_PlaySoundGeneral(NA_SE_EN_GANON_AT_RETURN, &player->actor.world.pos, 4,
-                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                       &gSfxDefaultReverb);
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 
                 // Heal player slightly (soul absorbed)
                 Health_ChangeBy(play, 8); // Half heart

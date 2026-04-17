@@ -429,8 +429,7 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Du hast die %yLaterne%w erhalten!&Fang Feuer von Fackeln und&nutze es um deinen Weg zu erleuchten!",
       "Vous obtenez la %yLanterne%w!&Capturez le feu des torches et&utilisez-le pour éclairer votre chemin!" },
 
-    { RG_PENDING_3, static_cast<ItemID>(ITEM_PENDING_3),
-      "You got %cPending Item 3%w!&This item is not yet implemented.",
+    { RG_PENDING_3, static_cast<ItemID>(ITEM_POKEBALL), "You got %cPending Item 3%w!&This item is not yet implemented.",
       "Du hast %cPending Item 3%w!&Dieses Item ist noch nicht implementiert.",
       "Vous obtenez %cPending Item 3%w!&Cet objet n'est pas encore implémenté." },
 };
@@ -4899,7 +4898,7 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             ExtInv_SetItemById(ITEM_MINISH_CAP);
             break;
         case RG_PENDING_3:
-            ExtInv_SetItemById(ITEM_PENDING_3);
+            ExtInv_SetItemById(ITEM_POKEBALL);
             break;
         case RG_CANE_OF_SOMARIA:
             ExtInv_SetItemById(ITEM_CANE_OF_SOMARIA);

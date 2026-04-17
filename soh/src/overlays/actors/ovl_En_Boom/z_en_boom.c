@@ -7,6 +7,7 @@
 #include "z_en_boom.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/extended_equipment.h"
 #include "mods/equipment/objects/ikaxe_DL/header.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -68,6 +69,12 @@ void EnBoom_Init(Actor* thisx, PlayState* play) {
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
 
+    // IK Axe: if spawned by vanilla boomerang pipeline during throw mode,
+    // convert to tomahawk (params 99)
+    if (this->actor.params == 0 && ExtEquip_IsEnabled() && gExtEquipState.currentExtSword == 3) {
+        this->actor.params = 99;
+    }
+
     // IK Axe tomahawk (params 99): orange/red trail + hammer damage
     if (this->actor.params == 99) {
         blure.p1StartColor[0] = 255;
@@ -89,7 +96,7 @@ void EnBoom_Init(Actor* thisx, PlayState* play) {
         blure.p2EndColor[1] = 60;
         blure.p2EndColor[2] = 10;
         blure.p2EndColor[3] = 0;
-    // Zora fin boomerangs (params 1=left, 2=right) use cyan trail
+        // Zora fin boomerangs (params 1=left, 2=right) use cyan trail
     } else if (this->actor.params == 1 || this->actor.params == 2) {
         blure.p1StartColor[0] = 100;
         blure.p1StartColor[1] = 220;
@@ -183,9 +190,8 @@ static void EnBoom_FlyTomahawk(EnBoom* this, PlayState* play) {
 
         // Check AT hit (enemy)
         if (this->collider.base.atFlags & AT_HIT) {
-            Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &this->actor.world.pos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &this->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             Math_Vec3f_Copy(&this->actor.world.pos, &this->actor.prevPos);
             shouldReturn = 1;
         }
@@ -194,11 +200,10 @@ static void EnBoom_FlyTomahawk(EnBoom* this, PlayState* play) {
         Vec3f hitPoint;
         s32 hitDynaID;
         if (BgCheck_EntityLineTest1(&play->colCtx, &this->actor.prevPos, &this->actor.world.pos, &hitPoint,
-                                     &this->actor.wallPoly, true, true, true, true, &hitDynaID)) {
+                                    &this->actor.wallPoly, true, true, true, true, &hitDynaID)) {
             CollisionCheck_SpawnShieldParticlesMetal(play, &hitPoint);
-            Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &this->actor.world.pos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_IT_HAMMER_HIT, &this->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             Math_Vec3f_Copy(&this->actor.world.pos, &hitPoint);
             shouldReturn = 1;
         }

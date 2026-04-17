@@ -360,7 +360,7 @@ typedef enum {
     /* 0xB4 */ ITEM_MINISH_CAP,
     /* 0xB5 */ ITEM_LANTERN,
     /* 0xB6 */ ITEM_CHATEAU_ROMANI,
-    /* 0xB7 */ ITEM_PENDING_3,
+    /* 0xB7 */ ITEM_POKEBALL,
     // MM Mask items (for 3rd inventory page)
     /* 0xB8 */ ITEM_MM_MASK_POSTMAN = 0xB8,
     /* 0xB9 */ ITEM_MM_MASK_ALL_NIGHT,

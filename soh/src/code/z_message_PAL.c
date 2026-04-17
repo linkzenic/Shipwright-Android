@@ -854,8 +854,9 @@ u16 Message_DrawItemIcon(PlayState* play, u16 itemId, Gfx** p, u16 i) {
     // Invalidate icon texture as it may have changed from the last time a text box had an icon
     gSPInvalidateTexCache(gfx++, (uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE);
 
-    if (GameInteractor_Should(VB_DRAW_ITEM_ICON, itemId < ITEM_CUSTOM, &gfx)) {
-        if (itemId >= ITEM_MEDALLION_FOREST) {
+    if (GameInteractor_Should(VB_DRAW_ITEM_ICON, true, &gfx)) {
+        // 24x24 icons: only medallions and spiritual stones (0x66-0x6E)
+        if (itemId >= ITEM_MEDALLION_FOREST && itemId <= ITEM_ZORA_SAPPHIRE) {
             gDPLoadTextureBlock(gfx++, (uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, G_IM_FMT_RGBA,
                                 G_IM_SIZ_32b, 24, 24, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP,
                                 G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
@@ -2223,8 +2224,7 @@ void Message_DecodeJPN(PlayState* play) {
             }
         } else if (curChar == MESSAGE_ITEM_ICON_JPN) {
             msgCtx->msgBufDecodedWide[++decodedBufPos] = font->msgBufWide[msgCtx->msgBufPos + 1];
-            if (GameInteractor_Should(VB_LOAD_ITEM_ICON, (uint8_t)font->msgBufWide[msgCtx->msgBufPos + 1] < ITEM_CUSTOM,
-                                      sDisplayNextMessageAsEnglish)) {
+            if (GameInteractor_Should(VB_LOAD_ITEM_ICON, true, sDisplayNextMessageAsEnglish)) {
                 Message_LoadItemIcon(play, font->msgBufWide[msgCtx->msgBufPos + 1], R_TEXTBOX_Y + 10);
             }
         } else if (curChar == MESSAGE_BACKGROUND_JPN) {
@@ -2656,9 +2656,8 @@ void Message_Decode(PlayState* play) {
             msgCtx->msgBufDecoded[++decodedBufPos] = font->msgBuf[msgCtx->msgBufPos + 1];
             osSyncPrintf("ITEM_NO=(%d) (%d)\n", msgCtx->msgBufDecoded[decodedBufPos],
                          font->msgBuf[msgCtx->msgBufPos + 1]);
-            if (GameInteractor_Should(VB_LOAD_ITEM_ICON, (uint8_t)font->msgBuf[msgCtx->msgBufPos + 1] < ITEM_CUSTOM,
-                                      sDisplayNextMessageAsEnglish)) {
-                Message_LoadItemIcon(play, font->msgBuf[msgCtx->msgBufPos + 1], R_TEXTBOX_Y + 10);
+            if (GameInteractor_Should(VB_LOAD_ITEM_ICON, true, sDisplayNextMessageAsEnglish)) {
+                Message_LoadItemIcon(play, (u8)font->msgBuf[msgCtx->msgBufPos + 1], R_TEXTBOX_Y + 10);
             }
         } else if (temp_s2 == MESSAGE_BACKGROUND) {
             msgCtx->textboxBackgroundIdx = font->msgBuf[msgCtx->msgBufPos + 1] * 2;

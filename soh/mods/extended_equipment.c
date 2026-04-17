@@ -10,7 +10,11 @@
  */
 
 #include "extended_equipment.h"
+#include "transformation_masks/transformation_masks.h"
 #include "transformation_masks/assets/mm_asset_loader.h"
+#include "pak_loader/pak_loader.h"
+
+extern MmPlayerTransformation MmForm_GetCurrentForm(void);
 #include <string.h>
 #include <math.h>
 #include "z64.h"
@@ -35,9 +39,10 @@ extern s32 CVarGetInteger(const char* name, s32 defaultValue);
 // ---------------------------------------------------------------------------
 ExtendedEquipmentState gExtEquipState;
 u8 gExtEquipSuppressIconOverride = 0;
+f32 gChampionSlowFactor = 1.0f;
 
 // Transform backup: stores equipped ext equipment indices before transformation
-static u8 sTransformBackup[4] = {0}; // [EQUIP_TYPE_SWORD..BOOTS]
+static u8 sTransformBackup[4] = { 0 }; // [EQUIP_TYPE_SWORD..BOOTS]
 static u8 sTransformBackupValid = 0;
 
 #define EXT_EQUIP_PAGE_SWITCH_COOLDOWN 15
@@ -62,10 +67,10 @@ void ExtEquip_Init(void) {
     }
 
     // Load equipped state from save data (per-file, persisted only on game save)
-    gExtEquipState.currentExtSword  = gSaveContext.ship.extEquipSword;
+    gExtEquipState.currentExtSword = gSaveContext.ship.extEquipSword;
     gExtEquipState.currentExtShield = gSaveContext.ship.extEquipShield;
-    gExtEquipState.currentExtTunic  = gSaveContext.ship.extEquipTunic;
-    gExtEquipState.currentExtBoots  = gSaveContext.ship.extEquipBoots;
+    gExtEquipState.currentExtTunic = gSaveContext.ship.extEquipTunic;
+    gExtEquipState.currentExtBoots = gSaveContext.ship.extEquipBoots;
 
     // Clamp to valid range
     if (gExtEquipState.currentExtSword > 3)
@@ -181,6 +186,10 @@ void ExtEquip_Equip(s16 equipType, u8 index) {
     if (index == 0 || index > 3)
         return;
 
+    // Pikachu cannot use extended equipment
+    if (TransformMasks_IsTransformedAny() && MmForm_GetCurrentForm() == MM_PLAYER_FORM_PIKACHU)
+        return;
+
     // Must own the item to equip it
     if (!ExtEquip_HasItem(equipType, index))
         return;
@@ -234,13 +243,15 @@ void ExtEquip_Unequip(s16 equipType) {
 // ---------------------------------------------------------------------------
 
 void ExtEquip_UnequipForTransform(void) {
-    if (!ExtEquip_IsEnabled()) return;
-    if (sTransformBackupValid) return; // Already backed up (form-to-form switch)
+    if (!ExtEquip_IsEnabled())
+        return;
+    if (sTransformBackupValid)
+        return; // Already backed up (form-to-form switch)
 
-    sTransformBackup[EQUIP_TYPE_SWORD]  = gExtEquipState.currentExtSword;
+    sTransformBackup[EQUIP_TYPE_SWORD] = gExtEquipState.currentExtSword;
     sTransformBackup[EQUIP_TYPE_SHIELD] = gExtEquipState.currentExtShield;
-    sTransformBackup[EQUIP_TYPE_TUNIC]  = gExtEquipState.currentExtTunic;
-    sTransformBackup[EQUIP_TYPE_BOOTS]  = gExtEquipState.currentExtBoots;
+    sTransformBackup[EQUIP_TYPE_TUNIC] = gExtEquipState.currentExtTunic;
+    sTransformBackup[EQUIP_TYPE_BOOTS] = gExtEquipState.currentExtBoots;
     sTransformBackupValid = 1;
 
     for (s16 t = EQUIP_TYPE_SWORD; t <= EQUIP_TYPE_BOOTS; t++) {
@@ -251,7 +262,8 @@ void ExtEquip_UnequipForTransform(void) {
 }
 
 void ExtEquip_RestoreFromTransform(void) {
-    if (!sTransformBackupValid) return;
+    if (!sTransformBackupValid)
+        return;
     if (!ExtEquip_IsEnabled()) {
         sTransformBackupValid = 0;
         return;
@@ -272,6 +284,10 @@ void ExtEquip_ClearTransformBackup(void) {
 
 void ExtEquip_ToggleFromCButton(u16 itemId) {
     if (itemId < ITEM_EXT_SWORD_1 || itemId > ITEM_EXT_BOOTS_3)
+        return;
+
+    // Pikachu cannot use extended equipment
+    if (TransformMasks_IsTransformedAny() && MmForm_GetCurrentForm() == MM_PLAYER_FORM_PIKACHU)
         return;
 
     // Map itemId to equipType + index
@@ -394,10 +410,13 @@ void ExtEquip_DrawSwordDL(void* playVoid) {
     PlayState* play = (PlayState*)playVoid;
 
     if (gExtEquipState.currentExtSword == 1) {
-        // Byrna: draw blue cane DL (defined in equip_byrna.c)
-        OPEN_DISPS(play->state.gfxCtx);
-        gSPDisplayList(POLY_OPA_DISP++, g_byrna_cane_dl);
-        CLOSE_DISPS(play->state.gfxCtx);
+        // Byrna: draw blue cane DL only when sword is held (not sheathed)
+        Player* drawPlayer = GET_PLAYER(play);
+        if (Player_GetMeleeWeaponHeld(drawPlayer) != 0) {
+            OPEN_DISPS(play->state.gfxCtx);
+            gSPDisplayList(POLY_OPA_DISP++, g_byrna_cane_dl);
+            CLOSE_DISPS(play->state.gfxCtx);
+        }
     } else if (gExtEquipState.currentExtSword == 3) {
         // IK Axe: draw Iron Knuckle Axe DL
         IKAxe_DrawAxe(play);
@@ -412,9 +431,11 @@ u8 ExtEquip_ShouldHideSwordDL(void) {
     if (gExtEquipState.currentExtSword == 1)
         return 1;
 
-    // IK Axe replaces the sword model with axe DL
-    if (gExtEquipState.currentExtSword == 3)
-        return 1;
+    // IK Axe: only hide sword DL when hammer is active (drawn)
+    // In free mode (putaway), don't hide — vanilla shows open hand naturally
+    if (gExtEquipState.currentExtSword == 3) {
+        return gExtEquipBehavior.ikAxeDrawing;
+    }
 
     return 0;
 }

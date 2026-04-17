@@ -13,7 +13,6 @@
 #include "mods/items/custom_items.h"
 #include "mods/extended_player.h"
 #include "mods/extended_equipment.h"
-#include "mods/equipment/objects/ikaxe_DL/header.h"
 #include "mods/items/logic/item_mitts.h"
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/pak_loader/pak_loader.h"
@@ -558,7 +557,7 @@ void Player_SetBootData(PlayState* play, Player* this) {
         if (form == 0 || form == 5) {
             R_RUN_SPEED_LIMIT = 1000; // FD and Pikachu
         } else if (form >= 1 && form <= 3) {
-            R_RUN_SPEED_LIMIT = 600;  // Goron, Zora, Deku
+            R_RUN_SPEED_LIMIT = 600; // Goron, Zora, Deku
         }
     }
 }
@@ -930,11 +929,6 @@ s32 Player_ActionToMeleeWeapon(s32 actionParam) {
 
     if ((sword > 0) && (sword < 6)) {
         return sword;
-    }
-
-    // IK Axe: HAMMER on B-button — treat as BGS melee weapon (index 3)
-    if (actionParam == PLAYER_IA_HAMMER && ExtEquip_IsEnabled() && gExtEquipState.currentExtSword == 3) {
-        return 3; // Same as PLAYER_IA_SWORD_BIGGORON
     }
 
     // Custom melee weapons (Fire Rod, Ice Rod, Light Rod) - treated as Deku Stick (4)
@@ -1521,99 +1515,110 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
     Player* this = (Player*)thisx;
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
-        // PAK Loader: When a custom model or equipment pak is active, use equipment DLs.
-        if (PakLoader_HasActiveModel() &&
-            (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
-             limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
-            Gfx* pakDL = PakLoader_GetEquipDL(this, limbIndex);
-            if (pakDL == PAK_DL_STUB) {
-                *dList = NULL; // Stub: model intentionally hides this
-            } else if (pakDL != NULL) {
-                *dList = pakDL; // Custom equipment DL from pak
-            }
-            // else: NULL → keep skeleton's default DL
-        } else if (limbIndex == PLAYER_LIMB_L_HAND) {
-            Gfx** dLists = this->leftHandDLists;
-
-            if ((sLeftHandType == PLAYER_MODELTYPE_LH_BGS) && (gSaveContext.swordHealth <= 0.0f)) {
-                dLists += 4;
-            } else if ((sLeftHandType == PLAYER_MODELTYPE_LH_BOOMERANG) &&
-                       (this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN)) {
-                dLists = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
-                sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
-            } else if ((this->leftHandType == PLAYER_MODELTYPE_LH_OPEN) && (this->actor.speedXZ > 2.0f) &&
-                       !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
-                dLists = &gPlayerLeftHandClosedDLs[gSaveContext.linkAge];
-                sLeftHandType = PLAYER_MODELTYPE_LH_CLOSED;
-            }
-
-            // Extended equipment: hide sword DL when ext sword draws its own model
-            if (ExtEquip_ShouldHideSwordDL() &&
-                (sLeftHandType != PLAYER_MODELTYPE_LH_OPEN && sLeftHandType != PLAYER_MODELTYPE_LH_CLOSED &&
-                 sLeftHandType != PLAYER_MODELTYPE_LH_BOOMERANG)) {
-                dLists = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
-                sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
-            }
-            *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
-        } else if (limbIndex == PLAYER_LIMB_R_HAND) {
-            Gfx** dLists = this->rightHandDLists;
-
-            if (sRightHandType == PLAYER_MODELTYPE_RH_SHIELD) {
-                if (ExtEquip_GetShieldDLOverride() != NULL) {
-                    // Shield of Ikana: show open hand, custom shield drawn in PostLimbDraw
-                    dLists = &sPlayerRightHandOpenDLs[gSaveContext.linkAge];
-                    sRightHandType = PLAYER_MODELTYPE_RH_OPEN;
-                } else {
-                    dLists += this->currentShield * 4;
+        // PAK Loader: When a custom model or equipment pak is active, try equipment DLs first.
+        // If GetEquipDL returns a DL or STUB, use it. If NULL, fall through to vanilla code.
+        {
+            u8 pakHandled = 0;
+            if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
+                                               limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
+                Gfx* pakDL = PakLoader_GetEquipDL(this, limbIndex);
+                if (pakDL == PAK_DL_STUB) {
+                    *dList = NULL;
+                    pakHandled = 1;
+                } else if (pakDL != NULL) {
+                    *dList = pakDL;
+                    pakHandled = 1;
                 }
-            } else if ((this->rightHandType == PLAYER_MODELTYPE_RH_OPEN) && (this->actor.speedXZ > 2.0f) &&
-                       !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
-                dLists = &sPlayerRightHandClosedDLs[gSaveContext.linkAge];
-                sRightHandType = PLAYER_MODELTYPE_RH_CLOSED;
-            }
-
-            *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
-        } else if (limbIndex == PLAYER_LIMB_SHEATH) {
-            Gfx** dLists = this->sheathDLists;
-
-            if ((this->sheathType == PLAYER_MODELTYPE_SHEATH_18) || (this->sheathType == PLAYER_MODELTYPE_SHEATH_19)) {
-                if (ExtEquip_GetShieldDLOverride() != NULL) {
-                    // Shield of Ikana: hide OOT shield on back, custom drawn in PostLimbDraw
-                    dLists = &sSheathDLs[0]; // No shield on back (just sheath)
-                } else {
-                    dLists += this->currentShield * 4;
-                }
-                if (!LINK_IS_ADULT && (this->currentShield < PLAYER_SHIELD_HYLIAN) &&
-                    (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
-                    dLists += PLAYER_SHIELD_MAX * 4;
-                }
-            } else if (!CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) ||
-                       (CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) &&
-                        ((gSaveContext.equips.buttonItems[0] != ITEM_SWORD_MASTER &&
-                          gSaveContext.equips.buttonItems[0] != ITEM_SWORD_BGS) &&
-                         this->currentShield == PLAYER_SHIELD_DEKU))) {
-                if (!LINK_IS_ADULT &&
-                    ((this->sheathType == PLAYER_MODELTYPE_SHEATH_16) ||
-                     (this->sheathType == PLAYER_MODELTYPE_SHEATH_17)) &&
-                    (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
-                    dLists = &sSheathWithSwordDLs[PLAYER_SHIELD_MAX * 4];
+                // pakDL == NULL for hands/sheath → fall through to vanilla for that limb
+                // pakDL == NULL for WAIST → skeleton swap already provides the custom DL, don't let vanilla overwrite
+                if (pakDL == NULL && limbIndex == PLAYER_LIMB_WAIST && PakLoader_GetSelectedIndex() >= 0) {
+                    pakHandled = 1; // Keep skeleton's custom waist DL
                 }
             }
+            if (!pakHandled && limbIndex == PLAYER_LIMB_L_HAND) {
+                Gfx** dLists = this->leftHandDLists;
 
-            if (dLists[sDListsLodOffset] != NULL) {
+                if ((sLeftHandType == PLAYER_MODELTYPE_LH_BGS) && (gSaveContext.swordHealth <= 0.0f)) {
+                    dLists += 4;
+                } else if ((sLeftHandType == PLAYER_MODELTYPE_LH_BOOMERANG) &&
+                           (this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN)) {
+                    dLists = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
+                    sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
+                } else if ((this->leftHandType == PLAYER_MODELTYPE_LH_OPEN) && (this->actor.speedXZ > 2.0f) &&
+                           !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
+                    dLists = &gPlayerLeftHandClosedDLs[gSaveContext.linkAge];
+                    sLeftHandType = PLAYER_MODELTYPE_LH_CLOSED;
+                }
+
+                // Extended equipment: hide sword DL when ext sword draws its own model
+                if (ExtEquip_ShouldHideSwordDL() &&
+                    (sLeftHandType != PLAYER_MODELTYPE_LH_OPEN && sLeftHandType != PLAYER_MODELTYPE_LH_CLOSED &&
+                     sLeftHandType != PLAYER_MODELTYPE_LH_BOOMERANG)) {
+                    dLists = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
+                    sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
+                }
                 *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
-            } else {
-                *dList = NULL;
-            }
+            } else if (!pakHandled && limbIndex == PLAYER_LIMB_R_HAND) {
+                Gfx** dLists = this->rightHandDLists;
 
-        } else if (limbIndex == PLAYER_LIMB_WAIST) {
+                if (sRightHandType == PLAYER_MODELTYPE_RH_SHIELD) {
+                    if (ExtEquip_GetShieldDLOverride() != NULL) {
+                        // Shield of Ikana: show open hand, custom shield drawn in PostLimbDraw
+                        dLists = &sPlayerRightHandOpenDLs[gSaveContext.linkAge];
+                        sRightHandType = PLAYER_MODELTYPE_RH_OPEN;
+                    } else {
+                        dLists += this->currentShield * 4;
+                    }
+                } else if ((this->rightHandType == PLAYER_MODELTYPE_RH_OPEN) && (this->actor.speedXZ > 2.0f) &&
+                           !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
+                    dLists = &sPlayerRightHandClosedDLs[gSaveContext.linkAge];
+                    sRightHandType = PLAYER_MODELTYPE_RH_CLOSED;
+                }
 
-            if (!Player_IsCustomLinkModel()) {
-                *dList = ResourceMgr_LoadGfxByName(
-                    this->waistDLists[sDListsLodOffset]); // NOTE: This needs to be disabled when using custom
-                                                          // characters - they're not going to have LODs anyways...
+                *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
+            } else if (!pakHandled && limbIndex == PLAYER_LIMB_SHEATH) {
+                Gfx** dLists = this->sheathDLists;
+
+                if ((this->sheathType == PLAYER_MODELTYPE_SHEATH_18) ||
+                    (this->sheathType == PLAYER_MODELTYPE_SHEATH_19)) {
+                    if (ExtEquip_GetShieldDLOverride() != NULL) {
+                        // Shield of Ikana: hide OOT shield on back, custom drawn in PostLimbDraw
+                        dLists = &sSheathDLs[0]; // No shield on back (just sheath)
+                    } else {
+                        dLists += this->currentShield * 4;
+                    }
+                    if (!LINK_IS_ADULT && (this->currentShield < PLAYER_SHIELD_HYLIAN) &&
+                        (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
+                        dLists += PLAYER_SHIELD_MAX * 4;
+                    }
+                } else if (!CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) ||
+                           (CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) &&
+                            ((gSaveContext.equips.buttonItems[0] != ITEM_SWORD_MASTER &&
+                              gSaveContext.equips.buttonItems[0] != ITEM_SWORD_BGS) &&
+                             this->currentShield == PLAYER_SHIELD_DEKU))) {
+                    if (!LINK_IS_ADULT &&
+                        ((this->sheathType == PLAYER_MODELTYPE_SHEATH_16) ||
+                         (this->sheathType == PLAYER_MODELTYPE_SHEATH_17)) &&
+                        (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
+                        dLists = &sSheathWithSwordDLs[PLAYER_SHIELD_MAX * 4];
+                    }
+                }
+
+                if (dLists[sDListsLodOffset] != NULL) {
+                    *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
+                } else {
+                    *dList = NULL;
+                }
+
+            } else if (!pakHandled && limbIndex == PLAYER_LIMB_WAIST) {
+
+                if (!Player_IsCustomLinkModel()) {
+                    *dList = ResourceMgr_LoadGfxByName(
+                        this->waistDLists[sDListsLodOffset]); // NOTE: This needs to be disabled when using custom
+                                                              // characters - they're not going to have LODs anyways...
+                }
             }
-        }
+        } // close pakHandled block
     }
 
     if (GameInteractor_InvisibleLinkActive()) {
@@ -2219,21 +2224,6 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                 ExtEquip_DrawShieldBackDL(play);
             }
 
-            // IK Axe on back when sheathed (weapon NOT drawn)
-            if (ExtEquip_IsEnabled() && gExtEquipState.currentExtSword == 3 &&
-                this->heldItemAction == PLAYER_IA_NONE) {
-                OPEN_DISPS(play->state.gfxCtx);
-                Matrix_Push();
-                Matrix_Translate(-50.0f, -500.0f, -100.0f, MTXMODE_APPLY);
-                Matrix_RotateZYX(0x4000, 0x0000, 0x0000, MTXMODE_APPLY);
-                Matrix_Scale(0.15f, 0.15f, 0.15f, MTXMODE_APPLY);
-                Gfx_SetupDL_25Opa(play->state.gfxCtx);
-                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                          G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-                gSPDisplayList(POLY_XLU_DISP++, gIKAxeInlineDL);
-                Matrix_Pop();
-                CLOSE_DISPS(play->state.gfxCtx);
-            }
         } else if (limbIndex == PLAYER_LIMB_HEAD) {
             Matrix_MultVec3f(&D_801260D4, &this->actor.focus.pos);
 
@@ -2469,8 +2459,24 @@ void Player_DrawPauseImpl(PlayState* play, void* gameplayKeep, void* linkObject,
 
     gSPSegment(POLY_OPA_DISP++, 0x0C, gCullBackDList);
 
+    // PAK Loader: swap pause screen skeleton with custom model
+    void* pauseSkelBackup = skelAnime->skeleton;
+    s32 pauseDListCountBackup = skelAnime->dListCount;
+    if (PakLoader_HasActiveModel()) {
+        PakLoader_SwapSkeleton(GET_PLAYER(play));
+        // Copy the swapped skeleton to the pause skelAnime
+        Player* player = GET_PLAYER(play);
+        skelAnime->skeleton = player->skelAnime.skeleton;
+        skelAnime->dListCount = player->skelAnime.dListCount;
+        PakLoader_RestoreSkeleton(player);
+    }
+
     Player_DrawImpl(play, skelAnime->skeleton, skelAnime->jointTable, skelAnime->dListCount, 0, tunic, boots, 0,
                     Player_OverrideLimbDrawPause, NULL, &playerSwordAndShield);
+
+    // Restore pause skeleton
+    skelAnime->skeleton = pauseSkelBackup;
+    skelAnime->dListCount = pauseDListCountBackup;
 
     if (CVarGetInteger(CVAR_GENERAL("PauseMenuAnimatedLinkTriforce"), 0)) {
         Matrix_SetTranslateRotateYXZ(pos->x - (LINK_AGE_IN_YEARS == YEARS_ADULT ? 25 : 0),

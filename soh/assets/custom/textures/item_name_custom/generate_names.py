@@ -49,10 +49,12 @@ ALL_ITEMS = [
     ("gShovelNameTex", "Shovel"),
     ("gMinishCapNameTex", "Minish Cap"),
     ("gLanternNameTex", "Lantern"),
-    ("gPending3NameTex", "Pending 3"),
+    ("gPokeballNameTex", "Pokeball"),
     ("gIronKnuckleAxeNameTex", "Iron Knuckle Axe"),
     ("gSheikahShieldNameTex", "Sheikah Shield"),
     ("gSpiritBreastplateNameTex", "Spirit Breastplate"),
+    ("gKiteShieldNameTex", "Kite Shield"),
+    ("gMagicArmorNameTex", "Magic Armor"),
 ]
 
 

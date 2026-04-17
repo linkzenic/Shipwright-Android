@@ -83,55 +83,10 @@ static u16 sCapeVerticesMap[CAPE_NUM_STRANDS * CAPE_NUM_JOINTS] = {
 };
 
 // ---------------------------------------------------------------------------
-// Magic boost: cape doubles your magic capacity
+// Magic recovery: recover half of magic spent each frame (rounded up)
 // ---------------------------------------------------------------------------
-static u8 sMagicBoostActive = 0;
-static s8 sOrigMagicLevel = 0;
-static s16 sOrigMagicCapacity = 0;
-
-// Only touches magicCapacity (doubles it). Never touches isDoubleMagicAcquired.
-// For no-magic case, also sets magicLevel=1 so the bar shows.
-
-static void MagicCape_ApplyMagicBoost(void) {
-    if (sMagicBoostActive) {
-        // Detect external changes (fairy fountain, etc.)
-        s16 expectedCap = sOrigMagicCapacity * 2;
-        if (gSaveContext.magicCapacity != expectedCap) {
-            sMagicBoostActive = 0; // External change, re-apply
-        } else {
-            return;
-        }
-    }
-
-    // Save current base values
-    sOrigMagicLevel = gSaveContext.magicLevel;
-    sOrigMagicCapacity = gSaveContext.magicCapacity;
-
-    if (sOrigMagicLevel == 0) {
-        // No magic → no boost (avoid triggering rando magic flags)
-        return;
-    }
-
-    // Just double whatever capacity you have
-    gSaveContext.magicCapacity = sOrigMagicCapacity * 2;
-
-    sMagicBoostActive = 1;
-}
-
-static void MagicCape_RemoveMagicBoost(void) {
-    if (!sMagicBoostActive)
-        return;
-
-    // Restore capacity
-    gSaveContext.magicCapacity = sOrigMagicCapacity;
-
-    // Clamp current magic to restored capacity
-    if (gSaveContext.magic > (s8)gSaveContext.magicCapacity) {
-        gSaveContext.magic = (s8)gSaveContext.magicCapacity;
-    }
-
-    sMagicBoostActive = 0;
-}
+static s8 sCapePrevMagic = 0;
+static u8 sCapeMagicTracking = 0;
 
 // ---------------------------------------------------------------------------
 // Init
@@ -159,7 +114,7 @@ static void MagicCape_Reset(void) {
     if (!sCapeInitialized)
         return;
 
-    MagicCape_RemoveMagicBoost();
+    sCapeMagicTracking = 0;
     Gfx_UnregisterBlendedTexture(gMantTex);
     sCapeInitialized = 0;
     sCapeShouldersCaptured = 0;
@@ -418,11 +373,11 @@ static void MagicCape_Draw(Player* player, PlayState* play) {
 
 // ---------------------------------------------------------------------------
 // Cleanup: called EVERY frame from dispatch, regardless of equipped tunic.
-// Handles removing boost + resetting cape when tunic changes away.
+// Handles resetting cape when tunic changes away.
 // ---------------------------------------------------------------------------
 static void MagicCape_Cleanup(void) {
     if (gExtEquipState.currentExtTunic != 1 && sCapeInitialized) {
-        MagicCape_Reset(); // calls RemoveMagicBoost internally
+        MagicCape_Reset();
     }
 }
 
@@ -444,8 +399,22 @@ static void MagicCape_Behavior(Player* player, PlayState* play) {
         MagicCape_Init();
     }
 
-    // Apply magic boost
-    MagicCape_ApplyMagicBoost();
+    // Magic recovery: if magic decreased this frame, recover half (rounded up)
+    if (!sCapeMagicTracking) {
+        sCapePrevMagic = gSaveContext.magic;
+        sCapeMagicTracking = 1;
+    } else {
+        s8 spent = sCapePrevMagic - gSaveContext.magic;
+        if (spent > 0) {
+            // Recover ceil(spent / 2)
+            s8 recover = (spent + 1) / 2;
+            gSaveContext.magic += recover;
+            if (gSaveContext.magic > gSaveContext.magicCapacity) {
+                gSaveContext.magic = gSaveContext.magicCapacity;
+            }
+        }
+        sCapePrevMagic = gSaveContext.magic;
+    }
 
     sCapeFrameTimer++;
     sCapeUpdateHasRun = 1;

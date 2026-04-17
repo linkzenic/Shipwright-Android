@@ -104,10 +104,8 @@ static void Byrna_Behavior(Player* player, PlayState* play) {
         gExtEquipBehavior.byrnaActive = 1;
     }
 
-    // Only force BGS IA when player is in a sword-related action (not using C-button items)
-    // Sword IAs: NONE, SWORD_MASTER, SWORD_KOKIRI, SWORD_BIGGORON
-    if (player->heldItemAction == PLAYER_IA_SWORD_MASTER || player->heldItemAction == PLAYER_IA_SWORD_KOKIRI ||
-        player->heldItemAction == PLAYER_IA_NONE) {
+    // Only force BGS IA when player is actively holding a sword (not sheathed/NONE, not C-button items)
+    if (player->heldItemAction == PLAYER_IA_SWORD_MASTER || player->heldItemAction == PLAYER_IA_SWORD_KOKIRI) {
         player->heldItemAction = PLAYER_IA_SWORD_BIGGORON;
     }
 

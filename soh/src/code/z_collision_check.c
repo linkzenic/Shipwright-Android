@@ -3000,7 +3000,8 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
         return;
     }
     if (!(info->bumperFlags & BUMP_HIT) ||
-        (info->bumperFlags & BUMP_NO_DAMAGE && !(info->acHitInfo && info->acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE))) {
+        (info->bumperFlags & BUMP_NO_DAMAGE &&
+         !(info->acHitInfo && info->acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE))) {
         return;
     }
 
@@ -3026,7 +3027,8 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
     }
     // DMG_UNBLOCKABLE (Gigantamax Pikachu): bypass damage table, force minimum damage
     if (info->acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE) {
-        if (damage < 4) damage = 4; // Minimum 4 damage regardless of resistance
+        if (damage < 4)
+            damage = 4; // Minimum 4 damage regardless of resistance
     }
     if (!(collider->acFlags & AC_HARD)) {
         collider->actor->colChkInfo.damage += damage;

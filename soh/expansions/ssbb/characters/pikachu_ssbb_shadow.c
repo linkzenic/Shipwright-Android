@@ -11,7 +11,7 @@ Gfx pikachu_ssbb_shadow_dl[] = {
     gsDPSetPrimColor(0, 0, 220, 50, 90, 255),
     gsSPLoadGeometryMode(G_ZBUFFER | G_CULL_FRONT),
     gsSPTexture(0, 0, 0, 0, 0),
-gsSPVertex(0x08000001, 32, 0),
+    gsSPVertex(0x08000001, 32, 0),
     gsSP2Triangles(0, 1, 2, 0, 3, 1, 0, 0),
     gsSP2Triangles(4, 3, 0, 0, 5, 3, 4, 0),
     gsSP2Triangles(6, 5, 4, 0, 7, 5, 6, 0),

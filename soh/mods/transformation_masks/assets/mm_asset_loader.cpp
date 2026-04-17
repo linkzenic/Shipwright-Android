@@ -1566,37 +1566,37 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0811, 26, 65 }, // JUMP L1b: INST_26, F4(65) — metallic ring
     { 0x0811, 23, 53 }, // JUMP L1c: INST_23, F3(53) — whoosh tail
     // CHAN_PL_JUMP_CONCRETE: L0=INST_2 G#3+B3, L1=same LAYER_05DF chain
-    { 0x0812, 2, 54 },  // LAND L0: INST_2, GF3(54) — seq_0: PITCH_GF3
-    { 0x0812, 32, 72 }, // LAND L1a: INST_32, C5(72)
-    { 0x0812, 26, 65 }, // LAND L1b: INST_26, F4(65)
-    { 0x0812, 23, 53 }, // LAND L1c: INST_23, F3(53)
-    { 0x0814, 9, 69 },  // CLIMB_CLIFF: INST_9, A4(69) — seq_0: PITCH_A4
+    { 0x0812, 2, 54 },              // LAND L0: INST_2, GF3(54) — seq_0: PITCH_GF3
+    { 0x0812, 32, 72 },             // LAND L1a: INST_32, C5(72)
+    { 0x0812, 26, 65 },             // LAND L1b: INST_26, F4(65)
+    { 0x0812, 23, 53 },             // LAND L1c: INST_23, F3(53)
+    { 0x0814, 9, 69 },              // CLIMB_CLIFF: INST_9, A4(69) — seq_0: PITCH_A4
     { 0x0839, 20, 48, 0, 57, 200 }, // SWIM: INST_20, target C3(48), porta from A3(57) — seq_0: porta 0x81
     // CHAN_PL_FREEZE (seq_0): gain=30
     { 0x0874, 15, 52, 0, 64, 255 }, // L0: INST_15, E3(52), porta from E4(64)
     { 0x0874, 80, 35, 0, 41, 255 }, // L1: INST_80, B1(35), porta from F2(41)
-    { 0x0877, 9, 53 },  // PUT_OUT_ITEM: INST_9, F3
-    { 0x08D0, 12, 60 }, // SLIP_LEVEL: INST_12, C4
+    { 0x0877, 9, 53 },              // PUT_OUT_ITEM: INST_9, F3
+    { 0x08D0, 12, 60 },             // SLIP_LEVEL: INST_12, C4
 
     // === Player Bank: Deku SFX ===
     // CHAN_PL_DEKUNUTS_FIRE: INST_74, t6, E3 then porta E3→Db4 (seq_0 line 4362)
     { 0x08E0, 74, 61, 6, 52, 56 }, // INST_74, target Db4(61), t6, porta from E3(52), speed 56
     // CHAN_PL_DEKUNUTS_IN_GRD = 3 layers (seq_0 line 2364)
-    { 0x08E2, 47, 57, 0, 43, 255 },   // L0: INST_47, A3(57), porta mode82 from G2(43)
-    { 0x08E2, 35, 59, 48, 40, 127 },  // L1: INST_35 t48, B3(59), porta from E2(40) — seq_0: PITCH_B3
-    { 0x08E2, 32, 58 },               // L2: INST_32, BF3(58) loop
+    { 0x08E2, 47, 57, 0, 43, 255 },  // L0: INST_47, A3(57), porta mode82 from G2(43)
+    { 0x08E2, 35, 59, 48, 40, 127 }, // L1: INST_35 t48, B3(59), porta from E2(40) — seq_0: PITCH_B3
+    { 0x08E2, 32, 58 },              // L2: INST_32, BF3(58) loop
     // CHAN_PL_DEKUNUTS_OUT_GRD = 3 layers (seq_0 line 2390)
-    { 0x08E3, 47, 59, 0, 57, 192 },   // L0: INST_47, B3(59), porta from A3(57) — seq_0: PITCH_B3
-    { 0x08E3, 106, 64 },              // L1: INST_106, E4(64)
-    { 0x08E3, 33, 76, 48, 64, 127 },  // L2: INST_33 t48, E5(76), porta from E4(64)
+    { 0x08E3, 47, 59, 0, 57, 192 },  // L0: INST_47, B3(59), porta from A3(57) — seq_0: PITCH_B3
+    { 0x08E3, 106, 64 },             // L1: INST_106, E4(64)
+    { 0x08E3, 33, 76, 48, 64, 127 }, // L2: INST_33 t48, E5(76), porta from E4(64)
 
     // === Player Bank: Goron SFX ===
     // CHAN_PL_GORON_BALLJUMP: INST_102, porta G2→G3, vibrato (seq_0 line 4379)
     { 0x08E1, 102, 55, 0, 43, 255 }, // INST_102, target G3(55), porta from G2(43), speed 255
     // CHAN_PL_TRANSFORM (seq_0): INST_68 at channel, 3 layers sharing porta F5→GF5→A5
     // L0+L1: INST_68, t=0/t=5, legato, porta from F5(77), note GF5(78)
-    { 0x08E4, 68, 78, 0, 77, 127 },  // L0: INST_68, GF5(78), porta from F5(77)
-    { 0x08E4, 68, 78, 5, 77, 127 },  // L1: INST_68, GF5(78), t5, porta from F5(77)
+    { 0x08E4, 68, 78, 0, 77, 127 }, // L0: INST_68, GF5(78), porta from F5(77)
+    { 0x08E4, 68, 78, 5, 77, 127 }, // L1: INST_68, GF5(78), t5, porta from F5(77)
     // L2: INST_64, t=-43, same porta code
     { 0x08E4, 64, 78, -43, 77, 127 }, // L2: INST_64, GF5(78), t-43, porta from F5(77)
     // CHAN_PL_TRANSFORM_DEMO (seq_0): INST_47, note G3(55) dur=20, then porta G3(55)→B1(35) dur=35
@@ -1637,18 +1637,18 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
 
     // === Player Bank: Goron roll SFX ===
     // CHAN_PL_GORON_CHG_ROLL: 3 layers
-    { 0x0980, 35, 67, 48, 0, 0 },  // L0: INST_35, G4(67) t48→high(bombchu_motor)
+    { 0x0980, 35, 67, 48, 0, 0 },    // L0: INST_35, G4(67) t48→high(bombchu_motor)
     { 0x0980, 77, 48, 22, 43, 175 }, // L2: INST_77, C3(48) t22, porta from G2(43)
     // CHAN_PL_GORON_ROLL (seq_0): gain=15, 3 layers (L0=surface footstep dynamic)
-    { 0x0990, 77, 58 },  // L1: INST_77, BF3(58)
-    { 0x0990, 47, 41 },  // L2: INST_47, F2(41)
+    { 0x0990, 77, 58 }, // L1: INST_77, BF3(58)
+    { 0x0990, 47, 41 }, // L2: INST_47, F2(41)
 
     // === Player Bank: Deku SFX (0x9A0 range) ===
     // CHAN_PL_DEKUNUTS_BUD (seq_0 line 2773): 2 layers
     // L0: INST_52, porta mode83 from E2(40), note EF1(27) then EF3(51)
-    { 0x09A0, 52, 27, 0, 40, 255 },  // L0: INST_52, EF1(27), porta from E2(40)
+    { 0x09A0, 52, 27, 0, 40, 255 }, // L0: INST_52, EF1(27), porta from E2(40)
     // L1: same but transpose=7
-    { 0x09A0, 52, 27, 7, 40, 255 },  // L1: INST_52 t7, EF1(27), porta from E2(40)
+    { 0x09A0, 52, 27, 7, 40, 255 }, // L1: INST_52 t7, EF1(27), porta from E2(40)
     // CHAN_PL_DEKUNUTS_BUBLE_BREATH: 2 layers + vibrato(45Hz,24) (seq_0 line 5143)
     // L0: INST_74, porta Ab2(44)→A3(57), legato loop
     { 0x09A1, 74, 57, 0, 44, 255 },
@@ -1675,7 +1675,7 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x09AD, 111, 60, 0, 57, 100 }, // INST_111, C4(60), porta from A3(57)
     // CHAN_PL_ZORA_SPARK_BARRIER: 2 layers, both INST_46
     { 0x09AF, 46, 64, 48, 0, 0 }, // L0: INST_46, E4(64) t48→high(shimmering), legato loop
-    { 0x09AF, 46, 55 },            // L1: INST_46, G3(55), legato loop
+    { 0x09AF, 46, 55 },           // L1: INST_46, G3(55), legato loop
     // CHAN_PL_GORON_STOMACH_EXPLOSION: INST_77, 2 notes F5→A4
     { 0x09B8, 77, 77 }, // INST_77, F5 (first note)
     // CHAN_PL_GORON_DRINK_BOMB: INST_106, t48, porta C2→B2
@@ -1683,25 +1683,25 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
 
     // === Item Bank: Form-specific ===
     // CHAN_IT_GORON_BALLFANG (seq_0): 3 layers
-    { 0x184F, 29, 64 },              // L0: INST_29, E4(64)
-    { 0x184F, 26, 62, 48, 0, 0 },    // L1: INST_26 t48, D4(62)→high sample
-    { 0x184F, 32, 60 },              // L2: INST_32, C4(60)
+    { 0x184F, 29, 64 },           // L0: INST_29, E4(64)
+    { 0x184F, 26, 62, 48, 0, 0 }, // L1: INST_26 t48, D4(62)→high sample
+    { 0x184F, 32, 60 },           // L2: INST_32, C4(60)
     // CHAN_IT_DEKUNUTS_FLOWER_OPEN: 2 layers
     { 0x1850, 27, 43, 0, 31, 240 }, // L0: INST_27, G2(43), porta from G1(31) — seq_0: porta 0x84
-    { 0x1850, 78, 59 }, // L1: INST_78, B3
-    { 0x1852, 78, 65 }, // IT_DEKUNUTS_FLOWER_CLOSE: INST_78, F4
+    { 0x1850, 78, 59 },             // L1: INST_78, B3
+    { 0x1852, 78, 65 },             // IT_DEKUNUTS_FLOWER_CLOSE: INST_78, F4
     { 0x1853, 41, 60, 0, 64, 255 }, // IT_DEKUNUTS_BUBLE_BROKEN: INST_41, C4(60), porta from E4(64)
     { 0x1854, 41, 60, 0, 64, 255 }, // IT_DEKUNUTS_BUBLE_VANISH: INST_41, C4(60), porta from E4(64)
     // CHAN_IT_SET_TRANSFORM_MASK: sequential INST_9 then INST_28
     { 0x1856, 9, 55 },  // L0: INST_9, G3
     { 0x1856, 28, 62 }, // L1: INST_28, D4
     // CHAN_IT_GORON_PUNCH_SWING: 2 layers both INST_27, porta A1→C1
-    { 0x1857, 27, 24, 0, 33, 200 },  // L0: INST_27, C1(24) porta from A1(33)
-    { 0x1857, 27, 24, 4, 33, 200 },  // L1: INST_27, C1(24) t4, porta from A1(33)
-    { 0x1858, 15, 36 }, // IT_TRANSFORM_MASK_BROKEN: INST_15, C2
+    { 0x1857, 27, 24, 0, 33, 200 }, // L0: INST_27, C1(24) porta from A1(33)
+    { 0x1857, 27, 24, 4, 33, 200 }, // L1: INST_27, C1(24) t4, porta from A1(33)
+    { 0x1858, 15, 36 },             // IT_TRANSFORM_MASK_BROKEN: INST_15, C2
     // CHAN_IT_ZORA_KICK_SWING: 2 layers
-    { 0x1859, 27, 38, 2, 50, 255 },  // L0: INST_27, D2(38) t2, porta from D3(50)
-    { 0x1859, 39, 42, 0, 72, 255 },  // L1: INST_39, GF2(42) porta from C5(72)
+    { 0x1859, 27, 38, 2, 50, 255 }, // L0: INST_27, D2(38) t2, porta from D3(50)
+    { 0x1859, 39, 42, 0, 72, 255 }, // L1: INST_39, GF2(42) porta from C5(72)
     // 0x1869 = IT_SHIELD_REMOVE_ZORA — same channel
     { 0x1869, 27, 38, 2, 50, 255 },
     { 0x1869, 39, 42, 0, 72, 255 },
@@ -1712,7 +1712,7 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
 
     // === Player Bank: Deku form-specific ===
     { 0x09A6, 27, 43, 0, 40, 255 }, // DEKUNUTS_STRUGGLE: INST_27, G2(43), porta from E2(40) — seq_0: porta 0x83
-    { 0x09BF, 74, 71 }, // DEKUNUTS_MISS_FIRE: INST_74, B4
+    { 0x09BF, 74, 71 },             // DEKUNUTS_MISS_FIRE: INST_74, B4
     // === Player Bank: Deku hop SFX (0x09B0-0x09B4) ===
     { 0x09B0, 129, 60, 0, 36, 255 }, // DEKUNUTS_JUMP L0: TRIANGLE, C4(60) porta from C2(36)
     { 0x09B0, 4, 57 },               // DEKUNUTS_JUMP L1: INST_4, A3
@@ -1727,9 +1727,9 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     // === Environment Bank ===
     // CHAN_EV_LIGHTNING_HARD (seq_0): 3 layers, gain=15
     // L0: INST_74 t42, env BF44 (shares note with L1)
-    { 0x2912, 74, 72, 42, 0, 0 },  // L0: INST_74, C5(72), t42
+    { 0x2912, 74, 72, 42, 0, 0 }, // L0: INST_74, C5(72), t42
     // L1: INST_47, env BF44 (shares note)
-    { 0x2912, 47, 72 },            // L1: INST_47, C5(72)
+    { 0x2912, 47, 72 }, // L1: INST_47, C5(72)
     // L2: INST_74, porta C4(60)→C2(36)
     { 0x2912, 74, 36, 0, 60, 255 }, // L2: INST_74, C2(36), porta from C4(60)
     // === System Bank: Transform flash ===
@@ -1978,38 +1978,38 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             // From voicebank_table.h lines 3-34 + seq_0 channel handlers
             // Verified 1:1 against zeldaret/mm seq_0.prg.seq + voicebank_table.h
             static const u16 sFdActionToSfxId[] = {
-                0,   // 0x6800 SWORD_N:    B690 ARRAY_B6A0={0,1,2,3}
-                4,   // 0x6801 SWORD_L:    B6AB ARRAY_B6CD={4,5}
-                0,   // 0x6802 LASH:       CHAN_VO_LI_LASH=cdelay1+end (SILENT)
-                0,   // 0x6803 HANG:       CHAN_VO_LI_LASH (SILENT)
-                0,   // 0x6804 CLIMB_END:  CHAN_VO_LI_LASH (SILENT)
-                9,   // 0x6805 DAMAGE_S:   B72D ARRAY_B73E={9,10,11}
-                12,  // 0x6806 FREEZE:     B747 ARRAY_B758={12,13,14}
-                0,   // 0x6807 FALL_S:     CHAN_VO_LI_LASH (SILENT)
-                15,  // 0x6808 FALL_L:     B779 ARRAY_B78A={15,16}
-                19,  // 0x6809 BREATH_REST:B791 ARRAY_B7A2={19,23}
-                56,  // 0x680A BREATH_DRK: ldlayer LAYER_B7AA SF0_EFFECT_56
-                13,  // 0x680B DOWN:       ldlayer LAYER_B7B2 t=1 {13,14,15}
-                15,  // 0x680C TAKEN:      B7C2 ARRAY_B7D3={15,16}
-                9,   // 0x680D HELD:       →DAMAGE_S B72D {9,10,11}
-                0,   // 0x680E SNEEZE:     CHAN_0048 (system, no voice effect)
-                0,   // 0x680F SWEAT:      CHAN_0048 (system)
-                0,   // 0x6810 DRINK:      CHAN_0048 (system)
-                0,   // 0x6811 RELAX:      CHAN_0048 (system)
-                0,   // 0x6812 PUTAWAY:    B66E ARRAY_B7FB={0}
-                3,   // 0x6813 GROAN:      ldlayer LAYER_BA2F t=1 SF0_EFFECT_3
-                27,  // 0x6814 AUTO_JUMP:  B803 complex, primary eff=27
-                5,   // 0x6815 MAGIC_NALE: B66E ARRAY_B82A={5}
-                9,   // 0x6816 SURPRISE:   CHAN_0048 (system) — fallback to DAMAGE_S
-                4,   // 0x6817 MAGIC_FROL: B66E ARRAY_B83B={4}
-                6,   // 0x6818 PUSH:       CHAN_0048 (system) — fallback
-                6,   // 0x6819 HOOKSHOT:   B66E ARRAY_B857={6}
-                12,  // 0x681A LAND_DMG:   B66E ARRAY_B862={12}
-                0,   // 0x681B MAGIC_START:CHAN_0048 (system)
-                0,   // 0x681C MAGIC_ATK:  CHAN_0048 (system)
-                15,  // 0x681D BL_DOWN:    B779 ARRAY_B78A={15,16}
-                13,  // 0x681E DEMO_DMG:   B66E ARRAY_B879={13}
-                0,   // 0x681F LAST:       B690 ARRAY_B6A0={0,1,2,3}
+                0,  // 0x6800 SWORD_N:    B690 ARRAY_B6A0={0,1,2,3}
+                4,  // 0x6801 SWORD_L:    B6AB ARRAY_B6CD={4,5}
+                0,  // 0x6802 LASH:       CHAN_VO_LI_LASH=cdelay1+end (SILENT)
+                0,  // 0x6803 HANG:       CHAN_VO_LI_LASH (SILENT)
+                0,  // 0x6804 CLIMB_END:  CHAN_VO_LI_LASH (SILENT)
+                9,  // 0x6805 DAMAGE_S:   B72D ARRAY_B73E={9,10,11}
+                12, // 0x6806 FREEZE:     B747 ARRAY_B758={12,13,14}
+                0,  // 0x6807 FALL_S:     CHAN_VO_LI_LASH (SILENT)
+                15, // 0x6808 FALL_L:     B779 ARRAY_B78A={15,16}
+                19, // 0x6809 BREATH_REST:B791 ARRAY_B7A2={19,23}
+                56, // 0x680A BREATH_DRK: ldlayer LAYER_B7AA SF0_EFFECT_56
+                13, // 0x680B DOWN:       ldlayer LAYER_B7B2 t=1 {13,14,15}
+                15, // 0x680C TAKEN:      B7C2 ARRAY_B7D3={15,16}
+                9,  // 0x680D HELD:       →DAMAGE_S B72D {9,10,11}
+                0,  // 0x680E SNEEZE:     CHAN_0048 (system, no voice effect)
+                0,  // 0x680F SWEAT:      CHAN_0048 (system)
+                0,  // 0x6810 DRINK:      CHAN_0048 (system)
+                0,  // 0x6811 RELAX:      CHAN_0048 (system)
+                0,  // 0x6812 PUTAWAY:    B66E ARRAY_B7FB={0}
+                3,  // 0x6813 GROAN:      ldlayer LAYER_BA2F t=1 SF0_EFFECT_3
+                27, // 0x6814 AUTO_JUMP:  B803 complex, primary eff=27
+                5,  // 0x6815 MAGIC_NALE: B66E ARRAY_B82A={5}
+                9,  // 0x6816 SURPRISE:   CHAN_0048 (system) — fallback to DAMAGE_S
+                4,  // 0x6817 MAGIC_FROL: B66E ARRAY_B83B={4}
+                6,  // 0x6818 PUSH:       CHAN_0048 (system) — fallback
+                6,  // 0x6819 HOOKSHOT:   B66E ARRAY_B857={6}
+                12, // 0x681A LAND_DMG:   B66E ARRAY_B862={12}
+                0,  // 0x681B MAGIC_START:CHAN_0048 (system)
+                0,  // 0x681C MAGIC_ATK:  CHAN_0048 (system)
+                15, // 0x681D BL_DOWN:    B779 ARRAY_B78A={15,16}
+                13, // 0x681E DEMO_DMG:   B66E ARRAY_B879={13}
+                0,  // 0x681F LAST:       B690 ARRAY_B6A0={0,1,2,3}
             };
             u8 action = sfxIndex;
             effectIdx = (action < 32) ? sFdActionToSfxId[action] : 0;
@@ -2088,11 +2088,11 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                     235, // 0x6888 DUMMY_136 BC5E→B976 [43,44]       t=3 (3<<6)+43=235
                     239, // 0x6889 DUMMY_137 BC5E→B98E [47,48]       t=3 (3<<6)+47=239
                     244, // 0x688A DUMMY_138 BC64→BCA8 [52]          t=3 (3<<6)+52=244
-                     64, // 0x688B DUMMY_139 BC5E→VO43 [0,1,2]      t=1 (1<<6)+0=64
+                    64,  // 0x688B DUMMY_139 BC5E→VO43 [0,1,2]      t=1 (1<<6)+0=64
                     235, // 0x688C DUMMY_140 BC5E→B9BE [43,44]       t=3 (3<<6)+43=235
                     212, // 0x688D DUMMY_141 BC5E→B9D6 [20]          t=3 (3<<6)+20=212
-                     20, // 0x688E DUMMY_46  B87B shared             t=0 fallback
-                     20, // 0x688F DUMMY_47  - shared                t=0 fallback
+                    20,  // 0x688E DUMMY_46  B87B shared             t=0 fallback
+                    20,  // 0x688F DUMMY_47  - shared                t=0 fallback
                     243, // 0x6890 DUMMY_144       BCC7    [51]             3     (3<<6)+51=243
                     20,  // 0x6891 DUMMY_49(NPC)   shared  —               0     fallback=20
                     20,  // 0x6892 DUMMY_50(NPC)   shared  —               0     fallback=20
@@ -2588,12 +2588,12 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
         f32 voiceTranspose = 1.0f; // no pitch transpose — tuning handles it
         if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
             // CHAN_BC5E: vibdepth=88, vibfreq=128
-            vibRate = 128.0f * (1.0f / 16.0f);   // 8 Hz
-            vibDepth = 88.0f / 256.0f * 0.03f;    // ~1% pitch modulation
+            vibRate = 128.0f * (1.0f / 16.0f); // 8 Hz
+            vibDepth = 88.0f / 256.0f * 0.03f; // ~1% pitch modulation
         } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
             // CHAN_BCF3: vibdepth=32, vibfreq=240
-            vibRate = 240.0f * (1.0f / 16.0f);    // 15 Hz
-            vibDepth = 32.0f / 256.0f * 0.03f;     // ~0.4% pitch modulation
+            vibRate = 240.0f * (1.0f / 16.0f); // 15 Hz
+            vibDepth = 32.0f / 256.0f * 0.03f; // ~0.4% pitch modulation
         }
         // Goron (CHAN_BD84): no vibrato, no pitch transpose
 
@@ -2656,16 +2656,16 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
             // Built-in triangle wave (used by Deku hops)
             MmWav_GenerateTriangle();
             f32 targetAdvance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
-                          powf(2.0f, ((f32)note - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
-            s32 triSlot = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, targetAdvance, mmSfxId, vol * 0.6f,
-                                                  pan, 0.0f, 0.0f);
+                                powf(2.0f, ((f32)note - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+            s32 triSlot = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, targetAdvance, mmSfxId,
+                                                      vol * 0.6f, pan, 0.0f, 0.0f);
             // Apply portamento if specified (sweep from low to target note)
             if (triSlot > 0 && portaNote > 0 && portaSpeed > 0) {
                 for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
                     if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
                         sPlayingSounds[s].lifeSamples == 0) {
                         f32 portaStartAdv = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
-                                           powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+                                            powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
                         f32 durationSamples = (f32)portaSpeed * 64.0f;
                         sPlayingSounds[s].portaStartAdv = portaStartAdv;
                         sPlayingSounds[s].portaEndAdv = targetAdvance;
@@ -2693,8 +2693,10 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                 // Apply transpose to both sample selection AND pitch (matches MM seqplayer)
                 s32 effectiveNote = (s32)note + (s32)transpose;
                 // Clamp to valid MIDI range
-                if (effectiveNote < 0) effectiveNote = 0;
-                if (effectiveNote > 127) effectiveNote = 127;
+                if (effectiveNote < 0)
+                    effectiveNote = 0;
+                if (effectiveNote > 127)
+                    effectiveNote = 127;
                 SoundFontSound* sound = MmDirectAudio_GetInstrumentSoundDirect(font0, instIdx, (u8)effectiveNote);
                 if (sound && sound->sample) {
                     f32 pitchScale = powf(2.0f, ((f32)effectiveNote - 60.0f) / 12.0f);
@@ -2711,8 +2713,10 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                                 sPlayingSounds[s].lifeSamples == 0) {
                                 // Portamento start pitch: portaNote + transpose (same as target)
                                 s32 portaEffNote = (s32)portaNote + (s32)transpose;
-                                if (portaEffNote < 0) portaEffNote = 0;
-                                if (portaEffNote > 127) portaEffNote = 127;
+                                if (portaEffNote < 0)
+                                    portaEffNote = 0;
+                                if (portaEffNote > 127)
+                                    portaEffNote = 127;
                                 f32 portaStartPitch = powf(2.0f, ((f32)portaEffNote - 60.0f) / 12.0f);
                                 f32 portaStartAdv = sound->tuning * portaStartPitch * freqScale;
                                 // Duration: portaSpeed maps to samples (higher = slower)
@@ -2738,8 +2742,10 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                     // 1 seq tick ≈ 20ms, 32kHz → 640 samples/tick
                     if (slot > 0 && instIdx == 47 && !MmDirectAudio_IsContinuous(mmSfxId)) {
                         u32 maxLife = 35200; // default 55 ticks = 1.1s for INST_47
-                        if (mmSfxId == 0x08E7) maxLife = 22400;  // BALL_TO_GORON: 35 ticks
-                        if (mmSfxId == 0x08EF) maxLife = 22400;  // SQUAT: 35 ticks
+                        if (mmSfxId == 0x08E7)
+                            maxLife = 22400; // BALL_TO_GORON: 35 ticks
+                        if (mmSfxId == 0x08EF)
+                            maxLife = 22400; // SQUAT: 35 ticks
                         for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
                             if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
                                 sPlayingSounds[s].lifeSamples == 0) {
@@ -3001,8 +3007,7 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
         snd->lifeSamples += numSamples;
 
         // Auto-stop after maxLifeSamples (triggers release fade-out)
-        if (snd->maxLifeSamples > 0 && snd->lifeSamples >= snd->maxLifeSamples &&
-            snd->envPhase < ADSR_PHASE_RELEASE) {
+        if (snd->maxLifeSamples > 0 && snd->lifeSamples >= snd->maxLifeSamples && snd->envPhase < ADSR_PHASE_RELEASE) {
             snd->envPhase = ADSR_PHASE_RELEASE;
             snd->envReleaseRate = 1.0f / 640.0f; // ~20ms fade-out
         }

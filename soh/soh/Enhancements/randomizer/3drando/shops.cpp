@@ -27,8 +27,7 @@ PriceSettingsStruct::PriceSettingsStruct(RandomizerSettingKey _main, RandomizerS
     affordable = _affordable;
 }
 
-static std::array<std::vector<Text>, RG_MAX> trickNameTable; // Table of trick names for ice traps
-static bool initTrickNames = false;
+// trickNameTable removed — upstream uses Rando::Traps::GetTrapName() via ItemOverride::SetTrickName()
 
 // Set vanilla shop item locations before potentially shuffling
 void PlaceVanillaShopItems() {
@@ -236,10 +235,11 @@ int GetShopsanityReplaceAmount() {
     }
 }
 
-/* Initialize the table of trick names with an easy, medium, and hard name for each language.
-   english, french, german // spanish */
+// InitTrickNames() and GetIceTrapName() removed — dead code.
+// Upstream uses Rando::Traps::GetTrapName() via ItemOverride::SetTrickName() (see Traps.cpp)
+#if 0  // Dead code preserved for reference
 void InitTrickNames() {
-    trickNameTable[RG_KOKIRI_SWORD] = {
+    // trickNameTable[RG_KOKIRI_SWORD] = {
         Text{ "Korok Sword", "Épée Korok", "Korok-Schwert" },     // "Espada Korok"
         Text{ "Hero's Sword", "Épée du Héros", "Heroenschwert" }, // "Espada del héroe"
         Text{ "Razor Sword", "Lame Rasoir", "Elfenschwert" },     // "Espada de esmeril"
@@ -1769,3 +1769,4 @@ Text GetIceTrapName(uint16_t id) {
     // Randomly get the easy, medium, or hard name for the given item id
     return RandomElement(trickNameTable[id]);
 }
+#endif // Dead code

@@ -121,7 +121,7 @@ int8_t ExtPlayer_GetItemAction(int32_t item) {
             return PLAYER_IA_MINISH_CAP;
         case ITEM_LANTERN:
             return PLAYER_IA_LANTERN;
-        case ITEM_PENDING_3:
+        case ITEM_POKEBALL:
             return PLAYER_IA_PENDING_3;
 
         // Chateau Romani (bottle item - drink to activate infinite magic)

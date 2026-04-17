@@ -34,8 +34,10 @@ static void DivineShield_Behavior(Player* player, PlayState* play) {
 // Collider_ResetQuadAC clears the flags, so everything is still valid.
 // ---------------------------------------------------------------------------
 void DivineShield_OnShieldBlock(Player* player, PlayState* play) {
-    if (!ExtEquip_IsEnabled()) return;
-    if (ExtEquip_GetCurrent(EQUIP_TYPE_SHIELD) != 1) return;
+    if (!ExtEquip_IsEnabled())
+        return;
+    if (ExtEquip_GetCurrent(EQUIP_TYPE_SHIELD) != 1)
+        return;
 
     // Perfect parry: within first 10 frames of raising shield
     if (sDivineShieldRaiseTimer <= 10) {
@@ -60,8 +62,7 @@ void DivineShield_OnShieldBlock(Player* player, PlayState* play) {
                 iceVel.y = Rand_ZeroFloat(2.0f) + 1.0f;
                 iceVel.z = Rand_CenteredFloat(3.0f);
                 // White-blue sparkles: prim white, env light blue
-                EffectSsKiraKira_SpawnSmall(play, &icePos, &iceVel, &iceAccel,
-                                            &(Color_RGBA8){ 200, 220, 255, 255 },
+                EffectSsKiraKira_SpawnSmall(play, &icePos, &iceVel, &iceAccel, &(Color_RGBA8){ 200, 220, 255, 255 },
                                             &(Color_RGBA8){ 100, 150, 255, 0 });
             }
 
@@ -69,9 +70,8 @@ void DivineShield_OnShieldBlock(Player* player, PlayState* play) {
         }
 
         // Parry sound
-        Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_REFLECT_SW, &player->actor.world.pos, 4,
-                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
+        Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_REFLECT_SW, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
@@ -80,7 +80,8 @@ void DivineShield_OnShieldBlock(Player* player, PlayState* play) {
 // Returns 1 if Divine Shield should use COLTYPE_WOOD
 // ---------------------------------------------------------------------------
 u8 DivineShield_IsWoodType(void) {
-    if (!ExtEquip_IsEnabled()) return 0;
+    if (!ExtEquip_IsEnabled())
+        return 0;
     return (ExtEquip_GetCurrent(EQUIP_TYPE_SHIELD) == 1) ? 1 : 0;
 }
 
@@ -89,6 +90,7 @@ u8 DivineShield_IsWoodType(void) {
 // Returns 1 if fire should NOT destroy the shield
 // ---------------------------------------------------------------------------
 u8 DivineShield_IsFireproof(void) {
-    if (!ExtEquip_IsEnabled()) return 0;
+    if (!ExtEquip_IsEnabled())
+        return 0;
     return (ExtEquip_GetCurrent(EQUIP_TYPE_SHIELD) == 1) ? 1 : 0;
 }

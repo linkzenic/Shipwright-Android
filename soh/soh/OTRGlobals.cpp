@@ -1421,7 +1421,7 @@ std::unordered_map<ItemID, RandomizerGet> ItemIDtoRandomizerGetMap{
     { ITEM_SHOVEL, RG_SHOVEL },
     { ITEM_MINISH_CAP, RG_PENDING_1 },
     { ITEM_LANTERN, RG_LANTERN },
-    { ITEM_PENDING_3, RG_PENDING_3 },
+    { ITEM_POKEBALL, RG_PENDING_3 },
     // MM Masks
     { ITEM_MM_MASK_POSTMAN, RG_MM_MASK_POSTMAN },
     { ITEM_MM_MASK_ALL_NIGHT, RG_MM_MASK_ALL_NIGHT },

@@ -1782,7 +1782,8 @@ void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
             u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
             if (isGigaHit) {
                 s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
-                if (gigaDmg < 4) gigaDmg = 4;
+                if (gigaDmg < 4)
+                    gigaDmg = 4;
                 this->actor.colChkInfo.health -= gigaDmg;
                 this->work[MO_TENT_ACTION_STATE] = MO_CORE_STUNNED;
                 this->timers[0] = 25;

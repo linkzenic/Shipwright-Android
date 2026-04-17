@@ -2904,17 +2904,18 @@ void BossTw_Update(Actor* thisx, PlayState* play) {
             f32 dx = pl->actor.world.pos.x - this->actor.world.pos.x;
             f32 dy = pl->actor.world.pos.y - this->actor.world.pos.y;
             f32 dz = pl->actor.world.pos.z - this->actor.world.pos.z;
-            f32 dist = sqrtf(dx*dx + dz*dz);
+            f32 dist = sqrtf(dx * dx + dz * dz);
             lusprintf(__FILE__, __LINE__, 2, "WITCH: acHit=%d hp=%d p=%d dist=%.0f dy=%.0f af=0x%X\n",
-                (this->collider.base.acFlags & AC_HIT) != 0, this->actor.colChkInfo.health,
-                this->actor.params, dist, dy, this->collider.base.acFlags);
+                      (this->collider.base.acFlags & AC_HIT) != 0, this->actor.colChkInfo.health, this->actor.params,
+                      dist, dy, this->collider.base.acFlags);
         }
         if (this->collider.base.acFlags & AC_HIT) {
             ColliderInfo* wInfo = this->collider.info.acHitInfo;
             if (wInfo && (wInfo->toucher.dmgFlags & DMG_UNBLOCKABLE)) {
                 this->collider.base.acFlags &= ~AC_HIT;
                 this->actor.colChkInfo.health -= 4;
-                if ((s8)this->actor.colChkInfo.health <= 0) this->actor.colChkInfo.health = 0;
+                if ((s8)this->actor.colChkInfo.health <= 0)
+                    this->actor.colChkInfo.health = 0;
                 this->work[INVINC_TIMER] = 0;
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
             }
@@ -3130,17 +3131,19 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
             Player* pl = GET_PLAYER(play);
             f32 dx = pl->actor.world.pos.x - this->actor.world.pos.x;
             f32 dz = pl->actor.world.pos.z - this->actor.world.pos.z;
-            f32 distXZ = sqrtf(dx*dx + dz*dz);
+            f32 distXZ = sqrtf(dx * dx + dz * dz);
             static s32 sTwGigaCD = 0;
             if (distXZ < 400.0f && sTwGigaCD <= 0) {
                 this->actor.colChkInfo.health -= 4;
-                if ((s8)this->actor.colChkInfo.health <= 0) this->actor.colChkInfo.health = 0;
+                if ((s8)this->actor.colChkInfo.health <= 0)
+                    this->actor.colChkInfo.health = 0;
                 this->work[INVINC_TIMER] = 0;
                 BossTw_TwinrovaDamage(this, play, 4);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
                 sTwGigaCD = 15;
             }
-            if (sTwGigaCD > 0) sTwGigaCD--;
+            if (sTwGigaCD > 0)
+                sTwGigaCD--;
         }
     }
 
@@ -3161,13 +3164,15 @@ void BossTw_TwinrovaUpdate(Actor* thisx, PlayState* play2) {
                     extern u8 gPikaGigantamaxActive;
                     if ((info->toucher.dmgFlags & DMG_UNBLOCKABLE)) {
                         s32 gigaDmg = CollisionCheck_GetSwordDamage(info->toucher.dmgFlags, play);
-                        if (gigaDmg < 4) gigaDmg = 4;
+                        if (gigaDmg < 4)
+                            gigaDmg = 4;
                         this->timers[0] = 80;
                         this->csState1 = 10;
                         sShieldFireCharge = 0;
                         sShieldIceCharge = 0;
                         this->actor.colChkInfo.health -= gigaDmg;
-                        if ((s8)this->actor.colChkInfo.health <= 0) this->actor.colChkInfo.health = 0;
+                        if ((s8)this->actor.colChkInfo.health <= 0)
+                            this->actor.colChkInfo.health = 0;
                         func_800AA000(0.0f, 150, 10, 5);
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_TWINROBA_YOUNG_DAMAGE);
                     }

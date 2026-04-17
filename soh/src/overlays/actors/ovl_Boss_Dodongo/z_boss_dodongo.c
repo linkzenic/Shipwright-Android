@@ -1511,12 +1511,14 @@ void BossDodongo_UpdateDamage(BossDodongo* this, PlayState* play) {
             {
                 // Gigantamax Pikachu: bypass state check, force damage
                 extern u8 gPikaGigantamaxActive;
-                u8 isVulnerable = (this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown);
+                u8 isVulnerable =
+                    (this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown);
                 u8 isGigaHit = (item1->toucher.dmgFlags & DMG_UNBLOCKABLE) != 0;
 
                 if (isVulnerable || isGigaHit) {
                     swordDamage = damage = CollisionCheck_GetSwordDamage(item1->toucher.dmgFlags, play);
-                    if (isGigaHit && damage < 4) damage = swordDamage = 4; /* clamp handled by boss death check */
+                    if (isGigaHit && damage < 4)
+                        damage = swordDamage = 4; /* clamp handled by boss death check */
 
                     if (damage != 0) {
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);

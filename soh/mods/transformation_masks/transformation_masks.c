@@ -122,22 +122,33 @@ u8 TransformMasks_IsTransformed(void) {
 // MM voiceSfxIdOffset per form (from 2Ship z_player.c sPlayerAgeProperties):
 //   FD=0x00, Human=0x20, Deku=0x80, Zora=0xA0, Goron=0xC0
 void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos) {
-    if (!MmSfx_IsAvailable()) return;
+    if (!MmSfx_IsAvailable())
+        return;
 
     // Compute action index: ootVoiceSfxId is the BASE sfxId (before OOT age offset)
     // e.g., NA_SE_VO_LI_DAMAGE_S = 0x6805, action = 5
     u16 action = ootVoiceSfxId - 0x6800;
-    if (action >= 0x20) return; // Out of range
+    if (action >= 0x20)
+        return; // Out of range
 
     // Get MM voice offset for current form
     u16 mmOffset;
     MmPlayerTransformation form = MmForm_GetCurrentForm();
     switch (form) {
-        case MM_PLAYER_FORM_GORON:        mmOffset = 0xC0; break;
-        case MM_PLAYER_FORM_ZORA:         mmOffset = 0xA0; break;
-        case MM_PLAYER_FORM_DEKU:         mmOffset = 0x80; break;
-        case MM_PLAYER_FORM_FIERCE_DEITY: mmOffset = 0x00; break;
-        default: return;
+        case MM_PLAYER_FORM_GORON:
+            mmOffset = 0xC0;
+            break;
+        case MM_PLAYER_FORM_ZORA:
+            mmOffset = 0xA0;
+            break;
+        case MM_PLAYER_FORM_DEKU:
+            mmOffset = 0x80;
+            break;
+        case MM_PLAYER_FORM_FIERCE_DEITY:
+            mmOffset = 0x00;
+            break;
+        default:
+            return;
     }
 
     u16 mmSfxId = 0x6800 + mmOffset + action;
@@ -168,9 +179,10 @@ void TransformMasks_Update(PlayState* play, Player* player) {
     //   2. Swimming (IN_WATER): surface swim actions (D610/D84C/DAB4) don't call
     //      Player_UpdateUpperBody → pipeline never runs. Only Zora mask allowed in water.
     u8 isNoop = (player->actionFunc == MmForm_OotNoopAction);
+    u8 isPikachu = (MmForm_GetCurrentForm() == MM_PLAYER_FORM_PIKACHU && MmForm_IsTransformedAny());
     u8 isInWater = (player->stateFlags1 & PLAYER_STATE1_IN_WATER) != 0;
 
-    if ((isNoop || isInWater) && sControlInput != NULL) {
+    if ((isNoop || isPikachu || isInWater) && sControlInput != NULL) {
         static const u16 sBtns[] = { BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT };
         for (s32 i = 0; i < 3; i++) {
             if (CHECK_BTN_ALL(sControlInput->press.button, sBtns[i])) {

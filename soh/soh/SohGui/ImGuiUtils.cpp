@@ -173,7 +173,7 @@ std::map<uint32_t, ItemMapEntry> customItemMapping = {
     { ITEM_LANTERN, { ITEM_LANTERN, "ITEM_LANTERN", "ITEM_LANTERN_Faded", (char*)gItemIconPending2Tex } },
     { ITEM_CHATEAU_ROMANI,
       { ITEM_CHATEAU_ROMANI, "ITEM_CHATEAU_ROMANI", "ITEM_CHATEAU_ROMANI_Faded", (char*)gItemIconChateauRomaniTex } },
-    { ITEM_PENDING_3, { ITEM_PENDING_3, "ITEM_PENDING_3", "ITEM_PENDING_3_Faded", (char*)gItemIconPending3Tex } },
+    { ITEM_POKEBALL, { ITEM_POKEBALL, "ITEM_POKEBALL", "ITEM_POKEBALL_Faded", (char*)gItemIconPokeballTex } },
 };
 
 std::map<uint32_t, ItemMapEntry> gregMapping = {

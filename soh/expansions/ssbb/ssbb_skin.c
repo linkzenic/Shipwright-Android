@@ -14,6 +14,12 @@ void SSBBSkin_Init(SSBBSkinMesh* skin) {
     if (!skin)
         return;
 
+    // Skip if already initialized (shared skin mesh between companion + transform)
+    if (skin->vtxBuf[0] != NULL && skin->vtxBuf[1] != NULL) {
+        skin->bufIndex = 0;
+        return;
+    }
+
     size = skin->vertexCount * sizeof(Vtx);
     skin->vtxBuf[0] = ZELDA_ARENA_MALLOC_DEBUG(size);
     skin->vtxBuf[1] = ZELDA_ARENA_MALLOC_DEBUG(size);

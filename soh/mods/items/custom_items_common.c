@@ -16,6 +16,9 @@
 #include "helpers/fx_helper.h"
 #include "helpers/camera_helper.h"
 
+// Forward declarations for items included after this file in unity build
+extern void Handle_Pending3(Player* p, PlayState* play);
+
 // Global custom items state
 CustomItemState gCustomItemState = { .timer1 = 0,
                                      .timer2 = 0,
@@ -268,6 +271,16 @@ static void CustomItems_CleanupUnequipped(Player* p, PlayState* play) {
 }
 
 void CustomItems_Update(Player* p, PlayState* play) {
+    // Lantern passive systems run ALWAYS (even when other items block, even when unequipped)
+    {
+        extern void Lantern_UpdateFlames(PlayState * play);
+        extern void Lantern_UpdateBurning(PlayState * play);
+        extern void Lantern_UpdateLens(PlayState * play);
+        Lantern_UpdateFlames(play);
+        Lantern_UpdateBurning(play);
+        Lantern_UpdateLens(play);
+    }
+
     if (gCustomItemState.demiseDestructionActive) {
         Handle_DemiseDestruction(p, play);
         return;
@@ -344,7 +357,7 @@ void CustomItems_Update(Player* p, PlayState* play) {
 
     for (u8 i = 1; i <= 8; i++) {
         u8 item = gSaveContext.equips.buttonItems[i];
-        if (item < ITEM_ROCS_FEATHER_SKIJER || item > ITEM_PENDING_3)
+        if (item < ITEM_ROCS_FEATHER_SKIJER || item > ITEM_POKEBALL)
             continue;
 
         switch (item) {
@@ -422,6 +435,9 @@ void CustomItems_Update(Player* p, PlayState* play) {
             case ITEM_LANTERN:
                 Handle_Lantern(p, play);
                 break;
+            case ITEM_POKEBALL:
+                Handle_Pending3(p, play);
+                break;
             default:
                 break;
         }
@@ -467,12 +483,27 @@ s32 CustomItems_OverrideDraw(Player* p, PlayState* play) {
         CustomItems_DrawSwitchHookInHand(p, play);
         CustomItems_DrawSwitchHook(p, play);
     }
-    // Lantern draws in hand ONLY when lantern is the active held item or no item held.
-    // Hides when ANY other item is in use (sword, hookshot, bow, etc.).
+    // Lantern draws in hand ONLY during/after swing AND while lantern is still on a C-button.
     if (gCustomItemState.lanternEquipped || gCustomItemState.lanternSwinging) {
-        s32 heldIA = p->heldItemAction;
-        if (heldIA == PLAYER_IA_NONE || heldIA == PLAYER_IA_LANTERN) {
-            CustomItems_DrawLantern(p, play);
+        // Check if lantern is still on any C-button
+        u8 lanternOnC = 0;
+        for (u8 btn = 1; btn <= 8; btn++) {
+            if (gSaveContext.equips.buttonItems[btn] == ITEM_LANTERN) {
+                lanternOnC = 1;
+                break;
+            }
+        }
+        if (!lanternOnC) {
+            // Removed from C-buttons — force hide
+            gCustomItemState.lanternEquipped = 0;
+            gCustomItemState.lanternSwinging = 0;
+        } else {
+            s32 heldIA = p->heldItemAction;
+            if (heldIA == PLAYER_IA_NONE || heldIA == PLAYER_IA_LANTERN) {
+                CustomItems_DrawLantern(p, play);
+            } else {
+                gCustomItemState.lanternEquipped = 0;
+            }
         }
     }
 

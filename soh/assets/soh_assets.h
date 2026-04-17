@@ -590,8 +590,8 @@ static const ALIGN_ASSET(2) char gItemIconLanternPoeTex[] = dgItemIconLanternPoe
 #define dgItemIconLanternGreenTex "__OTR__textures/icon_item_custom/gItemIconLanternGreenTex"
 static const ALIGN_ASSET(2) char gItemIconLanternGreenTex[] = dgItemIconLanternGreenTex;
 
-#define dgItemIconPending3Tex "__OTR__textures/icon_item_custom/gItemIconPending3Tex"
-static const ALIGN_ASSET(2) char gItemIconPending3Tex[] = dgItemIconPending3Tex;
+#define dgItemIconPokeballTex "__OTR__textures/icon_item_custom/gItemIconPokeballTex"
+static const ALIGN_ASSET(2) char gItemIconPokeballTex[] = dgItemIconPokeballTex;
 
 #define dgItemIconChateauRomaniTex "__OTR__textures/icon_item_custom/gItemIconChateauRomaniTex"
 static const ALIGN_ASSET(2) char gItemIconChateauRomaniTex[] = dgItemIconChateauRomaniTex;
@@ -672,8 +672,8 @@ static const ALIGN_ASSET(2) char gMinishCapNameTex[] = dgMinishCapNameTex;
 #define dgPending2NameTex "__OTR__textures/item_name_custom/gPending2NameTex"
 static const ALIGN_ASSET(2) char gPending2NameTex[] = dgPending2NameTex;
 
-#define dgPending3NameTex "__OTR__textures/item_name_custom/gPending3NameTex"
-static const ALIGN_ASSET(2) char gPending3NameTex[] = dgPending3NameTex;
+#define dgPokeballNameTex "__OTR__textures/item_name_custom/gPokeballNameTex"
+static const ALIGN_ASSET(2) char gPokeballNameTex[] = dgPokeballNameTex;
 
 // Extended equipment names (from item_name_custom/ in soh.o2r)
 #define dgCaneOfByrnaNameTex "__OTR__textures/item_name_custom/gCaneOfByrnaNameTex"
@@ -714,6 +714,12 @@ static const ALIGN_ASSET(2) char gSheikahShieldNameTex[] = dgSheikahShieldNameTe
 
 #define dgSpiritBreastplateNameTex "__OTR__textures/item_name_custom/gSpiritBreastplateNameTex"
 static const ALIGN_ASSET(2) char gSpiritBreastplateNameTex[] = dgSpiritBreastplateNameTex;
+
+#define dgKiteShieldNameTex "__OTR__textures/item_name_custom/gKiteShieldNameTex"
+static const ALIGN_ASSET(2) char gKiteShieldNameTex[] = dgKiteShieldNameTex;
+
+#define dgMagicArmorNameTex "__OTR__textures/item_name_custom/gMagicArmorNameTex"
+static const ALIGN_ASSET(2) char gMagicArmorNameTex[] = dgMagicArmorNameTex;
 
 #define dgLanternNameTex "__OTR__textures/item_name_custom/gLanternNameTex"
 static const ALIGN_ASSET(2) char gLanternNameTex[] = dgLanternNameTex;

@@ -3,9 +3,8 @@
 
 #include "z64.h"
 
-// Separate CVar for SSBB Pikachu
-// 0 = off, 1 = rest pose (DL only), 2 = animated (Wait3)
-#define CVAR_SSBB_PIKACHU "gExpansions.SSBB.Pikachu"
+// Unified Pikachu behavior CVar: 0=Off, 1=Companion, 2=Transformation
+#define CVAR_SSBB_PIKACHU "gMods.Pikachu.Behavior"
 
 #define SSBB_PIKACHU_OFF 0
 #define SSBB_PIKACHU_REST 1

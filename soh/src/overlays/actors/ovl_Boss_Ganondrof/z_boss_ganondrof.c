@@ -1209,7 +1209,8 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
                     u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
                     if (isGigaHit) {
                         s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
-                        if (gigaDmg < 4) gigaDmg = 4;
+                        if (gigaDmg < 4)
+                            gigaDmg = 4;
                         this->actor.colChkInfo.health -= gigaDmg;
                         if ((s8)this->actor.colChkInfo.health <= 0) {
                             BossGanondrof_SetupDeath(this, play);

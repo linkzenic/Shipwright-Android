@@ -21,14 +21,30 @@ static ExtendedInventoryState sExtInvState = { .currentPage = 0, .pageSwitchTime
 // Page 2 item layout (slots 24-47)
 // Note: ITEM_ROCS_FEATHER_SKIJER at slot 24 is progressive - becomes ITEM_ROCS_CAPE when upgraded (shares slot)
 // Slot 15 (actual slot 39) now has ITEM_DESIRE_SENSOR instead of ITEM_ROCS_CAPE
-const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER, ITEM_WHIP,       ITEM_SPINNER,
-                                  ITEM_BOMB_ARROWS,         ITEM_ROD_FIRE,   ITEM_DEMISE_DESTRUCTION,
-                                  ITEM_DEKU_LEAF,           ITEM_TIME_GATE,  ITEM_BEETLE,
-                                  ITEM_SWITCH_HOOK,         ITEM_ROD_ICE,    ITEM_ZONAI_PERMAFROST,
-                                  ITEM_MOGMA_MITTS,         ITEM_GUST_JAR,   ITEM_BALL_AND_CHAIN,
-                                  ITEM_DESIRE_SENSOR,       ITEM_ROD_LIGHT,  ITEM_HYLIAS_GRACE,
-                                  ITEM_LANTERN,           ITEM_MINISH_CAP, ITEM_PENDING_3,
-                                  ITEM_CANE_OF_SOMARIA,     ITEM_SHOVEL,     ITEM_DOMINION_ROD };
+const uint8_t gPage2Items[24] = { ITEM_ROCS_FEATHER_SKIJER,
+                                  ITEM_WHIP,
+                                  ITEM_SPINNER,
+                                  ITEM_BOMB_ARROWS,
+                                  ITEM_ROD_FIRE,
+                                  ITEM_DEMISE_DESTRUCTION,
+                                  ITEM_DEKU_LEAF,
+                                  ITEM_TIME_GATE,
+                                  ITEM_BEETLE,
+                                  ITEM_SWITCH_HOOK,
+                                  ITEM_ROD_ICE,
+                                  ITEM_ZONAI_PERMAFROST,
+                                  ITEM_MOGMA_MITTS,
+                                  ITEM_GUST_JAR,
+                                  ITEM_BALL_AND_CHAIN,
+                                  ITEM_DESIRE_SENSOR,
+                                  ITEM_ROD_LIGHT,
+                                  ITEM_HYLIAS_GRACE,
+                                  ITEM_LANTERN,
+                                  ITEM_MINISH_CAP,
+                                  ITEM_POKEBALL,
+                                  ITEM_CANE_OF_SOMARIA,
+                                  ITEM_SHOVEL,
+                                  ITEM_DOMINION_ROD };
 
 // Age requirements for page 2 items
 // Roc's items (slot 0/24) = AGE_REQ_NONE (both adult and child can use Feather AND Cape)
@@ -281,8 +297,8 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return (void*)gMinishCapNameTex;
         case ITEM_LANTERN: // 0xB4
             return (void*)gLanternNameTex;
-        case ITEM_PENDING_3: // 0xB6
-            return (void*)gPending3NameTex;
+        case ITEM_POKEBALL:
+            return (void*)gPokeballNameTex;
         default:
             return NULL;
     }
@@ -389,15 +405,20 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
         case ITEM_LANTERN: { // 0xB4
             extern u8 Lantern_GetFireType(void);
             switch (Lantern_GetFireType()) {
-                case 1: return (void*)gItemIconLanternFireTex;   // Regular (orange)
-                case 2: return (void*)gItemIconLanternBlueTex;   // Blue
-                case 3: return (void*)gItemIconLanternPoeTex;    // Poe (purple)
-                case 4: return (void*)gItemIconLanternGreenTex;  // Green
-                default: return (void*)gItemIconLanternTex;      // Unlit
+                case 1:
+                    return (void*)gItemIconLanternFireTex; // Regular (orange)
+                case 2:
+                    return (void*)gItemIconLanternBlueTex; // Blue
+                case 3:
+                    return (void*)gItemIconLanternPoeTex; // Poe (purple)
+                case 4:
+                    return (void*)gItemIconLanternGreenTex; // Green
+                default:
+                    return (void*)gItemIconLanternTex; // Unlit
             }
         }
-        case ITEM_PENDING_3: // 0xB6
-            return (void*)gItemIconPending3Tex;
+        case ITEM_POKEBALL:
+            return (void*)gItemIconPokeballTex;
 
         // SW97 Medallion items (spell mode — show medallion quest icons)
         case ITEM_MEDALLION_FOREST:

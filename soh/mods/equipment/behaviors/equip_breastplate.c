@@ -59,9 +59,8 @@ static void Breastplate_Behavior(Player* player, PlayState* play) {
                 }
                 Rupees_ChangeBy(-rupeeCost);
 
-                Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_BOUND, &player->actor.world.pos, 4,
-                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                       &gSfxDefaultReverb);
+                Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_BOUND, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             }
         }
     } else {
@@ -98,15 +97,16 @@ u8 Breastplate_HasPower(void) {
 // Helper: set color + alpha based on rupees
 // Has rupees: golden, 20% alpha (51/255)
 // No rupees:  golden, fully opaque (armor materializes when magic is spent)
-#define BREASTPLATE_SET_MATERIAL() do { \
-    if (gSaveContext.rupees > 0) { \
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 51); \
-        gDPSetEnvColor(POLY_XLU_DISP++, 25, 20, 0, 255); \
-    } else { \
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 255); \
-        gDPSetEnvColor(POLY_XLU_DISP++, 25, 20, 0, 255); \
-    } \
-} while(0)
+#define BREASTPLATE_SET_MATERIAL()                                      \
+    do {                                                                \
+        if (gSaveContext.rupees > 0) {                                  \
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 51);  \
+            gDPSetEnvColor(POLY_XLU_DISP++, 25, 20, 0, 255);            \
+        } else {                                                        \
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 255); \
+            gDPSetEnvColor(POLY_XLU_DISP++, 25, 20, 0, 255);            \
+        }                                                               \
+    } while (0)
 
 // Base transform (user-tuned): Scale then translate to center on Link's torso
 #define BP_SX 1.0f
@@ -116,8 +116,7 @@ u8 Breastplate_HasPower(void) {
 #define BP_TY 104.0f
 #define BP_TZ 0.0f
 
-static void Breastplate_DrawPiece(PlayState* play, Gfx* dl,
-                                   f32 ikOffX, f32 ikOffY, f32 ikOffZ) {
+static void Breastplate_DrawPiece(PlayState* play, Gfx* dl, f32 ikOffX, f32 ikOffY, f32 ikOffZ) {
     OPEN_DISPS(play->state.gfxCtx);
 
     Matrix_Push();
@@ -141,8 +140,8 @@ static void Breastplate_Draw(PlayState* play) {
     // R Pauldron:      (+1900, 0, -1184)
     // L Pauldron:      (+1900, 0, +1184)
     // Helmet marking:  (+2100, -200, 0)
-    Breastplate_DrawPiece(play, gSpiritChestDL,      0.0f,    0.0f,     0.0f);
-    Breastplate_DrawPiece(play, gSpiritPauldronRDL,  1900.0f, 0.0f, -1184.0f);
-    Breastplate_DrawPiece(play, gSpiritPauldronLDL,  1900.0f, 0.0f,  1184.0f);
-    Breastplate_DrawPiece(play, gSpiritHelmetMarkDL, 2100.0f, -200.0f,  0.0f);
+    Breastplate_DrawPiece(play, gSpiritChestDL, 0.0f, 0.0f, 0.0f);
+    Breastplate_DrawPiece(play, gSpiritPauldronRDL, 1900.0f, 0.0f, -1184.0f);
+    Breastplate_DrawPiece(play, gSpiritPauldronLDL, 1900.0f, 0.0f, 1184.0f);
+    Breastplate_DrawPiece(play, gSpiritHelmetMarkDL, 2100.0f, -200.0f, 0.0f);
 }

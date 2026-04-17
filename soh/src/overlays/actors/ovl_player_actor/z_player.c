@@ -78,6 +78,15 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 #include "expansions/ssbb/ssbb_spawn.c"
 
 // ============================================================================
+// SM64 MARIO EXPANSION - via libsm64 (separate DLL, 1:1 SM64 physics)
+// ============================================================================
+#include "expansions/sm64/sm64_mario.h"
+#include "expansions/sm64/sm64_mario_surfaces.c"
+#include "expansions/sm64/sm64_mario_render.c"
+#include "expansions/sm64/sm64_mario.c"
+static u8 gSm64MarioInitialized = 0;
+
+// ============================================================================
 // SW97 SPACEWORLD '97 EXPANSION - Hat Physics, Spells, Arrows
 // Original: z64proto/sw97 team
 // ============================================================================
@@ -614,8 +623,8 @@ static s16 sFloorShapePitch = 0;
 static s32 sUseHeldItem = false; // When true, the current held item is used. Is reset to false every frame.
 static s32 sHeldItemButtonIsHeldDown = false; // Indicates if the button for the current held item is held down.
 static s32 sSw97SpellActive = false;          // True only when the active magic spell came from a SW97 medallion item.
-static u8 sZoraBoomerangActive = 0;          // When true, BTN_B returns ITEM_BOOMERANG for Zora fin boomerang.
-static u8 sDekuBubbleActive = 0;             // When true, BTN_B returns ITEM_SLINGSHOT for Deku bubble attack.
+static u8 sZoraBoomerangActive = 0;           // When true, BTN_B returns ITEM_BOOMERANG for Zora fin boomerang.
+static u8 sDekuBubbleActive = 0;              // When true, BTN_B returns ITEM_SLINGSHOT for Deku bubble attack.
 
 extern u8 gMogmaMittsClimbActive; // Mogma Mitts climb-any-wall flag (defined in item_mitts.c)
 
@@ -1794,7 +1803,7 @@ void Player_PlayVoiceSfx(Player* this, u16 sfxId) {
     // Redirect OOT voice to MM equivalent when transformed (including FD skin mode)
     // Uses IsTransformedAny to include FD which has IsTransformed()=false for gameplay hooks
     if (TransformMasks_IsTransformedAny()) {
-        extern void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos);
+        extern void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f * pos);
         TransformMasks_PlayMmVoice(sfxId, &this->actor.projectedPos);
         return;
     }
@@ -2555,6 +2564,16 @@ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
         if (sDekuBubbleActive) {
             return ITEM_SLINGSHOT;
         }
+        // Deku form: block OOT from interpreting B as sword.
+        // OOT's actionFunc runs BEFORE TransformMasks_Update, so Player_ProcessItemButtons
+        // sees B_BTN_ITEM=sword → starts sword swing before our code can intercept.
+        // Return ITEM_NONE so OOT ignores B entirely; our form code handles it.
+        if (TransformMasks_IsTransformed()) {
+            extern s32 MmForm_GetCurrentForm(void);
+            if (MmForm_GetCurrentForm() == 3 /* DEKU */) {
+                return ITEM_NONE;
+            }
+        }
         return B_BTN_ITEM;
     } else if (index == 1) {
         return C_BTN_ITEM(0);
@@ -2628,7 +2647,7 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             }
             if (!Player_ItemIsInUse(this, B_BTN_ITEM) && !Player_ItemIsInUse(this, C_BTN_ITEM(0)) &&
                 !Player_ItemIsInUse(this, C_BTN_ITEM(1)) && !Player_ItemIsInUse(this, C_BTN_ITEM(2)) && !hasOnDpad) {
-                // Zora boomerang / Deku bubble: don't put away — active via B hold, not on any button
+                // Zora boomerang / Deku bubble: don't put away — active via B, not on any button
                 if (sZoraBoomerangActive || sDekuBubbleActive) {
                     // Skip Player_UseItem(ITEM_NONE) — keep boomerang active
                 } else {
@@ -2798,15 +2817,24 @@ s32 func_8083442C(Player* this, PlayState* play) {
         Player_SetUpperActionFunc(this, func_808351D4);
 
         this->stateFlags1 |= PLAYER_STATE1_READY_TO_FIRE;
-        this->unk_834 = 14;
+
+        if (sDekuBubbleActive) {
+            // Deku bubble: skip ALL re-entry state resets.
+            // - Don't reset unk_834 to 14 (causes camera to re-transition as fresh aim entry)
+            // - Set unk_836 = 2 (skip draw animation, aim-ready immediately)
+            this->unk_836 = 2;
+        } else {
+            this->unk_834 = 14;
+        }
 
         if (this->unk_860 >= 0) {
-            // Deku bubble: skip draw SFX and arrow spawn (bubble charges visually instead)
+            // Deku bubble: skip draw SFX and arrow spawn (re-entering aim for rapid-fire)
             if (!sDekuBubbleActive) {
-            Player_PlaySfx(this, D_80854398[ABS(this->unk_860) - 1]);
+                Player_PlaySfx(this, D_80854398[ABS(this->unk_860) - 1]);
             }
 
-            if (!sDekuBubbleActive && !Player_HoldsHookshot(this) && (func_80834380(play, this, &item, &arrowType) > 0)) {
+            if (!sDekuBubbleActive && !Player_HoldsHookshot(this) &&
+                (func_80834380(play, this, &item, &arrowType) > 0)) {
                 magicArrowType = arrowType - ARROW_FIRE;
 
                 if (this->unk_860 >= 0) {
@@ -3029,12 +3057,18 @@ s32 func_80834D2C(Player* this, PlayState* play) {
             return 0;
         }
 
-        if (!Player_HoldsHookshot(this)) {
+        if (sDekuBubbleActive) {
+            // Deku bubble: skip bow-draw animation, go straight to aim loop.
+            // Without this, every re-fire plays the full "draw bow" anim before aiming.
+            this->unk_836 = 1; // Skip draw anim state machine (already "loaded")
+        } else if (!Player_HoldsHookshot(this)) {
             anim = &gPlayerAnim_link_bow_bow_ready;
         } else {
             anim = &gPlayerAnim_link_hook_shot_ready;
         }
-        LinkAnimation_PlayOnce(play, &this->upperSkelAnime, anim);
+        if (!sDekuBubbleActive) {
+            LinkAnimation_PlayOnce(play, &this->upperSkelAnime, anim);
+        }
     } else {
         Player_SetUpperActionFunc(this, func_80835884);
         this->unk_834 = 10;
@@ -3112,6 +3146,16 @@ s32 func_8083501C(Player* this, PlayState* play) {
 
     if ((!Player_HoldsHookshot(this) || func_80834FBC(this)) && !func_80834758(play, this) &&
         !func_80834F2C(this, play)) {
+        // Deku bubble: pipeline fully exiting — restore default state
+        if (sDekuBubbleActive) {
+            sDekuBubbleActive = 0;
+            this->stateFlags1 &= ~PLAYER_STATE1_ITEM_IN_HAND;
+            this->stateFlags1 &= ~PLAYER_STATE1_READY_TO_FIRE;
+            this->heldItemAction = PLAYER_IA_NONE;
+            this->itemAction = PLAYER_IA_NONE;
+            // Reset upper action to default idle to prevent sword swing on next frame
+            Player_SetUpperActionFunc(this, func_8083485C);
+        }
         return false;
     } else if (this->rideActor != NULL) {
         this->unk_6AD = 2; // OTRTODO: THIS IS A BAD IDEA BUT IT FIXES THE HORSE FIRST PERSON?
@@ -3175,8 +3219,14 @@ s32 func_808351D4(Player* this, PlayState* play) {
     Math_ScaledStepToS(&this->upperLimbRot.z, 1200, 400);
     this->unk_6AE_rotFlags |= UNK6AE_ROT_UPPER_Z;
 
-    if ((this->unk_836 == 0) && (Player_CheckForIdleAnim(this) == IDLE_ANIM_NONE) &&
-        (this->skelAnime.animation == &gPlayerAnim_link_bow_side_walk)) {
+    // Deku bubble: skip entire upper body animation state machine (player hidden in first-person).
+    // Just keep unk_836 >= 1 so the fire condition at line 3239 works.
+    if (sDekuBubbleActive) {
+        if (this->unk_836 < 1) {
+            this->unk_836 = 2;
+        }
+    } else if ((this->unk_836 == 0) && (Player_CheckForIdleAnim(this) == IDLE_ANIM_NONE) &&
+               (this->skelAnime.animation == &gPlayerAnim_link_bow_side_walk)) {
         LinkAnimation_PlayOnce(play, &this->upperSkelAnime, D_808543CC[sp2C]);
         this->unk_836 = -1;
     } else if (LinkAnimation_Update(play, &this->upperSkelAnime)) {
@@ -3196,14 +3246,13 @@ s32 func_808351D4(Player* this, PlayState* play) {
         Player_SetUpperActionFunc(this, func_808353D8);
         if (this->unk_860 >= 0) {
             if (sDekuBubbleActive) {
-                // Deku bubble: fire bubble projectile and clean up slingshot pipeline
-                extern void MmForm_FireDekuBubble(Player* player, PlayState* play);
+                // Deku bubble: fire bubble on B release (no arrow to detach, no ammo)
+                extern void MmForm_FireDekuBubble(Player * player, PlayState * play);
                 MmForm_FireDekuBubble(this, play);
-                sDekuBubbleActive = 0;
-                this->stateFlags1 &= ~PLAYER_STATE1_ITEM_IN_HAND;
-                this->stateFlags1 &= ~PLAYER_STATE1_READY_TO_FIRE;
-                this->heldItemAction = PLAYER_IA_SWORD_MASTER;
-                this->itemAction = PLAYER_IA_SWORD_MASTER;
+                // Reset unk_860 to negative so re-nock works in func_808353D8.
+                // Without this, unk_860 stays positive after ABS() at line 3272,
+                // making the re-nock condition (unk_860 < 0 && sHeldItemButtonIsHeldDown) always fail.
+                this->unk_860 = -2;
             } else if (sp2C == 0) {
                 if (!func_808350A4(play, this)) {
                     Player_PlaySfx(this, D_808543DC[ABS(this->unk_860) - 1]);
@@ -3235,7 +3284,7 @@ s32 func_808353D8(Player* this, PlayState* play) {
         if (func_8083442C(this, play)) {
             if (Player_HoldsHookshot(this)) {
                 this->unk_836 = 1;
-            } else {
+            } else if (!sDekuBubbleActive) {
                 LinkAnimation_PlayOnce(play, &this->upperSkelAnime, &gPlayerAnim_link_bow_bow_shoot_next);
             }
         }
@@ -3418,11 +3467,8 @@ s32 func_808359FC(Player* this, PlayState* play) {
             untargetedRotY = this->actor.shape.rot.y - 0x190;
 
             EnBoom* leftBoom = (EnBoom*)Actor_Spawn(
-                &play->actorCtx, play, ACTOR_EN_BOOM,
-                leftPos.x, leftPos.y, leftPos.z,
-                this->actor.focus.rot.x,
-                (this->focusActor != NULL) ? this->actor.shape.rot.y + 0x36B0 : untargetedRotY,
-                0, 1);
+                &play->actorCtx, play, ACTOR_EN_BOOM, leftPos.x, leftPos.y, leftPos.z, this->actor.focus.rot.x,
+                (this->focusActor != NULL) ? this->actor.shape.rot.y + 0x36B0 : untargetedRotY, 0, 1);
 
             if (leftBoom != NULL) {
                 leftBoom->moveTo = this->focusActor;
@@ -3434,11 +3480,8 @@ s32 func_808359FC(Player* this, PlayState* play) {
                 untargetedRotY = this->actor.shape.rot.y + 0x190;
 
                 EnBoom* rightBoom = (EnBoom*)Actor_Spawn(
-                    &play->actorCtx, play, ACTOR_EN_BOOM,
-                    rightPos.x, rightPos.y, rightPos.z,
-                    this->actor.focus.rot.x,
-                    (this->focusActor != NULL) ? this->actor.shape.rot.y - 0x36B0 : untargetedRotY,
-                    0, 2);
+                    &play->actorCtx, play, ACTOR_EN_BOOM, rightPos.x, rightPos.y, rightPos.z, this->actor.focus.rot.x,
+                    (this->focusActor != NULL) ? this->actor.shape.rot.y - 0x36B0 : untargetedRotY, 0, 2);
 
                 if (rightBoom != NULL) {
                     rightBoom->moveTo = this->focusActor;
@@ -3498,8 +3541,7 @@ s32 func_80835B60(Player* this, PlayState* play) {
         {
             extern LinkAnimationHeader* MmForm_GetZoraBoomerangAnim(s32 phase);
             LinkAnimationHeader* zoraCatch = TransformMasks_IsTransformed() ? MmForm_GetZoraBoomerangAnim(2) : NULL;
-            LinkAnimation_PlayOnce(play, &this->upperSkelAnime,
-                                   zoraCatch ? zoraCatch : &gPlayerAnim_link_boom_catch);
+            LinkAnimation_PlayOnce(play, &this->upperSkelAnime, zoraCatch ? zoraCatch : &gPlayerAnim_link_boom_catch);
         }
         func_808357E8(this, gPlayerLeftHandBoomerangDLs);
         Player_PlaySfx(this, NA_SE_PL_CATCH_BOOMERANG);
@@ -3698,6 +3740,7 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                         return;
                     }
                 }
+                // Kafei Mask Transform: handled inside MmMaskWear_Toggle
                 // MM Bunny Hood: use OOT Bunny Hood behavior (speed + jump)
                 if (item == ITEM_MM_MASK_BUNNY) {
                     TransformMasks_WearClear(); // Clear any other MM worn mask
@@ -4717,8 +4760,8 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
 
     // Zora/FD/Pikachu: override jump slash animations with form-specific ones.
     // OOT plays Link's sword animations; we replace with Zora's kick/fin animations.
-    if (TransformMasks_IsTransformed() &&
-        (arg2 >= PLAYER_MWA_FLIPSLASH_START) && (arg2 <= PLAYER_MWA_JUMPSLASH_FINISH)) {
+    if (TransformMasks_IsTransformed() && (arg2 >= PLAYER_MWA_FLIPSLASH_START) &&
+        (arg2 <= PLAYER_MWA_JUMPSLASH_FINISH)) {
         extern LinkAnimationHeader* MmForm_GetJumpSlashAnim(s32 phase);
         LinkAnimationHeader* formAnim = MmForm_GetJumpSlashAnim(arg2);
         if (formAnim != NULL) {
@@ -5007,7 +5050,8 @@ int func_8083816C(s32 arg0) {
 
 void func_8083819C(Player* this, PlayState* play) {
     // Divine Shield: fireproof — skip fire destruction
-    if (DivineShield_IsFireproof()) return;
+    if (DivineShield_IsFireproof())
+        return;
 
     if (this->currentShield == PLAYER_SHIELD_DEKU && (CVarGetInteger(CVAR_CHEAT("FireproofDekuShield"), 0) == 0)) {
         Actor_Spawn(&play->actorCtx, play, ACTOR_ITEM_SHIELD, this->actor.world.pos.x, this->actor.world.pos.y,
@@ -6634,9 +6678,13 @@ void func_8083BA90(PlayState* play, Player* this, s32 arg2, f32 xzVelocity, f32 
 s32 func_8083BB20(Player* this) {
     if (!(this->stateFlags1 & PLAYER_STATE1_SHIELDING)) {
         // Transformed forms: treat as having master sword (enables jump slash/flip slash)
+        // Exception: Deku uses B for bubble attack, not sword. Skip weapon override for Deku.
         u8 hasWeapon = (Player_GetMeleeWeaponHeld(this) != 0);
         if (!hasWeapon && TransformMasks_IsTransformedAny()) {
-            hasWeapon = 1;
+            extern s32 MmForm_GetCurrentForm(void);
+            if (MmForm_GetCurrentForm() != 3 /* DEKU */) {
+                hasWeapon = 1;
+            }
         }
         if (hasWeapon) {
             if (sUseHeldItem ||
@@ -6663,8 +6711,8 @@ void Player_SetupRoll(Player* this, PlayState* play) {
     // Deku cannot roll in MM — A while moving always does spin attack.
     if (TransformMasks_IsTransformed()) {
         extern s32 MmForm_GetCurrentForm(void);
-        extern void MmForm_StartDekuSpinFromOot(Player* player, PlayState* play);
-        extern void MmForm_StartGoronCurlFromOot(Player* player, PlayState* play);
+        extern void MmForm_StartDekuSpinFromOot(Player * player, PlayState * play);
+        extern void MmForm_StartGoronCurlFromOot(Player * player, PlayState * play);
         if (MmForm_GetCurrentForm() == 3 /* MM_PLAYER_FORM_DEKU */) {
             MmForm_StartDekuSpinFromOot(this, play);
             return;
@@ -6772,9 +6820,11 @@ void Player_StartZoraBoomerang(Player* this, PlayState* play) {
     sUseHeldItem = sHeldItemButtonIsHeldDown = true;
 }
 
+// IK Axe tomahawk: same boomerang hijack as Zora
 // Called each frame from mm_player_form.cpp — deactivates when boomerang action ends.
 void Player_ZoraBoomerangCleanup(Player* this) {
-    if (!sZoraBoomerangActive) return;
+    if (!sZoraBoomerangActive)
+        return;
 
     // Phase 1: When thrown, exit aim camera but keep boomerang flags for catch
     if ((this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) && this->unk_6AD == 2) {
@@ -6782,19 +6832,16 @@ void Player_ZoraBoomerangCleanup(Player* this) {
     }
 
     // Phase 2: Fully deactivate when pipeline is done (fins returned + catch finished)
-    if (!(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) &&
-        !CHECK_BTN_ALL(sControlInput->cur.button, BTN_B) &&
+    if (!(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) && !CHECK_BTN_ALL(sControlInput->cur.button, BTN_B) &&
         this->upperActionFunc == func_80835800) {
         goto cleanup;
     }
 
     // Failsafe: if damaged, in cutscene, or OOT left boomerang IA for any reason,
     // force cleanup to prevent softlock (B never throws → stuck in boomerang mode)
-    if ((this->stateFlags1 & PLAYER_STATE1_DAMAGED) ||
-        (this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) ||
+    if ((this->stateFlags1 & PLAYER_STATE1_DAMAGED) || (this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) ||
         (this->stateFlags1 & PLAYER_STATE1_DEAD) ||
-        (this->heldItemAction != PLAYER_IA_BOOMERANG &&
-         !(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN))) {
+        (this->heldItemAction != PLAYER_IA_BOOMERANG && !(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN))) {
         goto cleanup;
     }
 
@@ -6808,49 +6855,43 @@ cleanup:
     this->itemAction = PLAYER_IA_SWORD_MASTER;
 }
 
-// Deku bubble: hijack OOT's slingshot pipeline for first-person aim.
-// B press → first-person camera (CAM_MODE_SLINGSHOT), hold to charge, release to fire.
-// Slingshot pipeline: func_8083501C → func_8083442C → func_808351D4 (aim) → fire → end.
+// Deku bubble: enter OOT's slingshot pipeline for first-person aim.
 void Player_StartDekuBubble(Player* this, PlayState* play) {
-    if (sDekuBubbleActive) return;
+    if (sDekuBubbleActive)
+        return;
     sDekuBubbleActive = 1;
 
     this->heldItemAction = PLAYER_IA_SLINGSHOT;
     this->itemAction = PLAYER_IA_SLINGSHOT;
     this->stateFlags1 |= PLAYER_STATE1_ITEM_IN_HAND;
-    this->unk_860 = -2; // slingshot mode
+    this->unk_860 = -2; // slingshot
     this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+
+    // Cancel any sword/melee action OOT may have started this frame from the same B press.
+    // OOT's z-target action handlers run BEFORE our form code, so they can see B press
+    // and initiate a sword swing. We override by clearing the melee weapon state.
+    this->meleeWeaponState = 0;
+    this->meleeWeaponAnimation = -1;
 
     func_80834D2C(this, play);
     func_80834EB8(this, play);
     sUseHeldItem = sHeldItemButtonIsHeldDown = true;
 }
 
-// Called each frame from mm_player_form.cpp — deactivates on failsafe conditions.
+// Called each frame from mm_player_form.cpp — failsafe on damage/cutscene/dead.
 void Player_DekuBubbleCleanup(Player* this) {
-    if (!sDekuBubbleActive) return;
+    if (!sDekuBubbleActive)
+        return;
 
-    // Failsafe: damage, cutscene, dead, or OOT dropped slingshot IA
-    if ((this->stateFlags1 & PLAYER_STATE1_DAMAGED) ||
-        (this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) ||
-        (this->stateFlags1 & PLAYER_STATE1_DEAD) ||
-        (this->heldItemAction != PLAYER_IA_SLINGSHOT)) {
-        goto cleanup;
+    if ((this->stateFlags1 & PLAYER_STATE1_DAMAGED) || (this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE) ||
+        (this->stateFlags1 & PLAYER_STATE1_DEAD) || (this->heldItemAction != PLAYER_IA_SLINGSHOT)) {
+        sDekuBubbleActive = 0;
+        this->stateFlags1 &= ~PLAYER_STATE1_ITEM_IN_HAND;
+        this->stateFlags1 &= ~PLAYER_STATE1_READY_TO_FIRE;
+        this->heldItemAction = PLAYER_IA_NONE;
+        this->itemAction = PLAYER_IA_NONE;
+        Player_SetUpperActionFunc(this, func_8083485C);
     }
-
-    return;
-
-cleanup:
-    sDekuBubbleActive = 0;
-    this->unk_6AD = 0;
-    this->stateFlags1 &= ~PLAYER_STATE1_ITEM_IN_HAND;
-    this->stateFlags1 &= ~PLAYER_STATE1_READY_TO_FIRE;
-    this->heldItemAction = PLAYER_IA_SWORD_MASTER;
-    this->itemAction = PLAYER_IA_SWORD_MASTER;
-}
-
-u8 TransformMasks_IsDekuBubbleActive(void) {
-    return sDekuBubbleActive;
 }
 
 s32 Player_ActionHandler_10(Player* this, PlayState* play) {
@@ -8240,7 +8281,8 @@ s32 Player_TryEnteringCrawlspace(Player* this, PlayState* play, u32 interactWall
     f32 zVertex2;
     s32 i;
 
-    if (!LINK_IS_ADULT && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) && (interactWallFlags & 0x30)) {
+    if (!LINK_IS_ADULT && !TransformMasks_IsTransformed() && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
+        (interactWallFlags & 0x30)) {
         if (!GameInteractor_Should(VB_CRAWL, true)) {
             return false;
         }
@@ -12989,7 +13031,27 @@ void Player_Update(Actor* thisx, PlayState* play) {
             }
         }
 
+        // SM64 MARIO: Block OOT movement BEFORE Player_UpdateCommon
+        if (Sm64Mario_IsActive() && gSm64MarioInitialized) {
+            this->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+        }
+
+        // ALWAYS run Player_UpdateCommon (Pikachu pattern).
+        // OOT handles collision, loading zones, damage, doors, items.
         Player_UpdateCommon(this, play, &sp44);
+
+        // SM64 MARIO: Run AFTER Player_UpdateCommon, tick libsm64, override position.
+        if (Sm64Mario_IsActive()) {
+            if (!gSm64MarioInitialized) {
+                gSm64MarioInitialized = Sm64Mario_Init(play, this);
+            }
+            if (gSm64MarioInitialized) {
+                Sm64Mario_Update(play, this);
+            }
+        } else if (gSm64MarioInitialized) {
+            Sm64Mario_Reset();
+            gSm64MarioInitialized = 0;
+        }
 
         // CUSTOM ITEMS: Update standalone system (completely separate from vanilla)
         CustomItems_Update(this, play);
@@ -13195,6 +13257,21 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     Vec3f pos;
     Vec3s rot;
     f32 scale;
+
+    // PAK Loader: free previous frame's GbiWrap combined DLs (once per frame, main player only)
+    if (thisx == &GET_PLAYER(play2)->actor) {
+        PakLoader_FrameBegin();
+    }
+
+    // SM64 MARIO: Draw Mario mesh instead of Link.
+    // Exception: during first-person aiming (unk_6AD != 0), let OOT draw Link
+    // invisibly for the aiming system (same pattern as transformation masks).
+    if (thisx == &GET_PLAYER(play2)->actor && Sm64Mario_IsActive()) {
+        if (this->unk_6AD == 0) {
+            Sm64Mario_Draw(play, this);
+            return;
+        }
+    }
 
     // PAK Loader: Swap skeleton before vanilla draw, restore after.
     // This lets the ENTIRE vanilla draw pipeline run (equipment, eyes, boots, gauntlets)
@@ -13705,7 +13782,7 @@ void Player_Action_8084B1D8(Player* this, PlayState* play) {
     }
     if ((this->csAction != 0) || (this->unk_6AD == 0) || (this->unk_6AD >= 4) || Player_UpdateHostileLockOn(this) ||
         (this->focusActor != NULL) || !func_8083AD4C(play, this) ||
-        (((this->unk_6AD == 2) && (!sZoraBoomerangActive || Player_IsZTargeting(this)) &&
+        (((this->unk_6AD == 2) && ((!sZoraBoomerangActive && !sDekuBubbleActive) || Player_IsZTargeting(this)) &&
           (CHECK_BTN_ANY(sControlInput->press.button, BTN_A | BTN_B | BTN_R) || Player_FriendlyLockOnOrParallel(this) ||
            (!func_8002DD78(this) && !func_808334B4(this)))) ||
          ((this->unk_6AD == 1) && CHECK_BTN_ANY(sControlInput->press.button, buttonsToCheck)))) {
@@ -15447,8 +15524,8 @@ void Player_Action_SwingLantern(Player* this, PlayState* play) {
             if (Lantern_GetFireType() == 0) {
                 // Unlit: try to catch fire
                 if (Lantern_TryCatch(this, play)) {
-                    this->av1.actionVar1 = 1;   // caught!
-                    this->av2.actionVar2 = 0;   // textbox not started yet
+                    this->av1.actionVar1 = 1; // caught!
+                    this->av2.actionVar2 = 0; // textbox not started yet
                     this->stateFlags1 |= PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE;
                     Player_AnimPlayOnceAdjusted(play, this, &gPlayerAnim_link_bottle_bug_in);
                     func_80835EA4(play, 4); // Camera zoom (like bottle)
@@ -16031,8 +16108,7 @@ void Player_Action_808502D0(Player* this, PlayState* play) {
                 }
 
                 // Transformation masks: override jump slash recovery animation
-                if (TransformMasks_IsTransformed() &&
-                    (this->meleeWeaponAnimation >= PLAYER_MWA_FLIPSLASH_FINISH) &&
+                if (TransformMasks_IsTransformed() && (this->meleeWeaponAnimation >= PLAYER_MWA_FLIPSLASH_FINISH) &&
                     (this->meleeWeaponAnimation <= PLAYER_MWA_JUMPSLASH_FINISH)) {
                     extern LinkAnimationHeader* MmForm_GetJumpSlashAnim(s32 phase);
                     LinkAnimationHeader* formAnim = MmForm_GetJumpSlashAnim(this->meleeWeaponAnimation);

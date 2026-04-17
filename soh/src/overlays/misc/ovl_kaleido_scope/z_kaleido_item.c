@@ -371,9 +371,8 @@ static void Lantern_HandleKaleidoExtinguish(PlayState* play) {
             // Extinguish!
             gCustomItemState.lanternFireType = 0;
             sLanternHoldTimer = 0;
-            Audio_PlaySoundGeneral(NA_SE_EV_FIRE_PILLAR, &gSfxDefaultPos, 4,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultReverb);
+            Audio_PlaySoundGeneral(NA_SE_EV_FIRE_PILLAR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         }
     } else {
         sLanternHoldTimer = 0;

@@ -18,29 +18,26 @@
 
 #include "overlays/actors/ovl_En_Boom/z_en_boom.h"
 
-// Camera helper for first-person aim (from items module, linked separately)
-extern void FirstPerson_Init(Player* player, PlayState* play);
-extern void FirstPerson_Exit(Player* player, PlayState* play);
-extern s16 FirstPerson_GetAimYaw(Player* player);
-extern s16 FirstPerson_GetAimPitch(Player* player);
+// FirstPerson aim helpers (from items/helpers/camera_helper.c, linked separately)
+// Used by equip_ikaxe_throw.inc.c for C-Up aim mode
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define IKAXE_ANIM_SLOW        0.35f  // Slow windup start (heavy)
-#define IKAXE_ANIM_FAST        1.50f  // Fast at impact
-#define IKAXE_MAX_WALK_SPEED   6.0f   // Slower walk
-#define IKAXE_DOUBLE_DAMAGE    2      // Damage multiplier
-#define IKAXE_THROW_HOLD       15     // Hold B frames to throw
-#define IKAXE_THROW_RETURN     30     // Flight frames before return
-#define IKAXE_THROW_PARAMS     99     // En_Boom params for axe variant
+#define IKAXE_ANIM_SLOW 0.35f     // Slow windup start (heavy)
+#define IKAXE_ANIM_FAST 1.50f     // Fast at impact
+#define IKAXE_MAX_WALK_SPEED 6.0f // Slower walk
+#define IKAXE_DOUBLE_DAMAGE 2     // Damage multiplier
+#define IKAXE_THROW_HOLD 15       // Hold B frames to throw
+#define IKAXE_THROW_RETURN 30     // Flight frames before return
+#define IKAXE_THROW_PARAMS 99     // En_Boom params for axe variant
 
 // ---------------------------------------------------------------------------
 // Tomahawk throw state
 // ---------------------------------------------------------------------------
 static s16 sIKAxeBHoldFrames = 0;
 static u8 sIKAxeThrown = 0;
-static u8 sIKAxeAimActive = 0;  // first-person aim is on
+static u8 sIKAxeAimActive = 0; // first-person aim is on
 
 // ---------------------------------------------------------------------------
 // Animation Speed Override (chunky)
@@ -64,115 +61,14 @@ static void IKAxe_ModifyAnimSpeed(Player* player) {
 // ---------------------------------------------------------------------------
 // Tomahawk Throw States
 // ---------------------------------------------------------------------------
-#define IKAXE_THROW_IDLE    0
-#define IKAXE_THROW_CHARGING 1  // Holding B, aim pose
-#define IKAXE_THROW_FLYING  2   // Axe in the air
+#define IKAXE_THROW_IDLE 0
+#define IKAXE_THROW_CHARGING 1 // Holding B, aim pose
+#define IKAXE_THROW_FLYING 2   // Axe in the air
 
 static u8 sIKAxeThrowState = IKAXE_THROW_IDLE;
 
-// ---------------------------------------------------------------------------
-// Tomahawk Throw (hold B → first-person aim → release → parabolic arc)
-// ---------------------------------------------------------------------------
-static void IKAxe_UpdateThrow(Player* player, PlayState* play) {
-    u8 holdingB = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B);
-
-    switch (sIKAxeThrowState) {
-        case IKAXE_THROW_IDLE: {
-            // Throw: R + B (shield + B) when drawn
-            u8 holdingR = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_R);
-            u8 isDrawn = (player->heldItemAction >= PLAYER_IA_SWORD_MASTER &&
-                          player->heldItemAction <= PLAYER_IA_HAMMER);
-
-            if (holdingR && holdingB && isDrawn && player->meleeWeaponState == 0) {
-                sIKAxeBHoldFrames++;
-                if (sIKAxeBHoldFrames >= IKAXE_THROW_HOLD) {
-                    sIKAxeThrowState = IKAXE_THROW_CHARGING;
-
-                    // Enter first-person aim like Zora does — bypass vanilla camera
-                    player->unk_6AD = 2;
-                    player->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
-                    sIKAxeAimActive = 1;
-
-                    player->linearVelocity = 0.0f;
-                    player->actor.speedXZ = 0.0f;
-                }
-            } else if (!holdingB || !holdingR) {
-                sIKAxeBHoldFrames = 0;
-            }
-            break;
-        }
-
-        case IKAXE_THROW_CHARGING:
-            // Lock movement during aim
-            player->linearVelocity = 0.0f;
-            player->actor.speedXZ = 0.0f;
-
-            if (!holdingB) {
-                // Exit aim mode
-                if (sIKAxeAimActive) {
-                    player->unk_6AD = 0;
-                    player->stateFlags1 &= ~PLAYER_STATE1_FIRST_PERSON;
-                    sIKAxeAimActive = 0;
-                }
-
-                // Play throw animation
-                LinkAnimation_PlayOnce(play, &player->skelAnime,
-                    (LinkAnimationHeader*)&gPlayerAnim_link_boom_throwR);
-
-                // Launch direction from aim
-                s16 yaw = FirstPerson_GetAimYaw(player);
-                s16 pitch = FirstPerson_GetAimPitch(player);
-
-                // If Z-targeting, aim at target
-                if (player->focusActor != NULL) {
-                    yaw = Math_Vec3f_Yaw(&player->actor.world.pos, &player->focusActor->focus.pos);
-                    pitch = Math_Vec3f_Pitch(&player->actor.world.pos, &player->focusActor->focus.pos);
-                }
-
-                f32 posX = Math_SinS(yaw) * 20.0f + player->actor.world.pos.x;
-                f32 posZ = Math_CosS(yaw) * 20.0f + player->actor.world.pos.z;
-
-                EnBoom* axe = (EnBoom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOOM,
-                    posX, player->actor.world.pos.y + 40.0f, posZ,
-                    pitch, yaw, 0,
-                    IKAXE_THROW_PARAMS);
-
-                if (axe != NULL) {
-                    axe->moveTo = NULL;  // No homing — straight arc
-                    axe->returnTimer = IKAXE_THROW_RETURN;
-                    player->stateFlags1 |= PLAYER_STATE1_BOOMERANG_THROWN;
-                    player->boomerangActor = &axe->actor;
-                    sIKAxeThrown = 1;
-                    sIKAxeThrowState = IKAXE_THROW_FLYING;
-
-                    Audio_PlaySoundGeneral(NA_SE_IT_SWORD_SWING_HARD, &player->actor.world.pos, 4,
-                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                           &gSfxDefaultReverb);
-                } else {
-                    sIKAxeThrowState = IKAXE_THROW_IDLE;
-                }
-                sIKAxeBHoldFrames = 0;
-            }
-            break;
-
-        case IKAXE_THROW_FLYING:
-            // Axe is in the air — no melee until it returns
-            player->meleeWeaponState = 0;
-
-            // Axe returned and was caught → back to idle
-            if (!(player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN)) {
-                sIKAxeThrown = 0;
-                sIKAxeThrowState = IKAXE_THROW_IDLE;
-                // Catch animation
-                LinkAnimation_PlayOnce(play, &player->skelAnime,
-                    (LinkAnimationHeader*)&gPlayerAnim_link_boom_catch);
-                Audio_PlaySoundGeneral(NA_SE_IT_SWORD_PICKOUT, &player->actor.world.pos, 4,
-                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
-                                       &gSfxDefaultReverb);
-            }
-            break;
-    }
-}
+// Throw system in separate file for clarity
+#include "equip_ikaxe_throw.inc.c"
 
 // ---------------------------------------------------------------------------
 // Per-frame Behavior
@@ -191,31 +87,30 @@ static void IKAxe_Behavior(Player* player, PlayState* play) {
         gExtEquipBehavior.ikAxeActive = 1;
     }
 
-    // B button shows as sword for sheathe/unsheathe, icon overridden by ExtInv_GetItemIcon
-    gSaveContext.equips.buttonItems[0] = ITEM_SWORD_BGS;
-    gSaveContext.swordHealth = 8;
+    // Hammer on B — game handles equip/putaway naturally:
+    // B press → equip hammer → swing → auto putaway → free anims
+    gSaveContext.equips.buttonItems[0] = ITEM_HAMMER;
     gSaveContext.inventory.items[SLOT_HAMMER] = ITEM_HAMMER;
 
-    // Detect if weapon is drawn (sword IA = just unsheathed, or hammer IA = already forced)
-    u8 isDrawn = (player->heldItemAction >= PLAYER_IA_SWORD_MASTER &&
-                  player->heldItemAction <= PLAYER_IA_HAMMER);
+    // DON'T force heldItemAction every frame — let the game manage it.
+    // Hammer's natural cycle: press B → heldItemAction=HAMMER → swing → putaway → NONE
 
-    // Force Hammer IA when drawn — hammer attacks (slash/stab/spin all as hammer)
-    if (isDrawn && sIKAxeThrowState != IKAXE_THROW_FLYING) {
-        player->heldItemAction = PLAYER_IA_HAMMER;
-    }
+    u8 isHolding = (player->heldItemAction == PLAYER_IA_HAMMER);
 
-    // Double damage when drawn
-    if (isDrawn) {
+    // Signal draw system: hide vanilla sword DL only when hammer is out
+    gExtEquipBehavior.ikAxeDrawing = isHolding || (sIKAxeThrowState == IKAXE_THROW_CHARGING);
+
+    // Double damage only when holding
+    if (isHolding) {
         player->meleeWeaponQuads[0].info.toucher.damage = 4 * IKAXE_DOUBLE_DAMAGE;
         player->meleeWeaponQuads[1].info.toucher.damage = 4 * IKAXE_DOUBLE_DAMAGE;
     }
 
-    // Tomahawk throw (hold B → release) — only when drawn
+    // Tomahawk throw (R + B hold) — only when holding hammer
     IKAxe_UpdateThrow(player, play);
 
-    // Walk cap + chunky anims only when drawn and idle
-    if (sIKAxeThrowState == IKAXE_THROW_IDLE && isDrawn) {
+    // Walk cap + chunky anims only when holding and not throwing
+    if (sIKAxeThrowState == IKAXE_THROW_IDLE && isHolding) {
         if (player->meleeWeaponState == 0 && player->linearVelocity > IKAXE_MAX_WALK_SPEED) {
             player->linearVelocity = IKAXE_MAX_WALK_SPEED;
         }
@@ -248,14 +143,14 @@ static void IKAxe_Cleanup(void) {
 // Draw — IK Axe DL on XLU
 // ---------------------------------------------------------------------------
 static void IKAxe_DrawAxe(PlayState* play) {
-    // Axe is flying — En_Boom draws it, don't draw on player
+    // Axe is flying — En_Boom draws it
     if (sIKAxeThrowState == IKAXE_THROW_FLYING) {
         return;
     }
 
-    // Sheathed — axe drawn on back via PLAYER_LIMB_SHEATH, not in hand
+    // Free mode (putaway) — no axe in hand
     Player* drawPlayer = GET_PLAYER(play);
-    if (drawPlayer->heldItemAction == PLAYER_IA_NONE) {
+    if (drawPlayer->heldItemAction != PLAYER_IA_HAMMER && sIKAxeThrowState != IKAXE_THROW_CHARGING) {
         return;
     }
 
@@ -273,8 +168,7 @@ static void IKAxe_DrawAxe(PlayState* play) {
         Matrix_Scale(0.15f, 0.15f, 0.15f, MTXMODE_APPLY);
     }
 
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, gIKAxeInlineDL);
 
     CLOSE_DISPS(play->state.gfxCtx);

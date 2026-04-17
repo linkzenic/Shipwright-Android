@@ -13,6 +13,7 @@
 #include "macros.h"
 #include "functions.h"
 #include "soh/frame_interpolation.h"
+#include "mods/pak_loader/pak_loader.h"
 #include <exception>
 #include <libultraship/bridge.h>
 #include "soh/cvar_prefixes.h"
@@ -802,6 +803,18 @@ static const u16 sFrogShifts[] = {
 // =============================================================================
 
 extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
+    // Kafei Mask Transform: toggle between Kafei model and Link (no visible mask on face)
+    if (itemId == ITEM_MM_MASK_KAFEI && CVarGetInteger("gMods.KafeiMaskTransform", 0)) {
+        if (PakLoader_HasForcedModel()) {
+            PakLoader_ClearForcedModel();
+        } else {
+            PakLoader_ForceModel("custom_items_resources/N64_Kafei.pak");
+        }
+        Player_PlaySfx(&player->actor, NA_SE_PL_CHANGE_ARMS);
+        player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
+        return;
+    }
+
     s32 idx = MaskItemToIndex(itemId);
     if (idx < 0 || idx >= MM_MASK_COUNT) {
         return;
@@ -1405,12 +1418,12 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 Actor* spawned;
                 if (LINK_IS_ADULT) {
                     // Adult: Stalfos
-                    spawned = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_TEST, spawnX, spawnY, spawnZ, 0, (s16)angle,
-                                          0, 0);
+                    spawned =
+                        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_TEST, spawnX, spawnY, spawnZ, 0, (s16)angle, 0, 0);
                 } else {
                     // Child: Giant Stalchild (params=10 → 2x scale, 2x speed)
-                    spawned = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_SKB, spawnX, spawnY, spawnZ, 0, (s16)angle, 0,
-                                          10);
+                    spawned =
+                        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_SKB, spawnX, spawnY, spawnZ, 0, (s16)angle, 0, 10);
                 }
 
                 if (spawned != NULL) {

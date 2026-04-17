@@ -390,8 +390,8 @@ static void Pegasus_Draw(Player* p, PlayState* play) {
     gDPPipeSync(POLY_XLU_DISP++);
     gDPSetTextureLUT(POLY_XLU_DISP++, G_TT_NONE);
     gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
-    gDPLoadTextureBlock(POLY_XLU_DISP++, sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
-                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
+    gDPLoadTextureBlock(POLY_XLU_DISP++, sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                        G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
     gDPLoadMultiBlock(POLY_XLU_DISP++, sWindEffTexture, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
                       G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 14, 14);
 

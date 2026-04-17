@@ -30,6 +30,9 @@ void CustomItems_DrawSpinner(Player* this, PlayState* play) {
         f32 baseScale = 0.20f;
         Matrix_Scale(baseScale, baseScale, baseScale, MTXMODE_APPLY);
 
+        // New model origin is ~150 units higher than old; shift down to match
+        Matrix_Translate(0.0f, -150.0f, 0.0f, MTXMODE_APPLY);
+
         // Apply the generated matrix to the display list
         gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, __FILE__, __LINE__),
                   G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);

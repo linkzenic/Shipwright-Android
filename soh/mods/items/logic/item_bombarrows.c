@@ -54,8 +54,7 @@ static void BombArrows_GetBombOffset(Player* p, Vec3f* out) {
 // Spawn a real bomb that explodes instantly at impact position
 // Combines both arrow and bomb damage types for full damage coverage
 static void BombArrows_SpawnInstantBomb(PlayState* play, Vec3f* pos) {
-    EnBom* bomb =
-        (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, pos->x, pos->y, pos->z, 0, 0, 0, BOMB_BODY);
+    EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, pos->x, pos->y, pos->z, 0, 0, 0, BOMB_BODY);
 
     if (bomb != NULL) {
         // Timer=1 will decrement to 0 on first update and trigger explosion
@@ -120,8 +119,8 @@ static void BombArrows_StartCharge(Player* p, PlayState* play) {
     BombArrows_GetBombOffset(p, &bombPos);
 
     // Spawn real bomb actor with normal fuse (timer=70)
-    EnBom* bomb = (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, bombPos.x, bombPos.y, bombPos.z, 0, 0, 0,
-                                      BOMB_BODY);
+    EnBom* bomb =
+        (EnBom*)Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, bombPos.x, bombPos.y, bombPos.z, 0, 0, 0, BOMB_BODY);
 
     if (bomb == NULL) {
         Sfx_PlaySfxCentered(NA_SE_SY_ERROR);

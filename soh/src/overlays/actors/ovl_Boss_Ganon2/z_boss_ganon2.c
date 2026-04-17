@@ -1955,9 +1955,11 @@ void func_80902524(BossGanon2* this, PlayState* play) {
                     u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
                     if (isGigaHit) {
                         s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                        if (gigaDmg < 4) gigaDmg = 4;
+                        if (gigaDmg < 4)
+                            gigaDmg = 4;
                         this->actor.colChkInfo.health -= gigaDmg;
-                        if ((s8)this->actor.colChkInfo.health <= 1) this->actor.colChkInfo.health = 1;
+                        if ((s8)this->actor.colChkInfo.health <= 1)
+                            this->actor.colChkInfo.health = 1;
                         this->unk_316 = 60;
                         this->unk_342 = 5;
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
@@ -2008,9 +2010,11 @@ void func_80902524(BossGanon2* this, PlayState* play) {
                 u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
                 if (isGigaHit) {
                     s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                    if (gigaDmg < 4) gigaDmg = 4;
+                    if (gigaDmg < 4)
+                        gigaDmg = 4;
                     this->actor.colChkInfo.health -= gigaDmg;
-                    if ((s8)this->actor.colChkInfo.health <= 1) this->actor.colChkInfo.health = 1;
+                    if ((s8)this->actor.colChkInfo.health <= 1)
+                        this->actor.colChkInfo.health = 1;
                     this->unk_316 = 60;
                     this->unk_342 = 5;
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);

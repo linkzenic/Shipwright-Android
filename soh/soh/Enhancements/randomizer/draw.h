@@ -63,6 +63,10 @@ void Randomizer_DrawLantern(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawDesireSensor(PlayState* play, GetItemEntry* getItemEntry);
 
+// Custom items - Pokeball & Minish Cap
+void Randomizer_DrawPokeball(PlayState* play, GetItemEntry* getItemEntry);
+void Randomizer_DrawMinishCap(PlayState* play, GetItemEntry* getItemEntry);
+
 // Extended Equipment Get-Item 3D Models
 void Randomizer_DrawExtCaneOfByrna(PlayState* play, GetItemEntry* getItemEntry);
 void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry);

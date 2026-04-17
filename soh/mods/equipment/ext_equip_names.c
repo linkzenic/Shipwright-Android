@@ -25,7 +25,7 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
         case ITEM_EXT_SHIELD_1:
             return (void*)gDivineShieldNameTex;
         case ITEM_EXT_SHIELD_2:
-            return (void*)gSheikahShieldNameTex;
+            return (void*)gKiteShieldNameTex;
         case ITEM_EXT_SHIELD_3:
             return (void*)gShieldOfIkanaNameTex;
 
@@ -33,7 +33,7 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
         case ITEM_EXT_TUNIC_1:
             return (void*)gMagicCapeNameTex;
         case ITEM_EXT_TUNIC_2:
-            return (void*)gSpiritBreastplateNameTex;
+            return (void*)gMagicArmorNameTex;
         case ITEM_EXT_TUNIC_3:
             return (void*)gChampionsTunicNameTex;
 

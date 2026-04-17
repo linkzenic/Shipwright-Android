@@ -53,13 +53,14 @@ extern "C" u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item);
 static struct {
     const s16* data;
     u32 len;
-    u32 pos;       // Current playback position (in 22050Hz samples)
-    f32 fracPos;   // Fractional position for resampling
+    u32 pos;     // Current playback position (in 22050Hz samples)
+    f32 fracPos; // Fractional position for resampling
     u8 playing;
 } sPikaSfxState;
 
 static void PikaSfx_Play(PikaSfxId id) {
-    if (id >= PIKA_SFX_COUNT) return;
+    if (id >= PIKA_SFX_COUNT)
+        return;
     sPikaSfxState.data = sPikaSfxTable[id].data;
     sPikaSfxState.len = sPikaSfxTable[id].len;
     sPikaSfxState.pos = 0;
@@ -75,7 +76,8 @@ static u8 sPikaSfxGiant = 0; // Set by Update, read by MixInto (avoids forward r
 extern "C" u8 gPikaGigantamaxActive = 0;
 
 extern "C" void PikaSfx_MixInto(s16* outBuf, u32 numSamples) {
-    if (!sPikaSfxState.playing || !sPikaSfxState.data) return;
+    if (!sPikaSfxState.playing || !sPikaSfxState.data)
+        return;
     // Slower pitch when Gigantamax (deeper voice like a big Pikachu)
     f32 step = sPikaSfxGiant ? (22050.0f / 32000.0f) * 0.65f : 22050.0f / 32000.0f;
     // Half intensity, scaled by master volume (gSfxDefaultFreqAndVolScale = 0-1)
@@ -88,7 +90,7 @@ extern "C" void PikaSfx_MixInto(s16* outBuf, u32 numSamples) {
             return;
         }
         s16 sample = sPikaSfxState.data[idx];
-        s32 mixed = (s32)outBuf[i * 2] + (s32)(sample * vol);     // Left
+        s32 mixed = (s32)outBuf[i * 2] + (s32)(sample * vol);      // Left
         s32 mixedR = (s32)outBuf[i * 2 + 1] + (s32)(sample * vol); // Right
         outBuf[i * 2] = (mixed > 32767) ? 32767 : (mixed < -32768) ? -32768 : (s16)mixed;
         outBuf[i * 2 + 1] = (mixedR > 32767) ? 32767 : (mixedR < -32768) ? -32768 : (s16)mixedR;
@@ -97,8 +99,8 @@ extern "C" void PikaSfx_MixInto(s16* outBuf, u32 numSamples) {
 }
 
 // ── Macros ──────────────────────────────────────────────────────────────────
-#define PIKA_CVAR "gMods.Pikachu.FormEnabled"
-#define PIKACHU_SCALE 0.014f // 0.4 * 0.035 (small Pikachu)
+#define PIKA_CVAR "gMods.Pikachu.Behavior" // 0=Off, 1=Companion, 2=Transformation
+#define PIKACHU_SCALE 0.014f               // 0.4 * 0.035 (small Pikachu)
 #define PIKACHU_WALK_MULT 1.6f
 #define PIKACHU_RUN_MULT 1.6f
 
@@ -137,7 +139,7 @@ typedef struct {
     s32 blinkFrame;
 
     // Quick Attack state
-    u8 qatkPhase; // 0=inactive, 1=dash1, 2=dash2
+    u8 qatkPhase;       // 0=inactive, 1=dash1, 2=dash2
     u8 airQuickAtkUsed; // 1 = already used in air (reset on ground)
     s32 qatkTimer;
 
@@ -152,12 +154,12 @@ typedef struct {
     s32 stunTimer;
 
     // Gigantamax state (Giant's Mask)
-    u8 gigantamax;       // 0=normal, 1=gigantamax active
-    f32 giantScale;      // Current scale multiplier (lerps to target)
-    s32 giantMpDrain;    // MP drain timer
-    s32 giantTextTimer;  // Textbox display timer (>0 = showing text)
-    u8 giantTextType;    // 0=transform, 1=revert
-    s32 giantCooldown;   // Debounce timer (prevents double-call toggle)
+    u8 gigantamax;      // 0=normal, 1=gigantamax active
+    f32 giantScale;     // Current scale multiplier (lerps to target)
+    s32 giantMpDrain;   // MP drain timer
+    s32 giantTextTimer; // Textbox display timer (>0 = showing text)
+    u8 giantTextType;   // 0=transform, 1=revert
+    s32 giantCooldown;  // Debounce timer (prevents double-call toggle)
 
     // Smash input detection
     s32 stickFlickTimer; // Frames since stick went from <50% to >80%
@@ -195,8 +197,8 @@ typedef struct {
         u8 colInited;
     } jolts[5];
     u8 joltsActive;
-    u8 thunderActive;       // 1 = Thunder (L+B) is active
-    u8 grabPullActive;      // 1 = grab is pulling enemy (hookshot-style)
+    u8 thunderActive;  // 1 = Thunder (L+B) is active
+    u8 grabPullActive; // 1 = grab is pulling enemy (hookshot-style)
 
     // Forward smash charge state
     u8 smashCharging; // 1 = in AttackS4Hold, charging
@@ -251,34 +253,59 @@ static void Pika_SetAction(SSBBActionId action) {
 
     // Voice SFX per action type
     switch (action) {
-        case SSBB_ACT_ATTACK_JAB: case SSBB_ACT_ATTACK_FTILT: case SSBB_ACT_ATTACK_FTILT_HI:
-        case SSBB_ACT_ATTACK_FTILT_LW: case SSBB_ACT_ATTACK_DTILT: case SSBB_ACT_ATTACK_UTILT:
-        case SSBB_ACT_ATTACK_DASH: case SSBB_ACT_ATTACK_NAIR: case SSBB_ACT_ATTACK_FAIR:
-        case SSBB_ACT_ATTACK_BAIR: case SSBB_ACT_ATTACK_UAIR: case SSBB_ACT_ATTACK_DAIR:
+        case SSBB_ACT_ATTACK_JAB:
+        case SSBB_ACT_ATTACK_FTILT:
+        case SSBB_ACT_ATTACK_FTILT_HI:
+        case SSBB_ACT_ATTACK_FTILT_LW:
+        case SSBB_ACT_ATTACK_DTILT:
+        case SSBB_ACT_ATTACK_UTILT:
+        case SSBB_ACT_ATTACK_DASH:
+        case SSBB_ACT_ATTACK_NAIR:
+        case SSBB_ACT_ATTACK_FAIR:
+        case SSBB_ACT_ATTACK_BAIR:
+        case SSBB_ACT_ATTACK_UAIR:
+        case SSBB_ACT_ATTACK_DAIR:
             PikaSfx_Play(PIKA_SFX_ATTACK);
             break;
-        case SSBB_ACT_ATTACK_FSMASH: case SSBB_ACT_ATTACK_USMASH: case SSBB_ACT_ATTACK_DSMASH:
+        case SSBB_ACT_ATTACK_FSMASH:
+        case SSBB_ACT_ATTACK_USMASH:
+        case SSBB_ACT_ATTACK_DSMASH:
             PikaSfx_Play(PIKA_SFX_SMASH);
             break;
-        case SSBB_ACT_SPECIAL_N: case SSBB_ACT_SPECIAL_N_AIR:
+        case SSBB_ACT_SPECIAL_N:
+        case SSBB_ACT_SPECIAL_N_AIR:
             PikaSfx_Play(PIKA_SFX_SPECIAL);
             break;
-        case SSBB_ACT_SPECIAL_HI_START: case SSBB_ACT_SPECIAL_HI_AIR_START:
+        case SSBB_ACT_SPECIAL_HI_START:
+        case SSBB_ACT_SPECIAL_HI_AIR_START:
             PikaSfx_Play(PIKA_SFX_QUICK_ATTACK);
             break;
-        case SSBB_ACT_SPECIAL_LW_START: case SSBB_ACT_SPECIAL_LW_AIR_START:
+        case SSBB_ACT_SPECIAL_LW_START:
+        case SSBB_ACT_SPECIAL_LW_AIR_START:
             PikaSfx_Play(PIKA_SFX_THUNDER);
             break;
-        case SSBB_ACT_SWING1: case SSBB_ACT_SWING4:
+        case SSBB_ACT_SWING1:
+        case SSBB_ACT_SWING4:
         case SSBB_ACT_JUMP_B: // Hammer windup uses JumpB anim
             PikaSfx_Play(PIKA_SFX_HAMMER);
             break;
-        case SSBB_ACT_DAMAGE_N1: case SSBB_ACT_DAMAGE_N2: case SSBB_ACT_DAMAGE_N3:
-        case SSBB_ACT_DAMAGE_HI1: case SSBB_ACT_DAMAGE_HI2: case SSBB_ACT_DAMAGE_HI3:
-        case SSBB_ACT_DAMAGE_LW1: case SSBB_ACT_DAMAGE_LW2: case SSBB_ACT_DAMAGE_LW3:
-        case SSBB_ACT_DAMAGE_AIR1: case SSBB_ACT_DAMAGE_AIR2: case SSBB_ACT_DAMAGE_AIR3:
-        case SSBB_ACT_DAMAGE_FLY_N: case SSBB_ACT_DAMAGE_FLY_HI: case SSBB_ACT_DAMAGE_FLY_LW:
-        case SSBB_ACT_DAMAGE_ELEC: case SSBB_ACT_DAMAGE_FALL:
+        case SSBB_ACT_DAMAGE_N1:
+        case SSBB_ACT_DAMAGE_N2:
+        case SSBB_ACT_DAMAGE_N3:
+        case SSBB_ACT_DAMAGE_HI1:
+        case SSBB_ACT_DAMAGE_HI2:
+        case SSBB_ACT_DAMAGE_HI3:
+        case SSBB_ACT_DAMAGE_LW1:
+        case SSBB_ACT_DAMAGE_LW2:
+        case SSBB_ACT_DAMAGE_LW3:
+        case SSBB_ACT_DAMAGE_AIR1:
+        case SSBB_ACT_DAMAGE_AIR2:
+        case SSBB_ACT_DAMAGE_AIR3:
+        case SSBB_ACT_DAMAGE_FLY_N:
+        case SSBB_ACT_DAMAGE_FLY_HI:
+        case SSBB_ACT_DAMAGE_FLY_LW:
+        case SSBB_ACT_DAMAGE_ELEC:
+        case SSBB_ACT_DAMAGE_FALL:
             PikaSfx_Play(PIKA_SFX_DAMAGE);
             break;
         default:
@@ -328,7 +355,7 @@ static f32 Pika_StickMag(PlayState* play) {
 // ── Public API (extern "C" interface for transformation_masks.c) ────────────
 
 extern "C" u8 PikachuForm_IsEnabled(void) {
-    return CVarGetInteger(PIKA_CVAR, 0) != 0;
+    return 1; // Always enabled — use Pokeball to transform
 }
 
 extern "C" u8 PikachuForm_LoadSkeleton(PlayState* play) {
@@ -427,7 +454,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     }
 
     // ── Gigantamax cooldown tick ──
-    if (sPika.giantCooldown > 0) sPika.giantCooldown--;
+    if (sPika.giantCooldown > 0)
+        sPika.giantCooldown--;
     sPikaSfxGiant = sPika.gigantamax;
     {
         const SSBBActionDef* gDef = SSBBAction_Get(sPika.currentAction);
@@ -445,7 +473,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     // (OOT sets unk_6AD=4 during invincibility frames for visual flicker)
     player->unk_6AD = 0;
     if (sPika.gigantamax && (play->gameplayFrames % 30 == 0))
-        lusprintf(__FILE__, __LINE__, 2, "GIGA: active=%d isAtk=%d action=%d\n", (int)gPikaGigantamaxActive, (int)Pika_IsAttacking(), (int)sPika.currentAction);
+        lusprintf(__FILE__, __LINE__, 2, "GIGA: active=%d isAtk=%d action=%d\n", (int)gPikaGigantamaxActive,
+                  (int)Pika_IsAttacking(), (int)sPika.currentAction);
 
     // ── Gigantamax state ──
     if (sPika.gigantamax) {
@@ -466,7 +495,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     } else {
         sPika.giantScale = 1.0f;
     }
-    if (sPika.giantTextTimer > 0) sPika.giantTextTimer--;
+    if (sPika.giantTextTimer > 0)
+        sPika.giantTextTimer--;
 
     // ── C-button item dispatch (bypass OOT's blocked Player_ProcessItemButtons) ──
     if (!Pika_IsAttacking()) {
@@ -628,35 +658,35 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
 
     // ── Shield (R button) — don't activate during grab/throw ──
     {
-    u8 inGrab = (sPika.currentAction == SSBB_ACT_CATCH || sPika.currentAction == SSBB_ACT_CATCH_DASH ||
-                 sPika.currentAction == SSBB_ACT_CATCH_WAIT || sPika.currentAction == SSBB_ACT_CATCH_ATTACK ||
-                 sPika.currentAction == SSBB_ACT_THROW_B || sPika.currentAction == SSBB_ACT_THROW_F ||
-                 sPika.currentAction == SSBB_ACT_THROW_HI || sPika.currentAction == SSBB_ACT_THROW_LW);
-    if (rHold && onGround && !Pika_IsAttacking() && !inGrab) {
-        if (sPika.currentAction != SSBB_ACT_GUARD && sPika.currentAction != SSBB_ACT_GUARD_ON) {
-            Pika_SetAction(SSBB_ACT_GUARD_ON);
-            sPika.shieldActive = 1;
-        } else if (sPika.currentAction == SSBB_ACT_GUARD_ON && Pika_ActionFinished()) {
-            Pika_SetAction(SSBB_ACT_GUARD);
-        }
-        // While shield active: act as Mirror Shield for Twinrova beam absorption
-        if (sPika.shieldActive) {
-            player->stateFlags1 |= PLAYER_STATE1_SHIELDING;
-            player->currentShield = PLAYER_SHIELD_MIRROR;
-        }
-        // Roll dodge: R + stick
-        if (rPress && stickMag > 0.5f) {
-            s16 stickAngle = play->state.input[0].cur.stick_x > 0 ? 0x4000 : -0x4000;
-            s16 facingDiff = stickAngle - player->actor.shape.rot.y;
-            if (facingDiff > 0) {
-                Pika_SetAction(SSBB_ACT_ESCAPE_F);
-            } else {
-                Pika_SetAction(SSBB_ACT_ESCAPE_B);
+        u8 inGrab = (sPika.currentAction == SSBB_ACT_CATCH || sPika.currentAction == SSBB_ACT_CATCH_DASH ||
+                     sPika.currentAction == SSBB_ACT_CATCH_WAIT || sPika.currentAction == SSBB_ACT_CATCH_ATTACK ||
+                     sPika.currentAction == SSBB_ACT_THROW_B || sPika.currentAction == SSBB_ACT_THROW_F ||
+                     sPika.currentAction == SSBB_ACT_THROW_HI || sPika.currentAction == SSBB_ACT_THROW_LW);
+        if (rHold && onGround && !Pika_IsAttacking() && !inGrab) {
+            if (sPika.currentAction != SSBB_ACT_GUARD && sPika.currentAction != SSBB_ACT_GUARD_ON) {
+                Pika_SetAction(SSBB_ACT_GUARD_ON);
+                sPika.shieldActive = 1;
+            } else if (sPika.currentAction == SSBB_ACT_GUARD_ON && Pika_ActionFinished()) {
+                Pika_SetAction(SSBB_ACT_GUARD);
             }
+            // While shield active: act as Mirror Shield for Twinrova beam absorption
+            if (sPika.shieldActive) {
+                player->stateFlags1 |= PLAYER_STATE1_SHIELDING;
+                player->currentShield = PLAYER_SHIELD_MIRROR;
+            }
+            // Roll dodge: R + stick
+            if (rPress && stickMag > 0.5f) {
+                s16 stickAngle = play->state.input[0].cur.stick_x > 0 ? 0x4000 : -0x4000;
+                s16 facingDiff = stickAngle - player->actor.shape.rot.y;
+                if (facingDiff > 0) {
+                    Pika_SetAction(SSBB_ACT_ESCAPE_F);
+                } else {
+                    Pika_SetAction(SSBB_ACT_ESCAPE_B);
+                }
+            }
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            goto advance_anim;
         }
-        player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
-        goto advance_anim;
-    }
     } // close inGrab scope
     if (sPika.shieldActive && !rHold) {
         sPika.shieldActive = 0;
@@ -748,19 +778,20 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     }
     if ((sPika.currentAction == SSBB_ACT_SPECIAL_LW_LOOP && sPika.actionFrame > 60) ||
         (sPika.currentAction == SSBB_ACT_SPECIAL_LW_AIR_LOOP && sPika.actionFrame > 60)) {
-        SSBBActionId endAct = (sPika.currentAction == SSBB_ACT_SPECIAL_LW_LOOP)
-            ? SSBB_ACT_SPECIAL_LW_CHARGE_END : SSBB_ACT_SPECIAL_LW_AIR_CHARGE_END;
+        SSBBActionId endAct = (sPika.currentAction == SSBB_ACT_SPECIAL_LW_LOOP) ? SSBB_ACT_SPECIAL_LW_CHARGE_END
+                                                                                : SSBB_ACT_SPECIAL_LW_AIR_CHARGE_END;
         Pika_SetAction(endAct);
         player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
         goto advance_anim;
     }
-    if ((sPika.currentAction == SSBB_ACT_SPECIAL_LW_LOOP ||
-         sPika.currentAction == SSBB_ACT_SPECIAL_LW_AIR_LOOP) && !Pika_ActionFinished()) {
+    if ((sPika.currentAction == SSBB_ACT_SPECIAL_LW_LOOP || sPika.currentAction == SSBB_ACT_SPECIAL_LW_AIR_LOOP) &&
+        !Pika_ActionFinished()) {
         player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
         goto advance_anim;
     }
     if ((sPika.currentAction == SSBB_ACT_SPECIAL_LW_CHARGE_END ||
-         sPika.currentAction == SSBB_ACT_SPECIAL_LW_AIR_CHARGE_END) && !Pika_ActionFinished()) {
+         sPika.currentAction == SSBB_ACT_SPECIAL_LW_AIR_CHARGE_END) &&
+        !Pika_ActionFinished()) {
         player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
         goto advance_anim;
     }
@@ -782,78 +813,79 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
         sPika.aBufferTimer--;
 
     {
-    u8 jabSelfCancel = ((sPika.currentAction == SSBB_ACT_ATTACK_JAB ||
-                         sPika.currentAction == SSBB_ACT_ATTACK_UTILT ||
-                         sPika.currentAction == SSBB_ACT_ATTACK_USMASH) && sPika.actionFrame >= 3);
-    if (sPika.aBufferTimer > 0 && (Pika_CanCancel() || !Pika_IsAttacking() || jabSelfCancel)) {
-        sPika.aBufferTimer = 0;
-        u8 wasFlick = sPika.aBufferStickFlick;
-        SSBBActionId newAction = SSBB_ACT_WAIT1;
+        u8 jabSelfCancel =
+            ((sPika.currentAction == SSBB_ACT_ATTACK_JAB || sPika.currentAction == SSBB_ACT_ATTACK_UTILT ||
+              sPika.currentAction == SSBB_ACT_ATTACK_USMASH) &&
+             sPika.actionFrame >= 3);
+        if (sPika.aBufferTimer > 0 && (Pika_CanCancel() || !Pika_IsAttacking() || jabSelfCancel)) {
+            sPika.aBufferTimer = 0;
+            u8 wasFlick = sPika.aBufferStickFlick;
+            SSBBActionId newAction = SSBB_ACT_WAIT1;
 
-        // Gigantamax: only jab combo allowed (no tilts, smashes, aerials)
-        if (sPika.gigantamax) {
-            newAction = SSBB_ACT_ATTACK_JAB;
-            Pika_SetAction(newAction);
-            goto advance_anim;
-        }
-
-        if (!onGround && sPika.comboCount == 0) {
-            // Air attacks (only if NOT in jab combo chain)
-            if (lHold) {
-                newAction = SSBB_ACT_ATTACK_DAIR;
-            } else if (stickMag > 0.3f) {
-                s16 stickYaw = Math_Atan2S(play->state.input[0].cur.stick_x, play->state.input[0].cur.stick_y);
-                s16 facingDiff = stickYaw - player->actor.shape.rot.y;
-                if (abs(facingDiff) > 0x4000) {
-                    newAction = SSBB_ACT_ATTACK_BAIR;
-                } else {
-                    newAction = SSBB_ACT_ATTACK_FAIR;
-                }
-            } else {
-                newAction = SSBB_ACT_ATTACK_NAIR;
+            // Gigantamax: only jab combo allowed (no tilts, smashes, aerials)
+            if (sPika.gigantamax) {
+                newAction = SSBB_ACT_ATTACK_JAB;
+                Pika_SetAction(newAction);
+                goto advance_anim;
             }
-        } else if ((wasFlick || sPika.stickFlickTimer > 0) && stickMag > 0.5f) {
-            // Stick flick + A = Forward/Down smash
-            if (lHold) {
-                newAction = SSBB_ACT_ATTACK_DSMASH;
-            } else {
-                // Start smash charge (AttackS4Hold loops while A held)
+
+            if (!onGround && sPika.comboCount == 0) {
+                // Air attacks (only if NOT in jab combo chain)
+                if (lHold) {
+                    newAction = SSBB_ACT_ATTACK_DAIR;
+                } else if (stickMag > 0.3f) {
+                    s16 stickYaw = Math_Atan2S(play->state.input[0].cur.stick_x, play->state.input[0].cur.stick_y);
+                    s16 facingDiff = stickYaw - player->actor.shape.rot.y;
+                    if (abs(facingDiff) > 0x4000) {
+                        newAction = SSBB_ACT_ATTACK_BAIR;
+                    } else {
+                        newAction = SSBB_ACT_ATTACK_FAIR;
+                    }
+                } else {
+                    newAction = SSBB_ACT_ATTACK_NAIR;
+                }
+            } else if ((wasFlick || sPika.stickFlickTimer > 0) && stickMag > 0.5f) {
+                // Stick flick + A = Forward/Down smash
+                if (lHold) {
+                    newAction = SSBB_ACT_ATTACK_DSMASH;
+                } else {
+                    // Start smash charge (AttackS4Hold loops while A held)
+                    newAction = SSBB_ACT_ATTACK_FSMASH_HOLD;
+                    sPika.smashCharging = 1;
+                    sPika.smashCharge = 0;
+                }
+            } else if (speed > 4.0f && sPika.runTimer < 60) {
+                // Running < 1 second + A = Forward Smash charge
                 newAction = SSBB_ACT_ATTACK_FSMASH_HOLD;
                 sPika.smashCharging = 1;
                 sPika.smashCharge = 0;
-            }
-        } else if (speed > 4.0f && sPika.runTimer < 60) {
-            // Running < 1 second + A = Forward Smash charge
-            newAction = SSBB_ACT_ATTACK_FSMASH_HOLD;
-            sPika.smashCharging = 1;
-            sPika.smashCharge = 0;
-        } else if (speed > 4.0f) {
-            // Running 1+ second + A = Dash Attack
-            newAction = SSBB_ACT_ATTACK_DASH;
-        } else if (lHold) {
-            newAction = SSBB_ACT_ATTACK_DTILT;
-        } else if (stickMag > 0.3f) {
-            // A + stick held = Forward tilt
-            newAction = SSBB_ACT_ATTACK_FTILT;
-        } else {
-            // A combo chain: jab → utilt → usmash (3 different anims)
-            if (sPika.comboCount == 0) {
-                newAction = SSBB_ACT_ATTACK_JAB;
-                sPika.comboCount = 1;
-            } else if (sPika.comboCount == 1) {
-                newAction = SSBB_ACT_ATTACK_UTILT;
-                sPika.comboCount = 2;
+            } else if (speed > 4.0f) {
+                // Running 1+ second + A = Dash Attack
+                newAction = SSBB_ACT_ATTACK_DASH;
+            } else if (lHold) {
+                newAction = SSBB_ACT_ATTACK_DTILT;
+            } else if (stickMag > 0.3f) {
+                // A + stick held = Forward tilt
+                newAction = SSBB_ACT_ATTACK_FTILT;
             } else {
-                newAction = SSBB_ACT_ATTACK_USMASH;
-                sPika.comboCount = 0;
+                // A combo chain: jab → utilt → usmash (3 different anims)
+                if (sPika.comboCount == 0) {
+                    newAction = SSBB_ACT_ATTACK_JAB;
+                    sPika.comboCount = 1;
+                } else if (sPika.comboCount == 1) {
+                    newAction = SSBB_ACT_ATTACK_UTILT;
+                    sPika.comboCount = 2;
+                } else {
+                    newAction = SSBB_ACT_ATTACK_USMASH;
+                    sPika.comboCount = 0;
+                }
             }
-        }
 
-        Pika_SetAction(newAction);
-        player->actor.shape.rot.y = player->actor.world.rot.y;
-        player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
-        goto advance_anim;
-    }
+            Pika_SetAction(newAction);
+            player->actor.shape.rot.y = player->actor.world.rot.y;
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            goto advance_anim;
+        }
     } // close jabSelfCancel scope
 
     // Reset combo if not in attack
@@ -891,7 +923,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                     nut->gravity = -2.0f;
                 }
                 AMMO(ITEM_NUT) -= 1;
-                if (AMMO(ITEM_NUT) < 0) AMMO(ITEM_NUT) = 0;
+                if (AMMO(ITEM_NUT) < 0)
+                    AMMO(ITEM_NUT) = 0;
                 sPika.bombPending = 0;
             }
             if (Pika_ActionFinished()) {
@@ -917,7 +950,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                 }
 
                 AMMO(ammoItem) -= 1;
-                if (AMMO(ammoItem) < 0) AMMO(ammoItem) = 0;
+                if (AMMO(ammoItem) < 0)
+                    AMMO(ammoItem) = 0;
 
                 Pika_SetAction(SSBB_ACT_HEAVY_THROW_HI);
                 sPika.bombPending = 0;
@@ -1054,12 +1088,11 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     }
     {
         const SSBBActionDef* curDef = SSBBAction_Get(sPika.currentAction);
-        u8 isQuickAtk = (sPika.currentAction == SSBB_ACT_SPECIAL_HI_START ||
-                         sPika.currentAction == SSBB_ACT_SPECIAL_HI_AIR_START);
-        u8 isSkullBash = (sPika.currentAction == SSBB_ACT_SPECIAL_S ||
-                          sPika.currentAction == SSBB_ACT_SPECIAL_S_AIR_START);
-        if (curDef && (curDef->flags & SSBB_ACT_FLAG_LOCKED) && !Pika_ActionFinished() &&
-            !isQuickAtk && !isSkullBash) {
+        u8 isQuickAtk =
+            (sPika.currentAction == SSBB_ACT_SPECIAL_HI_START || sPika.currentAction == SSBB_ACT_SPECIAL_HI_AIR_START);
+        u8 isSkullBash =
+            (sPika.currentAction == SSBB_ACT_SPECIAL_S || sPika.currentAction == SSBB_ACT_SPECIAL_S_AIR_START);
+        if (curDef && (curDef->flags & SSBB_ACT_FLAG_LOCKED) && !Pika_ActionFinished() && !isQuickAtk && !isSkullBash) {
             player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
             if (!(curDef->flags & SSBB_ACT_FLAG_MOVEMENT)) {
                 player->actor.velocity.x = 0;
@@ -1072,13 +1105,14 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     }
 
     // Reset air quick attack when on ground
-    if (onGround) sPika.airQuickAtkUsed = 0;
+    if (onGround)
+        sPika.airQuickAtkUsed = 0;
 
     // ── Quick Attack — forward dash or homing launch (like Spinner) ──
     if (sPika.currentAction == SSBB_ACT_SPECIAL_HI_START || sPika.currentAction == SSBB_ACT_SPECIAL_HI_AIR_START) {
         player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
-        Actor* target = (player->focusActor && (player->stateFlags1 & PLAYER_STATE1_Z_TARGETING))
-                        ? player->focusActor : NULL;
+        Actor* target =
+            (player->focusActor && (player->stateFlags1 & PLAYER_STATE1_Z_TARGETING)) ? player->focusActor : NULL;
         // Block air usage if already used once (like Roc's Cape)
         if (!onGround && sPika.qatkPhase == 0 && sPika.airQuickAtkUsed) {
             Pika_SetAction(SSBB_ACT_FALL);
@@ -1088,7 +1122,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
         if (sPika.qatkPhase == 0) {
             sPika.qatkPhase = 1;
             sPika.qatkTimer = target ? 30 : 12;
-            if (!onGround) sPika.airQuickAtkUsed = 1;
+            if (!onGround)
+                sPika.airQuickAtkUsed = 1;
             Audio_PlayActorSound2(&player->actor, NA_SE_IT_BOOMERANG_THROW);
         }
         if (sPika.qatkPhase >= 1 && sPika.qatkTimer > 0) {
@@ -1104,7 +1139,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                 player->linearVelocity = 0.0f;
                 player->actor.world.rot.y = player->actor.shape.rot.y = angle;
                 f32 dist = Math_Vec3f_DistXYZ(&player->actor.world.pos, &target->world.pos);
-                if (dist < 60.0f) sPika.qatkTimer = 0;
+                if (dist < 60.0f)
+                    sPika.qatkTimer = 0;
             } else {
                 // NO TARGET: dash forward in facing direction
                 s16 yaw = player->actor.world.rot.y;
@@ -1112,16 +1148,17 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                 player->actor.world.pos.z += Math_CosS(yaw) * 40.0f;
                 player->linearVelocity = 0.0f;
             }
-            if (player->actor.bgCheckFlags & 0x08) sPika.qatkTimer = 0;
+            if (player->actor.bgCheckFlags & 0x08)
+                sPika.qatkTimer = 0;
 
             // Boomerang / G-Max Volt Crash collider during dash
             s16 qRadius = sPika.gigantamax ? (s16)(40 * sPika.giantScale) : 40;
             s16 qHeight = sPika.gigantamax ? (s16)(40 * sPika.giantScale) : 40;
             sPika.atCyl.dim.radius = qRadius;
             sPika.atCyl.dim.height = qHeight;
-            sPika.atCyl.info.toucher.dmgFlags = sPika.gigantamax
-                ? (DMG_UNBLOCKABLE | DMG_SLASH_MASTER | DMG_BOOMERANG | DMG_ARROW_LIGHT)
-                : (DMG_BOOMERANG | DMG_SLASH_MASTER | DMG_ARROW_LIGHT);
+            sPika.atCyl.info.toucher.dmgFlags =
+                sPika.gigantamax ? (DMG_UNBLOCKABLE | DMG_SLASH_MASTER | DMG_BOOMERANG | DMG_ARROW_LIGHT)
+                                 : (DMG_BOOMERANG | DMG_SLASH_MASTER | DMG_ARROW_LIGHT);
             sPika.atCyl.info.toucher.damage = sPika.gigantamax ? 16 : 8;
             sPika.atCyl.info.toucher.effect = 0x08;
             sPika.atCyl.info.toucherFlags = TOUCH_ON | TOUCH_SFX_HARD;
@@ -2048,7 +2085,8 @@ advance_anim:
             if ((play->gameplayFrames % 2) == 0) {
                 for (s32 k = 0; k < 3; k++) {
                     f32 angle = (f32)k * 2.094f + (f32)play->gameplayFrames * 0.8f;
-                    Vec3f kPos = { pPos.x + Math_SinF(angle) * 12.0f, pPos.y + 15.0f, pPos.z + Math_CosF(angle) * 12.0f };
+                    Vec3f kPos = { pPos.x + Math_SinF(angle) * 12.0f, pPos.y + 15.0f,
+                                   pPos.z + Math_CosF(angle) * 12.0f };
                     Vec3f kVel = { Math_SinF(angle) * 1.5f, 1.0f, Math_CosF(angle) * 1.5f };
                     EffectSsKiraKira_SpawnFocused(play, &kPos, &kVel, &zero, &elecPrim, &elecEnv, 400, 12);
                 }
@@ -2056,7 +2094,8 @@ advance_anim:
             // Lightning bolt every 3 frames along trail
             if ((play->gameplayFrames % 3) == 0) {
                 Vec3f boltPos = { pPos.x - sPika.qatkDir.x * 20.0f, pPos.y + 15.0f, pPos.z - sPika.qatkDir.z * 20.0f };
-                EffectSsLightning_Spawn(play, &boltPos, &elecPrim, &elecEnv, 120, (s16)(play->gameplayFrames * 0x2000), 10, 3);
+                EffectSsLightning_Spawn(play, &boltPos, &elecPrim, &elecEnv, 120, (s16)(play->gameplayFrames * 0x2000),
+                                        10, 3);
             }
             // Continuous whoosh SFX
             func_8002F974(&player->actor, NA_SE_IT_BOOMERANG_FLY - SFX_FLAG);
@@ -2222,360 +2261,357 @@ advance_anim:
     }
 
     // Specials & other non-A-flag attacks: always active during their action
-    if (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP ||  // Thunder
-        act == SSBB_ACT_SPECIAL_S || act == SSBB_ACT_SPECIAL_S_AIR_START ||          // Skull Bash dash
-        act == SSBB_ACT_SPECIAL_N || act == SSBB_ACT_SPECIAL_N_AIR ||                // Thunder Jolt
-        act == SSBB_ACT_SPECIAL_HI_START || act == SSBB_ACT_SPECIAL_HI_AIR_START ||  // Quick Attack
-        act == SSBB_ACT_ITEM_HAMMER_WAIT || act == SSBB_ACT_ITEM_HAMMER_MOVE ||      // Hammer
-        act == SSBB_ACT_ITEM_HAMMER_AIR ||
-        act == SSBB_ACT_CATCH || act == SSBB_ACT_CATCH_DASH ||                       // Grab
-        act == SSBB_ACT_CATCH_ATTACK ||                                               // Pummel
-        act == SSBB_ACT_THROW_F || act == SSBB_ACT_THROW_B ||                        // Throws
-        act == SSBB_ACT_THROW_HI || act == SSBB_ACT_THROW_LW ||
-        act == SSBB_ACT_SWING1 || act == SSBB_ACT_SWING3 ||                          // Item swings
-        act == SSBB_ACT_SWING4 || act == SSBB_ACT_SWING4_BAT ||
-        act == SSBB_ACT_SWING_DASH)
+    if (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP ||                 // Thunder
+        act == SSBB_ACT_SPECIAL_S || act == SSBB_ACT_SPECIAL_S_AIR_START ||                       // Skull Bash dash
+        act == SSBB_ACT_SPECIAL_N || act == SSBB_ACT_SPECIAL_N_AIR ||                             // Thunder Jolt
+        act == SSBB_ACT_SPECIAL_HI_START || act == SSBB_ACT_SPECIAL_HI_AIR_START ||               // Quick Attack
+        act == SSBB_ACT_ITEM_HAMMER_WAIT || act == SSBB_ACT_ITEM_HAMMER_MOVE ||                   // Hammer
+        act == SSBB_ACT_ITEM_HAMMER_AIR || act == SSBB_ACT_CATCH || act == SSBB_ACT_CATCH_DASH || // Grab
+        act == SSBB_ACT_CATCH_ATTACK ||                                                           // Pummel
+        act == SSBB_ACT_THROW_F || act == SSBB_ACT_THROW_B ||                                     // Throws
+        act == SSBB_ACT_THROW_HI || act == SSBB_ACT_THROW_LW || act == SSBB_ACT_SWING1 ||
+        act == SSBB_ACT_SWING3 || // Item swings
+        act == SSBB_ACT_SWING4 || act == SSBB_ACT_SWING4_BAT || act == SSBB_ACT_SWING_DASH)
         hitboxActive = 1;
 
     if (hitboxActive && sPika.colliderReady) {
 
-            // ── Per-attack hitbox parameters ──
-            // dmgFlags must cover what each boss/puzzle needs:
-            //   Sword:     0x00000700 (KOKIRI|MASTER|GIANT) — most enemies
-            //   Hammer:    0x00000040 — rusted switches, Volvagia, Ganon
-            //   Arrow:     0x00000020 — Gohma eye, Bongo Bongo hands
-            //   Hookshot:  0x00000080 — Morpha, various pulls
-            //   Boomerang: 0x00000010 — Barinade tentacles, parasites
-            //   Explosive: 0x00000008 — bombable walls, Dodongo, Ganon
-            //   MagicFire: 0x00020000 — ice blocks, torches
-            //   MagicLight:0x00080000 — Ganondorf, dark enemies
-            //   ArrowLight:0x00002000 — Ganondorf stun, Bongo Bongo
-            //   DekuNut:   0x00000001 — stun
-            //   Spin:      0x01C00000 — spin attack damage
+        // ── Per-attack hitbox parameters ──
+        // dmgFlags must cover what each boss/puzzle needs:
+        //   Sword:     0x00000700 (KOKIRI|MASTER|GIANT) — most enemies
+        //   Hammer:    0x00000040 — rusted switches, Volvagia, Ganon
+        //   Arrow:     0x00000020 — Gohma eye, Bongo Bongo hands
+        //   Hookshot:  0x00000080 — Morpha, various pulls
+        //   Boomerang: 0x00000010 — Barinade tentacles, parasites
+        //   Explosive: 0x00000008 — bombable walls, Dodongo, Ganon
+        //   MagicFire: 0x00020000 — ice blocks, torches
+        //   MagicLight:0x00080000 — Ganondorf, dark enemies
+        //   ArrowLight:0x00002000 — Ganondorf stun, Bongo Bongo
+        //   DekuNut:   0x00000001 — stun
+        //   Spin:      0x01C00000 — spin attack damage
 
-            // ── ATKD-verified hitbox data from FitPikachuMotionEtc.pac ──
-            // Sizes scaled: Brawl range × 1.5 for OOT collider units
-            // dmgFlags: real macros from z64collision_check.h
-            s32 radius = 20;
-            s32 height = 25;
-            s32 damage = 4;
-            // Default: hits EVERYTHING (all damage bits except shield/mirror)
-            u32 dmgFlags = DMG_DEFAULT;
-            u8 sfxType = TOUCH_SFX_WOOD;
-            u32 atTypeFlags = AT_ON | AT_TYPE_PLAYER;
+        // ── ATKD-verified hitbox data from FitPikachuMotionEtc.pac ──
+        // Sizes scaled: Brawl range × 1.5 for OOT collider units
+        // dmgFlags: real macros from z64collision_check.h
+        s32 radius = 20;
+        s32 height = 25;
+        s32 damage = 4;
+        // Default: hits EVERYTHING (all damage bits except shield/mirror)
+        u32 dmgFlags = DMG_DEFAULT;
+        u8 sfxType = TOUCH_SFX_WOOD;
+        u32 atTypeFlags = AT_ON | AT_TYPE_PLAYER;
 
-            SSBBActionId act = sPika.currentAction;
+        SSBBActionId act = sPika.currentAction;
 
-            // ═══ JAB COMBO (3 hits) ═══
-            // Hit 1 (JAB): Headbutt — sphere at head position, sword damage
+        // ═══ JAB COMBO (3 hits) ═══
+        // Hit 1 (JAB): Headbutt — sphere at head position, sword damage
+        if (act == SSBB_ACT_ATTACK_JAB) {
+            damage = 4; // Master sword damage
+            radius = 15;
+            height = 15;
+            dmgFlags = DMG_SLASH_MASTER | DMG_SPIN_MASTER;
+        }
+        // ── Forward Tilt: BGS damage ──
+        if (act == SSBB_ACT_ATTACK_FTILT || act == SSBB_ACT_ATTACK_FTILT_HI || act == SSBB_ACT_ATTACK_FTILT_LW) {
+            damage = 8;
+            radius = 13;
+            height = 12;
+            dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+        }
+        // Hit 2 (UTILT in combo): BGS damage
+        if (act == SSBB_ACT_ATTACK_UTILT) {
+            damage = 8;
+            radius = 30;
+            height = 30;
+            dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+        }
+        // ── Down Tilt: BGS damage ──
+        if (act == SSBB_ACT_ATTACK_DTILT) {
+            damage = 8;
+            radius = 13;
+            height = 15;
+            dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+        }
+        // ── Dash Attack: ATKD frames 4-16, X=[3,32] Y=[0,12] ──
+        if (act == SSBB_ACT_ATTACK_DASH) {
+            damage = 4;
+            radius = 22;
+            height = 18;
+            dmgFlags = DMG_SLASH_MASTER | DMG_HAMMER_SWING | DMG_MAGIC_LIGHT;
+        }
+        // ── Aerials: boosted radius and damage for OOT gameplay ──
+        if (act == SSBB_ACT_ATTACK_NAIR) {
+            damage = 8;
+            radius = 30;
+            height = 30;
+        }
+        if (act == SSBB_ACT_ATTACK_FAIR) {
+            damage = 6;
+            radius = 30;
+            height = 25;
+        }
+        if (act == SSBB_ACT_ATTACK_BAIR) {
+            damage = 6;
+            radius = 30;
+            height = 25;
+        }
+        if (act == SSBB_ACT_ATTACK_UAIR) {
+            damage = 6;
+            radius = 35;
+            height = 50;
+        }
+        if (act == SSBB_ACT_ATTACK_DAIR) {
+            damage = 8;
+            radius = 11;
+            height = 30;
+        } // X=[-7,7] Y=[-10,10]
+        if (act >= SSBB_ACT_ATTACK_NAIR && act <= SSBB_ACT_ATTACK_DAIR) {
+            dmgFlags = DMG_SLASH_KOKIRI | DMG_SLASH_MASTER | DMG_BOOMERANG | DMG_MAGIC_LIGHT;
+        }
+        // ── Forward Smash: damage scales with charge (4 uncharged → 8 full) ──
+        // ── Forward Smash: BGS damage, charge 8→16 (double BGS jump slash at max) ──
+        if (act == SSBB_ACT_ATTACK_FSMASH) {
+            f32 chPct = (f32)sPika.smashCharge / 60.0f;
+            if (chPct > 1.0f)
+                chPct = 1.0f;
+            damage = 8 + (s32)(chPct * 8.0f); // 8-16
+            radius = 15 + (s32)(chPct * 10.0f);
+            height = 15;
+            sfxType = TOUCH_SFX_HARD;
+            dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+        }
+        // ── Up Smash (combo hit 3): BGS damage + paralyze ──
+        if (act == SSBB_ACT_ATTACK_USMASH) {
+            damage = 8;
+            radius = 25;
+            height = 25;
+            sfxType = TOUCH_SFX_HARD;
+            dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT | DMG_DEKU_NUT;
+        }
+        // ── Down Smash: BGS damage ──
+        if (act == SSBB_ACT_ATTACK_DSMASH) {
+            damage = 8;
+            radius = 21;
+            height = 27;
+            sfxType = TOUCH_SFX_HARD;
+            dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+        }
+        // ── Final Smash: ALL damage types ──
+        if (act == SSBB_ACT_FINAL || act == SSBB_ACT_FINAL2 || act == SSBB_ACT_FINAL_AIR ||
+            act == SSBB_ACT_FINAL_AIR2) {
+            radius = 80;
+            height = 80;
+            damage = 20;
+            sfxType = TOUCH_SFX_HARD;
+            dmgFlags = DMG_DEFAULT;
+            atTypeFlags = AT_ON | AT_TYPE_ALL;
+        }
+        // ── Thunder Jolt: projectile-type ──
+        if (act == SSBB_ACT_SPECIAL_N || act == SSBB_ACT_SPECIAL_N_AIR) {
+            radius = 15;
+            height = 15;
+            damage = 6;
+            dmgFlags = DMG_SLINGSHOT | DMG_SLASH_KOKIRI | DMG_ARROW_NORMAL | DMG_HOOKSHOT;
+        }
+        // ── Skull Bash: damage scales with charge (7% uncharged → 25% full) ──
+        if (act == SSBB_ACT_SPECIAL_S) {
+            f32 chPct = (f32)sPika.chargeTimer / 60.0f;
+            if (chPct > 1.0f)
+                chPct = 1.0f;
+            damage = 4 + (s32)(chPct * 12.0f);  // 4-16 damage based on charge
+            radius = 25 + (s32)(chPct * 15.0f); // 25-40 radius
+            height = 30 + (s32)(chPct * 10.0f); // 30-40 height
+            sfxType = TOUCH_SFX_HARD;
+            // Hammer flag to break things (rusted switches, rocks) + slash + electric
+            dmgFlags = DMG_SLASH | DMG_HAMMER_SWING | DMG_HOOKSHOT | DMG_EXPLOSIVE | DMG_MAGIC_LIGHT;
+        }
+
+        // ── Quick Attack: large boomerang collider, stuns Barinade ──
+        if (act == SSBB_ACT_SPECIAL_HI_START || act == SSBB_ACT_SPECIAL_HI_AIR_START) {
+            radius = 40;
+            height = 50;
+            damage = 8;
+            dmgFlags = DMG_BOOMERANG | DMG_DEKU_NUT | DMG_SLASH_MASTER | DMG_SLINGSHOT | DMG_HOOKSHOT | DMG_MAGIC_LIGHT;
+        }
+        // ── THUNDER (L+B): MASSIVE AoE — 2× Biggoron jump slash ──
+        // Active during LOOP phase (60 frames of continuous damage).
+        // Radius 120 covers entire arena. Damage 16 = 4 full hearts.
+        if (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) {
+            radius = 120;
+            height = 150;
+            damage = 16;
+            sfxType = TOUCH_SFX_HARD;
+            dmgFlags = DMG_SLASH_MASTER | DMG_SLASH_GIANT | DMG_HAMMER_SWING | DMG_EXPLOSIVE | DMG_ARROW_LIGHT |
+                       DMG_MAGIC_FIRE | DMG_MAGIC_ICE | DMG_MAGIC_LIGHT | DMG_HOOKSHOT | DMG_BOOMERANG | DMG_SLINGSHOT |
+                       DMG_UNBLOCKABLE;
+            atTypeFlags = AT_ON | AT_TYPE_ALL;
+        }
+        // ── Grab: hookshot pull — must hit Morpha ──
+        if (act == SSBB_ACT_CATCH) {
+            radius = 30;
+            height = 30;
+            damage = 2;
+            dmgFlags = DMG_HOOKSHOT | DMG_BOOMERANG | DMG_MAGIC_LIGHT;
+        }
+        if (act == SSBB_ACT_CATCH_DASH) {
+            radius = 35;
+            height = 30;
+            damage = 2;
+            dmgFlags = DMG_HOOKSHOT | DMG_BOOMERANG | DMG_MAGIC_LIGHT;
+        }
+        // ── Back Throw: strong knockback damage ──
+        if (act == SSBB_ACT_THROW_B || act == SSBB_ACT_THROW_F || act == SSBB_ACT_THROW_HI ||
+            act == SSBB_ACT_THROW_LW) {
+            radius = 30;
+            height = 30;
+            damage = 8;
+            dmgFlags = DMG_DEFAULT;
+            sfxType = TOUCH_SFX_HARD;
+        }
+        // ── Pummel (CatchAttack): 2% Electric per hit ──
+        if (act == SSBB_ACT_CATCH_ATTACK) {
+            radius = 15;
+            height = 20;
+            damage = 2;
+            dmgFlags = DMG_SLASH_KOKIRI | DMG_MAGIC_LIGHT;
+        }
+
+        // ── Hammer: ATKD range 36×23 ──
+        if (act == SSBB_ACT_ITEM_HAMMER_WAIT || act == SSBB_ACT_ITEM_HAMMER_MOVE || act == SSBB_ACT_ITEM_HAMMER_AIR) {
+            radius = 72;
+            height = 46;
+            damage = 12;
+            sfxType = TOUCH_SFX_HARD;
+            dmgFlags = 0x40 | 0x08 | 0x400 | 0x80000 | 0x400000 | 0x800000 | 0x1000000;
+        }
+
+        // ── Melee items (Deku Stick): reflect energy balls ──
+        if (act == SSBB_ACT_SWING1 || act == SSBB_ACT_SWING3 || act == SSBB_ACT_SWING4 || act == SSBB_ACT_SWING4_BAT ||
+            act == SSBB_ACT_SWING_DASH) {
+            damage = 4;
+            dmgFlags = 0x02 | 0x100 | 0x200 | 0x400 | 0x100000;
+            // DEKU_STICK | SLASH_ALL | SHIELD (reflect)
+        }
+
+        // ── Elemental Rod: NO hitbox here — rods spawn arrow projectiles ──
+        // (handled in PikaItem_ElementalRod which spawns En_Arrow)
+        if (act == SSBB_ACT_ITEM_SHOOT || act == SSBB_ACT_ITEM_SHOOT_AIR) {
+            // Don't activate AT collider — the arrow actor handles damage
+            radius = 0;
+            height = 0;
+            damage = 0;
+        }
+
+        sPika.atCyl.dim.radius = radius;
+        sPika.atCyl.dim.height = height;
+        // Thunder extends both up AND down; everything else starts at feet
+        sPika.atCyl.dim.yShift = (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) ? -75 : 0;
+        // Gigantamax: add UNBLOCKABLE to ALL attacks so bosses take damage
+        if (sPika.gigantamax)
+            dmgFlags |= DMG_UNBLOCKABLE;
+        sPika.atCyl.info.toucher.dmgFlags = dmgFlags;
+        sPika.atCyl.info.toucher.damage = (u8)damage;
+        // Effect: 0x08=electric (Biri), 0x01=stun (Deku Nut), 0x00=normal
+        if (dmgFlags & DMG_DEKU_NUT) {
+            sPika.atCyl.info.toucher.effect = 0x01; // Stun/paralyze
+        } else {
+            sPika.atCyl.info.toucher.effect = 0x00; // Normal sword hit
+        }
+        sPika.atCyl.info.toucherFlags = TOUCH_ON | TOUCH_SFX_WOOD;
+        sPika.atCyl.base.actor = &player->actor;
+        sPika.atCyl.base.atFlags = atTypeFlags;
+
+        // Position collider IN FRONT of Pikachu (not at feet)
+        // Up attacks (utilt, usmash, uair) go above; down attacks below; rest forward
+        Collider_UpdateCylinder(&player->actor, &sPika.atCyl);
+        {
+            f32 pyaw = (f32)player->actor.shape.rot.y * (M_PI / 0x8000);
+            // All colliders centered on Pikachu, max 5 units forward offset
+            f32 fwd = 0.0f; // Default: centered
+            f32 up = 10.0f; // Default: body center
+
+            // Thunder: centered on Pikachu, elevated
+            if (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) {
+                fwd = 0.0f;
+                up = 30.0f;
+            }
+            // Jab combo
             if (act == SSBB_ACT_ATTACK_JAB) {
-                damage = 4; // Master sword damage
-                radius = 15;
-                height = 15;
-                dmgFlags = DMG_SLASH_MASTER | DMG_SPIN_MASTER;
+                fwd = 5.0f;
+                up = 15.0f;
             }
-            // ── Forward Tilt: BGS damage ──
-            if (act == SSBB_ACT_ATTACK_FTILT || act == SSBB_ACT_ATTACK_FTILT_HI || act == SSBB_ACT_ATTACK_FTILT_LW) {
-                damage = 8;
-                radius = 13;
-                height = 12;
-                dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
-            }
-            // Hit 2 (UTILT in combo): BGS damage
             if (act == SSBB_ACT_ATTACK_UTILT) {
-                damage = 8;
-                radius = 30;
-                height = 30;
-                dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+                fwd = 0.0f;
+                up = 10.0f;
             }
-            // ── Down Tilt: BGS damage ──
+            if (act == SSBB_ACT_ATTACK_USMASH) {
+                fwd = 5.0f;
+                up = 10.0f;
+            }
+            // Tilts
+            if (act == SSBB_ACT_ATTACK_FTILT || act == SSBB_ACT_ATTACK_FTILT_HI || act == SSBB_ACT_ATTACK_FTILT_LW) {
+                fwd = 5.0f;
+                up = 10.0f;
+            }
             if (act == SSBB_ACT_ATTACK_DTILT) {
-                damage = 8;
-                radius = 13;
-                height = 15;
-                dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+                fwd = 5.0f;
+                up = 0.0f;
             }
-            // ── Dash Attack: ATKD frames 4-16, X=[3,32] Y=[0,12] ──
-            if (act == SSBB_ACT_ATTACK_DASH) {
-                damage = 4;
-                radius = 22;
-                height = 18;
-                dmgFlags = DMG_SLASH_MASTER | DMG_HAMMER_SWING | DMG_MAGIC_LIGHT;
+            // Smashes
+            if (act == SSBB_ACT_ATTACK_FSMASH) {
+                fwd = 5.0f;
+                up = 10.0f;
             }
-            // ── Aerials: boosted radius and damage for OOT gameplay ──
-            if (act == SSBB_ACT_ATTACK_NAIR) {
-                damage = 8;
-                radius = 30;
-                height = 30;
+            if (act == SSBB_ACT_ATTACK_DSMASH) {
+                fwd = 0.0f;
+                up = 0.0f;
             }
-            if (act == SSBB_ACT_ATTACK_FAIR) {
-                damage = 6;
-                radius = 30;
-                height = 25;
-            }
-            if (act == SSBB_ACT_ATTACK_BAIR) {
-                damage = 6;
-                radius = 30;
-                height = 25;
-            }
+            // Aerials
             if (act == SSBB_ACT_ATTACK_UAIR) {
-                damage = 6;
-                radius = 35;
-                height = 50;
+                fwd = 0.0f;
+                up = 20.0f;
             }
             if (act == SSBB_ACT_ATTACK_DAIR) {
-                damage = 8;
-                radius = 11;
-                height = 30;
-            } // X=[-7,7] Y=[-10,10]
-            if (act >= SSBB_ACT_ATTACK_NAIR && act <= SSBB_ACT_ATTACK_DAIR) {
-                dmgFlags = DMG_SLASH_KOKIRI | DMG_SLASH_MASTER | DMG_BOOMERANG | DMG_MAGIC_LIGHT;
+                fwd = 0.0f;
+                up = -5.0f;
             }
-            // ── Forward Smash: damage scales with charge (4 uncharged → 8 full) ──
-            // ── Forward Smash: BGS damage, charge 8→16 (double BGS jump slash at max) ──
-            if (act == SSBB_ACT_ATTACK_FSMASH) {
-                f32 chPct = (f32)sPika.smashCharge / 60.0f;
-                if (chPct > 1.0f) chPct = 1.0f;
-                damage = 8 + (s32)(chPct * 8.0f);   // 8-16
-                radius = 15 + (s32)(chPct * 10.0f);
-                height = 15;
-                sfxType = TOUCH_SFX_HARD;
-                dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+            if (act == SSBB_ACT_ATTACK_BAIR) {
+                fwd = -5.0f;
+                up = 10.0f;
             }
-            // ── Up Smash (combo hit 3): BGS damage + paralyze ──
-            if (act == SSBB_ACT_ATTACK_USMASH) {
-                damage = 8;
-                radius = 25;
-                height = 25;
-                sfxType = TOUCH_SFX_HARD;
-                dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT | DMG_DEKU_NUT;
+            if (act == SSBB_ACT_ATTACK_NAIR) {
+                fwd = 0.0f;
+                up = 10.0f;
             }
-            // ── Down Smash: BGS damage ──
-            if (act == SSBB_ACT_ATTACK_DSMASH) {
-                damage = 8;
-                radius = 21;
-                height = 27;
-                sfxType = TOUCH_SFX_HARD;
-                dmgFlags = DMG_SLASH_GIANT | DMG_SPIN_GIANT | DMG_JUMP_GIANT;
+            if (act == SSBB_ACT_ATTACK_FAIR) {
+                fwd = 5.0f;
+                up = 10.0f;
             }
-            // ── Final Smash: ALL damage types ──
-            if (act == SSBB_ACT_FINAL || act == SSBB_ACT_FINAL2 || act == SSBB_ACT_FINAL_AIR ||
-                act == SSBB_ACT_FINAL_AIR2) {
-                radius = 80;
-                height = 80;
-                damage = 20;
-                sfxType = TOUCH_SFX_HARD;
-                dmgFlags = DMG_DEFAULT;
-                atTypeFlags = AT_ON | AT_TYPE_ALL;
+            // Dash/Skull Bash — these need more forward since Pikachu is moving
+            if (act == SSBB_ACT_ATTACK_DASH) {
+                fwd = 5.0f;
+                up = 5.0f;
             }
-            // ── Thunder Jolt: projectile-type ──
-            if (act == SSBB_ACT_SPECIAL_N || act == SSBB_ACT_SPECIAL_N_AIR) {
-                radius = 15;
-                height = 15;
-                damage = 6;
-                dmgFlags = DMG_SLINGSHOT | DMG_SLASH_KOKIRI | DMG_ARROW_NORMAL | DMG_HOOKSHOT;
-            }
-            // ── Skull Bash: damage scales with charge (7% uncharged → 25% full) ──
             if (act == SSBB_ACT_SPECIAL_S) {
-                f32 chPct = (f32)sPika.chargeTimer / 60.0f;
-                if (chPct > 1.0f)
-                    chPct = 1.0f;
-                damage = 4 + (s32)(chPct * 12.0f);  // 4-16 damage based on charge
-                radius = 25 + (s32)(chPct * 15.0f); // 25-40 radius
-                height = 30 + (s32)(chPct * 10.0f); // 30-40 height
-                sfxType = TOUCH_SFX_HARD;
-                // Hammer flag to break things (rusted switches, rocks) + slash + electric
-                dmgFlags = DMG_SLASH | DMG_HAMMER_SWING | DMG_HOOKSHOT | DMG_EXPLOSIVE | DMG_MAGIC_LIGHT;
+                fwd = 5.0f;
+                up = 5.0f;
             }
 
-            // ── Quick Attack: large boomerang collider, stuns Barinade ──
-            if (act == SSBB_ACT_SPECIAL_HI_START || act == SSBB_ACT_SPECIAL_HI_AIR_START) {
-                radius = 40;
-                height = 50;
-                damage = 8;
-                dmgFlags = DMG_BOOMERANG | DMG_DEKU_NUT | DMG_SLASH_MASTER | DMG_SLINGSHOT | DMG_HOOKSHOT | DMG_MAGIC_LIGHT;
-            }
-            // ── THUNDER (L+B): MASSIVE AoE — 2× Biggoron jump slash ──
-            // Active during LOOP phase (60 frames of continuous damage).
-            // Radius 120 covers entire arena. Damage 16 = 4 full hearts.
-            if (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) {
-                radius = 120;
-                height = 150;
-                damage = 16;
-                sfxType = TOUCH_SFX_HARD;
-                dmgFlags = DMG_SLASH_MASTER | DMG_SLASH_GIANT | DMG_HAMMER_SWING | DMG_EXPLOSIVE | DMG_ARROW_LIGHT |
-                           DMG_MAGIC_FIRE | DMG_MAGIC_ICE | DMG_MAGIC_LIGHT | DMG_HOOKSHOT | DMG_BOOMERANG |
-                           DMG_SLINGSHOT | DMG_UNBLOCKABLE;
-                atTypeFlags = AT_ON | AT_TYPE_ALL;
-            }
-            // ── Grab: hookshot pull — must hit Morpha ──
-            if (act == SSBB_ACT_CATCH) {
-                radius = 30;
-                height = 30;
-                damage = 2;
-                dmgFlags = DMG_HOOKSHOT | DMG_BOOMERANG | DMG_MAGIC_LIGHT;
-            }
-            if (act == SSBB_ACT_CATCH_DASH) {
-                radius = 35;
-                height = 30;
-                damage = 2;
-                dmgFlags = DMG_HOOKSHOT | DMG_BOOMERANG | DMG_MAGIC_LIGHT;
-            }
-            // ── Back Throw: strong knockback damage ──
-            if (act == SSBB_ACT_THROW_B || act == SSBB_ACT_THROW_F ||
-                act == SSBB_ACT_THROW_HI || act == SSBB_ACT_THROW_LW) {
-                radius = 30;
-                height = 30;
-                damage = 8;
-                dmgFlags = DMG_DEFAULT;
-                sfxType = TOUCH_SFX_HARD;
-            }
-            // ── Pummel (CatchAttack): 2% Electric per hit ──
-            if (act == SSBB_ACT_CATCH_ATTACK) {
-                radius = 15;
-                height = 20;
-                damage = 2;
-                dmgFlags = DMG_SLASH_KOKIRI | DMG_MAGIC_LIGHT;
-            }
-
-            // ── Hammer: ATKD range 36×23 ──
-            if (act == SSBB_ACT_ITEM_HAMMER_WAIT || act == SSBB_ACT_ITEM_HAMMER_MOVE ||
-                act == SSBB_ACT_ITEM_HAMMER_AIR) {
-                radius = 72;
-                height = 46;
-                damage = 12;
-                sfxType = TOUCH_SFX_HARD;
-                dmgFlags = 0x40 | 0x08 | 0x400 | 0x80000 | 0x400000 | 0x800000 | 0x1000000;
-            }
-
-            // ── Melee items (Deku Stick): reflect energy balls ──
-            if (act == SSBB_ACT_SWING1 || act == SSBB_ACT_SWING3 || act == SSBB_ACT_SWING4 ||
-                act == SSBB_ACT_SWING4_BAT || act == SSBB_ACT_SWING_DASH) {
-                damage = 4;
-                dmgFlags = 0x02 | 0x100 | 0x200 | 0x400 | 0x100000;
-                // DEKU_STICK | SLASH_ALL | SHIELD (reflect)
-            }
-
-            // ── Elemental Rod: NO hitbox here — rods spawn arrow projectiles ──
-            // (handled in PikaItem_ElementalRod which spawns En_Arrow)
-            if (act == SSBB_ACT_ITEM_SHOOT || act == SSBB_ACT_ITEM_SHOOT_AIR) {
-                // Don't activate AT collider — the arrow actor handles damage
-                radius = 0;
-                height = 0;
-                damage = 0;
-            }
-
-            sPika.atCyl.dim.radius = radius;
-            sPika.atCyl.dim.height = height;
-            // Thunder extends both up AND down; everything else starts at feet
-            sPika.atCyl.dim.yShift = (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) ? -75 : 0;
-            // Gigantamax: add UNBLOCKABLE to ALL attacks so bosses take damage
-            if (sPika.gigantamax) dmgFlags |= DMG_UNBLOCKABLE;
-            sPika.atCyl.info.toucher.dmgFlags = dmgFlags;
-            sPika.atCyl.info.toucher.damage = (u8)damage;
-            // Effect: 0x08=electric (Biri), 0x01=stun (Deku Nut), 0x00=normal
-            if (dmgFlags & DMG_DEKU_NUT) {
-                sPika.atCyl.info.toucher.effect = 0x01; // Stun/paralyze
-            } else {
-                sPika.atCyl.info.toucher.effect = 0x00; // Normal sword hit
-            }
-            sPika.atCyl.info.toucherFlags = TOUCH_ON | TOUCH_SFX_WOOD;
-            sPika.atCyl.base.actor = &player->actor;
-            sPika.atCyl.base.atFlags = atTypeFlags;
-
-            // Position collider IN FRONT of Pikachu (not at feet)
-            // Up attacks (utilt, usmash, uair) go above; down attacks below; rest forward
-            Collider_UpdateCylinder(&player->actor, &sPika.atCyl);
-            {
-                f32 pyaw = (f32)player->actor.shape.rot.y * (M_PI / 0x8000);
-                // All colliders centered on Pikachu, max 5 units forward offset
-                f32 fwd = 0.0f; // Default: centered
-                f32 up = 10.0f; // Default: body center
-
-                // Thunder: centered on Pikachu, elevated
-                if (act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) {
-                    fwd = 0.0f;
-                    up = 30.0f;
-                }
-                // Jab combo
-                if (act == SSBB_ACT_ATTACK_JAB) {
-                    fwd = 5.0f;
-                    up = 15.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_UTILT) {
-                    fwd = 0.0f;
-                    up = 10.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_USMASH) {
-                    fwd = 5.0f;
-                    up = 10.0f;
-                }
-                // Tilts
-                if (act == SSBB_ACT_ATTACK_FTILT || act == SSBB_ACT_ATTACK_FTILT_HI ||
-                    act == SSBB_ACT_ATTACK_FTILT_LW) {
-                    fwd = 5.0f;
-                    up = 10.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_DTILT) {
-                    fwd = 5.0f;
-                    up = 0.0f;
-                }
-                // Smashes
-                if (act == SSBB_ACT_ATTACK_FSMASH) {
-                    fwd = 5.0f;
-                    up = 10.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_DSMASH) {
-                    fwd = 0.0f;
-                    up = 0.0f;
-                }
-                // Aerials
-                if (act == SSBB_ACT_ATTACK_UAIR) {
-                    fwd = 0.0f;
-                    up = 20.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_DAIR) {
-                    fwd = 0.0f;
-                    up = -5.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_BAIR) {
-                    fwd = -5.0f;
-                    up = 10.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_NAIR) {
-                    fwd = 0.0f;
-                    up = 10.0f;
-                }
-                if (act == SSBB_ACT_ATTACK_FAIR) {
-                    fwd = 5.0f;
-                    up = 10.0f;
-                }
-                // Dash/Skull Bash — these need more forward since Pikachu is moving
-                if (act == SSBB_ACT_ATTACK_DASH) {
-                    fwd = 5.0f;
-                    up = 5.0f;
-                }
-                if (act == SSBB_ACT_SPECIAL_S) {
-                    fwd = 5.0f;
-                    up = 5.0f;
-                }
-
-                sPika.atCyl.dim.pos.x += (s16)(sinf(pyaw) * fwd);
-                sPika.atCyl.dim.pos.z += (s16)(cosf(pyaw) * fwd);
-                sPika.atCyl.dim.pos.y += (s16)up;
-            }
-            // Clear hit flags every frame so collider can hit repeatedly
-            sPika.atCyl.base.atFlags &= ~(AT_HIT | AT_BOUNCED);
-            // For multi-hit attacks (Thunder), reset hit tracking every 10 frames
-            // so the collider can damage the same enemy again
-            if ((act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) &&
-                (sPika.actionFrame % 10) == 0) {
-                sPika.atCyl.info.atHit = NULL;
-                sPika.atCyl.info.atHitInfo = NULL;
-                sPika.atCyl.info.toucherFlags = TOUCH_ON | TOUCH_SFX_NONE;
-            }
-            CollisionCheck_SetAT(play, &play->colChkCtx, &sPika.atCyl.base);
+            sPika.atCyl.dim.pos.x += (s16)(sinf(pyaw) * fwd);
+            sPika.atCyl.dim.pos.z += (s16)(cosf(pyaw) * fwd);
+            sPika.atCyl.dim.pos.y += (s16)up;
         }
+        // Clear hit flags every frame so collider can hit repeatedly
+        sPika.atCyl.base.atFlags &= ~(AT_HIT | AT_BOUNCED);
+        // For multi-hit attacks (Thunder), reset hit tracking every 10 frames
+        // so the collider can damage the same enemy again
+        if ((act == SSBB_ACT_SPECIAL_LW_LOOP || act == SSBB_ACT_SPECIAL_LW_AIR_LOOP) && (sPika.actionFrame % 10) == 0) {
+            sPika.atCyl.info.atHit = NULL;
+            sPika.atCyl.info.atHitInfo = NULL;
+            sPika.atCyl.info.toucherFlags = TOUCH_ON | TOUCH_SFX_NONE;
+        }
+        CollisionCheck_SetAT(play, &play->colChkCtx, &sPika.atCyl.base);
+    }
 
     // ── Advance animation frame ──
     sPika.actionFrame++;
@@ -2591,7 +2627,8 @@ advance_anim:
     {
         static s32 sGiantAtkLinger = 0;
         if (sPika.gigantamax) {
-            if (Pika_IsAttacking()) sGiantAtkLinger = 20;
+            if (Pika_IsAttacking())
+                sGiantAtkLinger = 20;
             if (sGiantAtkLinger > 0) {
                 sGiantAtkLinger--;
                 // Scale the collider that the normal attack already set up
@@ -2613,7 +2650,7 @@ advance_anim:
                         while (a != NULL) {
                             f32 dx = player->actor.world.pos.x - a->world.pos.x;
                             f32 dz = player->actor.world.pos.z - a->world.pos.z;
-                            if (sqrtf(dx*dx + dz*dz) < dmgR && a->update != NULL) {
+                            if (sqrtf(dx * dx + dz * dz) < dmgR && a->update != NULL) {
                                 // Increment colChkInfo.health for witches (they merge at sum >= 4)
                                 // Decrement for normal bosses
                                 if (a->id == ACTOR_BOSS_TW && a->params < 2) {
@@ -2625,7 +2662,8 @@ advance_anim:
                                 } else {
                                     // Combined Twinrova (phase 2, visible) and all other bosses
                                     a->colChkInfo.health -= 4;
-                                    if ((s8)a->colChkInfo.health <= 0) a->colChkInfo.health = 0;
+                                    if ((s8)a->colChkInfo.health <= 0)
+                                        a->colChkInfo.health = 0;
                                     a->colChkInfo.damage += 4;
                                     // Electric spark VFX (blue flash + thunder SFX)
                                     Actor_SetColorFilter(a, 0x8000, 255, 0, 12);
@@ -2901,16 +2939,18 @@ extern "C" void PikachuForm_Draw(PlayState* play, Player* player) {
         OPEN_DISPS(play->state.gfxCtx);
 
         s32 alpha = 200;
-        if (sPika.giantTextTimer > 75) alpha = (90 - sPika.giantTextTimer) * 13;
-        if (sPika.giantTextTimer < 15) alpha = sPika.giantTextTimer * 13;
+        if (sPika.giantTextTimer > 75)
+            alpha = (90 - sPika.giantTextTimer) * 13;
+        if (sPika.giantTextTimer < 15)
+            alpha = sPika.giantTextTimer * 13;
 
         s32 barY = 170, barH = 32, skew = 8;
 
         gDPPipeSync(OVERLAY_DISP++);
         gDPSetCycleType(OVERLAY_DISP++, G_CYC_1CYCLE);
         gDPSetRenderMode(OVERLAY_DISP++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
-        gDPSetCombineLERP(OVERLAY_DISP++, 0, 0, 0, PRIMITIVE, 0, 0, 0, PRIMITIVE,
-                                          0, 0, 0, PRIMITIVE, 0, 0, 0, PRIMITIVE);
+        gDPSetCombineLERP(OVERLAY_DISP++, 0, 0, 0, PRIMITIVE, 0, 0, 0, PRIMITIVE, 0, 0, 0, PRIMITIVE, 0, 0, 0,
+                          PRIMITIVE);
         gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 30, 30, 40, (u8)alpha);
         gDPFillRectangle(OVERLAY_DISP++, skew, barY, 320 - skew, barY + barH);
         gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 80, 180, 220, (u8)(alpha * 3 / 4));
@@ -2967,7 +3007,8 @@ extern "C" u8 PikaItem_QuickAtk(PlayState* play, Player* player, s32 item) {
         return 0;
     u8 onGround = (player->actor.bgCheckFlags & 1) != 0;
     // Only 1 use in air (like Roc's Cape hasAirJumped)
-    if (!onGround && sPika.airQuickAtkUsed) return 1;
+    if (!onGround && sPika.airQuickAtkUsed)
+        return 1;
     sPika.airQuickAtkUsed = onGround ? 0 : 1;
     Pika_SetAction(SSBB_ACT_SPECIAL_HI_START);
     sPika.qatkPhase = 0;
@@ -3134,10 +3175,12 @@ extern "C" u8 PikaItem_Shield(PlayState* play, Player* player, s32 item) {
 // Gigantamax (Giant's Mask) — toggle giant mode, costs MP
 extern "C" u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item) {
     (void)item;
-    if (!sPika.initialized) return 0;
+    if (!sPika.initialized)
+        return 0;
 
     // Debounce: ignore if already processing (prevents double-call toggle)
-    if (sPika.giantCooldown > 0) return 1;
+    if (sPika.giantCooldown > 0)
+        return 1;
     sPika.giantCooldown = 10; // 10 frame cooldown
 
     if (sPika.gigantamax) {
@@ -3146,7 +3189,8 @@ extern "C" u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item) {
         sPika.giantTextTimer = 90;
         sPika.giantTextType = 1;
     } else {
-        if (gSaveContext.magic < 8) return 1;
+        if (gSaveContext.magic < 8)
+            return 1;
         gSaveContext.magic -= 8;
         sPika.gigantamax = 1;
         sPika.giantScale = 1.0f;

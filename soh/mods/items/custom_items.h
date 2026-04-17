@@ -21,7 +21,7 @@ extern "C" {
 
 // (GUSTJAR_MAX_TRACKED removed — no scale cache system)
 
-// Item IDs are defined in z64item.h enum (ITEM_ROCS_FEATHER_SKIJER through ITEM_PENDING_3)
+// Item IDs are defined in z64item.h enum (ITEM_ROCS_FEATHER_SKIJER through ITEM_POKEBALL)
 // No #defines needed — the enum values are authoritative
 
 /**
@@ -345,13 +345,13 @@ typedef struct {
     u8 minishCapGrowing;   // 1 = snap to start scale, 2 = growing to normal
 
     // ── Lantern ──────────────────────────────────────────────────────────
-    u8  lanternFireType;      // LanternFireType enum (0-4)
-    u8  lanternSwinging;      // 1 = in swing animation
-    u8  lanternEquipped;      // 1 = lantern is on a C-button (draw in hand always)
-    s16 lanternSwingFrame;    // Current swing anim frame
-    u8  lanternCatchWindow;   // 1 = catch frames active this frame
-    u8  lanternCatchState;    // 0=none, 1=playing catch anim, 2=showing message
-    s16 lanternHealTimer;     // Green fire regen countdown (150 frames)
+    u8 lanternFireType;    // LanternFireType enum (0-4)
+    u8 lanternSwinging;    // 1 = in swing animation
+    u8 lanternEquipped;    // 1 = lantern is on a C-button (draw in hand always)
+    s16 lanternSwingFrame; // Current swing anim frame
+    u8 lanternCatchWindow; // 1 = catch frames active this frame
+    u8 lanternCatchState;  // 0=none, 1=playing catch anim, 2=showing message
+    s16 lanternHealTimer;  // Green fire regen countdown (150 frames)
 
     // Shared (reused by items that never run simultaneously)
     Vec3f sharedProjectilePos;
