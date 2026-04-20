@@ -1646,6 +1646,16 @@ void SohInputEditorWindow::DrawLinkTab() {
                 ImGui::SetTooltip("Hide the eye button that toggles\non-screen touch controls visibility");
             }
 
+            bool freeLookTouch = CVarGetInteger("gDroidFreeLookTouch", 0) != 0;
+            if (ImGui::Checkbox("Enable right-side touch for free look##FreeLookTouch", &freeLookTouch)) {
+                CVarSetInteger("gDroidFreeLookTouch", freeLookTouch ? 1 : 0);
+                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+                Ship::Mobile::SetFreeLookTouchEnabled(freeLookTouch);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Swipe the right side of the screen\nto move the camera during free look");
+            }
+
             ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.133f, 0.133f, 0.133f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
