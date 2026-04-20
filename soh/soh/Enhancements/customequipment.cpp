@@ -121,6 +121,8 @@ static bool IsDummyPlayer(const Player* player) {
     return player != nullptr && player->actor.update == DummyPlayer_Update;
 }
 
+static bool sPrevAltAssetsEnabled = false;
+
 void PatchOrUnpatch(const char* resource, const char* gfx, const char* dlist1, const char* dlist2, const char* dlist3,
                     const char* alternateDL) {
     if (resource == NULL || gfx == NULL || dlist1 == NULL || dlist2 == NULL) {
@@ -128,6 +130,7 @@ void PatchOrUnpatch(const char* resource, const char* gfx, const char* dlist1, c
     }
 
     const bool altAssetsRuntime = ResourceMgr_IsAltAssetsEnabled();
+    const bool altAssetsChanged = (altAssetsRuntime != sPrevAltAssetsEnabled);
 
     if (!altAssetsRuntime) {
         // Alt assets are off; ensure any prior patches using these names are reverted.
@@ -136,9 +139,14 @@ void PatchOrUnpatch(const char* resource, const char* gfx, const char* dlist1, c
         if (dlist3 != NULL) {
             ResourceMgr_UnpatchGfxByName(resource, dlist3);
         }
-        // Drop any cached version of the resource so it reloads clean (unpatched) next use.
-        ResourceMgr_UnloadResource(resource);
+        if (altAssetsChanged) {
+            ResourceMgr_UnloadResource(resource);
+        }
         return;
+    }
+
+    if (altAssetsChanged) {
+        ResourceMgr_UnloadResource(resource);
     }
 
     if (!ResourceGetIsCustomByName(gfx)) {
@@ -510,4 +518,6 @@ void UpdatePatchCustomEquipmentDlists() {
     }
 
     ApplyCommonEquipmentPatches();
+
+    sPrevAltAssetsEnabled = ResourceMgr_IsAltAssetsEnabled();
 }
