@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <variant>
 #include <memory>
 
 #include "3drando/text.hpp"
