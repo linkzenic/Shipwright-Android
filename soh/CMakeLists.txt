@@ -371,6 +371,10 @@ if (BUILD_REMOTE_CONTROL)
             GIT_TAG release-2.2.0
         )
         FetchContent_MakeAvailable(SDL2_net)
+        # SDL_net.h lives at the source root but is included as <SDL2/SDL_net.h>
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sdl_net_compat/SDL2")
+        file(COPY "${sdl2_net_SOURCE_DIR}/SDL_net.h" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sdl_net_compat/SDL2/")
+        target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdl_net_compat")
     else()
         find_package(SDL2_net)
         if(NOT SDL2_net_FOUND)
