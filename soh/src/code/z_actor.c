@@ -1288,8 +1288,13 @@ void Actor_Destroy(Actor* actor, PlayState* play) {
 void Actor_UpdatePos(Actor* actor) {
     f32 speedRate = R_UPDATE_RATE * 0.5f;
 
-    // Champion's Tunic: Flurry Rush / Bullet Time world slowdown
-    if (gChampionSlowFactor < 1.0f && actor->category != ACTORCAT_PLAYER) {
+    // Champion's Tunic: Flurry Rush / Bullet Time world slowdown.
+    // Excluded: Link, native projectiles (ACTORCAT_ITEMACTION), and any
+    // actor spawned by Link as child (custom item projectiles).
+    if (gChampionSlowFactor < 1.0f
+        && actor->category != ACTORCAT_PLAYER
+        && actor->category != ACTORCAT_ITEMACTION
+        && actor->parent != &GET_PLAYER(gPlayState)->actor) {
         speedRate *= gChampionSlowFactor;
     }
 
@@ -2746,9 +2751,17 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                         // freezeTimer is decremented by DECR() above (line 2725);
                         // when it hits 0 the actor updates once, then we re-freeze.
                         // 5 frames frozen + 1 update = 1/6 speed ≈ 17% (close to 0.15).
-                        // Exclude ACTORCAT_PLAYER (Link) and ACTORCAT_ITEM_ACTION
-                        // (arrows, seeds, hookshot, boomerang — player projectiles).
-                        if (gChampionSlowFactor < 1.0f && i != ACTORCAT_PLAYER && i != ACTORCAT_ITEMACTION) {
+                        //
+                        // Excluded from freeze:
+                        //   • ACTORCAT_PLAYER (Link himself)
+                        //   • ACTORCAT_ITEMACTION (native arrows, seeds, hookshot, boomerang)
+                        //   • Any actor whose parent is Link — catches all custom item
+                        //     projectiles (beetle drone, switchhook hook, whip, etc.)
+                        //     since they're spawned with Actor_SpawnAsChild from player.
+                        if (gChampionSlowFactor < 1.0f
+                            && i != ACTORCAT_PLAYER
+                            && i != ACTORCAT_ITEMACTION
+                            && actor->parent != &player->actor) {
                             actor->freezeTimer = 5;
                         }
                     }

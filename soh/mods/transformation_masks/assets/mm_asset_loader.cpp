@@ -24,7 +24,9 @@
 #include <unordered_map>
 #include <libultraship/libultraship.h>
 #include <libultraship/log/luslog.h>
+#include <SDL2/SDL.h>
 #include "soh/OTRGlobals.h"
+#include "soh/GameVersions.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "functions.h" // For Audio_SetFontInstrument, AudioLoad_IsFontLoadComplete
 
@@ -182,6 +184,26 @@ static bool LoadMmO2r() {
     if (archiveManager) {
         auto archive = archiveManager->AddArchive(sMmO2rPath);
         if (archive != nullptr) {
+            // Validate the embedded ROM CRC32 before letting mm.o2r participate in
+            // resource resolution. We require MM 1.0 USA (NTSC). Older mm.o2r
+            // archives that don't embed a version are accepted (false positives
+            // would be worse than the missing check); Keiichi Alpha extractor
+            // fingerprinting is deferred.
+            if (archive->HasGameVersion()) {
+                uint32_t mmVer = archive->GetGameVersion();
+                if (mmVer != MM_NTSC_US_10) {
+                    SDL_ShowSimpleMessageBox(
+                        SDL_MESSAGEBOX_ERROR, "Incompatible mm.o2r",
+                        "Your mm.o2r file is not compatible.\n"
+                        "Required: MM 1.0 USA (NTSC).\n\n"
+                        "Please re-extract using 2Ship2Harkinian (Keiichi Alfa 4.0.0+) "
+                        "with an MM 1.0 USA (NTSC) ROM.",
+                        nullptr);
+                    MMASSETS_LOG("[MM Assets] Incompatible mm.o2r (got 0x%08X, required 0x%08X)",
+                                 mmVer, MM_NTSC_US_10);
+                    exit(1);
+                }
+            }
             sMmO2rLoaded = true;
             sMmArchive = archive;
 
@@ -282,10 +304,6 @@ const char* MmAssets_GetModPath(void) {
 
 const char* MmAssets_GetRequiredVersion(void) {
     return "2Ship2Harkinian Keiichi Alfa 4.0.0";
-}
-
-const char* MmAssets_GetDownloadUrl(void) {
-    return "https://github.com/HarbourMasters/2ship2harkinian/releases/tag/4.0.0";
 }
 
 const char* MmAssets_GetPath(void) {

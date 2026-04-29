@@ -101,6 +101,8 @@ static void Byrna_Behavior(Player* player, PlayState* play) {
         gExtEquipBehavior.byrnaSavedSwordEquip =
             (gSaveContext.equips.equipment >> gEquipShifts[EQUIP_TYPE_SWORD]) & 0xF;
         gExtEquipBehavior.byrnaSavedButtonItem = gSaveContext.equips.buttonItems[0];
+        gExtEquipBehavior.byrnaSavedSwordHealth = gSaveContext.swordHealth;
+        gExtEquipBehavior.byrnaSavedBgsFlag = gSaveContext.bgsFlag;
         gExtEquipBehavior.byrnaActive = 1;
     }
 
@@ -114,6 +116,11 @@ static void Byrna_Behavior(Player* player, PlayState* play) {
 
     // Keep B button showing BGS item (icon override handled by ExtInv_GetItemIcon)
     gSaveContext.equips.buttonItems[0] = ITEM_SWORD_BGS;
+
+    // Force bgsFlag = 1 so the game treats this as true BGS (no durability loss).
+    // Without this, if the player owns Giant's Knife (bgsFlag=0), swings would
+    // decrement swordHealth and eventually "break" the GK.
+    gSaveContext.bgsFlag = 1;
 
     // Force swordHealth > 0 so spin attack / charge attack works
     // (BGS normally breaks when swordHealth reaches 0)
@@ -130,6 +137,8 @@ static void Byrna_Cleanup(void) {
     // Restore original sword equipment
     Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, gExtEquipBehavior.byrnaSavedSwordEquip);
     gSaveContext.equips.buttonItems[0] = gExtEquipBehavior.byrnaSavedButtonItem;
+    gSaveContext.swordHealth = gExtEquipBehavior.byrnaSavedSwordHealth;
+    gSaveContext.bgsFlag = gExtEquipBehavior.byrnaSavedBgsFlag;
     gExtEquipBehavior.byrnaActive = 0;
 }
 

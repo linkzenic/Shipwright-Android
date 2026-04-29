@@ -89,8 +89,10 @@ static void IKAxe_Behavior(Player* player, PlayState* play) {
 
     // Hammer on B — game handles equip/putaway naturally:
     // B press → equip hammer → swing → auto putaway → free anims
+    // Only buttonItems[0] is needed: sItemActions[ITEM_HAMMER] → PLAYER_IA_HAMMER drives the swing.
+    // Do NOT write inventory.items[SLOT_HAMMER]: that slot is what the pause menu reads to draw
+    // the hammer icon, so writing it would falsely give the player a hammer they don't own.
     gSaveContext.equips.buttonItems[0] = ITEM_HAMMER;
-    gSaveContext.inventory.items[SLOT_HAMMER] = ITEM_HAMMER;
 
     // DON'T force heldItemAction every frame — let the game manage it.
     // Hammer's natural cycle: press B → heldItemAction=HAMMER → swing → putaway → NONE

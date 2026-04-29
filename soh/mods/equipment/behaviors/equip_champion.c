@@ -273,12 +273,13 @@ static void Champion_Behavior(Player* player, PlayState* play) {
             // Suspend fall
             player->actor.velocity.y = CHAMPION_BULLET_FLOAT;
 
-            // Prevent custom items' FirstPerson_Init from stealing the camera.
-            // Items call FirstPerson_Init on activation → sets FIRST_PERSON flag
-            // → camera goes first-person. We clear it so camera stays in Z-target
-            // (third person behind Link). Items fall back to Z-target/shape.rot.y
-            // for their aim direction, which we control below.
-            player->stateFlags1 &= ~PLAYER_STATE1_FIRST_PERSON;
+            // Maintain aim state for OOT items that need sustained aim (hookshot,
+            // longshot, bow, slingshot). z_player.c:3296 cancels their aim if
+            // unk_6AD == 0 AND not Z-targeting AND not FIRST_PERSON — so the
+            // hookshot would unequip without firing. unk_6AD = 2 keeps aim active.
+            // (PLAYER_STATE1_FIRST_PERSON is suppressed in camera_helper.c when
+            // Bullet Time is active, so custom items don't flip to first-person.)
+            player->unk_6AD = 2;
 
             // Stick → aim offsets (yaw = horizontal, pitch = vertical)
             s8 stickX = play->state.input[0].cur.stick_x;

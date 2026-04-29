@@ -9,9 +9,17 @@
 
 extern int Player_IsZTargeting(Player* this);
 
+// Champion's Tunic Bullet Time factor (defined in extended_equipment.c).
+// When < 1.0f, Bullet Time is active — skip first-person camera so third-person
+// Z-target view is kept and items fall back to shape.rot.y for aim direction.
+extern f32 gChampionSlowFactor;
+
 void FirstPerson_Init(Player* player, PlayState* play) {
     player->unk_6AD = 2; // weapon aiming mode
-    player->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
+    // Skip FIRST_PERSON flag during Bullet Time — our third-person camera handles it
+    if (gChampionSlowFactor >= 1.0f) {
+        player->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
+    }
     player->stateFlags1 |= PLAYER_STATE1_ITEM_IN_HAND;
     player->stateFlags1 |= PLAYER_STATE1_READY_TO_FIRE;
     player->unk_834 = 14;
@@ -27,7 +35,10 @@ void FirstPerson_Update(Player* player, PlayState* play) {
         player->unk_834 = 1;
     }
 
-    player->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
+    // Skip FIRST_PERSON flag during Bullet Time — prevents flip-flop with our code
+    if (gChampionSlowFactor >= 1.0f) {
+        player->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
+    }
     player->stateFlags1 |= PLAYER_STATE1_READY_TO_FIRE;
 }
 

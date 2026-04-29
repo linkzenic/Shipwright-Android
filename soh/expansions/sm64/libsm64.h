@@ -151,6 +151,14 @@ extern SM64_LIB_FN void sm64_mario_delete(int32_t marioId);
 
 extern SM64_LIB_FN void sm64_set_mario_action(int32_t marioId, uint32_t action);
 extern SM64_LIB_FN void sm64_set_mario_action_arg(int32_t marioId, uint32_t action, uint32_t actionArg);
+
+// libsm64 extension (added by Shipwright): sentinel held-object so
+// ACT_PICKING_UP / ACT_HOLD_IDLE / ACT_THROWING etc. don't crash on a NULL
+// heldObj deref. Call once after sm64_mario_create — usedObj stays valid
+// across throws, so a single call is enough.
+extern SM64_LIB_FN void sm64_mario_grab_dummy(int32_t marioId);
+extern SM64_LIB_FN void sm64_mario_release_dummy(int32_t marioId);
+
 extern SM64_LIB_FN void sm64_set_mario_animation(int32_t marioId, int32_t animID);
 extern SM64_LIB_FN void sm64_set_mario_anim_frame(int32_t marioId, int16_t animFrame);
 extern SM64_LIB_FN void sm64_set_mario_state(int32_t marioId, uint32_t flags);

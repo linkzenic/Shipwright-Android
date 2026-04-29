@@ -400,9 +400,13 @@ void BuildCustomItemMessage(Player* player, CustomMessage& msg) {
     // Check if this is a custom item with a detailed message
     const CustomItemMessageEntry* customMsg = GetCustomItemMessage(rgid);
     if (customMsg != nullptr) {
-        // Use the detailed custom message
+        // Use the detailed custom message. Pass the real ItemID so Message_LoadItemIcon's
+        // ">= ITEM_ROCS_FEATHER_SKIJER" branch fires (z_message_PAL.c:1671) and loads the
+        // 32x32 icon via ExtInv_GetItemIcon(itemId). Without this, AutoFormat() with no
+        // argument leaves the message without an ITEM_OBTAINED token at all, and the
+        // textbox renders with no icon on the left.
         msg = CustomMessage(customMsg->english, customMsg->german, customMsg->french, TEXTBOX_TYPE_BLUE);
-        msg.AutoFormat();
+        msg.AutoFormat(customMsg->itemId);
         return;
     }
 
@@ -418,7 +422,11 @@ void BuildCustomItemMessage(Player* player, CustomMessage& msg) {
     msg.Replace("[[color]]", Rando::StaticData::RetrieveItem(static_cast<RandomizerGet>(rgid)).GetColor());
     msg.Replace("[[name]]", name);
     if (Rando::StaticData::RetrieveItem(static_cast<RandomizerGet>(rgid)).HasCustomIcon()) {
-        msg.AutoFormat(ITEM_CUSTOM);
+        // Use the real ItemID from the item table so vanilla's Message_LoadItemIcon picks
+        // up the ">= ITEM_ROCS_FEATHER_SKIJER" branch and resolves via ExtInv_GetItemIcon.
+        ItemID itemId =
+            static_cast<ItemID>(Rando::StaticData::RetrieveItem(static_cast<RandomizerGet>(rgid)).GetItemID());
+        msg.AutoFormat(itemId);
     } else {
         msg.AutoFormat();
     }
@@ -706,12 +714,35 @@ static RegisterShipInitFunc initChateau(RegisterChateauRomaniMessage);
 static RegisterShipInitFunc initLanternCatch(RegisterLanternCatchMessage);
 
 void RegisterCustomIconHooks() {
+    // The original hook only fires when *should == false, but nothing in the call path
+    // ever sets it to false for custom items — so the custom icon loaders never run and
+    // vanilla tries to load Message_LoadItemIcon(ITEM_CUSTOM=0x9C) which is not a valid
+    // OBJECT_GI_*. Detect custom-icon items via the player's getItemEntry, suppress
+    // vanilla, and call our loader/drawer.
     COND_VB_SHOULD(VB_LOAD_ITEM_ICON, IS_RANDO, {
+        Player* player = GET_PLAYER(gPlayState);
+        if (player->getItemEntry.objectId != OBJECT_INVALID) {
+            RandomizerGet rgid = static_cast<RandomizerGet>(player->getItemEntry.getItemId);
+            if (Rando::StaticData::RetrieveItem(rgid).HasCustomIcon()) {
+                *should = false;
+                LoadCustomItemIcon(static_cast<bool>(va_arg(args, int)));
+                return;
+            }
+        }
         if (*should == false) {
             LoadCustomItemIcon(static_cast<bool>(va_arg(args, int)));
         }
     });
     COND_VB_SHOULD(VB_DRAW_ITEM_ICON, IS_RANDO, {
+        Player* player = GET_PLAYER(gPlayState);
+        if (player->getItemEntry.objectId != OBJECT_INVALID) {
+            RandomizerGet rgid = static_cast<RandomizerGet>(player->getItemEntry.getItemId);
+            if (Rando::StaticData::RetrieveItem(rgid).HasCustomIcon()) {
+                *should = false;
+                DrawCustomItemIcon(va_arg(args, Gfx**));
+                return;
+            }
+        }
         if (*should == false) {
             DrawCustomItemIcon(va_arg(args, Gfx**));
         }

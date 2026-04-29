@@ -38,6 +38,11 @@ extern "C" {
 // For Kamaro's Mask → dance animation from MM (includes mm_anims.h for MmAnimId enum)
 #include "mods/anim_translator/mm_anim_loader.h"
 
+// For Postman's Hat warp
+extern "C" {
+#include "mods/items/logic/item_postman_hat.h"
+}
+
 // For Great Fairy Mask map overlay (same textures as minish_kaleido)
 #include "textures/map_name_static/map_name_static.h"
 #include "textures/icon_item_static/icon_item_static.h"
@@ -143,6 +148,7 @@ static Gfx sBlastMaskXluSeg9[] = {
 #define MM_MASK_IDX_GREAT_FAIRY 4
 #define MM_MASK_IDX_DON_GERO 9
 #define MM_MASK_IDX_ROMANI 12
+#define MM_MASK_IDX_GIBDO 19
 
 // Blast Mask cooldown: 310 frames matching MM (z_player.c line 3873: this->blastMaskTimer = 310)
 #define BLAST_MASK_COOLDOWN 310
@@ -979,7 +985,9 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
         s32 idx = MaskItemToIndex(sCurrentMmMask);
 
         switch (idx) {
-            case 0: // Postman's Hat
+            case 0: // Postman's Hat — interaction happens via the mailbox
+                    // actor's A-press (see soh/mods/items/helpers/mailbox_actor.c).
+                    // The hat itself does nothing on B while worn.
                 break;
             case 1: // All-Night Mask — spawn night-only GS actors during daytime
             {
@@ -1491,6 +1499,10 @@ extern "C" s32 MmMaskWear_IsBlastCooldown(void) {
 
 extern "C" s32 MmMaskWear_IsAllNightMaskActive(void) {
     return (sCurrentMmMask != ITEM_NONE) && (MaskItemToIndex(sCurrentMmMask) == MM_MASK_IDX_ALL_NIGHT);
+}
+
+extern "C" s32 MmMaskWear_IsGibdoMaskWorn(void) {
+    return (sCurrentMmMask != ITEM_NONE) && (MaskItemToIndex(sCurrentMmMask) == MM_MASK_IDX_GIBDO);
 }
 
 extern "C" s32 MmMaskWear_IsChateauRomaniActive(void) {

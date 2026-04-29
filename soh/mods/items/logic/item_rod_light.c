@@ -835,6 +835,7 @@ static void LightRod_ReleaseCharge(Player* p, PlayState* play) {
 }
 
 static void LightRod_CancelCharge(Player* p) {
+    Audio_StopSfxById(LIGHT_ROD_SFX_CHARGE);
     lightRodCharging = 0;
     lightRodChargeLevel = 0.0f;
     lightRodChargeReady = 0;
@@ -921,6 +922,8 @@ static void LightRod_OnUnequip(PlayState* play, Player* p) {
     for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
         sLightProjSets[s].active = 0;
     Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
+    Audio_StopSfxById(LIGHT_ROD_SFX_CHARGE);
+    Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_CAST);
 
     lightRodCharging = 0;
     lightRodChargeLevel = 0.0f;
@@ -982,6 +985,12 @@ void Handle_LightRod(Player* p, PlayState* play) {
         if (p->stateFlags1 & criticalBlocks) {
             if (lightRodCharging)
                 LightRod_CancelCharge(p);
+            // Stop every looped SFX the rod can be holding active so cutscenes / damage / talking
+            // don't leave audio playing forever. Idempotent — Audio_StopSfxById is safe to call on
+            // sounds that aren't currently playing.
+            Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
+            Audio_StopSfxById(LIGHT_ROD_SFX_CHARGE);
+            Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_CAST);
             return;
         }
     }

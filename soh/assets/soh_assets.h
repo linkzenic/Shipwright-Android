@@ -579,6 +579,19 @@ static const ALIGN_ASSET(2) char gItemIconPecoriTex[] = dgItemIconPecoriTex;
 #define dgItemIconPending2Tex "__OTR__textures/icon_item_custom/gItemIconPending2Tex"
 static const ALIGN_ASSET(2) char gItemIconPending2Tex[] = dgItemIconPending2Tex;
 
+// SM64 Mario mode — mask + 3 cap icons. Mask is the "Mario mode toggle"
+// item that locks to C-Down. Caps replace Din's / Nayru's / Farore's
+// spell icons while Mario mode is on (since the spells map to the SM64
+// caps when used in that mode).
+#define dgItemIconMarioMaskTex "__OTR__textures/icon_item_custom/gItemIconMarioMaskTex"
+static const ALIGN_ASSET(2) char gItemIconMarioMaskTex[] = dgItemIconMarioMaskTex;
+#define dgItemIconVanishCapTex "__OTR__textures/icon_item_custom/gItemIconVanishCapTex"
+static const ALIGN_ASSET(2) char gItemIconVanishCapTex[] = dgItemIconVanishCapTex;
+#define dgItemIconMetalCapTex "__OTR__textures/icon_item_custom/gItemIconMetalCapTex"
+static const ALIGN_ASSET(2) char gItemIconMetalCapTex[] = dgItemIconMetalCapTex;
+#define dgItemIconWingCapTex "__OTR__textures/icon_item_custom/gItemIconWingCapTex"
+static const ALIGN_ASSET(2) char gItemIconWingCapTex[] = dgItemIconWingCapTex;
+
 #define dgItemIconLanternTex "__OTR__textures/icon_item_custom/gItemIconLanternTex"
 static const ALIGN_ASSET(2) char gItemIconLanternTex[] = dgItemIconLanternTex;
 #define dgItemIconLanternFireTex "__OTR__textures/icon_item_custom/gItemIconLanternFireTex"

@@ -15,6 +15,7 @@
 #include "soh/SaveManager.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "mods/extended_inventory.h"
+#include "mods/extended_equipment.h"
 
 // #region SOH [NTSC] - Allows custom messages to work on japanese
 static bool sDisplayNextMessageAsEnglish = false;
@@ -855,8 +856,12 @@ u16 Message_DrawItemIcon(PlayState* play, u16 itemId, Gfx** p, u16 i) {
     gSPInvalidateTexCache(gfx++, (uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE);
 
     if (GameInteractor_Should(VB_DRAW_ITEM_ICON, true, &gfx)) {
-        // 24x24 icons: only medallions and spiritual stones (0x66-0x6E)
-        if (itemId >= ITEM_MEDALLION_FOREST && itemId <= ITEM_ZORA_SAPPHIRE) {
+        // Mirror develop's vanilla behavior (>= ITEM_MEDALLION_FOREST → 24x24, else → 32x32),
+        // and carve out only the NEI custom-item range [ITEM_ROCS_FEATHER_SKIJER..ITEM_EXT_BOOTS_3]
+        // into the 32x32 branch. Items beyond ITEM_EXT_BOOTS_3 (e.g. ITEM_LAST_USED, ITEM_NONE)
+        // stay on the 24x24 path matching mainline so vanilla quest icons don't glitch.
+        if (itemId >= ITEM_MEDALLION_FOREST &&
+            !(itemId >= ITEM_ROCS_FEATHER_SKIJER && itemId <= ITEM_EXT_BOOTS_3)) {
             gDPLoadTextureBlock(gfx++, (uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, G_IM_FMT_RGBA,
                                 G_IM_SIZ_32b, 24, 24, 0, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP,
                                 G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
@@ -1653,20 +1658,32 @@ void Message_LoadItemIcon(PlayState* play, u16 itemId, s16 y) {
         interfaceCtx->mapPalette[30] = 0xFF;
         interfaceCtx->mapPalette[31] = 0xFF;
     }
-    // 24x24 icons: Medallions (0x66-0x6B) and Spiritual Stones (0x6C-0x6E)
-    // All other items (including custom items) use 32x32
-    if (itemId >= ITEM_MEDALLION_FOREST && itemId < ITEM_ROCS_FEATHER_SKIJER) {
-        R_TEXTBOX_ICON_XPOS = R_TEXT_INIT_XPOS - sIconItem24XOffsets[language];
-        R_TEXTBOX_ICON_YPOS = y + 10;
-        R_TEXTBOX_ICON_SIZE = 24;
-    } else {
+    // Main's structure: < ITEM_MEDALLION_FOREST = 32x32, else = 24x24.
+    // SoH addition: custom items (>= ITEM_ROCS_FEATHER_SKIJER) also use 32x32.
+    if (itemId < ITEM_MEDALLION_FOREST) {
         R_TEXTBOX_ICON_XPOS = R_TEXT_INIT_XPOS - sIconItem32XOffsets[language];
         R_TEXTBOX_ICON_YPOS = y + 6;
         R_TEXTBOX_ICON_SIZE = 32;
+        memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, gItemIcons[itemId],
+               strlen(gItemIcons[itemId]) + 1);
+        // "Item 32-0"
+        osSyncPrintf("アイテム32-0\n");
+    } else if (itemId >= ITEM_ROCS_FEATHER_SKIJER) {
+        // Custom items: 32x32, resolved via ExtInv_GetItemIcon
+        R_TEXTBOX_ICON_XPOS = R_TEXT_INIT_XPOS - sIconItem32XOffsets[language];
+        R_TEXTBOX_ICON_YPOS = y + 6;
+        R_TEXTBOX_ICON_SIZE = 32;
+        void* iconPtr = ExtInv_GetItemIcon(itemId);
+        memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, iconPtr, strlen((const char*)iconPtr) + 1);
+    } else {
+        R_TEXTBOX_ICON_XPOS = R_TEXT_INIT_XPOS - sIconItem24XOffsets[language];
+        R_TEXTBOX_ICON_YPOS = y + 10;
+        R_TEXTBOX_ICON_SIZE = 24;
+        memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, gItemIcons[itemId],
+               strlen(gItemIcons[itemId]) + 1);
+        // "Item 24"
+        osSyncPrintf("アイテム24＝%d (%d) {%d}\n", itemId, itemId - ITEM_KOKIRI_EMERALD, 84);
     }
-    // Copy OTR path string into textbox segment (gDPLoadTextureBlock resolves it at draw time)
-    void* iconPtr = ExtInv_GetItemIcon(itemId);
-    memcpy((uintptr_t)msgCtx->textboxSegment + MESSAGE_STATIC_TEX_SIZE, iconPtr, strlen((const char*)iconPtr) + 1);
     msgCtx->msgBufPos++;
     msgCtx->choiceNum = 1;
 }

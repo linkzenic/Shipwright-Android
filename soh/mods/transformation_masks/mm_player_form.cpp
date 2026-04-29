@@ -69,6 +69,10 @@ void MmForm_FireDekuBubble(Player* player, PlayState* play);
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/frame_interpolation.h"
 
+// framebuffer_effects.h has no __cplusplus guards — declare the one function we need
+// with explicit C linkage so the linker finds the C-mangled symbol.
+extern "C" void FB_WriteFramebufferSliceToCPU(Gfx** gfxp, void* buffer, u8 byteSwap);
+
 #include <libultraship/bridge.h>
 #include <libultraship/log/luslog.h>
 #include <ship/Context.h>
@@ -1236,17 +1240,23 @@ static size_t sZoraFinLDLCount = 0;
 static size_t sZoraFinRDLCount = 0;
 static Gfx* sCachedZoraFinLDL = NULL;
 static Gfx* sCachedZoraFinRDL = NULL;
-// Deku bubble projectile geometry DLs from MM gameplay_keep (from 2Ship z_en_arrow.c:716-738)
-// gameplay_keep_DL_06F9F0 = stationary bubble (sphere mesh, XLU), gameplay_keep_DL_06FAE0 = moving bubble (compressed
-// sphere, OPA)
+// Deku bubble projectile DLs from MM gameplay_keep (from 2Ship z_en_arrow.c:716-738)
+// DL_06F380 = setup DL (combiner/otherMode + loads tile 1=intensity Tex_06EB80 + tile 0=framebuffer seg 0x0F)
+// DL_06F9F0 = stationary bubble (sphere mesh, XLU)
+// DL_06FAE0 = moving bubble (compressed sphere, OPA)
+#define dgMmDekuBubbleSetupDL "__OTR__objects/gameplay_keep/gameplay_keep_DL_06F380"
 #define dgMmDekuBubbleStillDL "__OTR__objects/gameplay_keep/gameplay_keep_DL_06F9F0"
 #define dgMmDekuBubbleMoveDL "__OTR__objects/gameplay_keep/gameplay_keep_DL_06FAE0"
+static const ALIGN_ASSET(2) char gMmDekuBubbleSetupDL[] = dgMmDekuBubbleSetupDL;
 static const ALIGN_ASSET(2) char gMmDekuBubbleStillDL[] = dgMmDekuBubbleStillDL;
 static const ALIGN_ASSET(2) char gMmDekuBubbleMoveDL[] = dgMmDekuBubbleMoveDL;
+static std::vector<Gfx> sDekuBubbleSetupDLSafeCopy;
 static std::vector<Gfx> sDekuBubbleStillDLSafeCopy;
 static std::vector<Gfx> sDekuBubbleMoveDLSafeCopy;
+static size_t sDekuBubbleSetupDLCount = 0;
 static size_t sDekuBubbleStillDLCount = 0;
 static size_t sDekuBubbleMoveDLCount = 0;
+static Gfx* sCachedDekuBubbleSetupDL = NULL;
 static Gfx* sCachedDekuBubbleStillDL = NULL;
 static Gfx* sCachedDekuBubbleMoveDL = NULL;
 
@@ -1683,8 +1693,14 @@ static void MmForm_PreloadZoraDLs(void) {
 }
 
 static void MmForm_PreloadDekuDLs(void) {
-    // Deku bubble projectile geometry DLs from MM gameplay_keep
-    // From 2Ship z_en_arrow.c:716-738: ARROW_TYPE_DEKU_BUBBLE draw
+    // Deku bubble DLs from MM gameplay_keep (from 2Ship z_en_arrow.c:716-738)
+    sCachedDekuBubbleSetupDL = MmForm_LoadAndValidateDL(gMmDekuBubbleSetupDL, sDekuBubbleSetupDLSafeCopy);
+    sDekuBubbleSetupDLCount = sDekuBubbleSetupDLSafeCopy.size();
+    if (sCachedDekuBubbleSetupDL) {
+        MmForm_PreResolveDLHashes(sCachedDekuBubbleSetupDL, "gameplay_keep_DL_06F380", 0);
+    } else {
+        MMFORM_LOG("[MmForm] Warning: MM bubble setup DL_06F380 missing from mm.o2r");
+    }
     sCachedDekuBubbleStillDL = MmForm_LoadAndValidateDL(gMmDekuBubbleStillDL, sDekuBubbleStillDLSafeCopy);
     sDekuBubbleStillDLCount = sDekuBubbleStillDLSafeCopy.size();
     if (sCachedDekuBubbleStillDL) {
@@ -1758,10 +1774,13 @@ static void MmForm_ClearCachedDLs(void) {
     sBarrierDLSafeCopy.clear();
     sZoraFinLDLSafeCopy.clear();
     sZoraFinRDLSafeCopy.clear();
+    sCachedDekuBubbleSetupDL = NULL;
     sCachedDekuBubbleStillDL = NULL;
     sCachedDekuBubbleMoveDL = NULL;
+    sDekuBubbleSetupDLCount = 0;
     sDekuBubbleStillDLCount = 0;
     sDekuBubbleMoveDLCount = 0;
+    sDekuBubbleSetupDLSafeCopy.clear();
     sDekuBubbleStillDLSafeCopy.clear();
     sDekuBubbleMoveDLSafeCopy.clear();
     // FD hand DLs
@@ -2400,7 +2419,13 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
             { 90.0f, 0.74f, 111.0f, 70.0f, 79.4f, 59.0f, 41.0f, 19.0f, 36.0f, 50.0f, 56.0f, 68.0f, 70.0f, 19.5f, 18.2f,
               80.0f, 70.0f },
             // ZORA (MM z_player.c:934-1029)
-            { 90.0f, 1.0f, 111.0f, 70.0f, 79.4f, 59.0f, 41.0f, 19.0f, 36.0f, 50.0f, 56.0f, 68.0f, 70.0f, 18.0f, 23.0f,
+            // unk_28 lowered from MM's 50.0f → 44.8f (Adult Link's value) so OOT's ledge
+            // climb-from-water threshold (z_player.c:5315 `yDistToWater < 50.0f`) is satisfied.
+            // MM uses 50.0 because MM's Zora is taller, but in SoH the actor matrix is OOT
+            // Link's — equilibrium at 50.0 puts Zora exactly AT the threshold, making ledge
+            // grab from water fail. 44.8 puts equilibrium safely below threshold + matches
+            // Link's surface position so Zora rises fully ("nunca llega a la superficie" fix).
+            { 90.0f, 1.0f, 111.0f, 70.0f, 79.4f, 59.0f, 41.0f, 19.0f, 36.0f, 44.8f, 56.0f, 68.0f, 70.0f, 18.0f, 23.0f,
               70.0f, 56.0f },
             // DEKU (MM z_player.c:1030-1125)
             { 50.0f, 0.3f, 71.0f, 50.0f, 49.0f, 39.0f, 27.0f, 19.0f, 8.0f, 13.6f, 24.0f, 24.0f, 70.0f, 14.0f, 12.0f,
@@ -2541,6 +2566,15 @@ static void MmForm_RestoreOotState(Player* player) {
     gFormState.zoraBoots = 0;
     gFormState.fastSwimActive = 0;
     gFormState.swimRollSmoothed = 0;
+
+    // Reset animation playSpeed for both skeletons.
+    // Without this, stale high playSpeed values from form actions (fast swim, running,
+    // punch combo, etc.) bleed into Link's next walk/run animation → "really fast walk" bug.
+    // OOT's walk actions (Player_Action_80840DE4 side_walk) calculate playSpeed from
+    // linearVelocity, but other actions (Player_AnimChangeLoopMorph) use the last-set value.
+    player->skelAnime.playSpeed = 1.0f;
+    gFormState.formSkelAnime.playSpeed = 1.0f;
+    player->linearVelocity = 0.0f;  // Ensure walk anim formula doesn't use stale high velocity
 
     // Cleanup punch trail
     if (gFormState.punchTrailActive && gPlayState != NULL) {
@@ -3692,12 +3726,35 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
             }
         }
 
-        // Buffer: wait extra frames for B-press before going to recovery.
-        // Zora's shorter animations leave little time during the anim itself,
-        // so allow 8 frames after it ends to still chain the combo.
-        if (!gFormState.comboBPressed && step < 2 && gFormState.comboBufferTimer < 4) {
+        // Zora-only post-anim buffer: Zora's punch animations are very short
+        // (hit windows {2,5} {3,8} {3,10}), leaving little time during the swing for a
+        // second B-press. Allow 4 extra frames after anim end to catch late presses.
+        // Without this, Zora combo is unreachable AND the next-frame PunchEnd handler
+        // immediately consumes B-held into a boomerang aim, blocking the combo entirely.
+        // Goron's anims are long enough that this buffer just adds stickiness — skip it there.
+        if (!gFormState.comboBPressed && step < 2 && !isGoron && gFormState.comboBufferTimer < 4) {
             gFormState.comboBufferTimer++;
             return;
+        }
+
+        // MM Player_Action_84 line 18815-18819 + Player_ActionHandler_8 (line 8597):
+        // after combo check fails, Zora can hold B at anim end → enter boomerang aim.
+        // We mirror that here: B held without a buffered fresh press → boomerang aim,
+        // skipping the recovery anim entirely (matches MM's clean anim-end transition).
+        if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
+            gFormState.cutterAttack != NULL && !gFormState.comboBPressed) {
+            Input* boomIn = &play->state.input[0];
+            if (CHECK_BTN_ALL(boomIn->cur.button, BTN_B)) {
+                MmForm_StopRootMotion();
+                if (gFormState.punchTrailActive) {
+                    Effect_Delete(play, gFormState.punchTrailEffectIndex);
+                    gFormState.punchTrailActive = 0;
+                    gFormState.punchTrailEffectIndex = -1;
+                }
+                Player_StartZoraBoomerang(player, play);
+                MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
+                return;
+            }
         }
 
         // No combo / combo ended → recovery animation
@@ -3747,14 +3804,40 @@ static void MmForm_GoronAction_PunchEnd(Player* player, PlayState* play) {
     // Decelerate during recovery
     Math_StepToF(&player->linearVelocity, 0.0f, 5.0f);
 
-    // B hold during punch recovery → boomerang aim (Zora only)
-    // From MM Player_ActionHandler_8 (z_player.c:8462-8480):
-    // If unk_ADC > 0 (did at least 1 punch) AND B held → enter boomerang immediately.
-    // No timer — just B held after a punch combo.
+    Input* input = &play->state.input[0];
+
+    // B fresh press during recovery → advance to next combo step.
+    // (MM equivalent: Handler_7 in sActionHandlerListIdle, fired by fresh B press.)
+    // Step wraps with %3 so kick → press B again restarts at jab.
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        u8 nextStep = (u8)((gFormState.comboStep + 1) % 3);
+        LinkAnimationHeader* nextAnim = MmForm_GetPunchAttackAnim(nextStep);
+        if (nextAnim != NULL) {
+            gFormState.comboStep = nextStep;
+            gFormState.comboBPressed = 0;
+            gFormState.comboBufferTimer = 0;
+            GoronActionId nextAction = (GoronActionId)(GORON_ACT_PUNCH_A + nextStep);
+            MmForm_SetAction(nextAction, play, nextAnim, 1.0f, ANIMMODE_ONCE);
+            player->linearVelocity = 0.0f;
+            MmForm_PlayAttackVoice(player);
+            if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
+                u16 swing = (nextStep == 2) ? NA_SE_IT_SWORD_SWING_HARD : NA_SE_IT_SWORD_SWING;
+                MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, swing);
+            } else {
+                MmForm_PlaySfx(player, MM_NA_SE_IT_GORON_PUNCH_SWING, NA_SE_IT_SWORD_SWING_HARD);
+            }
+            MmForm_StartRootMotion(nextStep);
+            return;
+        }
+    }
+
+    // B held WITHOUT fresh press → boomerang aim (Zora only).
+    // `cur && !press` distinguishes sustained hold from fresh tap, so a tap to combo
+    // doesn't get misread as a hold-to-aim (the original bug).
+    // (MM equivalent: Handler_8 in sActionHandlerListIdle.)
     if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
         gFormState.cutterAttack != NULL) {
-        Input* input = &play->state.input[0];
-        if (CHECK_BTN_ALL(input->cur.button, BTN_B)) {
+        if (CHECK_BTN_ALL(input->cur.button, BTN_B) && !CHECK_BTN_ALL(input->press.button, BTN_B)) {
             Player_StartZoraBoomerang(player, play);
             MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
             return;
@@ -6657,7 +6740,77 @@ static void MmForm_UpdateBubbleProjectile(Player* player, PlayState* play) {
 // In MM: En_Arrow grows at player's head matrix. We use focus.pos as mouth position.
 // From 2Ship z_en_arrow.c:196-269: bubble grows via Math_SmoothStepToF toward 16.0
 // ---------------------------------------------------------------------------
+// Z-target / free-aim variant: 3D bubble at Deku's mouth in world-space.
+// Mirrors MmForm_DrawBubbleProjectile's stationary path, positioned at focus.pos
+// (head center, set by MmForm_PostLimbDraw) plus a small forward offset.
+static void MmForm_DrawChargingBubble3D(Player* player, PlayState* play) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    // Mouth = head center (focus.pos) + ~6 units forward along player yaw, slight Y offset.
+    f32 yawRad = BINANG_TO_RAD(player->actor.shape.rot.y);
+    Vec3f mouthPos = {
+        player->actor.focus.pos.x + sinf(yawRad) * 6.0f,
+        player->actor.focus.pos.y - 1.0f,
+        player->actor.focus.pos.z + cosf(yawRad) * 6.0f,
+    };
+
+    // Same scale formula as projectile (MM: bubble.scale * 0.002f). Charge 0..16 → 0..0.032.
+    f32 bubScale = gFormState.bubbleCharge * 0.002f;
+    s32 alpha = 255 - (s32)(gFormState.bubbleCharge * 4.0f); // MM formula
+
+    Vec3s rot = { 0, player->actor.shape.rot.y, 0 };
+    Matrix_SetTranslateRotateYXZ(mouthPos.x, mouthPos.y, mouthPos.z, &rot);
+    Matrix_Scale(bubScale, bubScale, bubScale, MTXMODE_APPLY);
+    Matrix_Translate(0.0f, 0.0f, 460.0f, MTXMODE_APPLY); // MM coord offset built into the DL
+
+    // Hilite (LookAt + SetHilite1Tile for sphere tex-gen on tile 1)
+    (void)func_8003435C(&mouthPos, play);
+
+    // Capture framebuffer for tile 0 refraction
+    {
+        Gfx* gfx = POLY_XLU_DISP;
+        FB_WriteFramebufferSliceToCPU(&gfx, play->state.gfxCtx->curFrameBuffer, true);
+        POLY_XLU_DISP = gfx;
+    }
+    gSPInvalidateTexCache(POLY_XLU_DISP++,
+                          (uintptr_t)play->state.gfxCtx->curFrameBuffer + ((104 * 320 + 144) * 2));
+
+    // MM setup DL (combiner, tile loads — tile 1 intensity, tile 0 framebuffer slice)
+    if (sCachedDekuBubbleSetupDL) {
+        gSPDisplayList(POLY_XLU_DISP++, sCachedDekuBubbleSetupDL);
+    }
+
+    // XLU override (setup DL leaves OPA mode)
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
+    gDPSetCombineLERP(POLY_XLU_DISP++, TEXEL1, 0, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0,
+                      COMBINED, 0, ENVIRONMENT, 0, COMBINED, 0, ENVIRONMENT, 0);
+    gDPSetEnvColor(POLY_XLU_DISP++, 230, 225, 150, alpha);
+
+    // Billboard the still bubble
+    Matrix_ReplaceRotation(&play->billboardMtxF);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+    // Sphere geometry (MM: gameplay_keep_DL_06F9F0, 74 verts)
+    if (sCachedDekuBubbleStillDL) {
+        gSPDisplayList(POLY_XLU_DISP++, sCachedDekuBubbleStillDL);
+    } else {
+        gSPDisplayList(POLY_XLU_DISP++, (Gfx*)gEffBubbleDL);
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 static void MmForm_DrawChargingBubble(Player* player, PlayState* play) {
+    // First-person aim (slingshot pipeline sets unk_6AD = 2): keep 2D camera overlay.
+    // Z-target / free aim (unk_6AD != 2): use 3D bubble at Deku's mouth so it stays
+    // attached to the visible body. Per OOT func_80834EB8: unk_6AD only becomes 2
+    // when NOT z-targeting, so this single check covers all cases without needing
+    // Player_IsZTargeting.
+    if (player->unk_6AD != 2) {
+        MmForm_DrawChargingBubble3D(player, play);
+        return;
+    }
+
     OPEN_DISPS(play->state.gfxCtx);
 
     // gEffBubbleDL is a 3D SPHERE — no billboard or rotation needed.
@@ -6731,32 +6884,31 @@ static void MmForm_DrawBubbleProjectile(Player* player, PlayState* play) {
         Matrix_Scale(bubScale * sp9C, bubScale * sp9C, bubScale * spA0, MTXMODE_APPLY);
         Matrix_Translate(0.0f, 0.0f, 460.0f, MTXMODE_APPLY);
 
+        // 1:1 replication of 2S2H's EnArrow_Draw bubble section (z_en_arrow.c).
+        // Uses FB_WriteFramebufferSliceToCPU to capture the current frame to curFrameBuffer,
+        // then the MM DL_06F380 setup DL reads tile 0 from it (segment 0x0F refraction),
+        // and tile 1 loads the intensity texture. This matches MM's original look exactly.
         if (gFormState.bubble.hSpeed == 0.0f) {
             // === STATIONARY BUBBLE (MM: speed == 0.0f, XLU path) ===
-            // MM calls: func_800B8118(&this->actor, play, 0) → Hilite_DrawXlu
-            Hilite* hilite = func_8003435C(&gFormState.bubble.pos, play);
+            // MM: func_800B8118(&actor, play, 0) — just emits gSPLookAt + gDPSetHilite1Tile
+            (void)func_8003435C(&gFormState.bubble.pos, play);
 
-            // Inline setup DL 06F380 commands (2-cycle mode + TEXTURE_GEN + hilite)
-            gDPPipeSync(POLY_XLU_DISP++);
-            gDPSetCombineLERP(POLY_XLU_DISP++, TEXEL1, 0, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0,
-                              0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
-            gDPSetOtherMode(POLY_XLU_DISP++,
-                            G_AD_NOTPATTERN | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE |
-                                G_TL_TILE | G_TD_CLAMP | G_TP_PERSP | G_CYC_2CYCLE | G_PM_NPRIMITIVE,
-                            G_AC_NONE | G_ZS_PIXEL | G_RM_FOG_SHADE_A | G_RM_AA_ZB_OPA_SURF2);
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x7F, 255, 255, 255, 255);
-            gSPLoadGeometryMode(POLY_XLU_DISP++, G_ZBUFFER | G_SHADE | G_FOG | G_LIGHTING | G_TEXTURE_GEN |
-                                                     G_TEXTURE_GEN_LINEAR | G_SHADING_SMOOTH);
-            gSPTexture(POLY_XLU_DISP++, 0x1388, 0x1388, 0, G_TX_RENDERTILE, G_ON);
-            // Tile 1: I4 intensity map (use OOT's gHilite1Tex as equivalent of MM's 06EB80)
-            gDPLoadMultiBlock_4b(POLY_XLU_DISP++, gHilite1Tex, 0x0100, 1, G_IM_FMT_I, 64, 64, 15,
-                                 G_TX_MIRROR | G_TX_WRAP, G_TX_MIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
-            // Tile 0: hilite reflection texture (segment 0x0F → hilite computed above)
-            gSPSegment(POLY_XLU_DISP++, 0x0F, (uintptr_t)hilite);
-            gDPLoadTextureTile(POLY_XLU_DISP++, 0x0F000000, G_IM_FMT_RGBA, G_IM_SIZ_16b, 320, 0, 144, 104, 175, 135, 0,
-                               G_TX_MIRROR | G_TX_WRAP, G_TX_MIRROR | G_TX_WRAP, 5, 5, 1, G_TX_NOLOD);
+            // Capture framebuffer to CPU buffer so DL_06F380 can read it as texture (tile 0)
+            {
+                Gfx* gfx = POLY_XLU_DISP;
+                FB_WriteFramebufferSliceToCPU(&gfx, play->state.gfxCtx->curFrameBuffer, true);
+                POLY_XLU_DISP = gfx;
+            }
+            // Invalidate tex cache at the exact read offset (144,104) in the 320-wide framebuffer
+            gSPInvalidateTexCache(POLY_XLU_DISP++,
+                                  (uintptr_t)play->state.gfxCtx->curFrameBuffer + ((104 * 320 + 144) * 2));
 
-            // MM: override render mode + combiner for XLU (after setup DL which sets OPA)
+            // Call MM's setup DL_06F380 (loads tile 1 intensity + tile 0 framebuffer + combiner)
+            if (sCachedDekuBubbleSetupDL) {
+                gSPDisplayList(POLY_XLU_DISP++, sCachedDekuBubbleSetupDL);
+            }
+
+            // MM override (after setup DL sets OPA render mode, we need XLU)
             gDPSetRenderMode(POLY_XLU_DISP++, G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2);
             gDPSetCombineLERP(POLY_XLU_DISP++, TEXEL1, 0, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0,
                               COMBINED, 0, ENVIRONMENT, 0, COMBINED, 0, ENVIRONMENT, 0);
@@ -6768,47 +6920,30 @@ static void MmForm_DrawBubbleProjectile(Player* player, PlayState* play) {
             gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
             // Draw stationary sphere (MM: gameplay_keep_DL_06F9F0, 74 vertices)
-            if (sDekuBubbleStillDLCount > 0 && !sDekuBubbleStillDLSafeCopy.empty()) {
-                static const size_t DL_PAD = 16;
-                size_t total = sDekuBubbleStillDLCount + DL_PAD;
-                Gfx* dlCopy = (Gfx*)Graph_Alloc(play->state.gfxCtx, total * sizeof(Gfx));
-                memcpy(dlCopy, sDekuBubbleStillDLSafeCopy.data(), sDekuBubbleStillDLCount * sizeof(Gfx));
-                for (size_t p = 0; p < DL_PAD; p++) {
-                    dlCopy[sDekuBubbleStillDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
-                    dlCopy[sDekuBubbleStillDLCount + p].words.w1 = 0;
-                }
-                MmForm_PatchSegmentedDL(dlCopy, sDekuBubbleStillDLCount, 0x08, gEmptyDL);
-                MmForm_PatchCullDLIndex(dlCopy, sDekuBubbleStillDLCount);
-                gSPDisplayList(POLY_XLU_DISP++, dlCopy);
+            if (sCachedDekuBubbleStillDL) {
+                gSPDisplayList(POLY_XLU_DISP++, sCachedDekuBubbleStillDL);
             } else {
-                // Fallback: OOT bubble
                 gSPDisplayList(POLY_XLU_DISP++, (Gfx*)gEffBubbleDL);
             }
 
         } else {
             // === MOVING BUBBLE (MM: speed > 0.0f, OPA path) ===
-            // MM calls: func_800B8050(&this->actor, play, 0) → Hilite_DrawOpa
-            Hilite* hilite = func_800342EC(&gFormState.bubble.pos, play);
+            (void)func_800342EC(&gFormState.bubble.pos, play);
 
-            // Inline setup DL 06F380 commands (emitted to OPA like MM does)
-            gDPPipeSync(POLY_OPA_DISP++);
-            gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL1, 0, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0,
-                              0, 0, 0, COMBINED, 0, 0, 0, COMBINED);
-            gDPSetOtherMode(POLY_OPA_DISP++,
-                            G_AD_NOTPATTERN | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE |
-                                G_TL_TILE | G_TD_CLAMP | G_TP_PERSP | G_CYC_2CYCLE | G_PM_NPRIMITIVE,
-                            G_AC_NONE | G_ZS_PIXEL | G_RM_FOG_SHADE_A | G_RM_AA_ZB_OPA_SURF2);
-            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0x7F, 255, 255, 255, 255);
-            gSPLoadGeometryMode(POLY_OPA_DISP++, G_ZBUFFER | G_SHADE | G_FOG | G_LIGHTING | G_TEXTURE_GEN |
-                                                     G_TEXTURE_GEN_LINEAR | G_SHADING_SMOOTH);
-            gSPTexture(POLY_OPA_DISP++, 0x1388, 0x1388, 0, G_TX_RENDERTILE, G_ON);
-            gDPLoadMultiBlock_4b(POLY_OPA_DISP++, gHilite1Tex, 0x0100, 1, G_IM_FMT_I, 64, 64, 15,
-                                 G_TX_MIRROR | G_TX_WRAP, G_TX_MIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
-            gSPSegment(POLY_OPA_DISP++, 0x0F, (uintptr_t)hilite);
-            gDPLoadTextureTile(POLY_OPA_DISP++, 0x0F000000, G_IM_FMT_RGBA, G_IM_SIZ_16b, 320, 0, 144, 104, 175, 135, 0,
-                               G_TX_MIRROR | G_TX_WRAP, G_TX_MIRROR | G_TX_WRAP, 5, 5, 1, G_TX_NOLOD);
+            // Capture framebuffer (same flow, just to OPA this time)
+            {
+                Gfx* gfx = POLY_OPA_DISP;
+                FB_WriteFramebufferSliceToCPU(&gfx, play->state.gfxCtx->curFrameBuffer, true);
+                POLY_OPA_DISP = gfx;
+            }
+            gSPInvalidateTexCache(POLY_OPA_DISP++,
+                                  (uintptr_t)play->state.gfxCtx->curFrameBuffer + ((104 * 320 + 144) * 2));
 
-            // MM: override combiner + set prim color (after setup DL)
+            if (sCachedDekuBubbleSetupDL) {
+                gSPDisplayList(POLY_OPA_DISP++, sCachedDekuBubbleSetupDL);
+            }
+
+            // MM override: combiner with PRIMITIVE instead of ENVIRONMENT for moving
             gDPSetCombineLERP(POLY_OPA_DISP++, TEXEL1, 0, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0,
                               COMBINED, 0, PRIMITIVE, 0, 0, 0, 0, COMBINED);
             gDPSetPrimColor(POLY_OPA_DISP++, 0, 0x7F, 230, 225, 150, 255);
@@ -6816,18 +6951,8 @@ static void MmForm_DrawBubbleProjectile(Player* player, PlayState* play) {
             gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
             // Draw moving sphere (MM: gameplay_keep_DL_06FAE0, 18 vertices)
-            if (sDekuBubbleMoveDLCount > 0 && !sDekuBubbleMoveDLSafeCopy.empty()) {
-                static const size_t DL_PAD = 16;
-                size_t total = sDekuBubbleMoveDLCount + DL_PAD;
-                Gfx* dlCopy = (Gfx*)Graph_Alloc(play->state.gfxCtx, total * sizeof(Gfx));
-                memcpy(dlCopy, sDekuBubbleMoveDLSafeCopy.data(), sDekuBubbleMoveDLCount * sizeof(Gfx));
-                for (size_t p = 0; p < DL_PAD; p++) {
-                    dlCopy[sDekuBubbleMoveDLCount + p].words.w0 = (uintptr_t)0xDF << 24;
-                    dlCopy[sDekuBubbleMoveDLCount + p].words.w1 = 0;
-                }
-                MmForm_PatchSegmentedDL(dlCopy, sDekuBubbleMoveDLCount, 0x08, gEmptyDL);
-                MmForm_PatchCullDLIndex(dlCopy, sDekuBubbleMoveDLCount);
-                gSPDisplayList(POLY_OPA_DISP++, dlCopy);
+            if (sCachedDekuBubbleMoveDL) {
+                gSPDisplayList(POLY_OPA_DISP++, sCachedDekuBubbleMoveDL);
             } else {
                 // Fallback: OOT bubble on XLU
                 Gfx_SetupDL_25Xlu(play->state.gfxCtx);
@@ -9013,6 +9138,12 @@ static void MmForm_DrawZoraBarrier(Player* player, PlayState* play) {
 // Forward declaration (defined in z_player.c line 352, non-static)
 extern "C" void Player_Action_8084E3C4(Player* this_, PlayState* play);
 
+// OOT idle action + setup helper — used to sync the lower body to idle when entering
+// boomerang aim from a non-idle action (e.g. jumpkick recovery).
+extern "C" void Player_Action_Idle(Player* this_, PlayState* play);
+extern "C" s32 Player_SetupAction(PlayState* play, Player* this_, void (*actionFunc)(Player*, PlayState*),
+                                  s32 flags);
+
 // Interpolate per-form instrument scales based on current gakki phase and frame.
 // From MM z_player_lib.c PostLimbDraw: each phase uses different keyframe arrays.
 static void MmForm_GakkiInterpScales(f32 curFrame) {
@@ -9188,47 +9319,52 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         player->modelAnimType = PLAYER_ANIMTYPE_0;
     }
 
-    // Zora boomerang cleanup + upper body aim sync
+    // Zora boomerang sync. State machine via boomerangCatchTimer:
+    //   0 = idle/no throw active
+    //   1 = throw in flight (cutterAttack played, fins out, waiting for return)
+    //   2 = catch animation playing (fins came back)
     if (gFormState.currentForm == MM_PLAYER_FORM_ZORA) {
         Player_ZoraBoomerangCleanup(player);
 
-        // During boomerang aim: play charge pose + sync aim pitch to upper body
-        if (player->heldItemAction == PLAYER_IA_BOOMERANG && (player->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG)) {
-            // Play Zora charge animation (pz_cutterwaitanim) on formSkelAnime
-            // so the form shows the aim pose instead of idle.
-            // Only set once (when animation doesn't match) to avoid resetting each frame.
+        u8 throwNow = (player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) != 0;
+
+        // Aim phase: USING_BOOMERANG + not yet thrown. Hold cutterWaitAnim looping.
+        // Cleanup Phase 1 clears USING_BOOMERANG the moment THROWN sets, so this only
+        // runs during actual aim (before throw fires).
+        if (player->heldItemAction == PLAYER_IA_BOOMERANG &&
+            (player->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG) && !throwNow) {
+            // Reset latch so the throw edge below fires cleanly even if a previous
+            // boomerang flight left the latch stuck at 1 (e.g. interrupt during flight).
+            gFormState.boomerangCatchTimer = 0;
             if (gFormState.cutterWaitAnim != NULL && gFormState.formSkelAnime.animation != gFormState.cutterWaitAnim) {
                 LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterWaitAnim, 1.0f, 0.0f,
                                      Animation_GetLastFrame(gFormState.cutterWaitAnim), ANIMMODE_LOOP, -6.0f);
             }
-
-            // Sync OOT's aim to upper body rotation
             player->upperLimbRot.x = player->actor.focus.rot.x;
             player->unk_6AE_rotFlags |= UNK6AE_ROT_FOCUS_X;
-
-            // Keep camera behind Zora: sync focus.rot.y to body facing
-            // Without this, the camera can orbit to the front during aim.
             player->actor.focus.rot.y = player->actor.shape.rot.y;
-
-            // When OOT transitions to throw (BOOMERANG_THROWN set), play throw animation
-            if ((player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) && gFormState.cutterAttack != NULL &&
-                gFormState.formSkelAnime.animation != gFormState.cutterAttack) {
-                LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterAttack, 1.0f, 0.0f,
-                                     Animation_GetLastFrame(gFormState.cutterAttack), ANIMMODE_ONCE, -4.0f);
-            }
         }
 
-        // Catch animation: detect edge transition BOOMERANG_THROWN going from set→cleared.
-        // Use boomerangCatchTimer as edge detector: set to 1 when THROWN is active,
-        // trigger catch anim once when THROWN clears.
-        if (player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) {
-            gFormState.boomerangCatchTimer = 1; // Mark: fins are out
-        } else if (gFormState.boomerangCatchTimer == 1 && (player->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG) &&
-                   gFormState.cutterCatch != NULL) {
-            // Edge: THROWN just cleared → play catch ONCE
-            gFormState.boomerangCatchTimer = 0;
+        // Throw edge: latch state and play cutterAttack ONCE. boomerangCatchTimer=0
+        // gate prevents re-firing every frame after action handlers overwrite the anim.
+        if (throwNow && gFormState.boomerangCatchTimer == 0 && gFormState.cutterAttack != NULL) {
+            LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterAttack, 1.0f, 0.0f,
+                                 Animation_GetLastFrame(gFormState.cutterAttack), ANIMMODE_ONCE, -4.0f);
+            gFormState.boomerangCatchTimer = 1; // throw in flight
+        }
+
+        // Catch edge: THROWN cleared after we latched a throw. Play cutterCatch ONCE.
+        if (!throwNow && gFormState.boomerangCatchTimer == 1 && gFormState.cutterCatch != NULL) {
             LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterCatch, 1.0f, 0.0f,
                                  Animation_GetLastFrame(gFormState.cutterCatch), ANIMMODE_ONCE, -4.0f);
+            gFormState.boomerangCatchTimer = 2; // catch playing
+        }
+
+        // Catch finished: clear latch so action dispatch and the next throw cycle work.
+        if (gFormState.boomerangCatchTimer == 2 && gFormState.cutterCatch != NULL &&
+            gFormState.formSkelAnime.animation == gFormState.cutterCatch &&
+            gFormState.formSkelAnime.curFrame >= Animation_GetLastFrame(gFormState.cutterCatch)) {
+            gFormState.boomerangCatchTimer = 0;
         }
     }
 
@@ -9239,7 +9375,21 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         if (player->heldItemAction == PLAYER_IA_SLINGSHOT && (player->stateFlags1 & PLAYER_STATE1_ITEM_IN_HAND)) {
             Input* bubInput = &play->state.input[0];
 
-            if (CHECK_BTN_ALL(bubInput->cur.button, BTN_B)) {
+            // A button cancels aim mode (MM behavior: Deku Link presses A to exit bubble aim).
+            // OOT's slingshot pipeline doesn't natively exit on A press — force it by changing
+            // heldItemAction so Player_DekuBubbleCleanup's trigger condition fires and does
+            // the full cleanup (clears flags, resets upper action to func_8083485C).
+            if (CHECK_BTN_ALL(bubInput->press.button, BTN_A)) {
+                player->heldItemAction = PLAYER_IA_NONE;
+                Player_DekuBubbleCleanup(player);
+
+                // Reset charge state
+                gFormState.bubbleCharging = 0;
+                gFormState.bubbleCharge = 0.0f;
+                gFormState.bubbleChargeTimer = 0;
+                gFormState.dekuCheekScale = 1.0f;
+                MmSfx_Stop(MM_NA_SE_PL_DEKUNUTS_BUBLE_BREATH);
+            } else if (CHECK_BTN_ALL(bubInput->cur.button, BTN_B)) {
                 Math_SmoothStepToF(&gFormState.bubbleCharge, 16.0f, 0.07f, 1.8f, 0.01f);
                 gFormState.bubbleChargeTimer++;
 
@@ -10085,6 +10235,32 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     }
 
     // =========================================================================
+    // Zora boomerang playback guard: while cutterAttack/cutterCatch is mid-playback
+    // (or cutterWaitAnim during aim), skip action dispatch so handlers (Z-target idle,
+    // walk transition, etc.) don't overwrite formSkelAnime.animation. OOT's actionFunc
+    // still runs each frame so the player keeps moving / Z-strafing normally — only the
+    // form-specific dispatch is suspended. Once the cutter anim finishes (curFrame at
+    // endFrame for ONCE; or USING_BOOMERANG/THROWN clears for the loop), normal dispatch
+    // resumes and the action handler transitions naturally to ZTARGET_IDLE/WALK/RUN —
+    // joint copy then displays OOT's animation so the player can walk freely during flight.
+    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.formSkelAnime.animation != NULL) {
+        SkelAnime* sa = &gFormState.formSkelAnime;
+        u8 inAim = (sa->animation == gFormState.cutterWaitAnim &&
+                    player->heldItemAction == PLAYER_IA_BOOMERANG &&
+                    (player->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG) &&
+                    !(player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN));
+        u8 inThrowAnim = (sa->animation == gFormState.cutterAttack &&
+                          sa->curFrame < Animation_GetLastFrame(gFormState.cutterAttack));
+        u8 inCatchAnim = (sa->animation == gFormState.cutterCatch &&
+                          sa->curFrame < Animation_GetLastFrame(gFormState.cutterCatch));
+        if (inAim || inThrowAnim || inCatchAnim) {
+            // Tick the form animation so the cutter anim progresses each frame.
+            LinkAnimation_Update(play, &gFormState.formSkelAnime);
+            return;
+        }
+    }
+
+    // =========================================================================
     // Action Dispatch
     // =========================================================================
     switch (gFormState.goronAction) {
@@ -10177,6 +10353,32 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             Math_StepToF(&player->linearVelocity, 0.0f, DAMAGE_DECEL_RATE);
             if (gFormState.formSkelAnime.animation == NULL ||
                 gFormState.formSkelAnime.curFrame >= Animation_GetLastFrame(gFormState.formSkelAnime.animation)) {
+                // MM Player_Action_84 line 18815: at anim end of Zora attack with B held → boomerang.
+                // Jumpkick lands here (set above when curAction == MMFORM_ACT_JUMP_KICK).
+                // Detect by anim pointer matching jumpKickEnd; sustained hold (cur && !press)
+                // distinguishes from a fresh tap that would mean a new combo.
+                if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.boomerangState == 0 &&
+                    gFormState.cutterAttack != NULL && gFormState.jumpKickEnd != NULL &&
+                    gFormState.formSkelAnime.animation == gFormState.jumpKickEnd) {
+                    Input* in = &play->state.input[0];
+                    if (CHECK_BTN_ALL(in->cur.button, BTN_B) && !CHECK_BTN_ALL(in->press.button, BTN_B)) {
+                        // Sync OOT's actionFunc to idle BEFORE Player_StartZoraBoomerang.
+                        // After jumpkick, OOT's actionFunc may still be Player_Action_808502D0
+                        // (jumpslash recovery). The boomerang upper-action chain (func_80835800)
+                        // expects the lower action to be in the idle handler list (which routes
+                        // the held-item button to the upper actions). Without this, B is held
+                        // but routed nowhere → softlock with the upper aim mode partially
+                        // engaged. Punch path doesn't need this because PunchEnd already runs
+                        // alongside Player_Action_Idle.
+                        Player_SetupAction(play, player, Player_Action_Idle, 1);
+                        player->meleeWeaponState = 0;
+                        player->meleeWeaponAnimation = -1;
+                        player->stateFlags3 |= PLAYER_STATE3_FINISHED_ATTACKING;
+                        Player_StartZoraBoomerang(player, play);
+                        MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
+                        break;
+                    }
+                }
                 MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
             }
             break;
@@ -10499,17 +10701,9 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // Player is NOT locked — can walk, run, jump attack, etc. during flight.
     MmForm_TrackBoomerangsInFlight(player, play);
 
-    // Boomerang catch animation priority (from 2Ship Player_UpperAction_16)
-    // While catchTimer > 0, the catch animation takes visual priority over the current action.
-    // Decrement each frame; when done, normal action animations resume.
-    if (gFormState.boomerangCatchTimer > 0) {
-        gFormState.boomerangCatchTimer--;
-        // Ensure catch animation stays active (action handlers may have overwritten it)
-        if (gFormState.cutterCatch != NULL && gFormState.formSkelAnime.animation != gFormState.cutterCatch) {
-            LinkAnimation_Change(play, &gFormState.formSkelAnime, gFormState.cutterCatch, 1.0f, 0.0f,
-                                 Animation_GetLastFrame(gFormState.cutterCatch), ANIMMODE_ONCE, -6.0f);
-        }
-    }
+    // (Catch animation is now driven by the boomerang state machine in the Zora sync block
+    // at the top of MmForm_UpdateActive. The action dispatch guard above blocks dispatch
+    // while cutterCatch is mid-playback, so no additional priority enforcement is needed.)
 
     // Always tick animation (separate from OOT's player->skelAnime)
     // Skip for actions that handle their own animation updates internally
@@ -10543,6 +10737,9 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
             gFormState.flashAlpha = 0;
             player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
             player->linearVelocity = 0.0f;
+            // Reset animation speed to prevent stale playSpeed bleeding into new form's walk
+            player->skelAnime.playSpeed = 1.0f;
+            gFormState.formSkelAnime.playSpeed = 1.0f;
 
             if (!MmForm_LoadFormSkeleton(play, gFormState.targetForm)) {
                 MMFORM_LOG("[MmForm] Skeleton load failed, aborting transform");
@@ -10553,8 +10750,13 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
             }
 
             ExtEquip_UnequipForTransform();
-            MmForm_ApplyFormProperties(player, gFormState.targetForm);
+            // Update currentForm BEFORE ApplyFormProperties+SetBootData so Player_SetBootData
+            // reads the new form. Otherwise the previous form's REG(38) etc. persist and
+            // make the new form's walk-cycle counter advance too fast until any other
+            // action triggers another SetBootData.
             gFormState.currentForm = gFormState.targetForm;
+            MmForm_ApplyFormProperties(player, gFormState.targetForm);
+            Player_SetBootData(play, player);
 
             // Play flash SFX
             if (MmSfx_IsAvailable()) {
@@ -10609,6 +10811,9 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
                     player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
                     player->linearVelocity = 0.0f;
                     player->actor.velocity.y = 0.0f;
+                    // Reset animation speed to prevent stale value bleeding across forms
+                    player->skelAnime.playSpeed = 1.0f;
+                    gFormState.formSkelAnime.playSpeed = 1.0f;
 
                     // Face away from camera
                     player->actor.shape.rot.y = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000;
@@ -10662,8 +10867,11 @@ static void MmForm_UpdateTransforming(Player* player, PlayState* play) {
                     }
 
                     ExtEquip_UnequipForTransform();
-                    MmForm_ApplyFormProperties(player, gFormState.targetForm);
+                    // Update currentForm BEFORE ApplyFormProperties+SetBootData so
+                    // Player_SetBootData loads the new form's REGs (not the previous form's).
                     gFormState.currentForm = gFormState.targetForm;
+                    MmForm_ApplyFormProperties(player, gFormState.targetForm);
+                    Player_SetBootData(play, player);
 
                     // Play flash SFX (from 2Ship line 19116: NA_SE_SY_TRANSFORM_MASK_FLASH)
                     MmSfx_PlayTransformFlash();
@@ -10718,11 +10926,14 @@ static void MmForm_UpdateDetransforming(Player* player, PlayState* play) {
                 gFormState.flashAlpha = 0;
         }
 
-        // At flash peak, restore OOT state
+        // At flash peak, restore OOT state.
+        // Set currentForm to HUMAN BEFORE RestoreOotState so the Player_SetBootData
+        // call inside it reads the new form — otherwise it keeps loading the old
+        // form's REG(38) etc., which makes the walk-cycle counter advance too fast.
         if (gFormState.cutsceneTimer == 3) {
-            MmForm_RestoreOotState(player);
             gFormState.currentForm = MM_PLAYER_FORM_HUMAN;
             gFormState.skeletonLoaded = 0;
+            MmForm_RestoreOotState(player);
         }
 
         if (gFormState.cutsceneTimer >= 5) {
@@ -10767,10 +10978,12 @@ static void MmForm_UpdateDetransforming(Player* player, PlayState* play) {
                 if (gFormState.flashAlpha >= 255) {
                     gFormState.flashAlpha = 255;
 
-                    // At flash: restore OOT skeleton
-                    MmForm_RestoreOotState(player);
+                    // At flash: restore OOT skeleton.
+                    // Update currentForm BEFORE RestoreOotState so Player_SetBootData reads HUMAN
+                    // (not DEKU) — otherwise Deku's REG(38)=1000 bleeds into Link's walk anim.
                     gFormState.currentForm = MM_PLAYER_FORM_HUMAN;
                     gFormState.skeletonLoaded = 0;
+                    MmForm_RestoreOotState(player);
 
                     MmSfx_PlayTransformFlash();
 
@@ -11860,6 +12073,10 @@ void MmForm_DragonScaleExitSwim(Player* player) {
     player->stateFlags2 &= ~(PLAYER_STATE2_DISABLE_ROTATION_ALWAYS | PLAYER_STATE2_DISABLE_DRAW);
     player->actor.gravity = -1.2f;
     player->actor.shape.rot.x = 0;
+    // Reset animation speed — fast swim had copied high playSpeed from formSkelAnime to
+    // player->skelAnime. Without this reset, Link's walk after exiting water plays too fast.
+    player->skelAnime.playSpeed = 1.0f;
+    gFormState.formSkelAnime.playSpeed = 1.0f;
     // Keep skeletonLoaded so re-entry is instant
 }
 
@@ -12293,9 +12510,12 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
     // If already transformed to a different form -> de-transform first, then re-transform
     // For now: instant switch (future: chain cutscenes)
     if (gFormState.state == MMFORM_STATE_ACTIVE && gFormState.currentForm != targetForm) {
+        // Update currentForm to HUMAN before RestoreOotState so Player_SetBootData
+        // inside loads OOT defaults (not the outgoing form's REGs).
+        gFormState.currentForm = MM_PLAYER_FORM_HUMAN;
+        gFormState.skeletonLoaded = 0;
         MmForm_RestoreOotState(player);
         MmForm_RestoreEquips(play);
-        gFormState.skeletonLoaded = 0;
         // Clear stale action/animation state to prevent crashes on new form
         gFormState.formSkelAnime.animation = NULL;
         gFormState.goronAction = GORON_ACT_IDLE;
@@ -12801,8 +13021,26 @@ void MmForm_Draw(PlayState* play, Player* player) {
             // so the MM skeleton displays OOT's animation perfectly synced.
             // Both skeletons have 22 limbs → LIMB_BUF_COUNT(22) = 24 Vec3s entries.
             // OverrideLimbDraw still applies rootAnimScale for correct form height.
-            if ((MmForm_UsesOotAnim() || gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY) &&
-                player->skelAnime.jointTable != NULL && gFormState.formSkelAnime.jointTable != NULL) {
+            //
+            // EXCEPTION: while Zora is playing cutterAttack or cutterCatch on the form
+            // skeleton, do NOT copy OOT's joints. OOT's upper-action plays
+            // gPlayerAnim_link_boom_attack/catch on player->skelAnime, and copying those
+            // joints overwrites our cutter anim, making the regular boomerang throw/catch
+            // animation appear instead of the Zora fin-cutter animation.
+            u8 isCutterAnim =
+                (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.formSkelAnime.animation != NULL &&
+                 (gFormState.formSkelAnime.animation == gFormState.cutterAttack ||
+                  gFormState.formSkelAnime.animation == gFormState.cutterCatch ||
+                  gFormState.formSkelAnime.animation == gFormState.cutterWaitAnim));
+            // Force the OOT joint copy whenever GETTING_ITEM is set: this guarantees the
+            // form holds the get-item-wait pose (last frame of link_demo_get_itemA) on
+            // Zora/Goron/Deku, even if our action state didn't transition to OOT_ACTION
+            // for any reason. Without this, the form falls back to its own idle anim
+            // while OOT keeps the player static at the held-up pose.
+            u8 forceOotCopy = (player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) != 0;
+            if ((MmForm_UsesOotAnim() || forceOotCopy || gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY) &&
+                !isCutterAnim && player->skelAnime.jointTable != NULL &&
+                gFormState.formSkelAnime.jointTable != NULL) {
                 memcpy(gFormState.formSkelAnime.jointTable, player->skelAnime.jointTable,
                        sizeof(Vec3s) * PLAYER_LIMB_BUF_COUNT);
             }

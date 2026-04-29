@@ -56,6 +56,9 @@
 #include "item_time_gate.c"
 #include "item_minish_cap.c"
 #include "../helpers/minish_kaleido.c"
+#include "item_postman_hat.c"
+// item_postman_hat.c appends `#include "../helpers/postman_kaleido.c"` at
+// its tail so the kaleido body ends up in the same TU.
 
 // Transformation Masks: REMOVED - now included directly in z_player.c
 // (transformation_masks.c includes mask_goron.c internally)

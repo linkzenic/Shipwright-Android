@@ -183,6 +183,43 @@ void PakLoader_FrameBegin(void);
  */
 void PakLoader_Shutdown(void);
 
+// ============================================================================
+// Harpoon Skin Sync API
+// ============================================================================
+// Skins loaded from mods/harpoon_skin_sync/ (or <exe>/harpoon_skin_sync/) share
+// the single sModels registry with local mods/ paks, but carry an isSyncOnly
+// flag so they are hidden from the local selection menu and never selected as
+// the local Adult/Child/Equipment model. They are only surfaced through the
+// BeginRemoteRender / EndRemoteRender API below, which temporarily routes the
+// forced-model slot to the sync entry for the duration of a remote actor draw.
+
+/**
+ * Look up a LOCAL (mods/) pak by display name (package.json "name").
+ * Skips any isSyncOnly entries.
+ * @return index into sModels, or -1 if not found.
+ */
+s32 PakLoader_FindLocalIndexByName(const char* name);
+
+/**
+ * Look up a SYNC (harpoon_skin_sync/) pak by display name.
+ * @return index into sModels pointing at an isSyncOnly entry, or -1 if not found.
+ */
+s32 PakLoader_FindSyncIndexByName(const char* name);
+
+/**
+ * Begin rendering a remote dummy player with the given SYNC model index.
+ * Temporarily overrides sForcedModelIndex so the pak_loader's eye/mouth/
+ * equipment/DL pipelines all use the remote's skin. Pass -1 to render with
+ * vanilla Link (e.g., when the remote's skin isn't installed locally).
+ * MUST be paired with PakLoader_EndRemoteRender.
+ */
+void PakLoader_BeginRemoteRender(s32 syncIdx);
+
+/**
+ * End a remote-render block, restoring whatever forced state was active before.
+ */
+void PakLoader_EndRemoteRender(void);
+
 #ifdef __cplusplus
 }
 #endif

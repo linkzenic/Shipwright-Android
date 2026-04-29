@@ -915,41 +915,48 @@ void OTRGlobals::Initialize() {
     auto versions = context->GetResourceManager()->GetArchiveManager()->GetGameVersions();
 
     for (uint32_t version : versions) {
-        if (!ValidHashes.contains(version)) {
+        // MM hashes are validated separately in mm_asset_loader.cpp. Skip them here
+        // so an mm.o2r added before this loop runs is not treated as an invalid OOT.
+        if (version == MM_NTSC_US_10 || version == MM_NTSC_US_10_UNCOMPRESSED ||
+            version == MM_NTSC_US_GC || version == MM_NTSC_JP_GC) {
+            continue;
+        }
+
+        if (version == OOT_NTSC_US_10) {
+            hasOriginal = true;
+            continue;
+        }
+
+        // Any other recognized OOT hash means the user gave us an OOT o2r that is
+        // not the required version (PAL, MQ, debug, JP, GC, 1.1, 1.2, iQue, ...).
+        if (ValidHashes.contains(version)) {
 #if defined(__SWITCH__)
-            SPDLOG_ERROR("Invalid OTR File!");
+            SPDLOG_ERROR("Incompatible OOT o2r — required: OOT 1.0 USA (NTSC)");
 #elif defined(__WIIU__)
             Ship::WiiU::ThrowInvalidOTR();
 #else
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Invalid OTR File",
-                                     "Attempted to load an invalid OTR file. Try regenerating.", nullptr);
-            SPDLOG_ERROR("Invalid OTR File!");
+            SDL_ShowSimpleMessageBox(
+                SDL_MESSAGEBOX_ERROR, "Incompatible oot.o2r",
+                "Your oot.o2r file is not compatible.\n"
+                "Required: OOT 1.0 USA (NTSC).\n\n"
+                "Please re-extract using the official extractor with an OOT 1.0 USA (NTSC) ROM.",
+                nullptr);
+            SPDLOG_ERROR("Incompatible OOT o2r — required: OOT 1.0 USA (NTSC)");
 #endif
             exit(1);
         }
-        switch (version) {
-            case OOT_PAL_MQ:
-            case OOT_NTSC_JP_MQ:
-            case OOT_NTSC_US_MQ:
-            case OOT_PAL_GC_MQ_DBG:
-                hasMasterQuest = true;
-                break;
-            case OOT_NTSC_US_10:
-            case OOT_NTSC_US_11:
-            case OOT_NTSC_US_12:
-            case OOT_PAL_10:
-            case OOT_PAL_11:
-            case OOT_NTSC_JP_GC_CE:
-            case OOT_NTSC_JP_GC:
-            case OOT_NTSC_US_GC:
-            case OOT_PAL_GC:
-            case OOT_PAL_GC_DBG1:
-            case OOT_PAL_GC_DBG2:
-                hasOriginal = true;
-                break;
-            default:
-                break;
-        }
+
+        // Unknown / corrupted file → keep the legacy generic Invalid OTR path.
+#if defined(__SWITCH__)
+        SPDLOG_ERROR("Invalid OTR File!");
+#elif defined(__WIIU__)
+        Ship::WiiU::ThrowInvalidOTR();
+#else
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Invalid OTR File",
+                                 "Attempted to load an invalid OTR file. Try regenerating.", nullptr);
+        SPDLOG_ERROR("Invalid OTR File!");
+#endif
+        exit(1);
     }
 }
 

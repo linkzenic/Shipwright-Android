@@ -172,13 +172,31 @@ void ExtEquip_GiveItem(s16 equipType, u8 index) {
     gSaveContext.inventory.equipment |= ExtEquip_GetBit(equipType, index);
 }
 
+// Clear vanilla equipment base that was set for ext equipment.
+// Called only from explicit toggle-off paths (not from vanilla equip path,
+// which sets its own vanilla equipment before calling ExtEquip_Unequip).
+static void ExtEquip_ClearVanillaEquip(s16 equipType) {
+    switch (equipType) {
+        case EQUIP_TYPE_SWORD:
+            Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_NONE);
+            gSaveContext.equips.buttonItems[0] = ITEM_NONE;
+            break;
+        case EQUIP_TYPE_SHIELD:
+            Inventory_ChangeEquipment(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_NONE);
+            break;
+        default:
+            break;
+    }
+}
+
 void ExtEquip_RemoveItem(s16 equipType, u8 index) {
     if (index == 0 || index > 3 || equipType < 0 || equipType > 3)
         return;
     gSaveContext.inventory.equipment &= ~ExtEquip_GetBit(equipType, index);
-    // If currently equipped, unequip
+    // If currently equipped, unequip and clear vanilla base
     if (ExtEquip_GetCurrent(equipType) == index) {
         ExtEquip_Unequip(equipType);
+        ExtEquip_ClearVanillaEquip(equipType);
     }
 }
 
@@ -198,6 +216,7 @@ void ExtEquip_Equip(s16 equipType, u8 index) {
     u8 current = ExtEquip_GetCurrent(equipType);
     if (current == index) {
         ExtEquip_Unequip(equipType);
+        ExtEquip_ClearVanillaEquip(equipType);
         return;
     }
 
@@ -236,6 +255,10 @@ void ExtEquip_Unequip(s16 equipType) {
     }
 
     ExtEquip_SetCurrentByType(equipType, 0);
+    // NOTE: vanilla equipment is NOT cleared here — callers that need it
+    // (toggle-off, remove) call ExtEquip_ClearVanillaEquip separately.
+    // The vanilla equip path (z_kaleido_equipment.c) calls ExtEquip_Unequip
+    // after already setting vanilla equipment, so clearing here would undo it.
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +326,7 @@ void ExtEquip_ToggleFromCButton(u16 itemId) {
     u8 current = ExtEquip_GetCurrent(equipType);
     if (current == index) {
         ExtEquip_Unequip(equipType);
+        ExtEquip_ClearVanillaEquip(equipType);
         Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_REMOVE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     } else {

@@ -1,4 +1,5 @@
 #include "Harpoon.h"
+#include "HarpoonSkinSync.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
 
@@ -15,6 +16,7 @@ extern "C" {
 #include "mods/mm_sources/objects/object_link_boy.h"
 #include "mods/items/custom_items.h"
 #include "mods/actors/somaria_cubes.h"
+#include "mods/pak_loader/pak_loader.h"
 extern PlayState* gPlayState;
 
 void Player_UseItem(PlayState* play, Player* player, s32 item);
@@ -576,7 +578,32 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
         CustomItems_ApplyVisualSync(&remoteCustomItems);
     }
 
+    // Skin sync: resolve remote's broadcast skin names against our sync registry
+    // (models loaded from harpoon_skin_sync/, flagged isSyncOnly in sModels).
+    // Missing names fire a one-shot UI notification and fall back to vanilla Link.
+    //
+    // For adult/child we pick by age (gSaveContext.linkAge was already overridden
+    // above with client.linkAge, so LINK_AGE_IN_YEARS reads the remote's age).
+    // Equipment slot is deferred — synced equipment paks would need per-actor
+    // cached equip DLs, a larger Phase 2 refactor.
+    s32 syncAdult = PakLoader_FindSyncIndexByName(client.adultSkinName.c_str());
+    s32 syncChild = PakLoader_FindSyncIndexByName(client.childSkinName.c_str());
+    if (!client.adultSkinName.empty() && syncAdult < 0)
+        HarpoonSkinSync::NotifyMissingPak(clientId, client.name, client.adultSkinName);
+    if (!client.childSkinName.empty() && syncChild < 0)
+        HarpoonSkinSync::NotifyMissingPak(clientId, client.name, client.childSkinName);
+
+    s32 syncBodyIdx = (LINK_AGE_IN_YEARS == YEARS_ADULT) ? syncAdult : syncChild;
+
+    // BeginRemoteRender routes the entire pak_loader pipeline (skeleton, eyes,
+    // mouth, equipment DL overrides, cached equip DLs) through syncBodyIdx for
+    // the duration of this Player_Draw — that's what gets faces and equipment
+    // to render consistently on remote players.
+    PakLoader_BeginRemoteRender(syncBodyIdx);
+
     Player_Draw((Actor*)player, play);
+
+    PakLoader_EndRemoteRender();
 
     // Restore all overridden state
     CustomItems_ApplyVisualSync(&savedCustomItems);

@@ -50,6 +50,17 @@ static u8 sCapeFrameTimer = 0;
 static u8 sCapeUpdateHasRun = 0;
 static f32 sCapeBaseYaw = 0.0f;
 
+// Persistent across cape (re)inits and scene transitions: register the blended texture
+// once and never unregister. Re-registering each Init/Reset cycle while the GPU pipeline
+// still references the prior registration was the suspect for intermittent crashes in
+// scenes with dense cutscene churn (Lon Lon, Kakariko).
+static u8 sCapeTexRegistered = 0;
+
+// On the first physics tick after Init (scene change, equip toggle, cutscene exit),
+// snap every joint of every strand to its current root position so the cape doesn't
+// settle from stale world coordinates left over from the previous scene.
+static u8 sCapeNeedsRootSnap = 1;
+
 // Shoulder positions captured from PostLimbDraw
 static Vec3f sCapeLeftShoulderPos;
 static Vec3f sCapeRightShoulderPos;
@@ -96,13 +107,19 @@ static void MagicCape_Init(void) {
         return;
 
     memset(sCapeStrands, 0, sizeof(sCapeStrands));
-    memset(sCapeMaskTex, 0, sizeof(sCapeMaskTex));
     sCapeFrameTimer = 0;
     sCapeUpdateHasRun = 0;
     sCapeShouldersCaptured = 0;
+    sCapeNeedsRootSnap = 1;
 
-    // Register clean mask so the material DL's blended texture works
-    Gfx_RegisterBlendedTexture(gMantTex, sCapeMaskTex, NULL);
+    // Register the blended texture exactly once over the lifetime of the process.
+    // sCapeMaskTex is static so its address is stable; the mask stays zero-filled which
+    // is a no-op blend (passes the source texture through unchanged).
+    if (!sCapeTexRegistered) {
+        memset(sCapeMaskTex, 0, sizeof(sCapeMaskTex));
+        Gfx_RegisterBlendedTexture(gMantTex, sCapeMaskTex, NULL);
+        sCapeTexRegistered = 1;
+    }
 
     sCapeInitialized = 1;
 }
@@ -114,10 +131,14 @@ static void MagicCape_Reset(void) {
     if (!sCapeInitialized)
         return;
 
+    // Note: we intentionally do NOT call Gfx_UnregisterBlendedTexture here. The texture
+    // registration is established once in Init and persists for the rest of the session.
+    // The mask buffer is static so its lifetime is forever; the GPU can keep referencing it
+    // safely across re-inits without races.
     sCapeMagicTracking = 0;
-    Gfx_UnregisterBlendedTexture(gMantTex);
     sCapeInitialized = 0;
     sCapeShouldersCaptured = 0;
+    sCapeNeedsRootSnap = 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +286,9 @@ static void MagicCape_UpdateVertices(void) {
     }
 
     vertices = ResourceMgr_LoadVtxByName((char*)vertices);
+    if (vertices == NULL) {
+        return;
+    }
 
     strand = &sCapeStrands[0];
     for (i = 0; i < CAPE_NUM_STRANDS; i++, strand++) {
@@ -289,6 +313,12 @@ static void MagicCape_UpdateVertices(void) {
 static void MagicCape_Draw(Player* player, PlayState* play) {
     if (!sCapeInitialized)
         return;
+    // Skip cape rendering while riding Epona (and other special states): the player skeleton
+    // is in horse pose, shoulder limbs land in unexpected positions, and the cape produces
+    // garbage geometry.
+    if (player->stateFlags1 & PLAYER_STATE1_ON_HORSE) {
+        return;
+    }
     if (sCapeShouldersCaptured != 3)
         return; // Need both shoulders
 
@@ -333,6 +363,18 @@ static void MagicCape_Draw(Player* player, PlayState* play) {
             sCapeStrands[strandIdx].root.y = midpoint.y + strandDivPos.y;
             sCapeStrands[strandIdx].root.z = midpoint.z + strandDivPos.z;
 
+            // First physics tick after Init: collapse every joint of this strand onto the
+            // current root so the cape doesn't have to settle from world (0,0,0) coords left
+            // by memset, which produced a violent first frame after every scene transition.
+            if (sCapeNeedsRootSnap) {
+                for (s32 j = 0; j < CAPE_NUM_JOINTS; j++) {
+                    sCapeStrands[strandIdx].joints[j] = sCapeStrands[strandIdx].root;
+                    sCapeStrands[strandIdx].velocities[j].x = 0.0f;
+                    sCapeStrands[strandIdx].velocities[j].y = 0.0f;
+                    sCapeStrands[strandIdx].velocities[j].z = 0.0f;
+                }
+            }
+
             s16 nextStrandIdx = strandIdx + 1;
             if (nextStrandIdx >= CAPE_NUM_STRANDS) {
                 nextStrandIdx = strandIdx - 1;
@@ -348,6 +390,7 @@ static void MagicCape_Draw(Player* player, PlayState* play) {
 
         MagicCape_UpdateVertices();
         sCapeUpdateHasRun = 0;
+        sCapeNeedsRootSnap = 0;
     }
 
     // --- Render ---
@@ -385,6 +428,12 @@ static void MagicCape_Cleanup(void) {
 // Main behavior entry (called per frame from dispatch)
 // ---------------------------------------------------------------------------
 static void MagicCape_Behavior(Player* player, PlayState* play) {
+    // Skip while riding Epona — pairs with the same guard in MagicCape_Draw.
+    // We don't Reset here; we just stop updating, so the cape resumes naturally on dismount.
+    if (player->stateFlags1 & PLAYER_STATE1_ON_HORSE) {
+        return;
+    }
+
     // Skip during cutscenes
     if (player->stateFlags1 &
         (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS)) {

@@ -344,6 +344,17 @@ typedef struct {
     u8 minishCapShrinking; // 1 = shrinking player during departure fade
     u8 minishCapGrowing;   // 1 = snap to start scale, 2 = growing to normal
 
+    // Postman Hat (Fast Travel via Mailboxes)
+    u8 postmanHatWarpMode;         // Warp map active
+    s8 postmanHatCursorIdx;        // Selected mailbox index
+    s8 postmanHatConfirmed;        // 1 = warp pending after kaleido close
+    s8 postmanHatDestIdx;          // Destination mailbox index
+    u8 postmanHatDashing;          // 1 = fade-out + streak outgoing
+    u8 postmanHatArriving;         // 1 = fade-in at destination
+    s16 postmanHatTransitionTimer; // Frame counter for both fades
+    u8 postmanMailboxesVisited;    // Bit N = mailbox N visited/unlocked
+    u8 postmanHatInputSkip;        // Skip input on first kaleido frame (same-frame A guard)
+
     // ── Lantern ──────────────────────────────────────────────────────────
     u8 lanternFireType;    // LanternFireType enum (0-4)
     u8 lanternSwinging;    // 1 = in swing animation

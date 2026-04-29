@@ -784,6 +784,7 @@ static void IceRod_ReleaseCharge(Player* p, PlayState* play) {
 }
 
 static void IceRod_CancelCharge(Player* p) {
+    Audio_StopSfxById(ICE_ROD_SFX_CHARGE);
     iceRodCharging = 0;
     iceRodChargeLevel = 0.0f;
     iceRodChargeReady = 0;
@@ -873,6 +874,8 @@ static void IceRod_OnUnequip(PlayState* play, Player* p) {
     for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
         sIceProjSets[s].active = 0;
     Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
+    Audio_StopSfxById(ICE_ROD_SFX_CHARGE);
+    Audio_StopSfxById(ICE_ROD_SFX_ICE_CAST);
 
     iceRodCharging = 0;
     iceRodChargeLevel = 0.0f;
@@ -934,6 +937,12 @@ void Handle_IceRod(Player* p, PlayState* play) {
         if (p->stateFlags1 & criticalBlocks) {
             if (iceRodCharging)
                 IceRod_CancelCharge(p);
+            // Stop every looped SFX the rod can be holding active so cutscenes / damage / talking
+            // don't leave audio playing forever. Idempotent — Audio_StopSfxById is safe to call on
+            // sounds that aren't currently playing.
+            Audio_StopSfxById(ICE_ROD_SFX_ICE_LOOP);
+            Audio_StopSfxById(ICE_ROD_SFX_CHARGE);
+            Audio_StopSfxById(ICE_ROD_SFX_ICE_CAST);
             return;
         }
     }

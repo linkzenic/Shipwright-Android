@@ -330,6 +330,26 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return fdIcon;
     }
 
+    // SM64 Mario mode: when active, the spells map to SM64 caps in the
+    // gameplay logic (sm64_mario_items.c MarioItem_UseSpell). Mirror that on
+    // the UI side — show the cap icons in the C-button slots so the player
+    // knows which cap each slot will trigger.
+    //   Din's Fire     → Vanish Cap  (translucent, walks through walls)
+    //   Nayru's Love   → Metal Cap   (invincible, sinks)
+    //   Farore's Wind  → Wing Cap    (flight via triple-jump → flap)
+    if (CVarGetInteger("gSm64Mario", 0)) {
+        if (itemId == ITEM_DINS_FIRE)    return (void*)gItemIconVanishCapTex;
+        if (itemId == ITEM_NAYRUS_LOVE)  return (void*)gItemIconMetalCapTex;
+        if (itemId == ITEM_FARORES_WIND) return (void*)gItemIconWingCapTex;
+    }
+
+    // SM64 Mario mask — the toggle item that locks to C-Down via
+    // gSm64MarioMaskForce. Pressing C-Down with this equipped flips
+    // gSm64Mario on/off (handled in mod_menu / z_player hook).
+    if (itemId == ITEM_MARIO_MASK) {
+        return (void*)gItemIconMarioMaskTex;
+    }
+
     if (itemId < 156) {
         return gItemIcons[itemId];
     }

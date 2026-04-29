@@ -15,6 +15,7 @@
 #include <math.h>
 #include "helpers/fx_helper.h"
 #include "helpers/camera_helper.h"
+#include "logic/item_postman_hat.h"
 
 // Forward declarations for items included after this file in unity build
 extern void Handle_Pending3(Player* p, PlayState* play);
@@ -280,6 +281,9 @@ void CustomItems_Update(Player* p, PlayState* play) {
         Lantern_UpdateBurning(play);
         Lantern_UpdateLens(play);
     }
+
+    // Postman Hat: unlock-on-visit + Mail Dash state machine always run.
+    Handle_PostmanHat(p, play);
 
     if (gCustomItemState.demiseDestructionActive) {
         Handle_DemiseDestruction(p, play);

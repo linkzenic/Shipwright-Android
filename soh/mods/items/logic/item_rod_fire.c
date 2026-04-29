@@ -366,6 +366,7 @@ static void FireRod_UpdateFlamethrower(Player* p, PlayState* play) {
         }
     } else {
         fireRodFlameActive = 0;
+        Audio_StopSfxById(FIRE_ROD_SFX_FLAMETHROWER);
         Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
     }
 }
@@ -650,6 +651,8 @@ static void FireRod_ReleaseCharge(Player* p, PlayState* play) {
     if (!fireRodCharging)
         return;
 
+    Audio_StopSfxById(FIRE_ROD_SFX_CHARGE);
+
     s32 spinType;
     u8 isBigSpin = 0;
     s16 magicCost;
@@ -688,6 +691,7 @@ static void FireRod_ReleaseCharge(Player* p, PlayState* play) {
 }
 
 static void FireRod_CancelCharge(Player* p) {
+    Audio_StopSfxById(FIRE_ROD_SFX_CHARGE);
     fireRodCharging = 0;
     fireRodChargeLevel = 0.0f;
     fireRodChargeReady = 0;
@@ -777,6 +781,9 @@ static void FireRod_OnUnequip(PlayState* play, Player* p) {
     for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
         sFireProjSets[s].active = 0;
     Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
+    Audio_StopSfxById(FIRE_ROD_SFX_FLAMETHROWER);
+    Audio_StopSfxById(FIRE_ROD_SFX_CHARGE);
+    Audio_StopSfxById(FIRE_ROD_SFX_FIRE_CAST);
 
     fireRodCharging = 0;
     fireRodChargeLevel = 0.0f;
@@ -838,6 +845,13 @@ void Handle_FireRod(Player* p, PlayState* play) {
         if (p->stateFlags1 & criticalBlocks) {
             if (fireRodCharging)
                 FireRod_CancelCharge(p);
+            // Stop every looped SFX the rod can be holding active so cutscenes / damage / talking
+            // don't leave audio playing forever. Idempotent — Audio_StopSfxById is safe to call on
+            // sounds that aren't currently playing.
+            Audio_StopSfxById(FIRE_ROD_SFX_FLAMETHROWER);
+            Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
+            Audio_StopSfxById(FIRE_ROD_SFX_FIRE_CAST);
+            Audio_StopSfxById(FIRE_ROD_SFX_CHARGE);
             return;
         }
     }

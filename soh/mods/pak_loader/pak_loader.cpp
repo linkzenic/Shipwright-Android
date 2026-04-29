@@ -17,6 +17,9 @@ extern "C" int ResourceMgr_OTRSigCheck(char* imgData);
 #include "z64.h"
 #include "soh/OTRGlobals.h"
 
+// Used for scene-change detection to invalidate stale OTR pointers in the equipment cache.
+extern PlayState* gPlayState;
+
 #include <vector>
 #include <string>
 #include <filesystem>
@@ -27,9 +30,18 @@ extern "C" int ResourceMgr_OTRSigCheck(char* imgData);
 #include <map>
 #include <zlib.h>
 
+// Direct archive read without mounting — used to load .o2r as per-player skin
+// containers from mods/harpoon_skin_sync/ (see Harpoon Skin Sync API at bottom of file).
+#include <ship/resource/File.h>
+#include <ship/resource/archive/O2rArchive.h>
+
 extern "C" {
 #include "objects/gameplay_keep/gameplay_keep.h"
 }
+
+// Forward declaration for the sync registry init — defined at the bottom of this
+// file. Declared here at global scope so PakLoader_Init can call it with C linkage.
+extern "C" void PakLoader_InitSyncRegistry(void);
 
 // ============================================================================
 // Logging
@@ -151,6 +163,8 @@ struct PakModel {
     u8 adultReady;
     u8 childReady;
     u8 isEquipmentOnly; // 1 = zzequipment pak (no body, only equipment items)
+    u8 isSyncOnly;      // 1 = loaded from mods/harpoon_skin_sync/; hidden from local menu,
+                        //     only picked up via PakLoader_BeginRemoteRender for remote players
 };
 
 // ============================================================================
@@ -1677,11 +1691,14 @@ static Gfx* FindEquip(std::map<u32, Gfx*>& equipDLs, u32 primary, u32 fb1 = 0, u
 static std::vector<Gfx*> sRuntimeCombinedDLs;
 static std::vector<Gfx*> sRuntimeCombinedDLsPrev;
 
-// Equipment cache combined DLs (built by RebuildCachedEquipDLs, freed on next rebuild).
-// These live as long as sCachedEquipDLs holds pointers to them. PakLoader_FrameBegin
-// must NOT touch these — only RebuildCachedEquipDLs manages this pool.
+// Equipment cache combined DLs. Pool rotation happens at most ONCE per frame
+// (triggered by the first rebuild after PakLoader_FrameBegin), so multiple
+// rebuilds within the same frame — e.g. when Harpoon renders a remote dummy
+// with a different body pak than the local player — keep appending to the
+// current pool without freeing DLs the earlier draws are still referencing.
 static std::vector<Gfx*> sEquipCombinedDLs;
 static std::vector<Gfx*> sEquipCombinedDLsPrev;
+static bool sEquipPoolNeedsRotation = true;
 
 // Cached merged equipment map — rebuilt only when selection changes.
 static std::map<u32, Gfx*> sCachedEquipDLs;
@@ -1692,6 +1709,16 @@ static u8 sCacheAge = 0xFF;
 // Set when fist DL resolution failed (assets not loaded yet).
 // PakLoader_FrameBegin reads and clears this to force a rebuild on the following frame.
 static bool sCacheFistIncomplete = false;
+// Tracks the current scene/entrance. Scene transitions (even to the same scene with a
+// different entrance) can invalidate OTR resource pointers cached via ResourceMgr_LoadGfxByName.
+// Warping to the same scene+entrance (debug warps, respawns) is also caught by the
+// per-frame pointer-validation below in PakLoader_FrameBegin.
+static s32 sLastSceneNum = -1;
+static s32 sLastEntranceIndex = -1;
+// Shadow map of vanilla-auto-loaded pointers. Used to detect OTR resource relocation:
+// if ResourceMgr_LoadGfxByName returns a different pointer than what we cached, the
+// old pointer is stale (memory freed/reloaded) and the cache must be rebuilt.
+static std::map<u32, Gfx*> sCachedVanillaPtrs;
 
 static void CleanupRuntimeDLs(void) {
     // Free the PREVIOUS frame's per-frame GbiWrap DLs (they've been executed by now)
@@ -1709,30 +1736,102 @@ static void CleanupRuntimeDLs(void) {
 // Also forces a cache rebuild if the previous frame's fist resolution was incomplete.
 extern "C" void PakLoader_FrameBegin(void) {
     CleanupRuntimeDLs();
+    // Allow the equipment-DL pool rotation to happen on the next rebuild. Only
+    // the FIRST rebuild within a frame rotates; later rebuilds (e.g. the one
+    // triggered when a Harpoon dummy player draws with a different body pak)
+    // just append to the current pool so earlier draws in this frame keep
+    // valid Gfx* pointers until the GPU finishes the frame.
+    sEquipPoolNeedsRotation = true;
     if (sCacheFistIncomplete) {
         sCacheFistIncomplete = false;
         sCacheBodyIdx = -2; // Stale key → triggers rebuild on next sGetEquipDLs call
     }
+    // Detect scene transitions AND OTR resource relocation.
+    //
+    // ResourceMgr_LoadGfxByName returns pointers that get invalidated when OTR resources
+    // are reloaded, evicted, or relocated during scene transitions (heavy loading zones
+    // like Kokiri Forest entrance 0xee + Four Sword pak + MmForm concurrent init).
+    // Vanilla hand/fist pointers baked into combined MiniDLs then reference freed memory
+    // → RSP jumps into the freed region (often vertex data of another resource) → crash.
+    //
+    // Two-layer detection:
+    //  1. Scene/entrance change (fast path — covers most transitions including same-scene
+    //     warps with different entrance, which a bare sceneNum check would miss)
+    //  2. Per-frame vanilla-pointer validation (catches re-warps to the same entrance and
+    //     any ResourceMgr eviction/relocation the scene check can't see)
+    if (gPlayState != NULL) {
+        s32 curScene = gPlayState->sceneNum;
+        s32 curEntrance = gSaveContext.entranceIndex;
+        if (curScene != sLastSceneNum || curEntrance != sLastEntranceIndex) {
+            sLastSceneNum = curScene;
+            sLastEntranceIndex = curEntrance;
+            sCacheBodyIdx = -2; // Stale key → rebuild on next sGetEquipDLs call
+        }
+    }
+    // Vanilla-pointer validation. Compare each cached vanilla hand/fist pointer with a
+    // fresh ResourceMgr_LoadGfxByName result. If the ResourceMgr relocated the resource,
+    // the pointer differs → invalidate cache so the next rebuild captures the fresh one.
+    if (!sCachedVanillaPtrs.empty()) {
+        u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
+        struct VanillaAlias {
+            u32 alias;
+            const char* adultPath;
+            const char* childPath;
+        };
+        static const VanillaAlias vanillas[] = {
+            { 0x50A0, gLinkAdultLeftHandClosedNearDL, gLinkChildLeftFistNearDL },
+            { 0x50B8, gLinkAdultRightHandClosedNearDL, gLinkChildRightHandClosedNearDL },
+            { 0x5098, gLinkAdultLeftHandNearDL, gLinkChildLeftHandNearDL },
+            { 0x50B0, gLinkAdultRightHandNearDL, gLinkChildRightHandNearDL },
+        };
+        for (const auto& v : vanillas) {
+            auto it = sCachedVanillaPtrs.find(v.alias);
+            if (it == sCachedVanillaPtrs.end())
+                continue;
+            const char* path = isAdult ? v.adultPath : v.childPath;
+            Gfx* fresh = ResourceMgr_LoadGfxByName(path);
+            if (fresh != it->second) {
+                sCacheBodyIdx = -2; // pointer moved → rebuild
+                break;
+            }
+        }
+    }
 }
 
-// Check that a pointer is a real native Gfx*, not a string pointer.
-// ResourceMgr_LoadGfxByName can return the path string itself when the asset isn't loaded yet.
+// Check that a pointer is a real native Gfx*, not a string or vertex/texture data.
+// ResourceMgr_LoadGfxByName can return the path string itself when the asset isn't loaded.
+// Equipment paks with broken alias tables may also have offsets that point into vertex or
+// texture data instead of DL headers — executing those crashes the RSP interpreter.
 //
-// Two string forms to catch:
-//  - "__OTR__..." prefixed paths (OTRSigCheck returns 1)
-//  - raw "/objects/..." paths without the __OTR__ prefix (first byte is '/')
+// Three classes of invalid pointer to catch:
+//  1. "__OTR__..." prefixed paths (OTRSigCheck returns 1)
+//  2. Raw "/objects/..." paths without the __OTR__ prefix (first byte is '/')
+//  3. Vertex/texture data where the GBI opcode byte is not a known command
 //
-// On little-endian x86/x64 the first byte of a Gfx struct is always 0x00 (the low byte of
-// w0, which holds the GBI opcode in its HIGH byte). A '/' character (0x2F) in that position
-// unambiguously identifies a raw path string, not a graphics command.
+// On little-endian x86/x64:
+//  - byte[0] of a valid Gfx struct is 0x00 (low byte of w0)
+//  - byte[3] holds the GBI opcode (high byte of w0)
+//
+// Valid F3DEX2 + SoH OTR opcodes:
+//  - 0x00-0x07: G_NOOP, G_VTX, G_MODIFYVTX, G_CULLDL, G_BRANCH_Z, G_TRI1, G_TRI2, G_QUAD
+//  - 0x20-0x31: SoH OTR extensions (DL_OTR_FILEPATH, PUSHCD, MTX_OTR, DL_OTR_HASH, ...)
+//  - 0xD3-0xFF: RSP/RDP commands (G_MTX, G_DL, G_ENDDL, G_SETCIMG, ...)
 static bool IsValidGfxPtr(Gfx* ptr) {
     if (!ptr || ptr == PAK_DL_STUB)
         return false;
     if (ResourceMgr_OTRSigCheck((char*)ptr) == 1)
         return false; // __OTR__ prefixed string
-    if (((char*)ptr)[0] == '/')
+    uint8_t* bytes = (uint8_t*)ptr;
+    if (bytes[0] == '/')
         return false; // raw path without __OTR__
-    return true;
+    uint8_t opcode = bytes[3]; // GBI opcode on LE (high byte of w0)
+    if (opcode <= 0x07)
+        return true; // basic commands
+    if (opcode >= 0x20 && opcode <= 0x31)
+        return true; // SoH OTR extensions
+    if (opcode >= 0xD3)
+        return true; // RSP/RDP commands
+    return false;    // 0x08-0x1F, 0x32-0xD2 are invalid → not a real DL
 }
 
 static Gfx* MakeMiniDL(Gfx* parts[], s32 count) {
@@ -1821,15 +1920,19 @@ static Gfx* MakeShieldBackDL(Gfx* shieldDL, Mtx* mtx) {
 }
 
 static void RebuildCachedEquipDLs(void) {
-    // Free OLD equipment combined DLs (two rebuilds old — safe to free now).
-    // Move CURRENT equipment combined DLs to "previous" — they may still be in the GFX buffer.
-    // They'll be freed on the NEXT rebuild (by which time they've been executed).
-    // These are kept separate from sRuntimeCombinedDLs (GbiWrap per-frame DLs) to prevent
-    // PakLoader_FrameBegin from freeing equipment cache DLs while sCachedEquipDLs still holds them.
-    for (auto* p : sEquipCombinedDLsPrev)
-        free(p);
-    sEquipCombinedDLsPrev = std::move(sEquipCombinedDLs);
-    sEquipCombinedDLs.clear();
+    // Rotate the combined-DL pool at most ONCE per frame. On the first rebuild of
+    // a frame: free the pool from two frames ago (GPU is done with it) and move the
+    // previous frame's pool to "prev". On subsequent rebuilds within the same frame
+    // (e.g. when Harpoon draws remote players with a different body pak), just keep
+    // appending new DLs to the current pool — they're still in use by earlier draws
+    // in this frame and must not be freed yet.
+    if (sEquipPoolNeedsRotation) {
+        for (auto* p : sEquipCombinedDLsPrev)
+            free(p);
+        sEquipCombinedDLsPrev = std::move(sEquipCombinedDLs);
+        sEquipCombinedDLs.clear();
+        sEquipPoolNeedsRotation = false;
+    }
     sCachedEquipDLs.clear();
 
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
@@ -1842,24 +1945,38 @@ static void RebuildCachedEquipDLs(void) {
     if (CVarGetInteger("gMods.PakLoader.Enabled", 0) || sForcedModelIndex >= 0) {
         bodyIdx = sGetActiveIndex();
     }
+    // Defensive insert — filter out entries whose Gfx* is actually an unresolved
+    // OTR/"/"-prefixed string path returned by ResourceMgr_LoadGfxByName when the
+    // asset wasn't loaded at pak-init time. If those slip into sCachedEquipDLs,
+    // PakLoader_GetDLOverride's standalone-table fast path (line ~2574) returns
+    // them unchecked and the Fast3D interpreter executes the string as a Gfx
+    // stream — that's the "Unhandled OP code" ASCII spam + crash in
+    // gfx_mtx_otr_filepath_handler we see with sync paks. PAK_DL_STUB (== 1) is
+    // a legitimate sentinel meaning "hide this DL" and must be preserved.
+    auto insertValid = [](std::map<u32, Gfx*>& dst, const std::map<u32, Gfx*>& src) {
+        for (auto& [k, v] : src) {
+            if (v == NULL || v == PAK_DL_STUB || IsValidGfxPtr(v)) {
+                dst[k] = v;
+            }
+        }
+    };
+
     if (bodyIdx >= 0 && bodyIdx < (s32)sModels.size()) {
         auto& bodyEq = isAdult ? sModels[bodyIdx].adultEquipDLs : sModels[bodyIdx].childEquipDLs;
-        sCachedEquipDLs.insert(bodyEq.begin(), bodyEq.end());
+        insertValid(sCachedEquipDLs, bodyEq);
     }
 
     // Layer 2: selected equipment pak overrides body
     if (sSelectedEquipIndex >= 0 && sSelectedEquipIndex < (s32)sModels.size()) {
         auto& equipEq =
             isAdult ? sModels[sSelectedEquipIndex].adultEquipDLs : sModels[sSelectedEquipIndex].childEquipDLs;
-        for (auto& [k, v] : equipEq)
-            sCachedEquipDLs[k] = v;
+        insertValid(sCachedEquipDLs, equipEq);
     }
 
     // Layer 3: forced equipment highest priority
     if (sForcedEquipIndex >= 0 && sForcedEquipIndex < (s32)sModels.size()) {
         auto& forcedEq = isAdult ? sModels[sForcedEquipIndex].adultEquipDLs : sModels[sForcedEquipIndex].childEquipDLs;
-        for (auto& [k, v] : forcedEq)
-            sCachedEquipDLs[k] = v;
+        insertValid(sCachedEquipDLs, forcedEq);
     }
 
     // If no body pak but we have equipment pieces that need fists, resolve vanilla hands.
@@ -1867,6 +1984,9 @@ static void RebuildCachedEquipDLs(void) {
     // Track whether any vanilla fist/hand DL failed to load (asset not ready yet).
     // If so, skip saving the cache key so the next frame forces a rebuild.
     bool anyFistMissing = false;
+    // Reset shadow map so only currently-loaded vanilla pointers are tracked.
+    // Entries inserted below feed the per-frame staleness check in PakLoader_FrameBegin.
+    sCachedVanillaPtrs.clear();
     if (bodyIdx < 0 && !sCachedEquipDLs.empty()) {
         // Need LFIST for sword/hammer/boomerang pieces
         if (!sCachedEquipDLs.count(0x50A0) &&
@@ -1874,9 +1994,10 @@ static void RebuildCachedEquipDLs(void) {
              sCachedEquipDLs.count(0x51F0) || sCachedEquipDLs.count(0x5178))) {
             const char* path = isAdult ? gLinkAdultLeftHandClosedNearDL : gLinkChildLeftFistNearDL;
             Gfx* fist = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(fist))
+            if (IsValidGfxPtr(fist)) {
                 sCachedEquipDLs[0x50A0] = fist;
-            else
+                sCachedVanillaPtrs[0x50A0] = fist;
+            } else
                 anyFistMissing = true;
         }
         // Need RFIST for shield/bow/hookshot/slingshot pieces
@@ -1885,27 +2006,30 @@ static void RebuildCachedEquipDLs(void) {
              sCachedEquipDLs.count(0x5138) || sCachedEquipDLs.count(0x5148) || sCachedEquipDLs.count(0x5180))) {
             const char* path = isAdult ? gLinkAdultRightHandClosedNearDL : gLinkChildRightHandClosedNearDL;
             Gfx* fist = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(fist))
+            if (IsValidGfxPtr(fist)) {
                 sCachedEquipDLs[0x50B8] = fist;
-            else
+                sCachedVanillaPtrs[0x50B8] = fist;
+            } else
                 anyFistMissing = true;
         }
         // Need LHAND for open hand
         if (!sCachedEquipDLs.count(0x5098)) {
             const char* path = isAdult ? gLinkAdultLeftHandNearDL : gLinkChildLeftHandNearDL;
             Gfx* hand = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(hand))
+            if (IsValidGfxPtr(hand)) {
                 sCachedEquipDLs[0x5098] = hand;
-            else
+                sCachedVanillaPtrs[0x5098] = hand;
+            } else
                 anyFistMissing = true;
         }
         // Need RHAND for open hand / ocarina
         if (!sCachedEquipDLs.count(0x50B0)) {
             const char* path = isAdult ? gLinkAdultRightHandNearDL : gLinkChildRightHandNearDL;
             Gfx* hand = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(hand))
+            if (IsValidGfxPtr(hand)) {
                 sCachedEquipDLs[0x50B0] = hand;
-            else
+                sCachedVanillaPtrs[0x50B0] = hand;
+            } else
                 anyFistMissing = true;
         }
     }
@@ -2506,7 +2630,8 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
         // Add equipment pieces (custom if available, skip if not — vanilla is baked in the fist DL)
         for (s32 i = 0; def->pieces[i] != 0; i++) {
             auto it = eq.find(def->pieces[i]);
-            if (it != eq.end() && it->second != NULL && it->second != PAK_DL_STUB) {
+            if (it != eq.end() && it->second != NULL && it->second != PAK_DL_STUB &&
+                IsValidGfxPtr(it->second)) {
                 parts[partCount++] = it->second;
             }
         }
@@ -2519,7 +2644,8 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
             u8 isLeftHand = (strstr(def->otrPath, "Left") != NULL);
             u32 fistAlias = isLeftHand ? 0x50A0 : 0x50B8;
             auto fistIt = eq.find(fistAlias);
-            if (fistIt != eq.end() && fistIt->second && fistIt->second != PAK_DL_STUB) {
+            if (fistIt != eq.end() && fistIt->second && fistIt->second != PAK_DL_STUB &&
+                IsValidGfxPtr(fistIt->second)) {
                 fist = fistIt->second;
             } else {
                 // Resolve vanilla fist from OTR — may fail if object not loaded yet
@@ -2527,7 +2653,7 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
                     fist = ResourceMgr_LoadGfxByName(def->fistOtrPath);
                 } catch (...) { fist = NULL; }
             }
-            if (fist && (uintptr_t)fist > 0x10000) { // Sanity check: valid pointer
+            if (IsValidGfxPtr(fist)) {
                 parts[partCount++] = fist;
             }
         }
@@ -2545,7 +2671,14 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
         if (strcmp(otrPath, e->otr) == 0) {
             auto it = eq.find(e->alias);
             if (it != eq.end() && it->second != NULL && it->second != PAK_DL_STUB) {
-                return it->second;
+                // Belt-and-suspenders: even with RebuildCachedEquipDLs filtering
+                // string-path entries at insert time, validate here before sending
+                // a pointer straight to the Fast3D interpreter.
+                if (IsValidGfxPtr(it->second)) {
+                    return it->second;
+                }
+                PAK_LOG("ERROR: GetDLOverride dropped invalid Gfx* for alias 0x%04X (path=%s)",
+                        e->alias, otrPath);
             }
             return NULL;
         }
@@ -2780,6 +2913,10 @@ extern "C" void PakLoader_Init(void) {
         CVarSetInteger("gMods.PakLoader.Equipment", -1);
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
+
+    // Populate the sync registry (mods/harpoon_skin_sync/) — forward declared at
+    // global scope near the top of this file.
+    PakLoader_InitSyncRegistry();
 }
 
 // Auto-force model based on worn MM mask (called per-frame)
@@ -2934,8 +3071,8 @@ extern "C" const char* PakLoader_GetModelName(s32 index) {
 extern "C" void PakLoader_SelectAdultModel(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
         index = -1;
-    if (index >= 0 && sModels[index].isEquipmentOnly)
-        index = -1; // Can't use equipment pak as body
+    if (index >= 0 && (sModels[index].isEquipmentOnly || sModels[index].isSyncOnly))
+        index = -1; // Can't use equipment pak or sync-only pak as body
     if (index == sSelectedAdultIndex)
         return;
     sSelectedAdultIndex = index;
@@ -2949,7 +3086,7 @@ extern "C" void PakLoader_SelectAdultModel(s32 index) {
 extern "C" void PakLoader_SelectChildModel(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
         index = -1;
-    if (index >= 0 && sModels[index].isEquipmentOnly)
+    if (index >= 0 && (sModels[index].isEquipmentOnly || sModels[index].isSyncOnly))
         index = -1;
     if (index == sSelectedChildIndex)
         return;
@@ -2973,6 +3110,8 @@ extern "C" u8 PakLoader_ModelHasAdult(s32 index) {
         return 0;
     if (sModels[index].isEquipmentOnly)
         return 0; // Equipment paks don't have body models
+    if (sModels[index].isSyncOnly)
+        return 0; // Hidden from menu — only used to render remote players
     return sModels[index].adultReady;
 }
 
@@ -2980,6 +3119,8 @@ extern "C" u8 PakLoader_ModelHasChild(s32 index) {
     if (index < 0 || index >= (s32)sModels.size())
         return 0;
     if (sModels[index].isEquipmentOnly)
+        return 0;
+    if (sModels[index].isSyncOnly)
         return 0;
     return sModels[index].childReady;
 }
@@ -2996,6 +3137,8 @@ extern "C" s32 PakLoader_GetSelectedIndex(void) {
 
 extern "C" void PakLoader_SelectEquipment(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
+        index = -1;
+    if (index >= 0 && sModels[index].isSyncOnly)
         index = -1;
     if (index == sSelectedEquipIndex)
         return;
@@ -3014,6 +3157,8 @@ extern "C" s32 PakLoader_GetSelectedEquipIndex(void) {
 extern "C" u8 PakLoader_ModelIsEquipmentOnly(s32 index) {
     if (index < 0 || index >= (s32)sModels.size())
         return 0;
+    if (sModels[index].isSyncOnly)
+        return 0; // Hidden — don't surface in equipment dropdown either
     return sModels[index].isEquipmentOnly;
 }
 
@@ -3146,6 +3291,253 @@ extern "C" void PakLoader_ClearForcedEquipment(void) {
     sForcedEquipPath.clear();
 }
 
+// ============================================================================
+// Harpoon Skin Sync
+// ============================================================================
+// Models loaded from mods/harpoon_skin_sync/ (or <exe>/harpoon_skin_sync/) live
+// in the same sModels vector as local mods/ paks but are tagged isSyncOnly=1 so
+// they are:
+//   - Hidden from the local selection menu (ModelHasAdult/Child/IsEquipmentOnly
+//     all return 0 for isSyncOnly entries, so they don't populate the dropdowns)
+//   - Never selected as the local Adult/Child/Equipment model
+//   - Only surfaced via PakLoader_BeginRemoteRender, which sets sForcedModelIndex
+//     to the sync entry for the duration of a remote actor's draw — that way the
+//     existing pak_loader pipeline (eyes, mouth, equipment DL overrides in
+//     GbiWrap, cached equip DLs) all see the remote's skin naturally.
+//
+// .o2r support: O2rArchive is instantiated directly (no ArchiveManager::AddArchive),
+// mirroring the pattern in OTRGlobals.cpp::ReadPortVersionFromOTR. The archive's
+// internal OTR paths therefore do NOT participate in global path resolution, so
+// a skin .o2r cannot accidentally override the host game's Link model.
+
+// Saved state for BeginRemoteRender / EndRemoteRender. We override ALL selection
+// state (forced + adult + child + equipment) so the remote dummy's draw is
+// isolated from whatever the local user has picked — otherwise, a remote without
+// a recognised skin would silently inherit the local user's pak (breaking the
+// consent model: remotes only wear skins you've explicitly placed in
+// harpoon_skin_sync/).
+static bool sRemoteRenderActive = false;
+static s32  sSavedForcedModelIndex = -1;
+static std::string sSavedForcedModelPath;
+static s32  sSavedSelectedAdultIndex = -1;
+static s32  sSavedSelectedChildIndex = -1;
+static s32  sSavedSelectedEquipIndex = -1;
+
+static bool LoadO2rSkinModel(const std::string& o2rPath, PakModel& model) {
+    auto archive = std::make_shared<Ship::O2rArchive>(o2rPath);
+    if (!archive->Open()) {
+        PAK_LOG("Failed to open .o2r: %s", o2rPath.c_str());
+        return false;
+    }
+
+    auto pkgFile = archive->LoadFile("package.json");
+    if (!pkgFile || !pkgFile->IsLoaded || !pkgFile->Buffer || pkgFile->Buffer->empty()) {
+        PAK_LOG("No package.json in .o2r: %s", o2rPath.c_str());
+        return false;
+    }
+    std::string packageJson(pkgFile->Buffer->data(), pkgFile->Buffer->size());
+
+    std::string name = JsonFindString(packageJson, "name");
+    if (!name.empty()) {
+        snprintf(model.displayName, sizeof(model.displayName), "%s", name.c_str());
+    }
+
+    std::string adultZobjName = JsonFindModelFile(packageJson, "adult_model");
+    std::string childZobjName = JsonFindModelFile(packageJson, "child_model");
+
+    auto extractO2rZobj = [&](const std::string& zobjName, u8** outData, u32* outSize) -> bool {
+        if (zobjName.empty()) return false;
+        auto f = archive->LoadFile(zobjName);
+        if (!f || !f->IsLoaded || !f->Buffer || f->Buffer->empty()) return false;
+        u32 sz = (u32)f->Buffer->size();
+        *outData = (u8*)malloc(sz);
+        if (!*outData) return false;
+        memcpy(*outData, f->Buffer->data(), sz);
+        *outSize = sz;
+        return true;
+    };
+
+    if (!adultZobjName.empty() && extractO2rZobj(adultZobjName, &model.adultZobj, &model.adultZobjSize)) {
+        model.hasAdult = 1;
+        SwapContext adultSwapCtx = {};
+        if (ZobjBuildSkeleton(model.adultZobj, model.adultZobjSize, model.adultLimbs, model.adultLimbTable,
+                              &model.adultFlexHeader, model.adultTranslatedDLs, &adultSwapCtx)) {
+            model.adultReady = 1;
+            ZobjParseAliasTable(model.adultZobj, model.adultZobjSize, model.adultEquipDLs,
+                                model.adultTranslatedDLs, adultSwapCtx);
+        }
+    }
+    if (!childZobjName.empty() && extractO2rZobj(childZobjName, &model.childZobj, &model.childZobjSize)) {
+        model.hasChild = 1;
+        SwapContext childSwapCtx = {};
+        if (ZobjBuildSkeleton(model.childZobj, model.childZobjSize, model.childLimbs, model.childLimbTable,
+                              &model.childFlexHeader, model.childTranslatedDLs, &childSwapCtx)) {
+            model.childReady = 1;
+            ZobjParseAliasTable(model.childZobj, model.childZobjSize, model.childEquipDLs,
+                                model.childTranslatedDLs, childSwapCtx);
+        }
+    }
+
+    return model.adultReady || model.childReady;
+}
+
+extern "C" void PakLoader_InitSyncRegistry(void) {
+    // Accept the sync folder at either:
+    //   1. <exe>/harpoon_skin_sync/         (top-level catalog — preferred)
+    //   2. <exe>/mods/harpoon_skin_sync/    (legacy subfolder location)
+    std::vector<std::filesystem::path> candidates;
+
+    std::string topPath = Ship::Context::LocateFileAcrossAppDirs("harpoon_skin_sync", appShortName);
+    if (!topPath.empty()) candidates.push_back(topPath);
+
+    std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
+    if (!modsPath.empty()) candidates.push_back(std::filesystem::path(modsPath) / "harpoon_skin_sync");
+
+    std::filesystem::path syncPath;
+    for (auto& c : candidates) {
+        if (std::filesystem::exists(c) && std::filesystem::is_directory(c)) {
+            syncPath = c;
+            break;
+        }
+    }
+
+    if (syncPath.empty()) {
+        PAK_LOG("No harpoon_skin_sync/ folder found; remote skin sync registry empty");
+        return;
+    }
+    PAK_LOG("harpoon_skin_sync: scanning '%s'", syncPath.string().c_str());
+
+    std::vector<std::filesystem::path> pakFiles;
+    std::vector<std::filesystem::path> o2rFiles;
+    for (auto& entry : std::filesystem::recursive_directory_iterator(syncPath)) {
+        if (entry.is_directory()) continue;
+        std::string ext = entry.path().extension().string();
+        for (char& c : ext) c = (char)tolower((unsigned char)c);
+        if (ext == ".pak") pakFiles.push_back(entry.path());
+        else if (ext == ".o2r") o2rFiles.push_back(entry.path());
+    }
+
+    PAK_LOG("harpoon_skin_sync: found %d .pak + %d .o2r", (int)pakFiles.size(), (int)o2rFiles.size());
+
+    auto fixupLimbTables = [](PakModel& m) {
+        for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
+            if (m.adultLimbTable[j]) m.adultLimbTable[j] = &m.adultLimbs[j];
+            if (m.childLimbTable[j]) m.childLimbTable[j] = &m.childLimbs[j];
+        }
+    };
+
+    // Append into the same sModels vector as local mods/ paks. The reserve
+    // *may* move existing entries to new storage — that invalidates every
+    // existing entry's adultLimbTable[j]/childLimbTable[j] (they still point
+    // at the old adultLimbs/childLimbs addresses). We MUST re-fixup every
+    // pre-existing entry before the first sync push, otherwise the next time
+    // the local user selects a mods/ pak we crash in SkelAnime_DrawFlexLimbLod
+    // chasing a stale limb pointer.
+    size_t preSyncCount = sModels.size();
+    sModels.reserve(preSyncCount + pakFiles.size() + o2rFiles.size());
+    for (auto& m : sModels) fixupLimbTables(m);
+
+    for (auto& p : pakFiles) {
+        PakModel model = {};
+        model.pakPath = p.string();
+        snprintf(model.displayName, sizeof(model.displayName), "Unknown");
+        if (LoadPakModel(model)) {
+            model.isSyncOnly = 1;
+            sModels.push_back(std::move(model));
+            fixupLimbTables(sModels.back());
+            PAK_LOG("Sync loaded .pak: '%s' (idx=%d, syncOnly)",
+                    sModels.back().displayName, (int)sModels.size() - 1);
+        } else {
+            if (model.adultZobj) free(model.adultZobj);
+            if (model.childZobj) free(model.childZobj);
+            PAK_LOG("Sync failed to load .pak: %s", p.string().c_str());
+        }
+    }
+
+    for (auto& o : o2rFiles) {
+        PakModel model = {};
+        model.pakPath = o.string();
+        snprintf(model.displayName, sizeof(model.displayName), "Unknown");
+        if (LoadO2rSkinModel(o.string(), model)) {
+            model.isSyncOnly = 1;
+            sModels.push_back(std::move(model));
+            fixupLimbTables(sModels.back());
+            PAK_LOG("Sync loaded .o2r: '%s' (idx=%d, syncOnly)",
+                    sModels.back().displayName, (int)sModels.size() - 1);
+        } else {
+            if (model.adultZobj) free(model.adultZobj);
+            if (model.childZobj) free(model.childZobj);
+            PAK_LOG("Sync failed to load .o2r: %s", o.string().c_str());
+        }
+    }
+}
+
+extern "C" s32 PakLoader_FindLocalIndexByName(const char* name) {
+    if (!name || !*name) return -1;
+    for (size_t i = 0; i < sModels.size(); i++) {
+        if (sModels[i].isSyncOnly) continue;
+        if (strcmp(sModels[i].displayName, name) == 0) return (s32)i;
+    }
+    return -1;
+}
+
+extern "C" s32 PakLoader_FindSyncIndexByName(const char* name) {
+    if (!name || !*name) return -1;
+    for (size_t i = 0; i < sModels.size(); i++) {
+        if (!sModels[i].isSyncOnly) continue;
+        if (strcmp(sModels[i].displayName, name) == 0) return (s32)i;
+    }
+    return -1;
+}
+
+// Begin rendering a remote dummy player with the given SYNC-registry index.
+// Temporarily routes the entire pak_loader pipeline (skeleton, eye/mouth
+// textures, equipment DL overrides, cached equip DLs) through the sync model
+// by piggy-backing on sForcedModelIndex — the forced path already has priority
+// over local CVars and reuses every existing hook, so this automatically fixes
+// the face-texture/equipment corruption that plain skeleton-swap caused.
+//
+// Must be paired with PakLoader_EndRemoteRender before any other actor draws
+// or before the frame ends.
+extern "C" void PakLoader_BeginRemoteRender(s32 syncIdx) {
+    if (sRemoteRenderActive) return; // Already in a block (shouldn't happen — dummies draw sequentially)
+
+    sSavedForcedModelIndex = sForcedModelIndex;
+    sSavedForcedModelPath = sForcedModelPath;
+    sSavedSelectedAdultIndex = sSelectedAdultIndex;
+    sSavedSelectedChildIndex = sSelectedChildIndex;
+    sSavedSelectedEquipIndex = sSelectedEquipIndex;
+    sRemoteRenderActive = true;
+
+    // Clear the local user's selection so the dummy never falls back to the
+    // local user's skin when the remote's skin isn't installed.
+    sSelectedAdultIndex = -1;
+    sSelectedChildIndex = -1;
+    sSelectedEquipIndex = -1;
+
+    if (syncIdx >= 0 && syncIdx < (s32)sModels.size() && sModels[syncIdx].isSyncOnly) {
+        // Route everything (skeleton, eyes, mouth, equipment) through the sync
+        // model via the existing forced-model path — all pak_loader hooks honour
+        // sForcedModelIndex automatically.
+        sForcedModelIndex = syncIdx;
+        sForcedModelPath = sModels[syncIdx].pakPath;
+    } else {
+        sForcedModelIndex = -1;
+        sForcedModelPath.clear();
+    }
+}
+
+extern "C" void PakLoader_EndRemoteRender(void) {
+    if (!sRemoteRenderActive) return;
+    sForcedModelIndex = sSavedForcedModelIndex;
+    sForcedModelPath = sSavedForcedModelPath;
+    sSelectedAdultIndex = sSavedSelectedAdultIndex;
+    sSelectedChildIndex = sSavedSelectedChildIndex;
+    sSelectedEquipIndex = sSavedSelectedEquipIndex;
+    sSavedForcedModelPath.clear();
+    sRemoteRenderActive = false;
+}
+
 extern "C" void PakLoader_Shutdown(void) {
     for (auto& model : sModels) {
         if (model.adultZobj)
@@ -3175,4 +3567,5 @@ extern "C" void PakLoader_Shutdown(void) {
         free(p);
     sRuntimeCombinedDLsPrev.clear();
     sCachedEquipDLs.clear();
+    sCachedVanillaPtrs.clear();
 }

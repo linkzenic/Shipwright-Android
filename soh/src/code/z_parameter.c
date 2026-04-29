@@ -1239,6 +1239,16 @@ void func_80083108(PlayState* play) {
                     }
                 }
 
+                // SM64 Mario mode: Farore's Wind / Din's / Nayru's all map
+                // to SM64 caps (sm64_mario_items.c). The vanilla per-scene
+                // FW restriction blocks the C-button in dungeons; force the
+                // restriction off so the cap can activate anywhere. Runs
+                // each tick so it tracks live CVar toggles, not just scene
+                // changes.
+                if (CVarGetInteger("gSm64Mario", 0)) {
+                    interfaceCtx->restrictions.farores = 0;
+                    interfaceCtx->restrictions.dinsNayrus = 0;
+                }
                 if (interfaceCtx->restrictions.farores != 0) {
                     for (i = 1; i < ARRAY_COUNT(gSaveContext.equips.buttonItems); i++) {
                         if (gSaveContext.equips.buttonItems[i] == ITEM_FARORES_WIND) {
@@ -1403,6 +1413,16 @@ void Interface_SetSceneRestrictions(PlayState* play) {
                 if (currentScene == SCENE_GERUDO_TRAINING_GROUND || currentScene == SCENE_INSIDE_GANONS_CASTLE) {
                     interfaceCtx->restrictions.farores = 0;
                 }
+            }
+            // SM64 Mario mode: Farore's Wind maps to the Wing Cap power-up
+            // (sm64_mario_items.c MarioItem_UseSpell). The OOT vanilla
+            // per-scene restrictions block FW in dungeons / Ganon's tower
+            // / etc. — bypass them so Mario can grab the wing cap anywhere
+            // that cap mechanic makes sense (i.e. always). Same for Din's
+            // / Nayru's, since those map to caps too.
+            if (CVarGetInteger("gSm64Mario", 0)) {
+                interfaceCtx->restrictions.farores = 0;
+                interfaceCtx->restrictions.dinsNayrus = 0;
             }
             return;
         }

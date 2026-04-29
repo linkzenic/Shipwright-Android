@@ -206,6 +206,17 @@ typedef struct {
     u8 remoteCubeCount;
     Actor* remoteCubeActors[3];
 
+    // Pak / .o2r skin sync — display names (package.json "name") of the remote's
+    // currently selected pak slots. Resolved locally via PakLoader_FindSyncIndexByName
+    // against mods/harpoon_skin_sync/. Empty = default Link.
+    std::string adultSkinName;
+    std::string childSkinName;
+    std::string equipSkinName;
+
+    // List of .o2r mods the remote has enabled in their mods/ root (handshake-only).
+    // Used for divergence warnings, not for render. Empty for legacy clients.
+    std::vector<std::string> enabledO2rMods;
+
     // Ptr to the dummy player actor
     Player* player;
 } HarpoonClient;
@@ -257,7 +268,14 @@ class Harpoon : public Network {
     void HandlePacket_TeleportTo(nlohmann::json payload);
     void HandlePacket_UpdateBeansCount(nlohmann::json payload);
 
+    // Skin sync packet handlers
+    void HandlePacket_O2rModList(nlohmann::json payload);
+
   public:
+    // Announce our list of enabled .o2r global mods (sent once after handshake).
+    // Used for divergence notifications only — never affects remote rendering.
+    void SendPacket_O2rModList();
+
     // Packet type strings (wire values kept for server compatibility)
     inline static const std::string HPN_HANDSHAKE = "PVP_HANDSHAKE";
     inline static const std::string HPN_ALL_CLIENTS = "PVP_ALL_CLIENTS";
@@ -290,6 +308,9 @@ class Harpoon : public Network {
     inline static const std::string HPN_UPDATE_DUNGEON_ITEMS = "PVP_UPDATE_DUNGEON_ITEMS";
     inline static const std::string HPN_TELEPORT_TO = "PVP_TELEPORT_TO";
     inline static const std::string HPN_UPDATE_BEANS_COUNT = "PVP_UPDATE_BEANS_COUNT";
+
+    // Skin sync packet types — server forwards these as unknown packets, no server change needed
+    inline static const std::string HPN_O2R_MOD_LIST = "PVP_O2R_MOD_LIST";
 
     static Harpoon* Instance;
     std::map<uint32_t, HarpoonClient> clients;

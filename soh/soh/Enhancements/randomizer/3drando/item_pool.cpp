@@ -748,48 +748,54 @@ void GenerateItemPool() {
         AddItemToPool(RG_MM_MASK_FIERCE_DEITY, 2, 1, 1, 1);
     }
 
-    // Skijer's Custom Items (Second Inventory Page) - 24 items
+    // Skijer's Custom Items (Second Inventory Page) - 24 items.
+    // We use AddFixedItemToPool here (instead of AddItemToPool) so each custom item enters the
+    // pool exactly once regardless of "Item Pool" setting. AddItemToPool in Plentiful mode also
+    // pushes a duplicate into plentifulPool, which doubled the custom-item count and caused the
+    // pool to overflow available major-item locations — symptom: most custom items silently
+    // dropped from the placement and never appeared in generated seeds.
     if (CVarGetInteger("gMods.CustomItems.Enabled", 0)) {
-        AddItemToPool(RG_PROGRESSIVE_ROCS, 3, 2, 2, 2);  // Progressive: Feather then Cape
-        AddItemToPool(RG_WHIP, 2, 1, 1, 1);
-        AddItemToPool(RG_SPINNER, 2, 1, 1, 1);
-        AddItemToPool(RG_BOMB_ARROWS, 2, 1, 1, 1);
-        AddItemToPool(RG_FIRE_ROD, 2, 1, 1, 1);
-        AddItemToPool(RG_DEMISE_DESTRUCTION, 2, 1, 1, 1);
-        AddItemToPool(RG_DEKU_LEAF, 2, 1, 1, 1);
-        AddItemToPool(RG_TIME_GATE, 2, 1, 1, 1);
-        AddItemToPool(RG_BEETLE, 2, 1, 1, 1);
-        AddItemToPool(RG_SWITCH_HOOK, 2, 1, 1, 1);
-        AddItemToPool(RG_ICE_ROD, 2, 1, 1, 1);
-        AddItemToPool(RG_ZONAI_PERMAFROST, 2, 1, 1, 1);
-        AddItemToPool(RG_MOGMA_MITTS, 2, 1, 1, 1);
-        AddItemToPool(RG_GUST_JAR, 2, 1, 1, 1);
-        AddItemToPool(RG_BALL_AND_CHAIN, 2, 1, 1, 1);
-        AddItemToPool(RG_LIGHT_ROD, 2, 1, 1, 1);
-        AddItemToPool(RG_HYLIAS_GRACE, 2, 1, 1, 1);
-        AddItemToPool(RG_LANTERN, 2, 1, 1, 1);
-        AddItemToPool(RG_PENDING_1, 2, 1, 1, 1);
-        AddItemToPool(RG_PENDING_3, 2, 1, 1, 1);
-        AddItemToPool(RG_CANE_OF_SOMARIA, 2, 1, 1, 1);
-        AddItemToPool(RG_SHOVEL, 2, 1, 1, 1);
-        AddItemToPool(RG_DOMINION_ROD, 2, 1, 1, 1);
-        AddItemToPool(RG_DESIRE_SENSOR, 2, 1, 1, 1);
+        AddFixedItemToPool(RG_PROGRESSIVE_ROCS, 2); // Progressive: Feather then Cape
+        AddFixedItemToPool(RG_WHIP);
+        AddFixedItemToPool(RG_SPINNER);
+        AddFixedItemToPool(RG_BOMB_ARROWS);
+        AddFixedItemToPool(RG_FIRE_ROD);
+        AddFixedItemToPool(RG_DEMISE_DESTRUCTION);
+        AddFixedItemToPool(RG_DEKU_LEAF);
+        AddFixedItemToPool(RG_TIME_GATE);
+        AddFixedItemToPool(RG_BEETLE);
+        AddFixedItemToPool(RG_SWITCH_HOOK);
+        AddFixedItemToPool(RG_ICE_ROD);
+        AddFixedItemToPool(RG_ZONAI_PERMAFROST);
+        AddFixedItemToPool(RG_MOGMA_MITTS);
+        AddFixedItemToPool(RG_GUST_JAR);
+        AddFixedItemToPool(RG_BALL_AND_CHAIN);
+        AddFixedItemToPool(RG_LIGHT_ROD);
+        AddFixedItemToPool(RG_HYLIAS_GRACE);
+        AddFixedItemToPool(RG_LANTERN);
+        AddFixedItemToPool(RG_PENDING_1); // Minish Cap
+        AddFixedItemToPool(RG_PENDING_3); // Pokeball
+        AddFixedItemToPool(RG_CANE_OF_SOMARIA);
+        AddFixedItemToPool(RG_SHOVEL);
+        AddFixedItemToPool(RG_DOMINION_ROD);
+        AddFixedItemToPool(RG_DESIRE_SENSOR);
     }
 
-    // Extended Equipment (12 items for equipment page 2)
+    // Extended Equipment (12 items for equipment page 2). Same fixed-pool reasoning as above —
+    // ensure each ext equipment piece is placed exactly once when the cheat is enabled.
     if (CVarGetInteger("gCheats.ExtEquip.Enabled", 0)) {
-        AddItemToPool(RG_EXT_CANE_OF_BYRNA, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_FOUR_SWORD, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_IRON_KNUCKLE_AXE, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_DIVINE_SHIELD, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_SHEIKAH_SHIELD, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_SHIELD_OF_IKANA, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_MAGIC_CAPE, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_SPIRIT_BREASTPLATE, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_CHAMPIONS_TUNIC, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_PEGASUS_ANKLET, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_PENDANT_OF_MEMORIES, 2, 1, 1, 1);
-        AddItemToPool(RG_EXT_WATER_DRAGON_SCALE, 2, 1, 1, 1);
+        AddFixedItemToPool(RG_EXT_CANE_OF_BYRNA);
+        AddFixedItemToPool(RG_EXT_FOUR_SWORD);
+        AddFixedItemToPool(RG_EXT_IRON_KNUCKLE_AXE);
+        AddFixedItemToPool(RG_EXT_DIVINE_SHIELD);
+        AddFixedItemToPool(RG_EXT_SHEIKAH_SHIELD);
+        AddFixedItemToPool(RG_EXT_SHIELD_OF_IKANA);
+        AddFixedItemToPool(RG_EXT_MAGIC_CAPE);
+        AddFixedItemToPool(RG_EXT_SPIRIT_BREASTPLATE);
+        AddFixedItemToPool(RG_EXT_CHAMPIONS_TUNIC);
+        AddFixedItemToPool(RG_EXT_PEGASUS_ANKLET);
+        AddFixedItemToPool(RG_EXT_PENDANT_OF_MEMORIES);
+        AddFixedItemToPool(RG_EXT_WATER_DRAGON_SCALE);
     }
 
     int bronzeScale = ctx->GetOption(RSK_SHUFFLE_SWIM) ? 1 : 0;

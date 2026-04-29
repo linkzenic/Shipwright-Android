@@ -84,7 +84,9 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 #include "expansions/sm64/sm64_mario_surfaces.c"
 #include "expansions/sm64/sm64_mario_render.c"
 #include "expansions/sm64/sm64_mario.c"
+#include "expansions/sm64/sm64_mario_items.c"
 static u8 gSm64MarioInitialized = 0;
+static u8 gSm64MarioInitTried = 0;
 
 // ============================================================================
 // SW97 SPACEWORLD '97 EXPANSION - Hat Physics, Spells, Arrows
@@ -404,7 +406,8 @@ u8 gWalkSpeedToggle;
 extern u8 gIvanPossessActive;
 
 s32 spawn_boomerang_ivan(EnPartner* this, PlayState* play) {
-    if (!CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && !gIvanPossessActive) {
+    if (!CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) && !gIvanPossessActive
+        && !Sm64Mario_IsReady()) {
         return 0;
     }
 
@@ -2557,9 +2560,15 @@ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
         return (play->bombchuBowlingStatus > 0) ? ITEM_BOMBCHU : ITEM_NONE;
     } else if (index == 0) {
         // Zora boomerang / Deku bubble: BTN_B returns the appropriate item
-        // so OOT's pipeline (aim, sHeldItemButtonIsHeldDown, throw/fire) works
-        if (sZoraBoomerangActive) {
-            return ITEM_BOOMERANG;
+        // so OOT's pipeline (aim, sHeldItemButtonIsHeldDown, throw/fire) works.
+        // ONLY during aim phase (USING_BOOMERANG flag set). During flight phase
+        // (fins in air, Phase 1 cleaned flags), return normal B item so player
+        // can punch/jump-slash while fins fly.
+        {
+            Player* cachedPlayer = GET_PLAYER(play);
+            if (sZoraBoomerangActive && (cachedPlayer->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG)) {
+                return ITEM_BOOMERANG;
+            }
         }
         if (sDekuBubbleActive) {
             return ITEM_SLINGSHOT;
@@ -3256,7 +3265,8 @@ s32 func_808351D4(Player* this, PlayState* play) {
                 if (!func_808350A4(play, this)) {
                     Player_PlaySfx(this, D_808543DC[ABS(this->unk_860) - 1]);
                 }
-            } else if (this->actor.bgCheckFlags & 1) {
+            } else if ((this->actor.bgCheckFlags & 1) || (gChampionSlowFactor < 1.0f)) {
+                // Champion's Tunic: allow hookshot/longshot to fire mid-air during Bullet Time
                 func_808350A4(play, this);
             }
         }
@@ -3451,7 +3461,6 @@ s32 func_808358F0(Player* this, PlayState* play) {
 }
 
 s32 func_808359FC(Player* this, PlayState* play) {
-    extern s32 MmForm_GetCurrentForm(void);
     if (LinkAnimation_Update(play, &this->upperSkelAnime)) {
         Player_SetUpperActionFunc(this, func_80835B60);
         this->unk_834 = 0;
@@ -5376,7 +5385,7 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
     } else if ((this->actor.bgCheckFlags & 1) && (this->ledgeClimbType == 1) && (this->ledgeClimbDelayTimer >= 3)) {
         // Goron rolling: don't auto-hop off ledges — roll off naturally with momentum
         if (TransformMasks_IsTransformed()) {
-            extern s32 MmForm_GetCurrentForm(void);
+
             extern u8 MmForm_IsGoronRolling(void);
             if (MmForm_GetCurrentForm() == 1 /* GORON */ && MmForm_IsGoronRolling()) {
                 return 0;
@@ -6680,7 +6689,7 @@ s32 func_8083BB20(Player* this) {
         // Exception: Deku uses B for bubble attack, not sword. Skip weapon override for Deku.
         u8 hasWeapon = (Player_GetMeleeWeaponHeld(this) != 0);
         if (!hasWeapon && TransformMasks_IsTransformedAny()) {
-            extern s32 MmForm_GetCurrentForm(void);
+
             if (MmForm_GetCurrentForm() != 3 /* DEKU */) {
                 hasWeapon = 1;
             }
@@ -6709,7 +6718,7 @@ void Player_SetupRoll(Player* this, PlayState* play) {
     // Deku: redirect ALL rolls to spin attack (from MM func_80839A84)
     // Deku cannot roll in MM — A while moving always does spin attack.
     if (TransformMasks_IsTransformed()) {
-        extern s32 MmForm_GetCurrentForm(void);
+
         extern void MmForm_StartDekuSpinFromOot(Player * player, PlayState * play);
         extern void MmForm_StartGoronCurlFromOot(Player * player, PlayState * play);
         if (MmForm_GetCurrentForm() == 3 /* MM_PLAYER_FORM_DEKU */) {
@@ -6762,7 +6771,7 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
 void Player_TransformZTargetAction(Player* this, PlayState* play, s32 controlStickDirection) {
     if (controlStickDirection <= PLAYER_STICK_DIR_FORWARD) {
         // Forward or no direction → jump slash
-        extern s32 MmForm_GetCurrentForm(void);
+
         s32 form = MmForm_GetCurrentForm();
         if (form == 2 /* ZORA */) {
             // MM Zora: linearVelocity=3.0*1.1=3.3, velocity.y=4.5*0.9=4.05
@@ -6815,6 +6824,15 @@ void Player_StartZoraBoomerang(Player* this, PlayState* play) {
     func_80834D2C(this, play);
     func_80834EB8(this, play);
 
+    // Defensive: force aim camera mode if OOT's setup didn't engage it.
+    // func_80834EB8 only sets unk_6AD = 2 if Z-target inactive AND Camera_CheckValidMode
+    // returns true. When called from a post-punch context the camera might still be in
+    // a transient mode where the validity check fails, leaving unk_6AD = 0 and the aim
+    // camera unusable. Forcing it here makes entry reliable regardless of caller state.
+    if (this->unk_6AD == 0 && !Player_IsZTargeting(this)) {
+        this->unk_6AD = 2;
+    }
+
     // Signal that the item button is being held (B = item button for Zora boomerang)
     sUseHeldItem = sHeldItemButtonIsHeldDown = true;
 }
@@ -6825,15 +6843,29 @@ void Player_ZoraBoomerangCleanup(Player* this) {
     if (!sZoraBoomerangActive)
         return;
 
-    // Phase 1: When thrown, exit aim camera but keep boomerang flags for catch
-    if ((this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) && this->unk_6AD == 2) {
+    // Phase 1: While fins are in flight, free the player to act normally.
+    // Clear all boomerang-related state flags + restore sword item action.
+    // Keep sZoraBoomerangActive=1 and BOOMERANG_THROWN so Phase 2 + catch anim work.
+    if (this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) {
         this->unk_6AD = 0;
-    }
-
-    // Phase 2: Fully deactivate when pipeline is done (fins returned + catch finished)
-    if (!(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) && !CHECK_BTN_ALL(sControlInput->cur.button, BTN_B) &&
-        this->upperActionFunc == func_80835800) {
-        goto cleanup;
+        // Keep PARALLEL so z-target jump slash works (A + forward → jump slash via Handler_10)
+        this->stateFlags1 &= ~(PLAYER_STATE1_USING_BOOMERANG | PLAYER_STATE1_ITEM_IN_HAND |
+                                PLAYER_STATE1_READY_TO_FIRE);
+        this->heldItemAction = PLAYER_IA_SWORD_MASTER;
+        this->itemAction = PLAYER_IA_SWORD_MASTER;
+        // Reset upper action from boomerang chain to default idle
+        if (this->upperActionFunc == func_80835800 || this->upperActionFunc == func_80835B60 ||
+            this->upperActionFunc == func_80835C08 || this->upperActionFunc == func_808358F0 ||
+            this->upperActionFunc == func_80835884 || this->upperActionFunc == func_808359FC) {
+            Player_SetUpperActionFunc(this, func_8083485C);
+        }
+        // Transition actionFunc to the appropriate z-target action if currently in Player_Action_Idle.
+        // Player_Action_Idle uses sActionHandlerListIdle which lacks Handler_10 (jump slash).
+        // Player_Action_808407CC (z-target walk) uses sActionHandlerList2 which INCLUDES Handler_10.
+        // ONLY transition once from Idle — let OOT handle further transitions (walk/run) naturally.
+        if (this->actionFunc == Player_Action_Idle) {
+            Player_SetupAction(gPlayState, this, Player_Action_808407CC, 1);
+        }
     }
 
     // Failsafe: if damaged, in cutscene, or OOT left boomerang IA for any reason,
@@ -6849,9 +6881,13 @@ void Player_ZoraBoomerangCleanup(Player* this) {
 cleanup:
     sZoraBoomerangActive = 0;
     this->unk_6AD = 0;
-    this->stateFlags1 &= ~PLAYER_STATE1_USING_BOOMERANG;
+    this->stateFlags1 &= ~(PLAYER_STATE1_USING_BOOMERANG | PLAYER_STATE1_BOOMERANG_THROWN |
+                            PLAYER_STATE1_ITEM_IN_HAND | PLAYER_STATE1_READY_TO_FIRE);
     this->heldItemAction = PLAYER_IA_SWORD_MASTER;
     this->itemAction = PLAYER_IA_SWORD_MASTER;
+    // Reset upper action to default idle — without this, upperActionFunc stays as func_80835800
+    // (boomerang idle) which blocks punch combo and other B-button attacks.
+    Player_SetUpperActionFunc(this, func_8083485C);
 }
 
 // Deku bubble: enter OOT's slingshot pipeline for first-person aim.
@@ -6916,7 +6952,7 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
                     if ((Player_GetMeleeWeaponHeld(this) != 0) && Player_CanUpdateItems(this)) {
                         func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
                     } else if (TransformMasks_IsTransformed()) {
-                        extern s32 MmForm_GetCurrentForm(void);
+            
                         s32 form = MmForm_GetCurrentForm();
                         if (form == 2 /* ZORA */ || form == 0 /* FD */ || form == 5 /* PIKACHU */) {
                             // OOT handles jump slash entirely. Anim overrides via MmForm_GetJumpSlashAnim.
@@ -7027,7 +7063,7 @@ s32 Player_ActionHandler_Roll(Player* this, PlayState* play) {
     // Transformation masks: Goron/Deku handle their own A-button (curl/spin).
     // Zora/FD use OOT's vanilla roll.
     if (TransformMasks_IsTransformed()) {
-        extern s32 MmForm_GetCurrentForm(void);
+
         s32 form = MmForm_GetCurrentForm();
         // Goron = curl, Deku = spin — handled by form code, block OOT roll
         if (form == 1 /* GORON */ || form == 3 /* DEKU */) {
@@ -7236,7 +7272,7 @@ s32 func_8083C910(PlayState* play, Player* this, f32 arg2) {
             // Transformation masks: Goron/Deku handle water entry (void/hop).
             // Zora/FD/Pikachu use OOT's vanilla swim entry.
             if (TransformMasks_IsTransformed()) {
-                extern s32 MmForm_GetCurrentForm(void);
+    
                 s32 wForm = MmForm_GetCurrentForm();
                 if (wForm == 1 /* GORON */ || wForm == 3 /* DEKU */) {
                     this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
@@ -8735,10 +8771,12 @@ void func_8084029C(Player* this, f32 arg1) {
     }
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER ||
-         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+           Sm64Mario_IsReady()) && this->ivanFloating)) &&
         !(this->actor.bgCheckFlags & 1) &&
         (this->hoverBootsTimer != 0 ||
-         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating))) {
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+           Sm64Mario_IsReady()) && this->ivanFloating))) {
         func_8002F8F0(&this->actor, NA_SE_PL_HOBBERBOOTS_LV - SFX_FLAG);
     } else if (func_8084021C(this->unk_868, arg1, 29.0f, 10.0f) || func_8084021C(this->unk_868, arg1, 29.0f, 24.0f)) {
         Player_PlaySteppingSfx(this, this->linearVelocity);
@@ -11499,6 +11537,18 @@ void Player_Init(Actor* thisx, PlayState* play2) {
     // Reset transformation state before Player_UseItem to avoid stale state from old scene
     TransformMasks_Init(play, this);
 
+    // SM64 MARIO: same pattern — drop stale Mario on every Player respawn so
+    // loading zones / warps reliably trigger a recreate in the new scene.
+    Sm64Mario_OnPlayerInit(play, this);
+    // Re-bind the Master-Sword punch collider to the new Player actor.
+    Sm64Mario_InitAttackCollider(play, this);
+    // Force Sm64Mario_Init to run fresh on the next Player_Update. Without this,
+    // scene-change recreation uses the "Update scene-change branch" path instead
+    // of the Init path — which empirically leaves actor-interaction in a degraded
+    // state ("tienes que hacer toggle on/off"). Mimicking the CVAR-toggle flow
+    // (Reset → Init) gives actors the same clean-state they have after a toggle.
+    gSm64MarioInitialized = 0;
+
     Player_UseItem(play, this, ITEM_NONE);
     Player_SetEquipmentData(play, this);
     this->prevBoots = this->currentBoots;
@@ -11813,7 +11863,8 @@ s32 Player_UpdateHoverBoots(Player* this) {
     s32 canHoverOnGround;
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER ||
-         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+           Sm64Mario_IsReady()) && this->ivanFloating)) &&
         (this->hoverBootsTimer != 0)) {
         this->hoverBootsTimer--;
     } else {
@@ -11822,7 +11873,8 @@ s32 Player_UpdateHoverBoots(Player* this) {
 
     canHoverOnGround =
         (this->currentBoots == PLAYER_BOOTS_HOVER ||
-         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+           Sm64Mario_IsReady()) && this->ivanFloating)) &&
         ((this->actor.yDistToWater >= 0.0f) || (func_80838144(sFloorType) >= 0) || func_8083816C(sFloorType));
 
     if (canHoverOnGround && (this->actor.bgCheckFlags & 1) && (this->hoverBootsTimer != 0)) {
@@ -12837,6 +12889,37 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
             }
         }
 
+        // SM64 Mario: same yield pattern. When paused and the player can
+        // interact with something (door, NPC, grabbable actor, ledge),
+        // unpause so the vanilla action handler runs the animation. Adds a
+        // temporary strength boost so Mario can lift bronze-gauntlet-level
+        // objects ("como si tuviera strength 1"). Strength is restored in the
+        // same frame so the save file isn't polluted — mirror of the
+        // gFormState.savedStrength pattern in mm_player_form.cpp:2363-2381.
+        if ((this->stateFlags3 & PLAYER_STATE3_PAUSE_ACTION_FUNC) && Sm64Mario_IsReady()) {
+            s16 sm64SavedStrength = CUR_UPG_VALUE(UPG_STRENGTH);
+            if (sm64SavedStrength < 1) {
+                Inventory_ChangeUpgrade(UPG_STRENGTH, 1);
+            }
+            // Handler call order matters — doors first (can pre-empt talk on
+            // NPC-doors like Mido), then talk, grab, ledge. NOTE: we do NOT
+            // inject B→A here anymore. A is Mario's jump; grabbing bombs /
+            // bomb flowers / liftable rocks happens via the B-proximity path
+            // in sm64_mario.c (Sm64Mario_TryGrabOrThrow), which manages
+            // heldActor directly without going through these handlers.
+            s32 sm64Handled =
+                Player_ActionHandler_1(this, play) ||      // doors (knob + sliding)
+                Player_ActionHandler_Talk(this, play) ||   // NPC textbox
+                Player_ActionHandler_2(this, play) ||      // A-triggered pickup / offer grab
+                Player_ActionHandler_12(this, play);       // ledge climb
+            if (sm64SavedStrength < 1) {
+                Inventory_ChangeUpgrade(UPG_STRENGTH, sm64SavedStrength);
+            }
+            if (sm64Handled) {
+                this->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            }
+        }
+
         if (GameInteractor_Should(VB_EXECUTE_PLAYER_ACTION_FUNC, !(this->stateFlags3 & PLAYER_STATE3_PAUSE_ACTION_FUNC),
                                   this, input)) {
             this->actionFunc(this, play);
@@ -13030,16 +13113,56 @@ void Player_Update(Actor* thisx, PlayState* play) {
             }
         }
 
-        // SM64 MARIO: Block OOT movement BEFORE Player_UpdateCommon
-        if (Sm64Mario_IsActive() && gSm64MarioInitialized) {
+        // SM64: tick the post-scene-transition suspend countdown. Must run
+        // BEFORE any IsActive / IsReady check so a scene change mutes Mario
+        // for ~30 frames before we re-engage — forces the Reset→Init cycle
+        // that reliably gets actors interacting with Mario afterwards.
+        Sm64Mario_TickTransitionSuspend(play, this);
+
+        // SM64: Mario Mask C-Down lock + toggle. When gSm64MarioMaskForce is
+        // set, ITEM_MARIO_MASK gets stamped onto C-Down each frame and
+        // pressing C-Down toggles gSm64Mario. Runs BEFORE Sm64Mario_HandleItems
+        // (called inside Sm64Mario_Update later) so the press is consumed
+        // before the item dispatcher can reach the mask slot.
+        Sm64MarioMask_ForceAndToggle(play, this);
+
+        // SM64: Block OOT actionFunc only when Mario is actually driving Link
+        // (IsReady = CVAR on AND sSm64MarioId >= 0). Yield (don't pause) when
+        // vanilla is in the middle of a context-sensitive interaction so its
+        // action func keeps running normally:
+        //  - TALKING: textbox dialog — Mario freezes idle while vanilla runs.
+        //  - CARRYING_ACTOR: Mario grabbed something via the OOT pickup path
+        //    (e.g. an NPC handover); vanilla handles carry/throw. Note: the
+        //    Mario-side B-grab system is independent and never sets this flag.
+        //  - GETTING_ITEM / IN_ITEM_CS: post-pickup item-show sequence.
+        //  - CLIMBING_LEDGE / HANGING_OFF_LEDGE: ledge transitions.
+        // Same pattern as mm_player_form.cpp yielding to OOT.
+        //
+        // C-button presses are NO LONGER yielded. Items now run through
+        // Sm64Mario_HandleItems (sm64_mario_items.c) which spawns projectiles
+        // at Mario's position in Mario's facing — Ivan-the-Fairy-style. Mario
+        // never enters Link's first-person aim mode, so FIRST_PERSON / unk_6AD
+        // are not in the yield list.
+        s32 marioYieldToOot =
+            (this->stateFlags1 & (PLAYER_STATE1_TALKING |
+                                  PLAYER_STATE1_CARRYING_ACTOR |
+                                  PLAYER_STATE1_GETTING_ITEM |
+                                  PLAYER_STATE1_IN_ITEM_CS |
+                                  PLAYER_STATE1_CLIMBING_LEDGE |
+                                  PLAYER_STATE1_HANGING_OFF_LEDGE)) != 0;
+        if (Sm64Mario_IsReady() && !marioYieldToOot) {
             this->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
         }
 
-        // ALWAYS run Player_UpdateCommon (Pikachu pattern).
-        // OOT handles collision, loading zones, damage, doors, items.
+        // SM64: Steal any enemy/hazard damage BEFORE Player_UpdateCommon runs.
+        // Clears AC_HIT + colChkInfo.damage so vanilla's func_80837C0C never
+        // touches Link's health, state, or velocity — the damage is forwarded
+        // to Mario's libsm64 knockback animation instead.
+        Sm64Mario_InterceptDamage(play, this);
+
         Player_UpdateCommon(this, play, &sp44);
 
-        // SM64 MARIO: Run AFTER Player_UpdateCommon, tick libsm64, override position.
+        // SM64 MARIO: Generate animation/mesh at Link's position (visual only).
         if (Sm64Mario_IsActive()) {
             if (!gSm64MarioInitialized) {
                 gSm64MarioInitialized = Sm64Mario_Init(play, this);
@@ -13049,8 +13172,20 @@ void Player_Update(Actor* thisx, PlayState* play) {
             }
         } else if (gSm64MarioInitialized) {
             Sm64Mario_Reset();
+            // Restore Player struct fields that UseSpell mutated. The plain
+            // ItemsReset variant inside Sm64Mario_Reset doesn't have a
+            // Player*, so the WithPlayer variant runs here from the z_player
+            // hook where `this` is the live Player.
+            Sm64Mario_ItemsResetWithPlayer(this);
             gSm64MarioInitialized = 0;
         }
+
+        // SM64: Position the Master-Sword punch collider on Mario's fist/foot
+        // during attack frames (reads sSm64OutState written by Update above).
+        Sm64Mario_UpdateAttackCollider(play, this);
+        // SM64: Mop up any damage state that slipped through Intercept
+        // (e.g. scripted direct-damage paths bypassing AC_HIT).
+        Sm64Mario_ScrubDamageState(play, this);
 
         // CUSTOM ITEMS: Update standalone system (completely separate from vanilla)
         CustomItems_Update(this, play);
@@ -13209,7 +13344,8 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
     }
 
     if ((this->currentBoots == PLAYER_BOOTS_HOVER ||
-         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) && this->ivanFloating)) &&
+         ((CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+           Sm64Mario_IsReady()) && this->ivanFloating)) &&
         !(this->actor.bgCheckFlags & 1) && !(this->stateFlags1 & PLAYER_STATE1_ON_HORSE) &&
         (this->hoverBootsTimer != 0)) {
         s32 sp5C;
@@ -13263,11 +13399,25 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     }
 
     // SM64 MARIO: Draw Mario mesh instead of Link.
-    // Exception: during first-person aiming (unk_6AD != 0), let OOT draw Link
-    // invisibly for the aiming system (same pattern as transformation masks).
-    if (thisx == &GET_PLAYER(play2)->actor && Sm64Mario_IsActive()) {
-        if (this->unk_6AD == 0) {
+    // Uses HasMesh (stricter than IsReady) so Link falls back to normal draw
+    // during the brief window between mario_create success and the first
+    // successful tick — otherwise both Link and Mario would be invisible.
+    // No first-person exception anymore: with Ivan-style item handling,
+    // Mario never enters Link's FP aim mode, so we never need to fall
+    // through to Link's draw to show FP arms.
+    if (thisx == &GET_PLAYER(play2)->actor) {
+        // Mario has a current mesh → draw Mario instead of Link.
+        if (Sm64Mario_HasMesh()) {
             Sm64Mario_Draw(play, this);
+            return;
+        }
+        // CVAR on but Mario isn't drawable right now (between Reset
+        // and Init during detransform — door cutscene, item-get, etc.,
+        // or while Lens of Truth is held) — skip Link's draw entirely
+        // so the player doesn't see Link briefly pop in. The
+        // detransform / suspend logic continues unchanged; this is
+        // purely a visibility veto.
+        if (Sm64Mario_ShouldHideLink()) {
             return;
         }
     }
@@ -13275,9 +13425,16 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     // PAK Loader: Swap skeleton before vanilla draw, restore after.
     // This lets the ENTIRE vanilla draw pipeline run (equipment, eyes, boots, gauntlets)
     // but with the custom model's body DLs. Only the skelAnime.skeleton pointer is swapped.
+    //
+    // Applies to BOTH the local player and remote dummy players: for remotes,
+    // HarpoonDummyPlayer_Draw calls PakLoader_BeginRemoteRender before Player_Draw,
+    // which sets sForcedModelIndex so PakLoader_HasActiveModel() returns true here
+    // with the remote's skin. The transformation-masks exclusion is LOCAL-only —
+    // remote dummies in an MM form never reach this branch (DrawMmForm intercepts).
+    u8 isLocalPlayer = (thisx == &GET_PLAYER(play2)->actor);
+    u8 transformBlocks = isLocalPlayer && (TransformMasks_IsTransformed() || TransformMasks_IsFDSkinMode());
     u8 pakActive = 0;
-    if (thisx == &GET_PLAYER(play2)->actor && PakLoader_HasActiveModel() && !TransformMasks_IsTransformed() &&
-        !TransformMasks_IsFDSkinMode()) {
+    if (PakLoader_HasActiveModel() && !transformBlocks) {
         PakLoader_SwapSkeleton(this);
         pakActive = 1;
     }

@@ -1774,8 +1774,9 @@ void Randomizer_DrawStasis(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawLantern(PlayState* play, GetItemEntry* getItemEntry) {
-    // Poe Lantern model from object_poh
-    DrawCustomItemDiamond(play, (Gfx*)gPoeLanternDL, 1.5f);
+    // Poe Lantern model from object_poh — modeled at actor scale (~50-70u tall),
+    // drop to 1/40× to fit the get-item cylinder.
+    DrawCustomItemDiamond(play, (Gfx*)gPoeLanternDL, 0.025f);
 }
 
 void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry) {
@@ -1783,7 +1784,9 @@ void Randomizer_DrawCryonis(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawPokeball(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, ItmPokeBall_opaque_dl, 0.02f);
+    // Vtx range is ±170 units (cull box), so model is ~340 native units across.
+    // Get-item cylinder is ~60 units, so 60/340 ≈ 0.18 fits.
+    DrawCustomItemDiamond(play, ItmPokeBall_opaque_dl, 0.18f);
 }
 
 void Randomizer_DrawMinishCap(PlayState* play, GetItemEntry* getItemEntry) {
@@ -1803,7 +1806,7 @@ void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry) {
     // Kokiri Sword model with green tint (Four Sword = green Zelda sword)
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    Matrix_Scale(0.55f, 0.55f, 0.55f, MTXMODE_APPLY);
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
@@ -1816,15 +1819,15 @@ void Randomizer_DrawExtFourSword(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawExtIronKnuckleAxe(PlayState* play, GetItemEntry* getItemEntry) {
-    // IK Axe model (from equip_ikaxe.c)
-    DrawCustomItemDiamond(play, gIKAxeInlineDL, 0.01f);
+    // IK Axe model (from equip_ikaxe.c) — inline DL is in actor-space scale, native ~1/50×
+    DrawCustomItemDiamond(play, gIKAxeInlineDL, 0.02f);
 }
 
 void Randomizer_DrawExtDivineShield(PlayState* play, GetItemEntry* getItemEntry) {
     // Hylian Shield model with golden tint (Divine Shield = holy gold variant)
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    Matrix_Scale(0.5f, 0.5f, 0.5f, MTXMODE_APPLY);
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
@@ -1837,19 +1840,50 @@ void Randomizer_DrawExtDivineShield(PlayState* play, GetItemEntry* getItemEntry)
 }
 
 void Randomizer_DrawExtSheikahShield(PlayState* play, GetItemEntry* getItemEntry) {
-    DrawCustomItemDiamond(play, gRandoSomariaCaneDL, 0.25f); // placeholder
-}
-
-void Randomizer_DrawExtShieldOfIkana(PlayState* play, GetItemEntry* getItemEntry) {
-    // MM Mirror Shield GI model (from OOT's object_gi_shield_3)
+    // Hylian Shield model with Sheikah teal/silver tint (Kite Shield)
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    Matrix_Scale(0.5f, 0.5f, 0.5f, MTXMODE_APPLY);
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gGiMirrorShieldDL);
+    gSPGrayscale(POLY_OPA_DISP++, true);
+    gDPSetGrayscaleColor(POLY_OPA_DISP++, 100, 200, 200, 255); // teal/silver Sheikah palette
+    gSPDisplayList(POLY_OPA_DISP++, (Gfx*)gGiHylianShieldDL);
+    gSPGrayscale(POLY_OPA_DISP++, false);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+extern void* TransformMasks_LoadMmDL(const char* path);
+
+void Randomizer_DrawExtShieldOfIkana(PlayState* play, GetItemEntry* getItemEntry) {
+    // Use the same MM Mirror Shield model that the equipped Shield of Ikana renders with.
+    // ExtEquip_LoadMmShieldDLs in extended_equipment.c proves this path resolves cleanly in
+    // mm.o2r — using object_gi_shield_3/gGiMirrorShieldDL crashed because its vertex hashes
+    // didn't resolve in the OTR pack, and the unresolved bytes were executed as gsSPVertex.
+    static Gfx* sCachedMmShieldDL = NULL;
+    static u8 sLoadAttempted = 0;
+    if (!sLoadAttempted) {
+        sLoadAttempted = 1;
+        sCachedMmShieldDL = (Gfx*)TransformMasks_LoadMmDL("objects/object_link_child/gLinkHumanMirrorShieldDL");
+    }
+    if (sCachedMmShieldDL == NULL) {
+        return; // mm.o2r not present — silent skip instead of crashing on a NULL DL
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+    // gLinkHumanMirrorShieldDL is modelled in arm-local space (oriented for Link's left arm
+    // joint). Apply order matters: RotateY first so the spin happens around world-up, THEN
+    // tilt -90° X so the shield ends up upright facing the camera, then scale down.
+    s16 rotation = play->gameplayFrames * 0x2;
+    Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
+    Matrix_RotateX(-M_PI / 2.0f, MTXMODE_APPLY);
+    Matrix_Scale(0.035f, 0.035f, 0.035f, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, sCachedMmShieldDL);
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
@@ -1870,10 +1904,12 @@ void Randomizer_DrawExtMagicCape(PlayState* play, GetItemEntry* getItemEntry) {
 }
 
 void Randomizer_DrawExtSpiritBreastplate(PlayState* play, GetItemEntry* getItemEntry) {
-    // Spirit Breastplate: chest + pauldrons composite model
+    // Spirit Breastplate: chest + pauldrons composite model.
+    // Native model is in IK-axe coordinate space (huge units). Bumped 0.005 → 0.02 so
+    // the chest is actually visible in the get-item cylinder.
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_Scale(0.005f, 0.005f, 0.005f, MTXMODE_APPLY);
+    Matrix_Scale(0.02f, 0.02f, 0.02f, MTXMODE_APPLY);
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
 
@@ -1923,7 +1959,7 @@ void Randomizer_DrawExtPegasusAnklet(PlayState* play, GetItemEntry* getItemEntry
     // Hover Boots model with red tint (Pegasus = red winged boots)
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    Matrix_Scale(0.45f, 0.45f, 0.45f, MTXMODE_APPLY);
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
@@ -1936,10 +1972,10 @@ void Randomizer_DrawExtPegasusAnklet(PlayState* play, GetItemEntry* getItemEntry
 }
 
 void Randomizer_DrawExtPendantOfMemories(PlayState* play, GetItemEntry* getItemEntry) {
-    // MM Pendant of Memories GI model (from mm.o2r)
+    // MM Pendant of Memories GI model (from mm.o2r) — original DL is small, scale up to fill cylinder
     OPEN_DISPS(play->state.gfxCtx);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    Matrix_Scale(0.3f, 0.3f, 0.3f, MTXMODE_APPLY);
+    Matrix_Scale(0.9f, 0.9f, 0.9f, MTXMODE_APPLY);
     s16 rotation = play->gameplayFrames * 0x2;
     Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
     gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),

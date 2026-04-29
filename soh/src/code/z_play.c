@@ -15,6 +15,8 @@
 #include "soh/framebuffer_effects.h"
 #include "mods/items/custom_items.h"
 #include "mods/items/helpers/minish_kaleido.h"
+#include "mods/items/helpers/postman_kaleido.h"
+#include "mods/items/logic/item_postman_hat.h"
 #include "mods/transformation_masks/mm_mask_wear.h"
 #include <libultraship/libultraship.h>
 
@@ -1276,6 +1278,8 @@ void Play_Update(PlayState* play) {
                 PLAY_LOG(3721);
                 if (gCustomItemState.minishCapWarpMode) {
                     MinishKaleido_Update(play);
+                } else if (gCustomItemState.postmanHatWarpMode) {
+                    PostmanKaleido_Update(play);
                 } else if (MmMaskWear_IsGreatFairyWarpActive()) {
                     MmMaskWear_GreatFairyWarpUpdate(play);
                 } else {
@@ -1343,7 +1347,8 @@ skip:
 
 void Play_DrawOverlayElements(PlayState* play) {
     if ((play->pauseCtx.state != 0) || (play->pauseCtx.debugState != 0)) {
-        if (!gCustomItemState.minishCapWarpMode && !MmMaskWear_IsGreatFairyWarpActive()) {
+        if (!gCustomItemState.minishCapWarpMode && !gCustomItemState.postmanHatWarpMode &&
+            !MmMaskWear_IsGreatFairyWarpActive()) {
             KaleidoScopeCall_Draw(play);
         }
     }
@@ -1364,6 +1369,8 @@ void Play_DrawOverlayElements(PlayState* play) {
     // Minish Cap warp overlay — drawn last on OVERLAY_DISP so it covers HUD
     if (gCustomItemState.minishCapWarpMode) {
         MinishKaleido_Draw(play);
+    } else if (gCustomItemState.postmanHatWarpMode) {
+        PostmanKaleido_Draw(play);
     }
 }
 

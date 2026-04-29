@@ -200,6 +200,8 @@ typedef struct {
     // Cane of Byrna (Ext Sword 1)
     u8 byrnaSavedSwordEquip; // Original equips.equipment sword nibble
     u8 byrnaSavedButtonItem; // Original equips.buttonItems[0]
+    f32 byrnaSavedSwordHealth; // Original swordHealth (GK durability)
+    u8 byrnaSavedBgsFlag;      // Original bgsFlag (1=BGS, 0=GK)
     u8 byrnaActive;          // Whether Byrna has overridden sword state
 
     // Pegasus Anklet
@@ -223,6 +225,8 @@ typedef struct {
     u8 ikAxeDrawing; // 1 when hammer is out (hide vanilla sword DL), 0 in free mode
 
     // Four Sword (Ext Sword 2)
+    u8 fourSwordSavedSwordEquip; // Original equips.equipment sword nibble
+    u8 fourSwordSavedButtonItem; // Original equips.buttonItems[0]
     u8 fourSwordActive;                // pak loader is live
     s16 fourSwordBHoldTimer;           // frames B has been held while shielding
     u8 fourSwordCharging;              // 1 while charge is armed (B+shield >= threshold)

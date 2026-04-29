@@ -393,6 +393,9 @@ typedef enum {
     /* 0xD3 */ ITEM_SW97_ARROW_DARK,
     /* 0xD4 */ ITEM_SW97_ARROW_SOUL,
     /* 0xD5 */ ITEM_SW97_ARROW_WIND,
+    // SM64 Mario mode toggle item — locked to C-Down via gSm64MarioMaskForce
+    // CVar; pressing C-Down with this item equipped toggles gSm64Mario.
+    /* 0xD6 */ ITEM_MARIO_MASK,
     /* 0xFC */ ITEM_LAST_USED = 0xFC,
     /* 0xFE */ ITEM_NONE_FE = 0xFE,
     /* 0xFF */ ITEM_NONE = 0xFF

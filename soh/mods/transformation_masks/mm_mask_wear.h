@@ -50,6 +50,10 @@ s32 MmMaskWear_IsBlastCooldown(void);
 // Returns true if All-Night Mask is currently worn (used by En_Sw and En_Wood02).
 s32 MmMaskWear_IsAllNightMaskActive(void);
 
+// Returns true if Gibdo Mask is currently worn (used by En_Rd to switch
+// Redeads/Gibdos to a friendly + dancing state, mirroring MM behavior).
+s32 MmMaskWear_IsGibdoMaskWorn(void);
+
 // Chateau Romani: infinite magic system (persists across scenes, cleared on death).
 s32 MmMaskWear_IsChateauRomaniActive(void);
 void MmMaskWear_ActivateChateauRomani(void);

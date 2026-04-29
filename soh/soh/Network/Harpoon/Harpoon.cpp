@@ -19,9 +19,12 @@ extern "C" {
 #include "mods/items/custom_items.h"
 #include "mods/extended_inventory.h"
 #include "mods/actors/somaria_cubes.h"
+#include "mods/pak_loader/pak_loader.h"
 #include "soh/Network/Harpoon/HarpoonBridge.h"
 extern PlayState* gPlayState;
 }
+#include "soh/Enhancements/mod_menu.h"
+#include "soh/Network/Harpoon/HarpoonSkinSync.h"
 
 // MARK: - Overrides
 
@@ -54,10 +57,12 @@ void Harpoon::Disable() {
 
 void Harpoon::OnConnected() {
     SendPacket_Handshake();
+    HarpoonSkinSync::Reset();
     RegisterHooks();
 }
 
 void Harpoon::OnDisconnected() {
+    HarpoonSkinSync::Reset();
     RegisterHooks();
 }
 
@@ -176,6 +181,9 @@ void Harpoon::ProcessIncomingPacketQueue() {
                 HandlePacket_TeleportTo(payload);
             else if (packetType == HPN_UPDATE_BEANS_COUNT)
                 HandlePacket_UpdateBeansCount(payload);
+            // Skin sync
+            else if (packetType == HPN_O2R_MOD_LIST)
+                HandlePacket_O2rModList(payload);
         } catch (const std::exception& e) { SPDLOG_ERROR("[Harpoon] Exception processing packet: {}", e.what()); }
     }
 }
@@ -247,6 +255,16 @@ bool Harpoon::IsSaveLoaded() {
     return true;
 }
 
+// Resolve the display name of the locally-selected pak at the given slot.
+// Returns an empty string when no pak is selected, the CVar is out of range,
+// or PakLoader hasn't finished initializing.
+static std::string GetLocalSkinName(const char* cvarName) {
+    s32 idx = CVarGetInteger(cvarName, -1);
+    if (idx < 0) return "";
+    const char* name = PakLoader_GetModelName(idx);
+    return name ? std::string(name) : "";
+}
+
 nlohmann::json Harpoon::PrepClientState() {
     nlohmann::json state;
     state["name"] = CVarGetString(CVAR_HARPOON("Name"), "Player");
@@ -259,6 +277,22 @@ nlohmann::json Harpoon::PrepClientState() {
         state["entranceIndex"] = gSaveContext.entranceIndex;
         state["linkAge"] = gSaveContext.linkAge;
     }
+
+    // Skin sync: broadcast the display name of the LOCAL (mods/) pak selection.
+    // Remote clients look the name up in THEIR mods/harpoon_skin_sync/ — missing
+    // skins fall back to vanilla Link + a one-shot UI notification.
+    state["adultSkin"] = GetLocalSkinName("gMods.PakLoader.AdultModel");
+    state["childSkin"] = GetLocalSkinName("gMods.PakLoader.ChildModel");
+    state["equipSkin"] = GetLocalSkinName("gMods.PakLoader.Equipment");
+
+    // .o2r mod list (handshake-only) — not used for rendering, just for
+    // informing peers of potential global visual divergence.
+    nlohmann::json o2rMods = nlohmann::json::array();
+    for (const auto& m : ModMenu_GetEnabledMods()) {
+        o2rMods.push_back(m);
+    }
+    state["o2rMods"] = o2rMods;
+
     return state;
 }
 
@@ -268,6 +302,17 @@ void Harpoon::SendPacket_Handshake() {
     nlohmann::json payload;
     payload["type"] = HPN_HANDSHAKE;
     payload["clientState"] = PrepClientState();
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_O2rModList() {
+    nlohmann::json payload;
+    payload["type"] = HPN_O2R_MOD_LIST;
+    nlohmann::json mods = nlohmann::json::array();
+    for (const auto& m : ModMenu_GetEnabledMods()) {
+        mods.push_back(m);
+    }
+    payload["mods"] = mods;
     SendJsonToRemote(payload);
 }
 
@@ -354,6 +399,13 @@ void Harpoon::SendPacket_PlayerUpdate() {
     payload["cylYShift"] = player->cylinder.dim.yShift;
     payload["mmStateFlags3"] = TransformMasks_GetMmStateFlags3();
     payload["mmSpeedXZ"] = TransformMasks_GetMmSpeedXZ();
+
+    // Skin sync — broadcast currently-selected local pak display names.
+    // Kept in the per-frame update (not just handshake) so late changes in the
+    // local menu propagate without having to reconnect.
+    payload["adultSkin"] = GetLocalSkinName("gMods.PakLoader.AdultModel");
+    payload["childSkin"] = GetLocalSkinName("gMods.PakLoader.ChildModel");
+    payload["equipSkin"] = GetLocalSkinName("gMods.PakLoader.Equipment");
 
     // OOT visual state
     payload["currentMask"] = player->currentMask;
@@ -632,6 +684,12 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
     client.cylYShift = payload.value("cylYShift", (s16)0);
     client.mmStateFlags3 = payload.value("mmStateFlags3", (u32)0);
     client.mmSpeedXZ = payload.value("mmSpeedXZ", (f32)0);
+
+    // Skin sync — names of the remote's selected pak slots (resolved at draw time
+    // against mods/harpoon_skin_sync/). Absent / empty → fall back to vanilla Link.
+    client.adultSkinName = payload.value("adultSkin", std::string(""));
+    client.childSkinName = payload.value("childSkin", std::string(""));
+    client.equipSkinName = payload.value("equipSkin", std::string(""));
 
     // OOT visual state
     client.currentMask = payload.value("currentMask", (u8)0);
@@ -1282,6 +1340,12 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
         activeGameMode = HARPOON_MODE_HUNGER_GAMES;
     }
 
+    // Announce our .o2r mod list once we're actually in a room — the server's
+    // unknown-packet relay only forwards to room members, so this must happen
+    // after room-joined (not right after handshake).
+    HarpoonSkinSync::Reset();
+    SendPacket_O2rModList();
+
     SPDLOG_INFO("[Harpoon] Joined room '{}' ({}) mode={}", currentRoomName, currentRoomId, currentRoomGameMode);
 }
 
@@ -1548,3 +1612,22 @@ s32 Harpoon_CheckAndSendDamage(ColliderCylinder* col, s32 damageType, s32 damage
 }
 
 } // extern "C"
+
+// MARK: - Skin sync handlers
+
+void Harpoon::HandlePacket_O2rModList(nlohmann::json payload) {
+    if (!payload.contains("clientId")) return;
+    uint32_t clientId = payload["clientId"].get<uint32_t>();
+    if (!clients.contains(clientId)) return;
+    auto& client = clients[clientId];
+
+    client.enabledO2rMods.clear();
+    if (payload.contains("mods") && payload["mods"].is_array()) {
+        for (const auto& m : payload["mods"]) {
+            if (m.is_string()) client.enabledO2rMods.push_back(m.get<std::string>());
+        }
+    }
+
+    // Divergence check (dedupe happens inside NotifyO2rDivergence via HarpoonSkinSync's set).
+    HarpoonSkinSync::NotifyO2rDivergence(clientId, client.name, client.enabledO2rMods);
+}

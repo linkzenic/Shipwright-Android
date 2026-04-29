@@ -42,6 +42,9 @@ extern u64 rspAspMainDataEnd[];
 extern void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples);
 // Pikachu voice sample mixer
 extern void PikaSfx_MixInto(s16* outBuf, u32 numSamples);
+// SM64 Mario audio: libsm64's generated PCM (produced by sm64_audio_tick
+// on the game thread, drained here on the audio thread via a ring buffer).
+extern void Sm64Audio_MixInto(int16_t* outBuf, uint32_t numSamples);
 
 void AudioMgr_CreateNextAudioBuffer(s16* samples, u32 num_samples) {
     OSMesg sp4C;
@@ -78,6 +81,8 @@ void AudioMgr_CreateNextAudioBuffer(s16* samples, u32 num_samples) {
     MmDirectAudio_MixInto(samples, num_samples);
     // Mix Pikachu voice samples
     PikaSfx_MixInto(samples, num_samples);
+    // Mix libsm64 Mario audio (jumps, punches, coins, death, etc.)
+    Sm64Audio_MixInto(samples, num_samples);
 
     gAudioContext.audioRandom = (gAudioContext.audioRandom + gAudioContext.totalTaskCnt) * osGetCount();
 }

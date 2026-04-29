@@ -60,12 +60,6 @@ const char* MmAssets_GetModPath(void);
 const char* MmAssets_GetRequiredVersion(void);
 
 /**
- * Get download URL for 2Ship
- * @return URL string
- */
-const char* MmAssets_GetDownloadUrl(void);
-
-/**
  * Get path to mm.o2r file
  * @return Path string, or empty if not found
  */

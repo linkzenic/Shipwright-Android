@@ -133,6 +133,10 @@ static void Spinner_Stop(Player* p, PlayState* play) {
     p->stateFlags1 &= ~PLAYER_STATE1_CHARGING_SPIN_ATTACK;
     p->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
     sSpinnerCol.base.atFlags &= ~AT_ON;
+    Audio_StopSfxById(NA_SE_EV_ROCK_SLIDE);
+    Audio_StopSfxById(NA_SE_IT_SHIELD_BOUND);
+    Audio_StopSfxById(NA_SE_IT_SWORD_SWING);
+    Audio_StopSfxById(NA_SE_IT_HAMMER_SWING);
     Audio_PlaySoundGeneral(NA_SE_PL_LAND, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
 }

@@ -3,6 +3,11 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/ResourceManagerHelpers.h"
 
+// Returns 1 when Link is currently wearing the MM Gibdo Mask (sCurrentMmMask
+// in mm_mask_wear.cpp). When true, Redeads/Gibdos drop into a friendly dance
+// state instead of attacking — mirrors MM's EnRd_ShouldNotDance pattern.
+extern s32 MmMaskWear_IsGibdoMaskWorn(void);
+
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
      ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER)
@@ -125,6 +130,79 @@ void EnRd_SetupAction(EnRd* this, EnRdActionFunc actionFunc) {
     this->actionFunc = actionFunc;
 }
 
+// ============================================================================
+// Gibdo-Mask friendly + dance state (MM En_Rd:328 EnRd_ShouldNotDance pattern)
+// ============================================================================
+
+static void EnRd_FriendlyDance(EnRd* this, PlayState* play);
+
+// MM dance anims loaded lazily from mm.o2r. NULL slots fall back to a sway on
+// the existing OOT idle anim, so the feature still works if mm.o2r doesn't
+// have object_rd's dance anims extracted.
+static AnimationHeader* sEnRdDanceAnims[3] = { NULL, NULL, NULL };
+static s32 sEnRdDanceAnimsChecked = 0;
+
+static void EnRd_EnsureDanceAnims(void) {
+    if (sEnRdDanceAnimsChecked) {
+        return;
+    }
+    sEnRdDanceAnimsChecked = 1;
+    sEnRdDanceAnims[0] = (AnimationHeader*)ResourceMgr_LoadAnimByName(
+        "__OTR__objects/object_rd/gGibdoRedeadSquattingDanceAnim");
+    sEnRdDanceAnims[1] = (AnimationHeader*)ResourceMgr_LoadAnimByName(
+        "__OTR__objects/object_rd/gGibdoRedeadClappingDanceAnim");
+    sEnRdDanceAnims[2] = (AnimationHeader*)ResourceMgr_LoadAnimByName(
+        "__OTR__objects/object_rd/gGibdoRedeadPirouetteAnim");
+    // ResourceMgr returns the path string itself when the asset is missing —
+    // a real Anim header never starts with '_', so a leading '_' means
+    // "asset not in mm.o2r". Trim those slots to NULL so we fall back.
+    for (s32 i = 0; i < 3; i++) {
+        if (sEnRdDanceAnims[i] != NULL && ((const char*)sEnRdDanceAnims[i])[0] == '_') {
+            sEnRdDanceAnims[i] = NULL;
+        }
+    }
+}
+
+static void EnRd_SetupFriendlyDance(EnRd* this) {
+    EnRd_EnsureDanceAnims();
+    // Deterministic per-actor pick (hash on pointer) so different Redeads in
+    // the same room dance differently when MM anims are available.
+    s32 pick = (s32)(((uintptr_t)this >> 4) % 3);
+    AnimationHeader* anim = sEnRdDanceAnims[pick];
+    if (anim == NULL) {
+        anim = (AnimationHeader*)&gGibdoRedeadIdleAnim; // fallback
+    }
+    Animation_Change(&this->skelAnime, anim, 1.0f, 0, Animation_GetLastFrame(anim), ANIMMODE_LOOP, -8.0f);
+    // Disable AC so the actor isn't damageable / Z-targetable as an enemy.
+    // Keep OC so Link can still bump into the body physically.
+    this->collider.base.acFlags &= ~AC_ON;
+    // Clear any in-progress hostile state.
+    this->actor.speedXZ = 0.0f;
+    EnRd_SetupAction(this, EnRd_FriendlyDance);
+}
+
+static void EnRd_FriendlyDance(EnRd* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+
+    // Mask removed → snap back to hostile idle setup so they re-engage Link.
+    if (!MmMaskWear_IsGibdoMaskWorn()) {
+        this->collider.base.acFlags |= AC_ON;
+        func_80AE269C(this);
+        return;
+    }
+
+    // Sway fallback: if no real MM dance anim was loaded, oscillate Y rot so
+    // the Redead at least looks alive and not just frozen idle.
+    if (sEnRdDanceAnims[0] == NULL) {
+        this->actor.shape.rot.y += (s16)(0x300 * Math_SinS(play->gameplayFrames * 0x800));
+    }
+
+    // Occasional Redead cry SFX (kept from hostile state for ambience).
+    if ((play->gameplayFrames & 0x5F) == 0) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_REDEAD_CRY);
+    }
+}
+
 void EnRd_Init(Actor* thisx, PlayState* play) {
     EnRd* this = (EnRd*)thisx;
 
@@ -243,6 +321,13 @@ void func_80AE2744(EnRd* this, PlayState* play) {
             }
         }
     } else {
+        // Gibdo Mask gate: while worn, redirect to friendly dance instead of
+        // detecting / freezing the player. Mirrors MM's EnRd_ShouldNotDance.
+        if (MmMaskWear_IsGibdoMaskWorn()) {
+            EnRd_SetupFriendlyDance(this);
+            return;
+        }
+
         if (this->unk_305 != 0) {
             if (this->actor.params != 2) {
                 func_80AE37BC(this);
@@ -319,6 +404,12 @@ void func_80AE2B90(EnRd* this, PlayState* play) {
 }
 
 void func_80AE2C1C(EnRd* this, PlayState* play) {
+    // Gibdo Mask gate: drop the chase + grab and switch to friendly dance.
+    if (MmMaskWear_IsGibdoMaskWorn()) {
+        EnRd_SetupFriendlyDance(this);
+        return;
+    }
+
     Vec3f sp44 = D_80AE4918;
     Color_RGBA8 sp40 = D_80AE4924;
     Color_RGBA8 sp3C = D_80AE4928;
@@ -493,6 +584,17 @@ void func_80AE33F0(EnRd* this) {
 void func_80AE3454(EnRd* this, PlayState* play) {
     s32 pad;
     Player* player = GET_PLAYER(play);
+
+    // Gibdo Mask gate: if Link puts on the mask mid-grab, release immediately
+    // and switch to friendly dance. Without this, an in-progress grab would
+    // keep damaging the player even though the mask is worn.
+    if (MmMaskWear_IsGibdoMaskWorn()) {
+        // Release Link from the grab (mirrors the case-2 release path).
+        player->stateFlags2 &= ~PLAYER_STATE2_GRABBED_BY_ENEMY;
+        this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+        EnRd_SetupFriendlyDance(this);
+        return;
+    }
 
     if (SkelAnime_Update(&this->skelAnime)) {
         this->unk_304++;

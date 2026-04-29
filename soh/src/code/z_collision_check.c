@@ -3036,7 +3036,9 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
 
     {
         extern u8 gIvanPossessActive;
-        if (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) {
+        extern u8 Sm64Mario_IsReady(void);
+        if (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+            Sm64Mario_IsReady()) {
             collider->actor->colChkInfo.damage *= GET_PLAYER(play)->ivanDamageMultiplier;
         }
     }
@@ -3662,7 +3664,9 @@ u8 CollisionCheck_GetSwordDamage(s32 dmgFlags, PlayState* play) {
 
     {
         extern u8 gIvanPossessActive;
-        if (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive) {
+        extern u8 Sm64Mario_IsReady(void);
+        if (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||
+            Sm64Mario_IsReady()) {
             damage *= GET_PLAYER(play)->ivanDamageMultiplier;
         }
     }

@@ -73,20 +73,20 @@ struct CustomItemMessageEntry {
 static const CustomItemMessageEntry customItemMessages[] = {
     // Movement Items
     { RG_ROCS_FEATHER, static_cast<ItemID>(ITEM_ROCS_FEATHER_SKIJER),
-      "You got %rRoc's Feather%w!&This magical feather lets you&jump higher than normal.^Assign it to %y[C]%w and "
+      "You got %rRoc's Feather%w!&This magical feather lets you&jump higher than normal.^Assign it to %y\xA1%w and "
       "press&to perform a high jump.&It even works in water!",
-      "Du hast %rRocs Feder%w erhalten!&Diese magische Feder lässt&dich höher springen.^Weise sie %y[C]%w zu und "
+      "Du hast %rRocs Feder%w erhalten!&Diese magische Feder lässt&dich höher springen.^Weise sie %y\xA1%w zu und "
       "drücke&um hoch zu springen.&Funktioniert auch im Wasser!",
-      "Vous obtenez la %rPlume de Roc%w!&Cette plume magique vous&permet de sauter plus haut.^Assignez-la à %y[C]%w et "
+      "Vous obtenez la %rPlume de Roc%w!&Cette plume magique vous&permet de sauter plus haut.^Assignez-la à %y\xA1%w et "
       "appuyez&pour faire un grand saut.&Fonctionne même dans l'eau!" },
 
     { RG_ROCS_CAPE, static_cast<ItemID>(ITEM_ROCS_CAPE),
       "You got %rRoc's Cape%w!&This magical cape enhances&your jumping ability.^Now you can perform a&%gdouble jump%w "
-      "in midair.&Press %y[C]%w again while&jumping to go higher!",
+      "in midair.&Press %y\xA1%w again while&jumping to go higher!",
       "Du hast %rRocs Umhang%w erhalten!&Dieser magische Umhang&verbessert deine Sprungkraft.^Du kannst nun "
-      "einen&%gDoppelsprung%w in der Luft&ausführen. Drücke %y[C]%w&erneut während du springst!",
+      "einen&%gDoppelsprung%w in der Luft&ausführen. Drücke %y\xA1%w&erneut während du springst!",
       "Vous obtenez la %rCape de Roc%w!&Cette cape magique améliore&vos capacités de saut.^Vous pouvez maintenant "
-      "effectuer&un %gdouble saut%w en l'air.&Appuyez sur %y[C]%w en sautant&pour aller plus haut!" },
+      "effectuer&un %gdouble saut%w en l'air.&Appuyez sur %y\xA1%w en sautant&pour aller plus haut!" },
 
     { RG_DEKU_LEAF, static_cast<ItemID>(ITEM_DEKU_LEAF),
       "You got the %gDeku Leaf%w!&A giant leaf with powers&of the wind.^%yIn the air%w: Use it to glide&slowly and "
@@ -101,14 +101,14 @@ static const CustomItemMessageEntry customItemMessages[] = {
 
     // Spell Items
     { RG_HYLIAS_GRACE, static_cast<ItemID>(ITEM_HYLIAS_GRACE),
-      "You got %pHylia's Grace%w!&A divine blessing that transforms&you into a %cfairy%w for 10 seconds.^Press %y[C]%w "
+      "You got %pHylia's Grace%w!&A divine blessing that transforms&you into a %cfairy%w for 10 seconds.^Press %y\xA1%w "
       "to activate&(requires a %rFairy in a Bottle%w).^%yA%w = Ascend  %yB%w = Descend&%yL%w = Sprint&1 minute "
       "cooldown after use.",
       "Du hast %pHylias Gnade%w erhalten!&Ein göttlicher Segen der dich&für 10 Sekunden in eine %cFee%w "
-      "verwandelt.^Drücke %y[C]%w zum Aktivieren&(benötigt eine %rFee in einer Flasche%w).^%yA%w = Aufsteigen  %yB%w = "
+      "verwandelt.^Drücke %y\xA1%w zum Aktivieren&(benötigt eine %rFee in einer Flasche%w).^%yA%w = Aufsteigen  %yB%w = "
       "Absteigen&%yL%w = Sprinten&1 Minute Abklingzeit nach Nutzung.",
       "Vous obtenez la %pGrâce d'Hylia%w!&Une bénédiction divine qui vous&transforme en %cfée%w pendant 10 "
-      "secondes.^Appuyez sur %y[C]%w pour activer&(nécessite une %rFée en Bouteille%w).^%yA%w = Monter  %yB%w = "
+      "secondes.^Appuyez sur %y\xA1%w pour activer&(nécessite une %rFée en Bouteille%w).^%yA%w = Monter  %yB%w = "
       "Descendre&%yL%w = Sprint&1 minute de recharge après utilisation." },
 
     // MM Masks (Third Inventory Page)
@@ -209,51 +209,51 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Vous obtenez le %pMasque du Dieu Féroce%w!&Un masque de transformation&de Majora's Mask." },
 
     { RG_ZONAI_PERMAFROST, static_cast<ItemID>(ITEM_ZONAI_PERMAFROST),
-      "You got %cZonai Permafrost%w!&Ancient Zonai technology that&freezes the flow of time itself.^Press %y[C]%w to "
+      "You got %cZonai Permafrost%w!&Ancient Zonai technology that&freezes the flow of time itself.^Press %y\xA1%w to "
       "cast the spell.&%rAll enemies%w, %ypuzzle elements%w,&and even the %cday/night cycle%w&freeze for %g10 "
       "seconds%w!^Costs %g12 Magic%w per use.&Move freely while time is stopped.",
-      "Du hast %cSonau Permafrost%w!&Uralte Sonau-Technologie die&den Fluss der Zeit einfriert.^Drücke %y[C]%w um den "
+      "Du hast %cSonau Permafrost%w!&Uralte Sonau-Technologie die&den Fluss der Zeit einfriert.^Drücke %y\xA1%w um den "
       "Zauber&zu wirken. %rAlle Feinde%w,&%yRätsel-Elemente%w, und sogar&der %cTag/Nacht-Zyklus%w frieren&für %g10 "
       "Sekunden%w ein!^Kostet %g12 Magie%w pro Nutzung.&Bewege dich frei während die&Zeit angehalten ist.",
       "Vous obtenez %cPermafrost Soneau%w!&Technologie ancienne des Soneau&qui gèle le flux du temps.^Appuyez sur "
-      "%y[C]%w pour lancer&le sort. %rTous les ennemis%w,&%yéléments de puzzle%w, et même&le %ccycle jour/nuit%w "
+      "%y\xA1%w pour lancer&le sort. %rTous les ennemis%w,&%yéléments de puzzle%w, et même&le %ccycle jour/nuit%w "
       "gèlent&pendant %g10 secondes%w!^Coûte %g12 Magie%w par utilisation.&Bougez librement pendant que&le temps est "
       "arrêté." },
 
     { RG_DEMISE_DESTRUCTION, static_cast<ItemID>(ITEM_DEMISE_DESTRUCTION),
-      "You got %rDemise Destruction%w!&The dark power of the Demon King&Demise, sealed in this artifact.^Press %y[C]%w "
+      "You got %rDemise Destruction%w!&The dark power of the Demon King&Demise, sealed in this artifact.^Press %y\xA1%w "
       "to unleash a&devastating %rlightning explosion%w&that damages all enemies in&a %glarge radius%w around "
       "you.^%rHigh Magic cost%w.&Best saved for emergencies!&The ground itself trembles...",
       "Du hast %rTodbringer Zerstörung%w!&Die dunkle Macht des Dämonenkönigs&Todbringer, versiegelt in "
-      "diesem&Artefakt.^Drücke %y[C]%w um eine verheerende&%rBlitz-Explosion%w zu entfesseln&die alle Feinde in "
+      "diesem&Artefakt.^Drücke %y\xA1%w um eine verheerende&%rBlitz-Explosion%w zu entfesseln&die alle Feinde in "
       "einem&%ggroßen Radius%w um dich trifft.^%rHohe Magiekosten%w.&Am besten für Notfälle aufheben!&Der Boden selbst "
       "bebt...",
       "Vous obtenez %rDestruction de l'Avatar%w!&Le pouvoir sombre du Roi Démon&Avatar, scellé dans cet "
-      "artefact.^Appuyez sur %y[C]%w pour déchaîner&une %rexplosion de foudre%w&dévastatrice qui blesse tous "
+      "artefact.^Appuyez sur %y\xA1%w pour déchaîner&une %rexplosion de foudre%w&dévastatrice qui blesse tous "
       "les&ennemis dans un %glarge rayon%w.^%rCoût élevé en Magie%w.&À garder pour les urgences!&La terre elle-même "
       "tremble..." },
 
     { RG_TIME_GATE, static_cast<ItemID>(ITEM_TIME_GATE),
       "You got the %cTime Gate%w!&A portable door through the ages,&the power of the Temple of Time&in your "
-      "hands.^Press %y[C]%w to activate.&A prompt will ask: %g\"Travel&through time?\"%w^Select %yYes%w to switch "
+      "hands.^Press %y\xA1%w to activate.&A prompt will ask: %g\"Travel&through time?\"%w^Select %yYes%w to switch "
       "between&%rChild%w and %gAdult%w Link&anywhere in the world!^Costs %g48 Magic%w per use.",
       "Du hast das %cZeittor%w!&Eine tragbare Tür durch die Zeit,&die Macht des Zeitturms in&deinen Händen.^Drücke "
-      "%y[C]%w zum Aktivieren.&Eine Frage erscheint: %g\"Durch&die Zeit reisen?\"%w^Wähle %yJa%w um zwischen&%rKind%w "
+      "%y\xA1%w zum Aktivieren.&Eine Frage erscheint: %g\"Durch&die Zeit reisen?\"%w^Wähle %yJa%w um zwischen&%rKind%w "
       "und %gErwachsenem%w Link&überall zu wechseln!^Kostet %g48 Magie%w pro Nutzung.",
       "Vous obtenez la %cPorte du Temps%w!&Une porte portable à travers les&âges, le pouvoir du Temple du Temps&dans "
-      "vos mains.^Appuyez sur %y[C]%w pour activer.&Une question apparaît: %g\"Voyager&dans le temps?\"%w^Sélectionnez "
+      "vos mains.^Appuyez sur %y\xA1%w pour activer.&Une question apparaît: %g\"Voyager&dans le temps?\"%w^Sélectionnez "
       "%yOui%w pour passer&entre Link %rEnfant%w et %gAdulte%w&n'importe où!^Coûte %g48 Magie%w par utilisation." },
 
     // Tool Items
     { RG_SWITCH_HOOK, static_cast<ItemID>(ITEM_SWITCH_HOOK),
-      "You got the %cSwitch Hook%w!&A magical hook that swaps&your position with targets.^Hold %y[C]%w to aim,&release "
-      "to fire.&%cC-Up%w = First-person mode^Swap places with pots, crates,&and certain enemies!&Non-swappable targets "
+      "You got the %cSwitch Hook%w!&A magical hook that swaps&your position with targets.^Hold %y\xA1%w to aim,&release "
+      "to fire.&%c\xA5%w = First-person mode^Swap places with pots, crates,&and certain enemies!&Non-swappable targets "
       "take damage.",
-      "Du hast den %cWechselhaken%w!&Ein magischer Haken der deine&Position mit Zielen tauscht.^Halte %y[C]%w zum "
-      "Zielen,&lass los zum Feuern.&%cC-Oben%w = Erste-Person^Tausche Plätze mit Töpfen, Kisten&und bestimmten "
+      "Du hast den %cWechselhaken%w!&Ein magischer Haken der deine&Position mit Zielen tauscht.^Halte %y\xA1%w zum "
+      "Zielen,&lass los zum Feuern.&%c\xA5%w = Erste-Person^Tausche Plätze mit Töpfen, Kisten&und bestimmten "
       "Feinden!&Nicht-tauschbare Ziele nehmen Schaden.",
       "Vous obtenez le %cCrochet Échange%w!&Un crochet magique qui échange&votre position avec les cibles.^Maintenez "
-      "%y[C]%w pour viser,&relâchez pour tirer.&%cC-Haut%w = Première personne^Échangez avec des pots, caisses,&et "
+      "%y\xA1%w pour viser,&relâchez pour tirer.&%c\xA5%w = Première personne^Échangez avec des pots, caisses,&et "
       "certains ennemis!&Les cibles non-échangeables subissent des dégâts." },
 
     { RG_MOGMA_MITTS, static_cast<ItemID>(ITEM_MOGMA_MITTS),
@@ -262,161 +262,161 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Vous obtenez les %yGants Mogma%w!&Griffes souterraines.&Grimpez partout! Utilise de la %gMagie%w." },
 
     { RG_GUST_JAR, static_cast<ItemID>(ITEM_GUST_JAR),
-      "You got the %gGust Jar%w!&A vessel containing&ancient winds.^%ySuction mode%w: Hold %y[C]%w&to absorb objects, "
+      "You got the %gGust Jar%w!&A vessel containing&ancient winds.^%ySuction mode%w: Hold %y\xA1%w&to absorb objects, "
       "enemies&and environmental elements.^%yCapture mode%w: Absorb fire,&ice or electricity to store&special "
-      "ammunition.^%yShoot mode%w: Release %y[C]%w to&fire what you captured.&%cC-Up%w = First-person mode",
-      "Du hast den %gMagischen Krug%w!&Ein Gefäß mit uralten&Winden.^%yAnsaugmodus%w: Halte %y[C]%w&um Objekte, Feinde "
+      "ammunition.^%yShoot mode%w: Release %y\xA1%w to&fire what you captured.&%c\xA5%w = First-person mode",
+      "Du hast den %gMagischen Krug%w!&Ein Gefäß mit uralten&Winden.^%yAnsaugmodus%w: Halte %y\xA1%w&um Objekte, Feinde "
       "und&Umgebungselemente anzusaugen.^%yFangmodus%w: Sauge Feuer,&Eis oder Elektrizität auf&als spezielle "
-      "Munition.^%ySchussmodus%w: Lass %y[C]%w los&um das Gefangene zu feuern.&%cC-Oben%w = Erste-Person",
+      "Munition.^%ySchussmodus%w: Lass %y\xA1%w los&um das Gefangene zu feuern.&%c\xA5%w = Erste-Person",
       "Vous obtenez le %gPot Magique%w!&Un récipient contenant&des vents anciens.^%yMode aspiration%w: Maintenez "
-      "%y[C]%w&pour absorber objets, ennemis&et éléments environnementaux.^%yMode capture%w: Absorbez feu,&glace ou "
-      "électricité comme&munition spéciale.^%yMode tir%w: Relâchez %y[C]%w pour&tirer ce que vous avez "
-      "capturé.&%cC-Haut%w = Première personne" },
+      "%y\xA1%w&pour absorber objets, ennemis&et éléments environnementaux.^%yMode capture%w: Absorbez feu,&glace ou "
+      "électricité comme&munition spéciale.^%yMode tir%w: Relâchez %y\xA1%w pour&tirer ce que vous avez "
+      "capturé.&%c\xA5%w = Première personne" },
 
     { RG_SHOVEL, static_cast<ItemID>(ITEM_SHOVEL),
-      "You got the %yShovel%w!&A reliable tool for&excavation.^Use %y[C]%w on soft soil&to dig and find "
+      "You got the %yShovel%w!&A reliable tool for&excavation.^Use %y\xA1%w on soft soil&to dig and find "
       "hidden&treasures.^It can also reveal secret&%gGrottos%w and damage&buried enemies!",
-      "Du hast die %ySchaufel%w!&Ein zuverlässiges Werkzeug&zum Graben.^Benutze %y[C]%w auf weichem&Boden um zu graben "
+      "Du hast die %ySchaufel%w!&Ein zuverlässiges Werkzeug&zum Graben.^Benutze %y\xA1%w auf weichem&Boden um zu graben "
       "und&verborgene Schätze zu finden.^Sie kann auch geheime&%gGrotten%w aufdecken und&vergrabene Feinde verletzen!",
-      "Vous obtenez la %yPelle%w!&Un outil fiable pour&l'excavation.^Utilisez %y[C]%w sur terre&meuble pour creuser "
+      "Vous obtenez la %yPelle%w!&Un outil fiable pour&l'excavation.^Utilisez %y\xA1%w sur terre&meuble pour creuser "
       "et&trouver des trésors cachés.^Elle peut aussi révéler des&%gGrottes secrètes%w et blesser&les ennemis "
       "enterrés!" },
 
     // Weapon Items
     { RG_BALL_AND_CHAIN, static_cast<ItemID>(ITEM_BALL_AND_CHAIN),
-      "You got the %yBall and Chain%w!&A heavy weapon from the&snow palace.^Hold %y[C]%w to charge,&release to "
-      "throw.&Crush ice and enemies!^With %gZ-Target%w it homes in&on the enemy automatically.&Breaks %rRed "
+      "You got the %yBall and Chain%w!&A heavy weapon from the&snow palace.^Hold %y\xA1%w to charge,&release to "
+      "throw.&Crush ice and enemies!^With %g\xA4%w it homes in&on the enemy automatically.&Breaks %rRed "
       "Ice%w!^%rNote%w: Your speed is reduced&while it's equipped.",
-      "Du hast die %yKettenkugel%w!&Eine schwere Waffe aus dem&Schneepalast.^Halte %y[C]%w zum Aufladen,&lass los zum "
-      "Werfen.&Zerschmettere Eis und Feinde!^Mit %gZ-Ziel%w verfolgt sie&automatisch den Feind.&Zerbricht %rRotes "
+      "Du hast die %yKettenkugel%w!&Eine schwere Waffe aus dem&Schneepalast.^Halte %y\xA1%w zum Aufladen,&lass los zum "
+      "Werfen.&Zerschmettere Eis und Feinde!^Mit %g\xA4%w verfolgt sie&automatisch den Feind.&Zerbricht %rRotes "
       "Eis%w!^%rHinweis%w: Deine Geschwindigkeit&ist reduziert während sie&ausgerüstet ist.",
-      "Vous obtenez le %yBoulet%w!&Une arme lourde du palais&des neiges.^Maintenez %y[C]%w pour charger,&relâchez pour "
-      "lancer.&Écrasez glace et ennemis!^Avec %gZ-Cible%w il suit&automatiquement l'ennemi.&Brise la %rGlace "
+      "Vous obtenez le %yBoulet%w!&Une arme lourde du palais&des neiges.^Maintenez %y\xA1%w pour charger,&relâchez pour "
+      "lancer.&Écrasez glace et ennemis!^Avec %g\xA4%w il suit&automatiquement l'ennemi.&Brise la %rGlace "
       "Rouge%w!^%rNote%w: Votre vitesse est réduite&tant qu'il est équipé." },
 
     { RG_WHIP, static_cast<ItemID>(ITEM_WHIP),
-      "You got the %yWhip%w!&A versatile tool for combat&and exploration.^Press %y[C]%w to lash forward.&It latches "
+      "You got the %yWhip%w!&A versatile tool for combat&and exploration.^Press %y\xA1%w to lash forward.&It latches "
       "onto beams and bars&for pendulum swinging.^%ySwinging%w: Use the stick to&control the pendulum.&Release to "
       "launch with momentum!^%yCombat%w: Paralyze enemies,&pull shields, and disarm.&Also grabs items!",
-      "Du hast die %yPeitsche%w!&Ein vielseitiges Werkzeug für&Kampf und Erkundung.^Drücke %y[C]%w zum Schlagen.&Hakt "
+      "Du hast die %yPeitsche%w!&Ein vielseitiges Werkzeug für&Kampf und Erkundung.^Drücke %y\xA1%w zum Schlagen.&Hakt "
       "sich an Balken und Stangen&zum Pendelschwingen ein.^%ySchwingen%w: Nutze den Stick um&das Pendel zu "
       "steuern.&Lass los für Schwung-Start!^%yKampf%w: Lähme Feinde,&ziehe Schilde weg und entwaffne.&Greift auch "
       "Items!",
-      "Vous obtenez le %yFouet%w!&Un outil polyvalent pour le combat&et l'exploration.^Appuyez sur %y[C]%w pour "
+      "Vous obtenez le %yFouet%w!&Un outil polyvalent pour le combat&et l'exploration.^Appuyez sur %y\xA1%w pour "
       "fouetter.&S'accroche aux poutres et barres&pour se balancer en pendule.^%yBalancement%w: Utilisez le stick&pour "
       "contrôler le pendule.&Relâchez pour vous lancer!^%yCombat%w: Paralysez les ennemis,&tirez les boucliers et "
       "désarmez.&Attrape aussi des objets!" },
 
     { RG_SPINNER, static_cast<ItemID>(ITEM_SPINNER),
-      "You got the %ySpinner%w!&Ancient technology from the&desert sands.^Press %y[C]%w to ride it&and glide around. "
-      "Use it to&cross great distances.^With %gZ-Target%w you perform&a homing attack towards&the enemy. Breaks rocks!",
-      "Du hast den %yKreisel%w!&Uralte Technologie aus dem&Wüstensand.^Drücke %y[C]%w um aufzusteigen&und zu gleiten. "
-      "Überbrücke&große Distanzen damit.^Mit %gZ-Ziel%w führst du einen&Verfolgungs-Angriff auf&den Feind aus. "
+      "You got the %ySpinner%w!&Ancient technology from the&desert sands.^Press %y\xA1%w to ride it&and glide around. "
+      "Use it to&cross great distances.^With %g\xA4%w you perform&a homing attack towards&the enemy. Breaks rocks!",
+      "Du hast den %yKreisel%w!&Uralte Technologie aus dem&Wüstensand.^Drücke %y\xA1%w um aufzusteigen&und zu gleiten. "
+      "Überbrücke&große Distanzen damit.^Mit %g\xA4%w führst du einen&Verfolgungs-Angriff auf&den Feind aus. "
       "Zerbricht Felsen!",
-      "Vous obtenez la %yToupie%w!&Technologie ancienne des&sables du désert.^Appuyez sur %y[C]%w pour monter&et "
-      "glisser. Utilisez-la pour&traverser de grandes distances.^Avec %gZ-Cible%w vous effectuez&une attaque guidée "
+      "Vous obtenez la %yToupie%w!&Technologie ancienne des&sables du désert.^Appuyez sur %y\xA1%w pour monter&et "
+      "glisser. Utilisez-la pour&traverser de grandes distances.^Avec %g\xA4%w vous effectuez&une attaque guidée "
       "vers&l'ennemi. Brise les rochers!" },
 
     { RG_BOMB_ARROWS, static_cast<ItemID>(ITEM_BOMB_ARROWS),
-      "You got %rBomb Arrows%w!&An explosive combination.^Requires %yArrows%w and %rBombs%w.&Use %y[C]%w to enter "
+      "You got %rBomb Arrows%w!&An explosive combination.^Requires %yArrows%w and %rBombs%w.&Use %y\xA1%w to enter "
       "first-person&mode and aim.^The arrow explodes on impact.&Consumes %y1 arrow%w + %r1 bomb%w&per shot.",
-      "Du hast %rBombenpfeile%w!&Eine explosive Kombination.^Benötigt %yPfeile%w und %rBomben%w.&Benutze %y[C]%w für "
+      "Du hast %rBombenpfeile%w!&Eine explosive Kombination.^Benötigt %yPfeile%w und %rBomben%w.&Benutze %y\xA1%w für "
       "Erste-Person&Modus und zielen.^Der Pfeil explodiert beim&Aufprall. Verbraucht %y1 Pfeil%w&+ %r1 Bombe%w pro "
       "Schuss.",
       "Vous obtenez les %rFlèches-Bombes%w!&Une combinaison explosive.^Nécessite des %yFlèches%w et "
-      "%rBombes%w.&Utilisez %y[C]%w pour entrer en&première personne et viser.^La flèche explose à l'impact.&Consomme "
+      "%rBombes%w.&Utilisez %y\xA1%w pour entrer en&première personne et viser.^La flèche explose à l'impact.&Consomme "
       "%y1 flèche%w + %r1 bombe%w&par tir." },
 
     // Elemental Rods
     { RG_FIRE_ROD, static_cast<ItemID>(ITEM_ROD_FIRE),
       "You got the %rFire Rod%w!&A magical weapon that channels&the power of fire.^%yBasic attacks%w:&Slash = 3 "
       "fireballs&Stab = 1 fireball&Jump = Flamethrower down^%ySpecial attacks%w:&Spin = Expanding fire wave&Hold "
-      "%y[C]%w = Charge attack&%cC-Up%w = First-person mode^%rWarning%w: Without magic, the&fire will burn YOU. Make "
+      "%y\xA1%w = Charge attack&%c\xA5%w = First-person mode^%rWarning%w: Without magic, the&fire will burn YOU. Make "
       "sure&you have enough magic!",
       "Du hast den %rFeuerstab%w!&Eine magische Waffe mit der&Kraft des Feuers.^%yBasisangriffe%w:&Hieb = 3 "
       "Feuerbälle&Stoß = 1 Feuerball&Sprung = Flammenwerfer^%ySpezialangriffe%w:&Wirbelattacke = Feuerwelle&Halte "
-      "%y[C]%w = Aufladen&%cC-Oben%w = Erste-Person^%rWarnung%w: Ohne Magie verbrennt&das Feuer DICH. Achte auf&genug "
+      "%y\xA1%w = Aufladen&%c\xA5%w = Erste-Person^%rWarnung%w: Ohne Magie verbrennt&das Feuer DICH. Achte auf&genug "
       "Magie!",
       "Vous obtenez la %rBaguette de Feu%w!&Une arme magique qui canalise&le pouvoir du feu.^%yAttaques de "
       "base%w:&Taille = 3 boules de feu&Estoc = 1 boule de feu&Saut = Lance-flammes^%yAttaques spéciales%w:&Tourbillon "
-      "= Vague de feu&Maintenez %y[C]%w = Charge&%cC-Haut%w = Première personne^%rAttention%w: Sans magie, le feu&VOUS "
+      "= Vague de feu&Maintenez %y\xA1%w = Charge&%c\xA5%w = Première personne^%rAttention%w: Sans magie, le feu&VOUS "
       "brûlera. Assurez-vous&d'avoir assez de magie!" },
 
     { RG_ICE_ROD, static_cast<ItemID>(ITEM_ROD_ICE),
       "You got the %bIce Rod%w!&A magical weapon that channels&the power of ice.^%yBasic attacks%w:&Slash = 3 ice "
       "projectiles&Stab = 1 ice projectile&Jump = Freezing blast down^%ySpecial attacks%w:&Spin = Expanding ice "
-      "wave&Hold %y[C]%w = Charge attack&%cC-Up%w = First-person mode^%rWarning%w: Without magic, the&ice will freeze "
+      "wave&Hold %y\xA1%w = Charge attack&%c\xA5%w = First-person mode^%rWarning%w: Without magic, the&ice will freeze "
       "YOU. Make sure&you have enough magic!",
       "Du hast den %bEisstab%w!&Eine magische Waffe mit der&Kraft des Eises.^%yBasisangriffe%w:&Hieb = 3 "
       "Eisprojektile&Stoß = 1 Eisprojektil&Sprung = Eisstrahl^%ySpezialangriffe%w:&Wirbelattacke = Eiswelle&Halte "
-      "%y[C]%w = Aufladen&%cC-Oben%w = Erste-Person^%rWarnung%w: Ohne Magie friert&das Eis DICH ein. Achte auf&genug "
+      "%y\xA1%w = Aufladen&%c\xA5%w = Erste-Person^%rWarnung%w: Ohne Magie friert&das Eis DICH ein. Achte auf&genug "
       "Magie!",
       "Vous obtenez la %bBaguette de Glace%w!&Une arme magique qui canalise&le pouvoir de la glace.^%yAttaques de "
       "base%w:&Taille = 3 projectiles de glace&Estoc = 1 projectile de glace&Saut = Souffle glacial^%yAttaques "
-      "spéciales%w:&Tourbillon = Vague de glace&Maintenez %y[C]%w = Charge&%cC-Haut%w = Première "
+      "spéciales%w:&Tourbillon = Vague de glace&Maintenez %y\xA1%w = Charge&%c\xA5%w = Première "
       "personne^%rAttention%w: Sans magie, la glace&VOUS gèlera. Assurez-vous&d'avoir assez de magie!" },
 
     { RG_LIGHT_ROD, static_cast<ItemID>(ITEM_ROD_LIGHT),
       "You got the %yLight Rod%w!&A magical weapon that channels&the power of lightning.^%yBasic attacks%w:&Slash = 3 "
       "lightning bolts&Stab = 1 lightning bolt&Jump = Electric discharge^%ySpecial attacks%w:&Spin = Expanding "
-      "electric wave&Hold %y[C]%w = Charge attack&%cC-Up%w = First-person mode^%rWarning%w: Without magic, "
+      "electric wave&Hold %y\xA1%w = Charge attack&%c\xA5%w = First-person mode^%rWarning%w: Without magic, "
       "the&lightning will shock YOU.&Make sure you have enough magic!",
       "Du hast den %yLichtstab%w!&Eine magische Waffe mit der&Kraft des Blitzes.^%yBasisangriffe%w:&Hieb = 3 Blitze im "
       "Bogen&Stoß = 1 direkter Blitz&Sprung = Elektrische Entladung^%ySpezialangriffe%w:&Wirbelattacke = "
-      "Elektrowelle&Halte %y[C]%w = Aufladen&%cC-Oben%w = Erste-Person^%rWarnung%w: Ohne Magie trifft&der Blitz DICH. "
+      "Elektrowelle&Halte %y\xA1%w = Aufladen&%c\xA5%w = Erste-Person^%rWarnung%w: Ohne Magie trifft&der Blitz DICH. "
       "Achte auf&genug Magie!",
       "Vous obtenez la %yBaguette de Lumière%w!&Une arme magique qui canalise&le pouvoir de la foudre.^%yAttaques de "
       "base%w:&Taille = 3 éclairs en éventail&Estoc = 1 éclair direct&Saut = Décharge électrique^%yAttaques "
-      "spéciales%w:&Tourbillon = Vague électrique&Maintenez %y[C]%w = Charge&%cC-Haut%w = Première "
+      "spéciales%w:&Tourbillon = Vague électrique&Maintenez %y\xA1%w = Charge&%c\xA5%w = Première "
       "personne^%rAttention%w: Sans magie, la foudre&VOUS électrocutera. Assurez-vous&d'avoir assez de magie!" },
 
     // Device Items
     { RG_CANE_OF_SOMARIA, static_cast<ItemID>(ITEM_CANE_OF_SOMARIA),
-      "You got the %rCane of Somaria%w!&A wand that creates magical&blocks out of thin air.^Press %y[C]%w to swing and "
+      "You got the %rCane of Somaria%w!&A wand that creates magical&blocks out of thin air.^Press %y\xA1%w to swing and "
       "create&a %rmagical block%w. Up to %g3&blocks%w can exist at once.^The %roldest block%w is destroyed&when you "
       "create a 4th.^Use them to activate switches,&block enemies, or as&platforms to reach heights.",
-      "Du hast den %rStab von Somaria%w!&Ein Stab der magische Blöcke&aus dem Nichts erschafft.^Drücke %y[C]%w zum "
+      "Du hast den %rStab von Somaria%w!&Ein Stab der magische Blöcke&aus dem Nichts erschafft.^Drücke %y\xA1%w zum "
       "Schwingen&und erschaffe einen %rmagischen&Block%w. Bis zu %g3 Blöcke%w können&gleichzeitig existieren.^Der "
       "%rälteste Block%w wird zerstört&wenn du einen 4. erschaffst.^Nutze sie für Schalter, um Feinde&zu blockieren, "
       "oder als Plattform.",
       "Vous obtenez la %rCanne de Somaria%w!&Une baguette qui crée des&blocs magiques de nulle part.^Appuyez sur "
-      "%y[C]%w pour brandir&et créer un %rbloc magique%w.&Jusqu'à %g3 blocs%w peuvent exister.^Le %rbloc le plus "
+      "%y\xA1%w pour brandir&et créer un %rbloc magique%w.&Jusqu'à %g3 blocs%w peuvent exister.^Le %rbloc le plus "
       "ancien%w est&détruit quand vous en créez un 4e.^Utilisez-les pour activer des&interrupteurs, bloquer des "
       "ennemis,&ou comme plateformes." },
 
     { RG_DOMINION_ROD, static_cast<ItemID>(ITEM_DOMINION_ROD),
-      "You got the %pDominion Rod%w!&An ancient artifact that can&possess and control enemies.^Press %y[C]%w to fire a "
+      "You got the %pDominion Rod%w!&An ancient artifact that can&possess and control enemies.^Press %y\xA1%w to fire a "
       "golden orb.&It can possess: %rBeamos%w,&%yArmos%w, and %cAnubis%w.^Once possessed, the enemy will&%gmimic your "
       "movements%w!&Walk to make it walk,&attack to make it attack.^Uses %gMagic%w while controlling.",
-      "Du hast den %pKopierstab%w!&Ein uraltes Artefakt das Feinde&besitzen und kontrollieren kann.^Drücke %y[C]%w um "
+      "Du hast den %pKopierstab%w!&Ein uraltes Artefakt das Feinde&besitzen und kontrollieren kann.^Drücke %y\xA1%w um "
       "einen goldenen Orb&zu feuern. Er kann besitzen:&%rBeamos%w, %yArmos%w und %cAnubis%w.^Einmal besessen, wird der "
       "Feind&%gdeine Bewegungen imitieren%w!&Laufe um ihn laufen zu lassen,&greife an um ihn angreifen zu "
       "lassen.^Verbraucht %gMagie%w beim Kontrollieren.",
       "Vous obtenez la %pBaguette des Animes%w!&Un artefact ancien qui peut&posséder et contrôler les ennemis.^Appuyez "
-      "sur %y[C]%w pour tirer un&orbe doré. Il peut posséder:&%rBeamos%w, %yArmos%w et %cAnubis%w.^Une fois possédé, "
+      "sur %y\xA1%w pour tirer un&orbe doré. Il peut posséder:&%rBeamos%w, %yArmos%w et %cAnubis%w.^Une fois possédé, "
       "l'ennemi va&%gimiter vos mouvements%w!&Marchez pour le faire marcher,&attaquez pour le faire attaquer.^Utilise "
       "de la %gMagie%w pendant&le contrôle." },
 
     { RG_BEETLE, static_cast<ItemID>(ITEM_BEETLE),
-      "You got the %gBeetle%w!&A remote-controlled mechanical&insect from ancient times.^%y[C]%w = Launch "
-      "beetle&%yAnalog Stick%w = Steer flight&%y[C]%w again = Recall beetle&%y[B]%w = Speed boost^The camera follows "
+      "You got the %gBeetle%w!&A remote-controlled mechanical&insect from ancient times.^%y\xA1%w = Launch "
+      "beetle&%yAnalog Stick%w = Steer flight&%y\xA1%w again = Recall beetle&%y\xA0%w = Speed boost^The camera follows "
       "the beetle.&Use it to grab distant items,&hit switches, and scout ahead!",
-      "Du hast den %gKäfer%w erhalten!&Ein ferngesteuertes mechanisches&Insekt aus alter Zeit.^%y[C]%w = Käfer "
-      "starten&%yAnalog-Stick%w = Flug steuern&%y[C]%w erneut = Käfer zurückrufen&%y[B]%w = Geschwindigkeitsschub^Die "
+      "Du hast den %gKäfer%w erhalten!&Ein ferngesteuertes mechanisches&Insekt aus alter Zeit.^%y\xA1%w = Käfer "
+      "starten&%yAnalog-Stick%w = Flug steuern&%y\xA1%w erneut = Käfer zurückrufen&%y\xA0%w = Geschwindigkeitsschub^Die "
       "Kamera folgt dem Käfer.&Nutze ihn um Items zu holen,&Schalter zu treffen und voraus zu spähen!",
-      "Vous obtenez le %gScarabée%w!&Un insecte mécanique télécommandé&des temps anciens.^%y[C]%w = Lancer le "
-      "scarabée&%yStick Analogique%w = Diriger le vol&%y[C]%w à nouveau = Rappeler&%y[B]%w = Accélération^La caméra "
+      "Vous obtenez le %gScarabée%w!&Un insecte mécanique télécommandé&des temps anciens.^%y\xA1%w = Lancer le "
+      "scarabée&%yStick Analogique%w = Diriger le vol&%y\xA1%w à nouveau = Rappeler&%y\xA0%w = Accélération^La caméra "
       "suit le scarabée.&Utilisez-le pour attraper des objets,&activer des interrupteurs et explorer!" },
 
     { RG_DESIRE_SENSOR, static_cast<ItemID>(ITEM_DESIRE_SENSOR),
-      "You got the %pDesire Sensor%w!&A cursed artifact that reveals&hidden treasures... at a cost.^Press %y[C]%w to "
+      "You got the %pDesire Sensor%w!&A cursed artifact that reveals&hidden treasures... at a cost.^Press %y\xA1%w to "
       "activate.&%rCosts 3 hearts%w per use!^%g(Randomizer only)%w:&%yGolden sparkles%w = Major items&remain in this "
       "area.&%rGanondorf laugh%w = Nothing left.",
       "Du hast den %pWunschdetektor%w!&Ein verfluchtes Artefakt das&verborgene Schätze enthüllt...&für einen "
-      "Preis.^Drücke %y[C]%w zum Aktivieren.&%rKostet 3 Herzen%w pro Nutzung!^%g(Nur im Randomizer)%w:&%yGoldene "
+      "Preis.^Drücke %y\xA1%w zum Aktivieren.&%rKostet 3 Herzen%w pro Nutzung!^%g(Nur im Randomizer)%w:&%yGoldene "
       "Funken%w = Wichtige Items&sind noch in diesem Gebiet.&%rGanondorfs Lachen%w = Nichts mehr da.",
       "Vous obtenez le %pDétecteur de Désir%w!&Un artefact maudit qui révèle&les trésors cachés... à un prix.^Appuyez "
-      "sur %y[C]%w pour activer.&%rCoûte 3 cœurs%w par utilisation!^%g(Randomizer uniquement)%w:&%yÉtincelles dorées%w "
+      "sur %y\xA1%w pour activer.&%rCoûte 3 cœurs%w par utilisation!^%g(Randomizer uniquement)%w:&%yÉtincelles dorées%w "
       "= Objets majeurs&restent dans cette zone.&%rRire de Ganondorf%w = Plus rien." },
 
     // Placeholder items (pending implementation)
@@ -429,9 +429,76 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Du hast die %yLaterne%w erhalten!&Fang Feuer von Fackeln und&nutze es um deinen Weg zu erleuchten!",
       "Vous obtenez la %yLanterne%w!&Capturez le feu des torches et&utilisez-le pour éclairer votre chemin!" },
 
-    { RG_PENDING_3, static_cast<ItemID>(ITEM_POKEBALL), "You got %cPending Item 3%w!&This item is not yet implemented.",
-      "Du hast %cPending Item 3%w!&Dieses Item ist noch nicht implementiert.",
-      "Vous obtenez %cPending Item 3%w!&Cet objet n'est pas encore implémenté." },
+    { RG_PENDING_3, static_cast<ItemID>(ITEM_POKEBALL),
+      "You got the %yPoké Ball%w!&Use it to give orders to&a transformed Pikachu."
+      "^%y\x9F%w combo  %y\xA0%w Thunder Jolt&Stick+%y\x9F%w/%y\xA0%w: smash / special&%y\xA2%w crouch  %y\xA3%w bubble shield&%y\xA1%w-buttons: special items",
+      "Du hast den %yPokéball%w erhalten!&Damit gibst du einem&verwandelten Pikachu Befehle."
+      "^%y\x9F%w Combo  %y\xA0%w Donner-Schock&Stick+%y\x9F%w/%y\xA0%w: Smash / Special&%y\xA2%w Hocken  %y\xA3%w Blasen-Schild&%y\xA1%w-Tasten: Special-Items",
+      "Vous obtenez la %yPoké Ball%w!&Donnez des ordres à un&Pikachu transformé."
+      "^%y\x9F%w combo  %y\xA0%w Tonnerre&Stick+%y\x9F%w/%y\xA0%w: smash / spécial&%y\xA2%w accroupi  %y\xA3%w bouclier&%y\xA1%w: objets spéciaux" },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Extended Equipment (12 items, equipment page 2 — toggled via [L] in pause)
+    // ─────────────────────────────────────────────────────────────────────────
+    { RG_EXT_CANE_OF_BYRNA, static_cast<ItemID>(ITEM_EXT_SWORD_1),
+      "You got the %cCane of Byrna%w!&A magical sword that wraps you&in a protective shield.^Equip on the %ysword slot%w&from the equipment page.&Press %y\xA2%w to toggle pages.^While equipped, your %gMagic%w&drains slowly but you become&%cinvincible%w to all damage!&Sword hits restore Magic.",
+      "Du hast den %cStab von Byrna%w!&Ein magisches Schwert das dich&in einen Schutzschild hüllt.^Rüste ihn am %ySchwert-Platz%w&aus der Ausrüstungsseite aus.&Drücke %y\xA2%w zum Wechseln.^Während ausgerüstet, leert sich&deine %gMagie%w langsam, aber du&wirst %cunverwundbar%w!&Schwerthiebe stellen Magie wieder her.",
+      "Vous obtenez la %cCanne de Byrna%w!&Une épée magique qui vous&entoure d'un bouclier.^Équipez-la dans l'%yemplacement épée%w&depuis la page équipement.&Appuyez sur %y\xA2%w pour changer.^Tant qu'équipée, votre %gMagie%w&se vide lentement mais vous&êtes %cinvincible%w!&Les coups restaurent la Magie." },
+
+    { RG_EXT_FOUR_SWORD, static_cast<ItemID>(ITEM_EXT_SWORD_2),
+      "You got the %gFour Sword%w!&A blade said to split its wielder&into four heroes.^Equip on the %ysword slot%w from&the equipment page (%y\xA2%w to toggle).^While equipped, %g3 ghost clones%w&of Link follow you and mirror&your sword swings.&Surround your foes!",
+      "Du hast das %gVier-Schwert%w!&Eine Klinge die ihren Träger&in vier Helden teilen soll.^Rüste es am %ySchwert-Platz%w aus&(%y\xA2%w zum Wechseln).^Während ausgerüstet folgen dir&%g3 Geist-Klone%w von Link und&spiegeln deine Schwerthiebe.&Umzingle deine Feinde!",
+      "Vous obtenez l'%gÉpée de Quatre%w!&Une lame dont on dit qu'elle&divise son porteur en quatre héros.^Équipez-la dans l'%yemplacement épée%w&(%y\xA2%w pour changer).^Tant qu'équipée, %g3 clones spectraux%w&de Link vous suivent et imitent&vos attaques. Encerclez l'ennemi!" },
+
+    { RG_EXT_IRON_KNUCKLE_AXE, static_cast<ItemID>(ITEM_EXT_SWORD_3),
+      "You got the %rIron Knuckle Axe%w!&A massive tomahawk wielded by&the armored knights of Ganon.^Equip on the %ysword slot%w (%y\xA2%w&toggles pages on equipment screen).^Press %y\xA0%w to swing the heavy axe.&Hold %y\xA0%w to charge a %rthrow%w —&the axe boomerangs back to you!^Crushes shields and breaks rocks.",
+      "Du hast die %rEisenknöchel-Axt%w!&Ein massiver Tomahawk der&gepanzerten Ritter Ganons.^Rüste sie am %ySchwert-Platz%w aus&(%y\xA2%w wechselt die Seite).^%y\xA0%w schwingt die schwere Axt.&Halte %y\xA0%w für einen %rWurf%w —&die Axt kommt zurück!^Zerschmettert Schilde und Felsen.",
+      "Vous obtenez la %rHache d'Iron Knuckle%w!&Un tomahawk massif des chevaliers&en armure de Ganon.^Équipez-la dans l'%yemplacement épée%w&(%y\xA2%w change de page).^%y\xA0%w pour swinguer la lourde hache.&Maintenez %y\xA0%w pour charger un %rlancer%w —&la hache revient à vous!^Brise les boucliers et les rochers." },
+
+    { RG_EXT_DIVINE_SHIELD, static_cast<ItemID>(ITEM_EXT_SHIELD_1),
+      "You got the %yDivine Shield%w!&A blessed shield said to repel&even the darkest of magics.^Equip on the %yshield slot%w&from the equipment page.&Press %y\xA2%w to toggle pages.^While equipped, hold %y\xA3%w to&block. The shield reflects&%cmagical projectiles%w back at&their casters!",
+      "Du hast den %yGötterschild%w!&Ein gesegneter Schild der selbst&dunkelste Magie abwehren soll.^Rüste ihn am %ySchild-Platz%w aus&(%y\xA2%w zum Wechseln).^Halte %y\xA3%w zum Blocken.&Der Schild reflektiert&%cmagische Geschosse%w zurück&zu ihren Werfern!",
+      "Vous obtenez le %yBouclier Divin%w!&Un bouclier béni qui repousse&même la magie la plus sombre.^Équipez-le dans l'%yemplacement bouclier%w&(%y\xA2%w pour changer).^Maintenez %y\xA3%w pour parer.&Il renvoie les %cprojectiles magiques%w&vers leurs lanceurs!" },
+
+    { RG_EXT_SHEIKAH_SHIELD, static_cast<ItemID>(ITEM_EXT_SHIELD_2),
+      "You got the %cKite Shield%w!&A light, agile shield favored by&the Sheikah warriors.^Equip on the %yshield slot%w&(%y\xA2%w toggles equipment pages).^Lighter than other shields —&you can %gdash%w and %gjump%w more&freely while it's equipped.&Hold %y\xA3%w to block normally.",
+      "Du hast den %cDrachenschild%w!&Ein leichter, beweglicher Schild&den Sheikah-Krieger bevorzugen.^Rüste ihn am %ySchild-Platz%w aus&(%y\xA2%w wechselt Seiten).^Leichter als andere Schilde —&du kannst dich freier %gbewegen%w&und %ghöher springen%w!&%y\xA3%w zum Blocken.",
+      "Vous obtenez le %cBouclier Cerf-Volant%w!&Un bouclier léger et agile&prisé par les guerriers Sheikah.^Équipez-le dans l'%yemplacement bouclier%w&(%y\xA2%w change de page).^Plus léger que les autres —&vous pouvez %gcourir%w et %gsauter%w&plus librement! %y\xA3%w pour parer." },
+
+    { RG_EXT_SHIELD_OF_IKANA, static_cast<ItemID>(ITEM_EXT_SHIELD_3),
+      "You got the %pShield of Ikana%w!&A cursed mirror shield from the&fallen Ikana Kingdom.^Equip on the %yshield slot%w&(%y\xA2%w toggles equipment pages).^%cPerfect Guard%w (block within&12 frames of attack): drain&enemy %rHP%w and heal yourself!^%pDeath Save%w: revive once per&life with darkness aura when&fatally struck.",
+      "Du hast den %pSchild von Ikana%w!&Ein verfluchter Spiegelschild aus&dem gefallenen Königreich Ikana.^Rüste ihn am %ySchild-Platz%w aus&(%y\xA2%w wechselt Seiten).^%cPerfekter Block%w (innerhalb 12&Frames blocken): saugt feindliche&%rHP%w und heilt dich!^%pTodesrettung%w: Einmal pro Leben&mit Dunkelheits-Aura wiederbelebt&bei tödlichem Treffer.",
+      "Vous obtenez le %pBouclier d'Ikana%w!&Un bouclier-miroir maudit du&royaume déchu d'Ikana.^Équipez-le dans l'%yemplacement bouclier%w&(%y\xA2%w change de page).^%cParade Parfaite%w (bloquer en moins&de 12 frames): vole les %rPV%w&ennemis et vous soigne!^%pSauvegarde de Mort%w: ressuscite&une fois par vie avec une aura&sombre lors d'un coup fatal." },
+
+    { RG_EXT_MAGIC_CAPE, static_cast<ItemID>(ITEM_EXT_TUNIC_1),
+      "You got the %pMagic Cape%w!&Ganondorf's enchanted cloak,&with full cloth physics.^Equip on the %ytunic slot%w&from the equipment page.&Press %y\xA2%w to toggle pages.^While equipped, the cape flows&behind you with the wind.&You recover %ghalf the magic%w&you spend each frame!",
+      "Du hast den %pZauberumhang%w!&Ganondorfs verzauberter Mantel,&mit voller Stoff-Physik.^Rüste ihn am %yTunika-Platz%w aus&(%y\xA2%w zum Wechseln).^Während ausgerüstet weht der&Umhang im Wind hinter dir.&Du erhältst die %gHälfte der Magie%w&die du verbrauchst zurück!",
+      "Vous obtenez la %pCape Magique%w!&Le manteau enchanté de Ganondorf,&avec physique de tissu complète.^Équipez-la dans l'%yemplacement tunique%w&(%y\xA2%w pour changer).^Tant qu'équipée, la cape flotte&derrière vous au vent.&Vous récupérez la %gmoitié de la Magie%w&dépensée chaque frame!" },
+
+    { RG_EXT_SPIRIT_BREASTPLATE, static_cast<ItemID>(ITEM_EXT_TUNIC_2),
+      "You got the %yMagic Armor%w!&A golden breastplate that uses&Magic to absorb damage.^Equip on the %ytunic slot%w&(%y\xA2%w toggles equipment pages).^While equipped, %gMagic drains%w&each time you take damage&instead of your hearts!^If you run out of magic, the&armor fails until refilled.",
+      "Du hast die %yMagische Rüstung%w!&Ein goldener Brustpanzer der&Magie nutzt um Schaden zu absorbieren.^Rüste sie am %yTunika-Platz%w aus&(%y\xA2%w wechselt Seiten).^Während ausgerüstet leert sich&%gdeine Magie%w bei Schaden&statt deiner Herzen!^Ohne Magie versagt die Rüstung,&bis sie wieder aufgefüllt ist.",
+      "Vous obtenez l'%yArmure Magique%w!&Un plastron doré qui utilise&la Magie pour absorber les dégâts.^Équipez-la dans l'%yemplacement tunique%w&(%y\xA2%w change de page).^Tant qu'équipée, votre %gMagie%w&se vide à chaque dégât&au lieu de vos cœurs!^Sans Magie, l'armure cesse de&fonctionner jusqu'au rechargement." },
+
+    { RG_EXT_CHAMPIONS_TUNIC, static_cast<ItemID>(ITEM_EXT_TUNIC_3),
+      "You got the %cChampion's Tunic%w!&The blue garb of Hyrule's chosen&hero, blessed with battle aura.^Equip on the %ytunic slot%w&(%y\xA2%w toggles equipment pages).^A %cblue tint%w covers the screen.&Land sword hits in quick succession&to charge a %gFlurry Rush%w finisher!",
+      "Du hast die %cRüstung des Helden%w!&Die blaue Tracht des auserwählten&Helden Hyrules, mit Kampfaura gesegnet.^Rüste sie am %yTunika-Platz%w aus&(%y\xA2%w wechselt Seiten).^Ein %cblauer Schimmer%w bedeckt&den Bildschirm. Lande schnelle&Schwerttreffer für %gFlurry Rush%w!",
+      "Vous obtenez la %cTunique du Héros%w!&Le vêtement bleu du héros élu&d'Hyrule, béni d'une aura de combat.^Équipez-la dans l'%yemplacement tunique%w&(%y\xA2%w change de page).^Une %cteinte bleue%w recouvre l'écran.&Enchaînez les coups d'épée pour&charger un finisseur %gFlurry Rush%w!" },
+
+    { RG_EXT_PEGASUS_ANKLET, static_cast<ItemID>(ITEM_EXT_BOOTS_1),
+      "You got the %rPegasus Anklet%w!&Winged anklets that grant the&speed of the legendary Pegasus.^Equip on the %yboots slot%w&from the equipment page.&Press %y\xA2%w to toggle pages.^While equipped, you %gsprint%w&permanently and a %ywind barrier%w&deflects light projectiles!",
+      "Du hast den %rPegasus-Fußreif%w!&Geflügelte Fußreifen mit der&Geschwindigkeit des Pegasus.^Rüste sie am %yStiefel-Platz%w aus&(%y\xA2%w zum Wechseln).^Während ausgerüstet rennst du&permanent und eine %yWindbarriere%w&lenkt leichte Geschosse ab!",
+      "Vous obtenez le %rBracelet de Pégase%w!&Des bracelets ailés qui octroient&la vitesse du légendaire Pégase.^Équipez-le dans l'%yemplacement bottes%w&(%y\xA2%w pour changer).^Tant qu'équipé, vous %gsprintez%w&en permanence et une %ybarrière de vent%w&dévie les projectiles légers!" },
+
+    { RG_EXT_PENDANT_OF_MEMORIES, static_cast<ItemID>(ITEM_EXT_BOOTS_2),
+      "You got the %pPendant of Memories%w!&A keepsake that lets you walk&between past and present.^Equip on the %yboots slot%w&(%y\xA2%w toggles equipment pages).^While equipped, your footsteps&leave faint %pghost trails%w that&briefly mark where you stood.&Useful for solving puzzles!",
+      "Du hast das %pAmulett der Erinnerungen%w!&Ein Andenken das dich zwischen&Vergangenheit und Gegenwart laufen lässt.^Rüste es am %yStiefel-Platz%w aus&(%y\xA2%w wechselt Seiten).^Während ausgerüstet hinterlassen&deine Schritte schwache %pGeisterspuren%w&die markieren wo du standest.",
+      "Vous obtenez le %pPendentif des Souvenirs%w!&Un souvenir qui vous laisse marcher&entre passé et présent.^Équipez-le dans l'%yemplacement bottes%w&(%y\xA2%w change de page).^Tant qu'équipé, vos pas laissent&de faibles %ptraînées spectrales%w qui&marquent où vous étiez." },
+
+    { RG_EXT_WATER_DRAGON_SCALE, static_cast<ItemID>(ITEM_EXT_BOOTS_3),
+      "You got the %bWater Dragon Scale%w!&A blessed scale of the Water&Dragon, master of the depths.^Equip on the %yboots slot%w&(%y\xA2%w toggles equipment pages).^While equipped, you swim&%gfaster%w and a %bwater barrier%w&surrounds you underwater,&deflecting projectiles!",
+      "Du hast die %bWasserdrachen-Schuppe%w!&Eine gesegnete Schuppe des&Wasserdrachen, Herrscher der Tiefen.^Rüste sie am %yStiefel-Platz%w aus&(%y\xA2%w wechselt Seiten).^Während ausgerüstet schwimmst du&%gschneller%w und eine %bWasserbarriere%w&umgibt dich unter Wasser!",
+      "Vous obtenez l'%bÉcaille du Dragon d'Eau%w!&Une écaille bénie du Dragon&d'Eau, maître des profondeurs.^Équipez-la dans l'%yemplacement bottes%w&(%y\xA2%w change de page).^Tant qu'équipée, vous nagez&%gplus vite%w et une %bbarrière d'eau%w&vous entoure sous l'eau!" },
 };
 static constexpr size_t customItemMessageCount = sizeof(customItemMessages) / sizeof(customItemMessages[0]);
 
