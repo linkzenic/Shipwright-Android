@@ -28,7 +28,12 @@
 #include "soh/OTRGlobals.h"
 #include "soh/GameVersions.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "soh/resource/type/Text.h"
 #include "functions.h" // For Audio_SetFontInstrument, AudioLoad_IsFontLoadComplete
+
+// Globals owned by SoH that we need to refresh after the SetArchives reorder below
+// invalidates their backing buffers. See the comment in LoadMmO2r() for details.
+extern "C" char* _message_0xFFFC_nes;
 
 // Logging macros (same pattern as mm_anim_loader.c)
 #define MMASSETS_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
@@ -221,6 +226,32 @@ static bool LoadMmO2r() {
                 }
                 archiveManager->SetArchives(reordered);
                 MMASSETS_LOG("[MM Assets] Loaded mm.o2r at lowest priority (pos 0 of %zu archives)", reordered->size());
+
+                // SetArchives → ResetVirtualFileSystem → archive->Unload() + archive->Load()
+                // on every archive. This invalidates the std::string buffers backing any
+                // captured c_str() pointers (e.g., MessageTableEntry.segment, the global
+                // _message_0xFFFC_nes, etc.). Windows MSVC heap happens to keep that memory
+                // readable so the dangling pointer "works"; Linux glibc reuses pages quickly,
+                // so Font_LoadOrderedFont reads garbage and crashes in FileChoose_Init or
+                // renders garbled glyphs on the title screen.
+                //
+                // Targeted refresh: re-resolve _message_0xFFFC_nes against the (now stable)
+                // post-reorder archive layout. This is the only global captured at start-up
+                // that we know hard-crashes when stale; the per-message MessageTableEntry
+                // .segment fields are re-captured every frame by the message system as it
+                // looks up text by ID, so they self-heal on next access.
+                _message_0xFFFC_nes = nullptr;
+                auto resMgr = OTRGlobals::Instance->context->GetResourceManager();
+                auto nesText = std::static_pointer_cast<SOH::Text>(
+                    resMgr->LoadResource("text/nes_message_data_static/nes_message_data_static"));
+                if (nesText) {
+                    for (auto& msg : nesText->messages) {
+                        if (msg.id == 0xFFFC) {
+                            _message_0xFFFC_nes = (char*)msg.msg.c_str();
+                            break;
+                        }
+                    }
+                }
             } else {
                 MMASSETS_LOG("[MM Assets] Loaded mm.o2r (single archive, ptr=%p)", (void*)archive.get());
             }

@@ -929,21 +929,54 @@ void OTRGlobals::Initialize() {
 
         // Any other recognized OOT hash means the user gave us an OOT o2r that is
         // not the required version (PAL, MQ, debug, JP, GC, 1.1, 1.2, iQue, ...).
+        // Show a warning but keep running — many things will still work, the user is
+        // just on their own if something specific to OOT 1.0 USA breaks. The dialog
+        // offers a "Don't show again" option that persists via a CVar; the in-session
+        // static flag prevents showing the dialog more than once if multiple
+        // unsupported archives are loaded.
         if (ValidHashes.contains(version)) {
-#if defined(__SWITCH__)
-            SPDLOG_ERROR("Incompatible OOT o2r — required: OOT 1.0 USA (NTSC)");
-#elif defined(__WIIU__)
-            Ship::WiiU::ThrowInvalidOTR();
+            static bool sIncompatibleOotWarned = false;
+            bool suppressed = CVarGetInteger(CVAR_GENERAL("SuppressOotVersionWarning"), 0) != 0;
+            SPDLOG_WARN("Incompatible OOT o2r detected (version 0x{:08X}). Recommended: OOT 1.0 USA (NTSC). "
+                        "Continuing anyway — crashes may occur.",
+                        version);
+            if (!sIncompatibleOotWarned && !suppressed) {
+                sIncompatibleOotWarned = true;
+#if defined(__SWITCH__) || defined(__WIIU__)
+                // No SDL dialog on these platforms; the SPDLOG_WARN above is the only feedback.
 #else
-            SDL_ShowSimpleMessageBox(
-                SDL_MESSAGEBOX_ERROR, "Incompatible oot.o2r",
-                "Your oot.o2r file is not compatible.\n"
-                "Required: OOT 1.0 USA (NTSC).\n\n"
-                "Please re-extract using the official extractor with an OOT 1.0 USA (NTSC) ROM.",
-                nullptr);
-            SPDLOG_ERROR("Incompatible OOT o2r — required: OOT 1.0 USA (NTSC)");
+                SDL_MessageBoxButtonData buttons[2] = {};
+                buttons[0].buttonid = 0;
+                buttons[0].text = "OK";
+                buttons[0].flags =
+                    SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT;
+                buttons[1].buttonid = 1;
+                buttons[1].text = "Don't show again";
+
+                SDL_MessageBoxData boxData = {};
+                boxData.flags = SDL_MESSAGEBOX_WARNING;
+                boxData.title = "OOT o2r version mismatch";
+                boxData.message =
+                    "Your oot.o2r is not OOT 1.0 USA (NTSC) — the recommended version.\n\n"
+                    "The game will continue, but if you experience crashes or graphical/text "
+                    "glitches later, this is likely the cause. Re-extract using the official "
+                    "extractor with an OOT 1.0 USA (NTSC) ROM for full compatibility.\n\n"
+                    "Choose \"Don't show again\" to silence this warning permanently for this install.";
+                boxData.numbuttons = 2;
+                boxData.buttons = buttons;
+                boxData.window = nullptr;
+
+                int buttonId = -1;
+                if (SDL_ShowMessageBox(&boxData, &buttonId) == 0 && buttonId == 1) {
+                    CVarSetInteger(CVAR_GENERAL("SuppressOotVersionWarning"), 1);
+                    CVarSave();
+                }
 #endif
-            exit(1);
+            }
+            // Treat as "has OOT data" so downstream init doesn't fall through to the
+            // generic "no OOT" error path. The user accepted the risk by dismissing the warning.
+            hasOriginal = true;
+            continue;
         }
 
         // Unknown / corrupted file → keep the legacy generic Invalid OTR path.

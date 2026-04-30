@@ -411,6 +411,21 @@ static void MagicCape_Draw(Player* player, PlayState* play) {
 
     gSPDisplayList(POLY_OPA_DISP++, gMantDL);
 
+    // Restore segment 0x0C to gCullBackDList after the cape DL finishes.
+    // SOH's player draw pipeline binds segment 0x0C to gCullBackDList (the backface-cull
+    // dlist that the skeleton DL chain jumps to when an LOD/cull threshold is hit —
+    // see pak_loader.cpp:3000 and z_player_lib.c). ExtEquip_DrawDispatch runs inside
+    // Player_Draw, so anything drawn after this (Four Sword clones via SkelAnime_DrawFlexOpa,
+    // IK Axe reticle, etc.) reuses that segment binding.
+    //
+    // If we leave 0x0C pointed at the cape vertex buffer (gMant1Vtx/gMant2Vtx — 192 bytes
+    // per strand), a clone limb's gSPDisplayList(0x0C000000) cull-jump executes vertex
+    // data as opcodes (the "0x62 0x70 0x55 0x50 ..." ASCII-looking pattern in the log,
+    // which is s16 world-space coords from MagicCape_UpdateVertices reinterpreted as
+    // RSP commands). Setting it to NULL/0 doesn't help — the cull-jump still dereferences
+    // a bad address. Restoring to gCullBackDList is what the player skeleton expects.
+    gSPSegment(POLY_OPA_DISP++, 0x0C, (uintptr_t)gCullBackDList);
+
     CLOSE_DISPS(play->state.gfxCtx);
 }
 

@@ -1582,14 +1582,13 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
                 if ((this->sheathType == PLAYER_MODELTYPE_SHEATH_18) ||
                     (this->sheathType == PLAYER_MODELTYPE_SHEATH_19)) {
                     if (ExtEquip_GetShieldDLOverride() != NULL) {
-                        // Shield of Ikana: hide OOT shield on back, custom drawn in PostLimbDraw
-                        dLists = &sSheathDLs[0]; // No shield on back (just sheath)
+                        dLists = &sSheathDLs[gSaveContext.linkAge];
                     } else {
                         dLists += this->currentShield * 4;
-                    }
-                    if (!LINK_IS_ADULT && (this->currentShield < PLAYER_SHIELD_HYLIAN) &&
-                        (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
-                        dLists += PLAYER_SHIELD_MAX * 4;
+                        if (!LINK_IS_ADULT && (this->currentShield < PLAYER_SHIELD_HYLIAN) &&
+                            (gSaveContext.equips.buttonItems[0] != ITEM_SWORD_KOKIRI)) {
+                            dLists += PLAYER_SHIELD_MAX * 4;
+                        }
                     }
                 } else if (!CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) ||
                            (CVarGetInteger(CVAR_ENHANCEMENT("EquipmentAlwaysVisible"), 0) &&
