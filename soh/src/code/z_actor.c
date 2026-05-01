@@ -2713,8 +2713,10 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
             } else {
                 Math_Vec3f_Copy(&actor->prevPos, &actor->world.pos);
 
-                // Stone Mask: enemies and NPCs can't detect Link
-                if (MmMaskWear_IsStoneMaskActive() && (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC)) {
+                // Stone Mask: enemies and NPCs can't detect Link. Also covers hostile MISC
+                // actors like Leever (ACTORCAT_MISC) that would otherwise bypass the gate.
+                if (MmMaskWear_IsStoneMaskActive() &&
+                    (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC || (actor->flags & ACTOR_FLAG_HOSTILE))) {
                     actor->xzDistToPlayer = 32000.0f;
                     actor->yDistToPlayer = 32000.0f;
                     actor->xyzDistToPlayerSq = SQ(32000.0f) + SQ(32000.0f);

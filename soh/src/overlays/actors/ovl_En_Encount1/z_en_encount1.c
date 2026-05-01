@@ -2,6 +2,7 @@
 #include "vt.h"
 #include "overlays/actors/ovl_En_Tite/z_en_tite.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/mm_mask_wear.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_LOCK_ON_DISABLED)
 
@@ -103,6 +104,10 @@ void EnEncount1_SpawnLeevers(EnEncount1* this, PlayState* play) {
     s32 bgId;
     f32 floorY;
     EnReeba* leever;
+
+    if (MmMaskWear_IsStoneMaskActive()) {
+        return;
+    }
 
     this->outOfRangeTimer = 0;
     spawnPos = this->actor.world.pos;

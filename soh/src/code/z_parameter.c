@@ -1350,6 +1350,23 @@ void func_80083108(PlayState* play) {
         }
     }
 
+    // Masks usable everywhere; only Zora mask underwater. Runtime use-gating lives in TransformMasks_Update.
+    {
+        s32 isInWater = (player != NULL) && (player->stateFlags1 & PLAYER_STATE1_IN_WATER);
+        for (i = 1; i < ARRAY_COUNT(gSaveContext.equips.buttonItems); i++) {
+            s32 btnItem = gSaveContext.equips.buttonItems[i];
+            s32 isMask = ((btnItem >= ITEM_MASK_KEATON) && (btnItem <= ITEM_MASK_TRUTH)) ||
+                         ((btnItem >= ITEM_MM_MASK_POSTMAN) && (btnItem <= ITEM_MM_MASK_FIERCE_DEITY)) ||
+                         (btnItem == ITEM_POKEBALL);
+            s32 isZoraMask = (btnItem == ITEM_MASK_ZORA) || (btnItem == ITEM_MM_MASK_ZORA);
+            if (isMask && (!isInWater || isZoraMask) &&
+                gSaveContext.buttonStatus[BUTTON_STATUS_INDEX(i)] == BTN_DISABLED) {
+                gSaveContext.buttonStatus[BUTTON_STATUS_INDEX(i)] = BTN_ENABLED;
+                sp28 = 1;
+            }
+        }
+    }
+
     if (sp28) {
         gSaveContext.unk_13EA = 0;
         if ((play->transitionTrigger == TRANS_TRIGGER_OFF) && (play->transitionMode == TRANS_MODE_OFF)) {

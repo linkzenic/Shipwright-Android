@@ -2617,25 +2617,26 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
     if (this->currentMask != PLAYER_MASK_NONE && !CVarGetInteger(CVAR_ENHANCEMENT("PersistentMasks"), 0)) {
         maskItemAction = this->currentMask - 1 + PLAYER_IA_MASK_KEATON;
 
-        bool hasOnDpad = false;
-        if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
+        // Read raw equip slots, not C_BTN_ITEM/DPAD_ITEM — those return ITEM_NONE on BTN_DISABLED
+        // and would strip the mask the moment Link enters a scene that disables the button.
+        bool maskOnButton = Player_ItemIsItemAction(gSaveContext.equips.buttonItems[1], maskItemAction) ||
+                            Player_ItemIsItemAction(gSaveContext.equips.buttonItems[2], maskItemAction) ||
+                            Player_ItemIsItemAction(gSaveContext.equips.buttonItems[3], maskItemAction);
+        if (!maskOnButton && CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
             for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
-                hasOnDpad |= Player_ItemIsItemAction(DPAD_ITEM(buttonIndex), maskItemAction);
+                maskOnButton |=
+                    Player_ItemIsItemAction(gSaveContext.equips.buttonItems[5 + buttonIndex], maskItemAction);
             }
         }
-        bool maskOnButton = Player_ItemIsItemAction(C_BTN_ITEM(0), maskItemAction) ||
-                            Player_ItemIsItemAction(C_BTN_ITEM(1), maskItemAction) ||
-                            Player_ItemIsItemAction(C_BTN_ITEM(2), maskItemAction) || hasOnDpad;
 
-        // MM Bunny Hood uses a different IA (PLAYER_IA_MM_MASK_BUNNY) than OOT Bunny Hood
-        // (PLAYER_IA_MASK_BUNNY_HOOD). Check both so the mask isn't auto-removed.
         if (!maskOnButton && this->currentMask == PLAYER_MASK_BUNNY) {
-            maskOnButton = Player_ItemIsItemAction(C_BTN_ITEM(0), PLAYER_IA_MM_MASK_BUNNY) ||
-                           Player_ItemIsItemAction(C_BTN_ITEM(1), PLAYER_IA_MM_MASK_BUNNY) ||
-                           Player_ItemIsItemAction(C_BTN_ITEM(2), PLAYER_IA_MM_MASK_BUNNY);
+            maskOnButton = Player_ItemIsItemAction(gSaveContext.equips.buttonItems[1], PLAYER_IA_MM_MASK_BUNNY) ||
+                           Player_ItemIsItemAction(gSaveContext.equips.buttonItems[2], PLAYER_IA_MM_MASK_BUNNY) ||
+                           Player_ItemIsItemAction(gSaveContext.equips.buttonItems[3], PLAYER_IA_MM_MASK_BUNNY);
             if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
                 for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
-                    maskOnButton |= Player_ItemIsItemAction(DPAD_ITEM(buttonIndex), PLAYER_IA_MM_MASK_BUNNY);
+                    maskOnButton |= Player_ItemIsItemAction(gSaveContext.equips.buttonItems[5 + buttonIndex],
+                                                            PLAYER_IA_MM_MASK_BUNNY);
                 }
             }
         }

@@ -914,6 +914,12 @@ void OTRGlobals::Initialize() {
 
     auto versions = context->GetResourceManager()->GetArchiveManager()->GetGameVersions();
 
+    // MQ-flavored OOT versions. Used so the MQ Dungeon randomizer options enable
+    // when both an MQ archive and a non-MQ archive are loaded.
+    auto isMqVersion = [](uint32_t v) {
+        return v == OOT_NTSC_JP_MQ || v == OOT_NTSC_US_MQ || v == OOT_PAL_MQ || v == OOT_PAL_GC_MQ_DBG;
+    };
+
     for (uint32_t version : versions) {
         // MM hashes are validated separately in mm_asset_loader.cpp. Skip them here
         // so an mm.o2r added before this loop runs is not treated as an invalid OOT.
@@ -924,6 +930,13 @@ void OTRGlobals::Initialize() {
 
         if (version == OOT_NTSC_US_10) {
             hasOriginal = true;
+            continue;
+        }
+
+        // OOT_NTSC_US_MQ is the recommended MQ counterpart of NTSC US 1.0 — fully
+        // compatible, no warning needed.
+        if (version == OOT_NTSC_US_MQ) {
+            hasMasterQuest = true;
             continue;
         }
 
@@ -975,7 +988,14 @@ void OTRGlobals::Initialize() {
             }
             // Treat as "has OOT data" so downstream init doesn't fall through to the
             // generic "no OOT" error path. The user accepted the risk by dismissing the warning.
-            hasOriginal = true;
+            // Also set the MQ/Original flags correctly so the randomizer's MQ Dungeon
+            // options enable when both flavors are present (e.g., OOT_PAL_GC_DBG1 +
+            // OOT_PAL_GC_MQ_DBG, or OOT_NTSC_US_10 + OOT_NTSC_US_MQ).
+            if (isMqVersion(version)) {
+                hasMasterQuest = true;
+            } else {
+                hasOriginal = true;
+            }
             continue;
         }
 
