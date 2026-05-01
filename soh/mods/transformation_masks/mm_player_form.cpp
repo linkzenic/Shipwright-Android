@@ -12259,13 +12259,17 @@ u8 MmForm_IsItemAllowed(s32 item) {
         return (gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY) ? 1 : 0;
     }
 
-    // OOT masks (Keaton..Truth) always blocked when transformed.
-    // They share SLOT_TRADE_CHILD so slot-based check alone would incorrectly allow them.
-    // EXCEPTION: Keaton mask is allowed as it triggers the Pikachu de-transform.
+    // All masks (OOT and MM) are usable in any form. The water-only Zora restriction
+    // is enforced separately in TransformMasks_Update; form has no say over masks.
+    // OOT masks share SLOT_TRADE_CHILD so we must short-circuit the slot lookup here.
     if (item >= ITEM_MASK_KEATON && item <= ITEM_MASK_TRUTH) {
-        if (item == ITEM_MASK_KEATON && PikachuForm_IsEnabled())
-            return 1; // Allow to de-transform from Pikachu
-        return 0;
+        return 1;
+    }
+    if (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY) {
+        return 1;
+    }
+    if (item == ITEM_POKEBALL) {
+        return 1;
     }
 
     // Look up slot for this item and check the slot-based array

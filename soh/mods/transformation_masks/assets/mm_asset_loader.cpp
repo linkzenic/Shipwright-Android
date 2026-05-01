@@ -30,10 +30,19 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/resource/type/Text.h"
 #include "functions.h" // For Audio_SetFontInstrument, AudioLoad_IsFontLoadComplete
+#include "message_data_static.h" // MessageTableEntry struct
 
-// Globals owned by SoH that we need to refresh after the SetArchives reorder below
-// invalidates their backing buffers. See the comment in LoadMmO2r() for details.
+// SoH globals that hold pointers into Text-resource std::string buffers. After
+// SetArchives → ResetVirtualFileSystem unloads+reloads every archive, those
+// buffers are reallocated and these pointers dangle. We null them so the
+// OTRMessage_Init re-run below repopulates them against the fresh resources.
 extern "C" char* _message_0xFFFC_nes;
+extern "C" MessageTableEntry* sNesMessageEntryTablePtr;
+extern "C" MessageTableEntry* sGerMessageEntryTablePtr;
+extern "C" MessageTableEntry* sFraMessageEntryTablePtr;
+extern "C" MessageTableEntry* sJpnMessageEntryTablePtr;
+extern "C" MessageTableEntry* sStaffMessageEntryTablePtr;
+extern "C" void OTRMessage_Init();
 
 // Logging macros (same pattern as mm_anim_loader.c)
 #define MMASSETS_LOG(fmt, ...) lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
@@ -227,31 +236,27 @@ static bool LoadMmO2r() {
                 archiveManager->SetArchives(reordered);
                 MMASSETS_LOG("[MM Assets] Loaded mm.o2r at lowest priority (pos 0 of %zu archives)", reordered->size());
 
-                // SetArchives → ResetVirtualFileSystem → archive->Unload() + archive->Load()
-                // on every archive. This invalidates the std::string buffers backing any
-                // captured c_str() pointers (e.g., MessageTableEntry.segment, the global
-                // _message_0xFFFC_nes, etc.). Windows MSVC heap happens to keep that memory
-                // readable so the dangling pointer "works"; Linux glibc reuses pages quickly,
-                // so Font_LoadOrderedFont reads garbage and crashes in FileChoose_Init or
-                // renders garbled glyphs on the title screen.
-                //
-                // Targeted refresh: re-resolve _message_0xFFFC_nes against the (now stable)
-                // post-reorder archive layout. This is the only global captured at start-up
-                // that we know hard-crashes when stale; the per-message MessageTableEntry
-                // .segment fields are re-captured every frame by the message system as it
-                // looks up text by ID, so they self-heal on next access.
-                _message_0xFFFC_nes = nullptr;
+                // SetArchives → ResetVirtualFileSystem unloads+reloads every archive,
+                // invalidating std::string buffers behind every captured c_str()
+                // (Font_LoadOrderedFont's _message_0xFFFC_nes, every MessageTableEntry.segment).
+                // Refresh ONLY the message tables — wider unloads (UnloadResources("*"))
+                // evict scene/collision data that's mid-load and crash WaterBox_GetSurfaceImpl
+                // during Player_Init.
                 auto resMgr = OTRGlobals::Instance->context->GetResourceManager();
-                auto nesText = std::static_pointer_cast<SOH::Text>(
-                    resMgr->LoadResource("text/nes_message_data_static/nes_message_data_static"));
-                if (nesText) {
-                    for (auto& msg : nesText->messages) {
-                        if (msg.id == 0xFFFC) {
-                            _message_0xFFFC_nes = (char*)msg.msg.c_str();
-                            break;
-                        }
-                    }
-                }
+                _message_0xFFFC_nes = nullptr;
+                sNesMessageEntryTablePtr = nullptr;
+                sGerMessageEntryTablePtr = nullptr;
+                sFraMessageEntryTablePtr = nullptr;
+                sJpnMessageEntryTablePtr = nullptr;
+                sStaffMessageEntryTablePtr = nullptr;
+                resMgr->UnloadResource("text/nes_message_data_static/nes_message_data_static");
+                resMgr->UnloadResource("text/ger_message_data_static/ger_message_data_static");
+                resMgr->UnloadResource("text/fra_message_data_static/fra_message_data_static");
+                resMgr->UnloadResource("text/jpn_message_data_static/jpn_message_data_static");
+                resMgr->UnloadResource("text/staff_message_data_static/staff_message_data_static");
+                OTRMessage_Init();
+                MMASSETS_LOG("[MM Assets] Refreshed message tables after archive reorder (0xFFFC=%p)",
+                             (void*)_message_0xFFFC_nes);
             } else {
                 MMASSETS_LOG("[MM Assets] Loaded mm.o2r (single archive, ptr=%p)", (void*)archive.get());
             }

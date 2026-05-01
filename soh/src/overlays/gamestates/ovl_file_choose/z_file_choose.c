@@ -1060,7 +1060,7 @@ void FileChoose_ConfigModeUpdate(GameState* thisx) {
     if (previousLanguage != gSaveContext.language) {
         if (ResourceMgr_GetGameRegion(0) == GAME_REGION_PAL && gSaveContext.language != LANGUAGE_JPN) {
             Font_LoadOrderedFont(&this->font);
-        } else { // GAME_REGION_NTSC
+        } else {
             Font_LoadOrderedFontNTSC(&this->font);
         }
         previousLanguage = gSaveContext.language;
@@ -3130,9 +3130,13 @@ void FileChoose_Init(GameState* thisx) {
     this->state.main = FileChoose_Main;
     this->state.destroy = FileChoose_Destroy;
     FileChoose_InitContext(&this->state);
+    // Use IsPalLoaded() instead of GetGameRegion(0): mm.o2r at archive slot 0 can
+    // skew region detection (MM is NTSC), but the actual PAL font data availability
+    // is determined by whether the NES message table has the 0xFFFC entry.
+    // Same pattern as z_en_mag.c (title screen).
     if (ResourceMgr_GetGameRegion(0) == GAME_REGION_PAL && gSaveContext.language != LANGUAGE_JPN) {
         Font_LoadOrderedFont(&this->font);
-    } else { // GAME_REGION_NTSC
+    } else {
         Font_LoadOrderedFontNTSC(&this->font);
     }
     Audio_QueueSeqCmd(0xF << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0xA);

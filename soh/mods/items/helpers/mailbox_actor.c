@@ -18,6 +18,7 @@
 #include "../custom_items.h"
 #include "../logic/item_postman_hat.h"
 #include "overlays/actors/ovl_En_Lightbox/z_en_lightbox.h"
+#include "mods/transformation_masks/assets/mm_asset_loader.h"
 
 extern Gfx* ResourceMgr_LoadGfxByName(const char* path);
 
@@ -113,6 +114,13 @@ static void Mailbox_EnsureAssets(void) {
     if (sMailboxAssetsChecked)
         return;
     sMailboxAssetsChecked = 1;
+    // object_pst lives in mm.o2r — without it, ResourceMgr_LoadGfxByName crashes
+    // dereferencing an empty Instructions vector.
+    if (!MmAssets_IsLoaded()) {
+        sMailboxFrameDL = NULL;
+        sMailboxAssetsAvailable = 0;
+        return;
+    }
     sMailboxFrameDL = ResourceMgr_LoadGfxByName("__OTR__objects/object_pst/gPostboxFrameDL");
     if (sMailboxFrameDL == NULL || ((const char*)sMailboxFrameDL)[0] == '_') {
         sMailboxFrameDL = NULL;

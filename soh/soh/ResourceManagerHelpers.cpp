@@ -21,13 +21,47 @@ extern "C" uint32_t ResourceMgr_GetNumGameVersions() {
     return Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->GetGameVersions().size();
 }
 
+// Helper: returns true if the version is any recognized OOT (NOT mm.o2r / mods).
+static bool IsOotVersion(uint32_t version) {
+    switch (version) {
+        case OOT_NTSC_US_10:
+        case OOT_NTSC_US_11:
+        case OOT_NTSC_US_12:
+        case OOT_NTSC_JP_GC:
+        case OOT_NTSC_JP_GC_CE:
+        case OOT_NTSC_US_GC:
+        case OOT_NTSC_JP_MQ:
+        case OOT_NTSC_US_MQ:
+        case OOT_PAL_10:
+        case OOT_PAL_11:
+        case OOT_PAL_GC:
+        case OOT_PAL_MQ:
+        case OOT_PAL_GC_DBG1:
+        case OOT_PAL_GC_DBG2:
+        case OOT_PAL_GC_MQ_DBG:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Returns the version of the index-th OOT archive, skipping non-OOT (mm.o2r, mods).
 extern "C" uint32_t ResourceMgr_GetGameVersion(int index) {
-    return Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->GetGameVersions()[index];
+    auto versions =
+        Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->GetGameVersions();
+    int ootIndex = 0;
+    for (uint32_t version : versions) {
+        if (IsOotVersion(version)) {
+            if (ootIndex == index)
+                return version;
+            ootIndex++;
+        }
+    }
+    return 0;
 }
 
 extern "C" uint32_t ResourceMgr_GetGamePlatform(int index) {
-    uint32_t version =
-        Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->GetGameVersions()[index];
+    uint32_t version = ResourceMgr_GetGameVersion(index);
 
     switch (version) {
         case OOT_NTSC_US_10:
@@ -48,11 +82,12 @@ extern "C" uint32_t ResourceMgr_GetGamePlatform(int index) {
         case OOT_PAL_GC_MQ_DBG:
             return GAME_PLATFORM_GC;
     }
+    // No OOT found at this index — default to N64 for backwards compat
+    return GAME_PLATFORM_N64;
 }
 
 extern "C" uint32_t ResourceMgr_GetGameRegion(int index) {
-    uint32_t version =
-        Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager()->GetGameVersions()[index];
+    uint32_t version = ResourceMgr_GetGameVersion(index);
 
     switch (version) {
         case OOT_NTSC_US_10:
@@ -73,6 +108,7 @@ extern "C" uint32_t ResourceMgr_GetGameRegion(int index) {
         case OOT_PAL_GC_MQ_DBG:
             return GAME_REGION_PAL;
     }
+    return GAME_REGION_NTSC;
 }
 
 extern "C" char* _message_0xFFFC_nes;

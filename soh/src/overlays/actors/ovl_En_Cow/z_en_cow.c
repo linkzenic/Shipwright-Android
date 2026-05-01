@@ -295,17 +295,22 @@ void func_809DF8FC(EnCow* this, PlayState* play) {
 }
 
 void func_809DF96C(EnCow* this, PlayState* play) {
-    // Romani mask: cow responds to direct talk without Epona's Song
+    // Romani Mask: cow responds to direct talk (press A) using the same flow
+    // as Epona's Song. Cow sanity is gated at the offer step, so if the rando
+    // intercepts no textbox opens and the shuffled item is delivered via the
+    // RandomizerInf queue path — identical to the ocarina-mode path below.
     if (MmMaskWear_GetCurrent() == ITEM_MM_MASK_ROMANI) {
         if (Actor_ProcessTalkRequest(&this->actor, play)) {
-            // Respect cow sanity: let randomizer intercept if shuffling cows
+            this->actionFunc = func_809DF870;
+        } else if ((this->actor.xzDistToPlayer < 150.0f) &&
+                   (ABS((s16)(this->actor.yawTowardsPlayer - this->actor.shape.rot.y)) < 0x61A8)) {
             if (GameInteractor_Should(VB_GIVE_ITEM_FROM_COW, true, this)) {
-                this->actionFunc = func_809DF870;
+                func_8002F2CC(&this->actor, play, 170.0f);
+                this->actor.textId = 0x2006;
             }
-            return;
         }
-        func_8002F2CC(&this->actor, play, 170.0f);
-        this->actor.textId = 0x2006;
+        func_809DF494(this, play);
+        return;
     }
 
     if ((play->msgCtx.ocarinaMode == OCARINA_MODE_00) || (play->msgCtx.ocarinaMode == OCARINA_MODE_04)) {

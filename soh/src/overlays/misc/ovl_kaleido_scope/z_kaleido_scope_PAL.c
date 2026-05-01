@@ -2822,16 +2822,10 @@ void KaleidoScope_InitVertices(PlayState* play, GraphicsContext* gfxCtx) {
     }
 
     for (phi_t3 = 1; phi_t3 < ARRAY_COUNT(gSaveContext.equips.buttonItems); phi_t3++, phi_t2 += 4) {
-        if (gSaveContext.equips.cButtonSlots[phi_t3 - 1] != ITEM_NONE &&
-            ((phi_t3 < 4) || CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0))) {
-            // Get the equipped slot and check if it's on the current page using modular system
-            u8 equippedSlot = gSaveContext.equips.cButtonSlots[phi_t3 - 1];
-
-            // Only draw the box if the equipped item is visible on the current page
-            if (!ExtInv_IsSlotOnCurrentPage(equippedSlot)) {
-                continue;
-            }
-
+        u8 equippedSlot = gSaveContext.equips.cButtonSlots[phi_t3 - 1];
+        if (equippedSlot != ITEM_NONE &&
+            ((phi_t3 < 4) || CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0)) &&
+            ExtInv_IsSlotOnCurrentPage(equippedSlot)) {
             // Calculate screen position (visual slot 0-23)
             u8 currentPageStart = ExtInv_GetCurrentPage() * 24;
             phi_t4 = (equippedSlot - currentPageStart) * 4;
