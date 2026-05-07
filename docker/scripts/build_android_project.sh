@@ -35,7 +35,7 @@ docker run --network="host" --rm \
     -v "$PROJECT_PATH":/workspace \
     -w /workspace \
     $IMAGE_NAME \
-    bash -c "cp -a local.properties Android/ && cd Android && ./gradlew ${GRADLEW_BUILD_TYPE}"
+    bash -c "cp -a local.properties Android/ && cd Android && ./gradlew --no-daemon ${GRADLEW_BUILD_TYPE}"
 
 BUILD_RESULT=$?
 
