@@ -199,7 +199,9 @@ void BgIceShelter_Init(Actor* thisx, PlayState* play) {
 
     this->dyna.actor.colChkInfo.mass = MASS_IMMOVABLE;
 
-    if (!((this->dyna.actor.params >> 6) & 1) && (Flags_GetSwitch(play, this->dyna.actor.params & 0x3F))) {
+    if (GameInteractor_Should(
+            VB_RED_ICE_MELTED_FLAG,
+            !((this->dyna.actor.params >> 6) & 1) && (Flags_GetSwitch(play, this->dyna.actor.params & 0x3F)), this)) {
         Actor_Kill(&this->dyna.actor);
         return;
     }
@@ -489,7 +491,7 @@ void func_808911D4(BgIceShelter* this, PlayState* play) {
 
     sEffSpawnFuncs[type](this, play, phi_f0, D_808917D0[type]);
 
-    if (this->alpha <= 0) {
+    if (GameInteractor_Should(VB_RED_ICE_DROP_ITEM, this->alpha <= 0, this)) {
         if (!((this->dyna.actor.params >> 6) & 1)) {
             Flags_SetSwitch(play, this->dyna.actor.params & 0x3F);
         }

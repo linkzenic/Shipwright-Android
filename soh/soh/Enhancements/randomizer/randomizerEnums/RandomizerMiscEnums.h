@@ -116,6 +116,8 @@ RANDO_ENUM_ITEM(RCTYPE_POT)                        // Pots
 RANDO_ENUM_ITEM(RCTYPE_CRATE)                      // Crates
 RANDO_ENUM_ITEM(RCTYPE_NLCRATE)                    // NL Crates
 RANDO_ENUM_ITEM(RCTYPE_SMALL_CRATE)                // Small crates
+RANDO_ENUM_ITEM(RCTYPE_ROCK)                       // Rocks
+RANDO_ENUM_ITEM(RCTYPE_BOULDER)                    // Boulders
 RANDO_ENUM_ITEM(RCTYPE_TREE)                       // Trees
 RANDO_ENUM_ITEM(RCTYPE_NLTREE)                     // NL Trees
 RANDO_ENUM_ITEM(RCTYPE_BUSH)                       // Bushes
@@ -133,6 +135,8 @@ RANDO_ENUM_ITEM(RCTYPE_BUTTERFLY_FAIRY)            // Fairies from Butterflies
 RANDO_ENUM_ITEM(RCTYPE_GRASS)                      // Grass
 RANDO_ENUM_ITEM(RCTYPE_SIGN)                       // Signs
 RANDO_ENUM_ITEM(RCTYPE_BEGGAR)                     // Beggar
+RANDO_ENUM_ITEM(RCTYPE_ICICLE)                     // Icicles
+RANDO_ENUM_ITEM(RCTYPE_RED_ICE)                    // Red Ice
 RANDO_ENUM_END(RandomizerCheckType)
 
 RANDO_ENUM_BEGIN(RandomizerCheckQuest)
