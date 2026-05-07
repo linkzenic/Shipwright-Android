@@ -74,6 +74,7 @@
 #include "soh/Network/Sail/Sail.h"
 #include "soh/Network/Anchor/Anchor.h"
 #include "soh/Network/Harpoon/Harpoon.h"
+#include "soh/Network/Harpoon/HarpoonSkinSync.h"
 #include "Enhancements/mods.h"
 #include "Enhancements/game-interactor/GameInteractor.h"
 #include "Enhancements/randomizer/draw.h"
@@ -1612,6 +1613,9 @@ extern "C" void InitOTR(int argc, char* argv[]) {
     Sail::Instance = new Sail();
     Anchor::Instance = new Anchor();
     Harpoon::Instance = new Harpoon();
+    // HarpoonSkinSync's heavy override + vanilla cache load is deferred to
+    // Harpoon::OnConnected() so it only runs when the user actually joins a
+    // session — keeps app startup fast for single-player runs.
 
     OTRMessage_Init();
     OTRAudio_Init();

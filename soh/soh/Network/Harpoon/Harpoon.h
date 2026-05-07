@@ -77,6 +77,24 @@ typedef struct {
     s8 itemAction;
     s8 heldItemAction;
     u8 modelGroup;
+    // Hand / sheath types — drive engine's hand DL selection (open / closed
+    // / holding sword / bow / etc.). Synced explicitly from remote so the
+    // dummy's hands match what the remote is actually doing.
+    s8 leftHandType;
+    s8 rightHandType;
+    s8 sheathType;
+    // Per-frame visual state used by Player_OverrideLimbDrawGameplayCommon
+    // to pick the right hand/item DLs at draw time. Without these synced
+    // the dummy's hands stay in their default pose even when the remote is
+    // running, drawing a bow, holding an item, or in first-person.
+    f32 speedXZ;            // controls open→closed hand transition when running
+    s8  meleeWeaponState;   // sword swing state — drives weapon trail effect
+    u8  fpModeFlag;         // unk_6AD — first-person flag, hides limbs when set
+    f32 bowStringDraw;      // unk_858 — bow string stretch (0–1)
+    s16 bowArrowState;      // unk_860 — arrow nocking state
+    s16 bowDrawAnimFrame;   // unk_834 — bow draw animation frame
+    Vec3s headLimbRot;      // head rotation
+    s16 upperLimbYawSecondary; // secondary upper-body yaw
     s8 invincibilityTimer;
     f32 unk_85C;
     s16 unk_862;
@@ -216,6 +234,13 @@ typedef struct {
     // List of .o2r mods the remote has enabled in their mods/ root (handshake-only).
     // Used for divergence warnings, not for render. Empty for legacy clients.
     std::vector<std::string> enabledO2rMods;
+
+    // List of mod names the remote has installed in their `harpoon_skin_sync/`
+    // folder (the catalog they can render OTHER players with). Used to
+    // suppress the "you have mod X that they don't" notification when our
+    // local mod is in the remote's sync registry — they'll render us
+    // correctly even though they don't have it mounted globally.
+    std::vector<std::string> harpoonSyncMods;
 
     // Ptr to the dummy player actor
     Player* player;

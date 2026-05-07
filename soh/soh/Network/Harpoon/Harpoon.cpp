@@ -56,6 +56,9 @@ void Harpoon::Disable() {
 }
 
 void Harpoon::OnConnected() {
+    // Lazy-init the skin sync registry the first time we connect. The call
+    // is idempotent — subsequent reconnects skip the heavy load.
+    HarpoonSkinSync::InitO2rOverrides();
     SendPacket_Handshake();
     HarpoonSkinSync::Reset();
     RegisterHooks();
@@ -309,10 +312,27 @@ void Harpoon::SendPacket_O2rModList() {
     nlohmann::json payload;
     payload["type"] = HPN_O2R_MOD_LIST;
     nlohmann::json mods = nlohmann::json::array();
+    std::string modsStr;
     for (const auto& m : ModMenu_GetEnabledMods()) {
         mods.push_back(m);
+        if (!modsStr.empty()) modsStr += ", ";
+        modsStr += m;
     }
     payload["mods"] = mods;
+    // Also broadcast our harpoon_skin_sync registry — names of mods we
+    // have available to render OTHER players. Lets remotes suppress the
+    // "you have mod X they don't" notification when X is in this list
+    // (we can render them correctly via our override path).
+    nlohmann::json syncMods = nlohmann::json::array();
+    std::string syncStr;
+    for (const auto& m : HarpoonSkinSync::GetOverrideNames()) {
+        syncMods.push_back(m);
+        if (!syncStr.empty()) syncStr += ", ";
+        syncStr += m;
+    }
+    payload["syncMods"] = syncMods;
+    SPDLOG_INFO("[Harpoon] SendPacket_O2rModList: {} mods=[{}] sync=[{}]",
+                (int)mods.size(), modsStr, syncStr);
     SendJsonToRemote(payload);
 }
 
@@ -386,6 +406,27 @@ void Harpoon::SendPacket_PlayerUpdate() {
     payload["itemAction"] = player->itemAction;
     payload["heldItemAction"] = player->heldItemAction;
     payload["modelGroup"] = player->modelGroup;
+    // Hand types — these drive which hand DL the engine picks (open / closed
+    // / sword / bow / etc.) at draw time. Without syncing them explicitly,
+    // the dummy's hand model can lag behind the remote's actual item state
+    // (e.g. remote draws sword, dummy still shows open fist).
+    payload["leftHandType"] = player->leftHandType;
+    payload["rightHandType"] = player->rightHandType;
+    payload["sheathType"] = player->sheathType;
+    // Per-frame visual state — these change every frame as the player
+    // moves / animates / aims, and the engine reads them to pick the
+    // correct hand/item DL at draw time. See z_player_lib.c:1547+ where
+    // open hand becomes closed when speedXZ > 2.0 (running).
+    payload["speedXZ"] = player->actor.speedXZ;
+    payload["meleeWeaponState"] = player->meleeWeaponState;
+    payload["fpModeFlag"] = player->unk_6AD;
+    payload["bowStringDraw"] = player->unk_858;
+    payload["bowArrowState"] = player->unk_860;
+    payload["bowDrawAnimFrame"] = player->unk_834;
+    payload["headLimbRotX"] = player->headLimbRot.x;
+    payload["headLimbRotY"] = player->headLimbRot.y;
+    payload["headLimbRotZ"] = player->headLimbRot.z;
+    payload["upperLimbYawSecondary"] = player->upperLimbYawSecondary;
     payload["invincibilityTimer"] = player->invincibilityTimer;
     payload["unk_862"] = player->unk_862;
     payload["unk_85C"] = player->unk_85C;
@@ -403,9 +444,23 @@ void Harpoon::SendPacket_PlayerUpdate() {
     // Skin sync — broadcast currently-selected local pak display names.
     // Kept in the per-frame update (not just handshake) so late changes in the
     // local menu propagate without having to reconnect.
-    payload["adultSkin"] = GetLocalSkinName("gMods.PakLoader.AdultModel");
-    payload["childSkin"] = GetLocalSkinName("gMods.PakLoader.ChildModel");
-    payload["equipSkin"] = GetLocalSkinName("gMods.PakLoader.Equipment");
+    std::string adultSkinName = GetLocalSkinName("gMods.PakLoader.AdultModel");
+    std::string childSkinName = GetLocalSkinName("gMods.PakLoader.ChildModel");
+    std::string equipSkinName = GetLocalSkinName("gMods.PakLoader.Equipment");
+    payload["adultSkin"] = adultSkinName;
+    payload["childSkin"] = childSkinName;
+    payload["equipSkin"] = equipSkinName;
+    {
+        // Once-per-(name-fingerprint) diagnostic so we can see exactly what
+        // skin we're broadcasting without spamming each frame.
+        static std::string sLastFingerprint;
+        std::string fp = adultSkinName + "|" + childSkinName + "|" + equipSkinName;
+        if (sLastFingerprint != fp) {
+            SPDLOG_INFO("[Harpoon] Broadcast skin: adult='{}' child='{}' equip='{}'",
+                        adultSkinName, childSkinName, equipSkinName);
+            sLastFingerprint = fp;
+        }
+    }
 
     // OOT visual state
     payload["currentMask"] = player->currentMask;
@@ -590,8 +645,11 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
     if (payload.contains("ownClientId")) {
         ownClientId = payload["ownClientId"].get<uint32_t>();
     }
+    bool roomMembershipChanged = false;
     if (payload.contains("clients")) {
+        size_t prevOnlineCount = 0;
         for (auto& [id, client] : clients) {
+            if (client.online) prevOnlineCount++;
             client.online = false;
         }
 
@@ -611,7 +669,24 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
             client.sceneNum = clientJson.value("sceneNum", (s16)SCENE_ID_MAX);
         }
 
+        size_t newOnlineCount = 0;
+        for (auto& [id, client] : clients) {
+            if (client.online) newOnlineCount++;
+        }
+        roomMembershipChanged = (newOnlineCount != prevOnlineCount);
+
         shouldRefreshActors = true;
+    }
+
+    // Re-broadcast our enabled .o2r mod list whenever the room membership
+    // changes — the list is normally only sent right after joining, but if a
+    // peer joins AFTER us their initial PVP_ALL_CLIENTS won't carry our list
+    // (it was sent before they were a member, so the server's relay dropped it
+    // for them). Triggering a re-send on every membership change ensures every
+    // peer eventually has every other peer's list, which is what the per-actor
+    // override sync needs.
+    if (roomMembershipChanged) {
+        SendPacket_O2rModList();
     }
 }
 
@@ -671,6 +746,19 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
     client.buttonItem0 = payload.value("buttonItem0", (u8)0);
     client.itemAction = payload.value("itemAction", (s8)0);
     client.heldItemAction = payload.value("heldItemAction", (s8)0);
+    client.leftHandType = payload.value("leftHandType", (s8)0);
+    client.rightHandType = payload.value("rightHandType", (s8)0);
+    client.sheathType = payload.value("sheathType", (s8)0);
+    client.speedXZ = payload.value("speedXZ", 0.0f);
+    client.meleeWeaponState = payload.value("meleeWeaponState", (s8)0);
+    client.fpModeFlag = payload.value("fpModeFlag", (u8)0);
+    client.bowStringDraw = payload.value("bowStringDraw", 0.0f);
+    client.bowArrowState = payload.value("bowArrowState", (s16)0);
+    client.bowDrawAnimFrame = payload.value("bowDrawAnimFrame", (s16)0);
+    client.headLimbRot.x = payload.value("headLimbRotX", (s16)0);
+    client.headLimbRot.y = payload.value("headLimbRotY", (s16)0);
+    client.headLimbRot.z = payload.value("headLimbRotZ", (s16)0);
+    client.upperLimbYawSecondary = payload.value("upperLimbYawSecondary", (s16)0);
     client.modelGroup = payload.value("modelGroup", (u8)0);
     client.invincibilityTimer = payload.value("invincibilityTimer", (s8)0);
     client.unk_862 = payload.value("unk_862", (s16)0);
@@ -687,9 +775,17 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
 
     // Skin sync — names of the remote's selected pak slots (resolved at draw time
     // against mods/harpoon_skin_sync/). Absent / empty → fall back to vanilla Link.
-    client.adultSkinName = payload.value("adultSkin", std::string(""));
-    client.childSkinName = payload.value("childSkin", std::string(""));
-    client.equipSkinName = payload.value("equipSkin", std::string(""));
+    std::string newAdultSkin = payload.value("adultSkin", std::string(""));
+    std::string newChildSkin = payload.value("childSkin", std::string(""));
+    std::string newEquipSkin = payload.value("equipSkin", std::string(""));
+    if (newAdultSkin != client.adultSkinName || newChildSkin != client.childSkinName ||
+        newEquipSkin != client.equipSkinName) {
+        SPDLOG_INFO("[Harpoon] Received skin update for '{}' (id={}): adult='{}' child='{}' equip='{}'",
+                    client.name, clientId, newAdultSkin, newChildSkin, newEquipSkin);
+    }
+    client.adultSkinName = newAdultSkin;
+    client.childSkinName = newChildSkin;
+    client.equipSkinName = newEquipSkin;
 
     // OOT visual state
     client.currentMask = payload.value("currentMask", (u8)0);
@@ -1616,18 +1712,44 @@ s32 Harpoon_CheckAndSendDamage(ColliderCylinder* col, s32 damageType, s32 damage
 // MARK: - Skin sync handlers
 
 void Harpoon::HandlePacket_O2rModList(nlohmann::json payload) {
-    if (!payload.contains("clientId")) return;
+    if (!payload.contains("clientId")) {
+        SPDLOG_INFO("[Harpoon] HandlePacket_O2rModList: dropped (no clientId in payload)");
+        return;
+    }
     uint32_t clientId = payload["clientId"].get<uint32_t>();
-    if (!clients.contains(clientId)) return;
+    if (!clients.contains(clientId)) {
+        SPDLOG_INFO("[Harpoon] HandlePacket_O2rModList: dropped (clientId={} not in clients map)", clientId);
+        return;
+    }
     auto& client = clients[clientId];
 
     client.enabledO2rMods.clear();
+    std::string modsStr;
     if (payload.contains("mods") && payload["mods"].is_array()) {
         for (const auto& m : payload["mods"]) {
-            if (m.is_string()) client.enabledO2rMods.push_back(m.get<std::string>());
+            if (m.is_string()) {
+                client.enabledO2rMods.push_back(m.get<std::string>());
+                if (!modsStr.empty()) modsStr += ", ";
+                modsStr += m.get<std::string>();
+            }
         }
     }
 
+    client.harpoonSyncMods.clear();
+    std::string syncStr;
+    if (payload.contains("syncMods") && payload["syncMods"].is_array()) {
+        for (const auto& m : payload["syncMods"]) {
+            if (m.is_string()) {
+                client.harpoonSyncMods.push_back(m.get<std::string>());
+                if (!syncStr.empty()) syncStr += ", ";
+                syncStr += m.get<std::string>();
+            }
+        }
+    }
+    SPDLOG_INFO("[Harpoon] HandlePacket_O2rModList: client='{}' (id={}) {} mods=[{}] sync=[{}]",
+                client.name, clientId, (int)client.enabledO2rMods.size(), modsStr, syncStr);
+
     // Divergence check (dedupe happens inside NotifyO2rDivergence via HarpoonSkinSync's set).
-    HarpoonSkinSync::NotifyO2rDivergence(clientId, client.name, client.enabledO2rMods);
+    HarpoonSkinSync::NotifyO2rDivergence(clientId, client.name, client.enabledO2rMods,
+                                         client.harpoonSyncMods);
 }

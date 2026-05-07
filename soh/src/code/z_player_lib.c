@@ -1510,6 +1510,27 @@ s32 Player_OverrideLimbDrawGameplayCommon(PlayState* play, s32 limbIndex, Gfx** 
     return false;
 }
 
+// Defined in soh/Network/Harpoon/HarpoonSkinSync.cpp. Inline forward decl
+// avoids dragging the C++ header (with its <string>/<vector> stuff) into
+// every TU that includes z_player_lib.c via the unity build. Returns the
+// override-or-patched-vanilla Gfx* for `otrPath` during a Harpoon dummy
+// draw, or NULL otherwise — caller must fall through to its normal
+// ResourceMgr_LoadGfxByName path on NULL.
+extern void* HarpoonSkinSync_ResolvePlayerLimbDL(const char* otrPath);
+
+// Helper for the four hand/sheath/waist branches below: if Harpoon's dummy
+// draw is active and we have the path cached, hand back the override /
+// patched-vanilla Gfx* directly instead of going through the global
+// ArchiveManager (which would return the LOCAL user's modded bytecode and
+// paint it onto the remote dummy).
+static Gfx* Player_ResolveLimbDLForDummyOrLocal(void* dlPathOrPtr) {
+    Gfx* harpoonDL = (Gfx*)HarpoonSkinSync_ResolvePlayerLimbDL((const char*)dlPathOrPtr);
+    if (harpoonDL != NULL) {
+        return harpoonDL;
+    }
+    return ResourceMgr_LoadGfxByName(dlPathOrPtr);
+}
+
 s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
                                            void* thisx) {
     Player* this = (Player*)thisx;
@@ -1557,7 +1578,7 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
                     dLists = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
                     sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
                 }
-                *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
+                *dList = Player_ResolveLimbDLForDummyOrLocal(dLists[sDListsLodOffset]);
             } else if (!pakHandled && limbIndex == PLAYER_LIMB_R_HAND) {
                 Gfx** dLists = this->rightHandDLists;
 
@@ -1575,7 +1596,7 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
                     sRightHandType = PLAYER_MODELTYPE_RH_CLOSED;
                 }
 
-                *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
+                *dList = Player_ResolveLimbDLForDummyOrLocal(dLists[sDListsLodOffset]);
             } else if (!pakHandled && limbIndex == PLAYER_LIMB_SHEATH) {
                 Gfx** dLists = this->sheathDLists;
 
@@ -1604,7 +1625,7 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
                 }
 
                 if (dLists[sDListsLodOffset] != NULL) {
-                    *dList = ResourceMgr_LoadGfxByName(dLists[sDListsLodOffset]);
+                    *dList = Player_ResolveLimbDLForDummyOrLocal(dLists[sDListsLodOffset]);
                 } else {
                     *dList = NULL;
                 }
@@ -1612,7 +1633,7 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
             } else if (!pakHandled && limbIndex == PLAYER_LIMB_WAIST) {
 
                 if (!Player_IsCustomLinkModel()) {
-                    *dList = ResourceMgr_LoadGfxByName(
+                    *dList = Player_ResolveLimbDLForDummyOrLocal(
                         this->waistDLists[sDListsLodOffset]); // NOTE: This needs to be disabled when using custom
                                                               // characters - they're not going to have LODs anyways...
                 }

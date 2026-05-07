@@ -282,6 +282,14 @@ void CustomItems_Update(Player* p, PlayState* play) {
         Lantern_UpdateLens(play);
     }
 
+    // Bomb-arrows auto-grant: when CVar is on, hand the player ITEM_BOMB_ARROWS
+    // the moment any bomb bag is owned. Idempotent — only writes when needed.
+    if (CVarGetInteger("gMods.BombArrows.AutoGrantOnBag", 0)) {
+        if (CUR_UPG_VALUE(UPG_BOMB_BAG) > 0 && INV_CONTENT(ITEM_BOMB_ARROWS) == ITEM_NONE) {
+            INV_CONTENT(ITEM_BOMB_ARROWS) = ITEM_BOMB_ARROWS;
+        }
+    }
+
     // Postman Hat: unlock-on-visit + Mail Dash state machine always run.
     Handle_PostmanHat(p, play);
 

@@ -83,8 +83,9 @@ void DummyPlayer_Init(Actor* actor, PlayState* play) {
     gSaveContext.linkAge = originalAge;
 
     bool isGlobalRoom = (std::string("soh-global") == CVarGetString(CVAR_REMOTE_ANCHOR("RoomId"), ""));
+    bool hideNameTags = CVarGetInteger(CVAR_REMOTE_ANCHOR("HideNameTags"), 0);
 
-    if (!isGlobalRoom) {
+    if (!isGlobalRoom && !hideNameTags) {
         NameTag_RegisterForActorWithOptions(actor, client.name.c_str(), {});
     }
 }

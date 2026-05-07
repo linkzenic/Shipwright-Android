@@ -869,6 +869,14 @@ void SohMenu::AddMenuSettings() {
                                            "to the randomizer item pool.\n"
                                            "Removes OOT Goron/Zora masks from pool.\n\n"
                                            "REQUIRES: 'Include MM Masks Inventory' enabled"));
+
+    AddWidget(path, "Bomb Arrows: Auto-grant with Bomb Bag", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.BombArrows.AutoGrantOnBag")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Cheat: automatically gives ITEM_BOMB_ARROWS the moment you obtain any bomb bag.\n"
+            "When on, the new bow/slingshot arrow wheel will show a Bomb entry as soon as the\n"
+            "bag is yours. Has no effect on the randomizer item pool."));
 }
 
 } // namespace SohGui

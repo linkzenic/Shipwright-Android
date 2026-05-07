@@ -434,6 +434,7 @@ if(MSVC)
             /sdl-;
             /permissive-;
             /MP;
+            /guard:cf;
             ${DEFAULT_CXX_DEBUG_INFORMATION_FORMAT};
             ${DEFAULT_CXX_EXCEPTION_HANDLING}
         )
@@ -452,6 +453,7 @@ if(MSVC)
             /MP;
             /sdl-;
             /w;
+            /guard:cf;
             ${DEFAULT_CXX_DEBUG_INFORMATION_FORMAT};
             ${DEFAULT_CXX_EXCEPTION_HANDLING}
         )
@@ -469,7 +471,8 @@ if(MSVC)
             >
             /MANIFEST:NO;
             /DEBUG;
-            /SUBSYSTEM:WINDOWS
+            /SUBSYSTEM:WINDOWS;
+            /GUARD:CF
         )
     elseif("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "Win32")
         target_link_options(${PROJECT_NAME} PRIVATE
@@ -484,7 +487,8 @@ if(MSVC)
             >
             /MANIFEST:NO;
             /DEBUG;
-            /SUBSYSTEM:WINDOWS
+            /SUBSYSTEM:WINDOWS;
+            /GUARD:CF
         )
     endif()
 endif()

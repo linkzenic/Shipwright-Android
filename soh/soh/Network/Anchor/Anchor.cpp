@@ -233,6 +233,29 @@ void Anchor::RefreshClientActors() {
     spawningDummyPlayerForClientId = 0;
 }
 
+void Anchor::RefreshClientNameTags() {
+    if (!IsSaveLoaded()) {
+        return;
+    }
+
+    bool isGlobalRoom = (std::string("soh-global") == CVarGetString(CVAR_REMOTE_ANCHOR("RoomId"), ""));
+    bool hideNameTags = CVarGetInteger(CVAR_REMOTE_ANCHOR("HideNameTags"), 0);
+
+    Actor* actor = gPlayState->actorCtx.actorLists[ACTORCAT_NPC].head;
+    while (actor != NULL) {
+        if (actor->id == ACTOR_EN_OE2 && actor->update == DummyPlayer_Update) {
+            NameTag_RemoveAllForActor(actor);
+            if (!isGlobalRoom && !hideNameTags) {
+                uint32_t clientId = GetDummyPlayerClientId(actor);
+                if (clients.contains(clientId)) {
+                    NameTag_RegisterForActorWithOptions(actor, clients[clientId].name.c_str(), {});
+                }
+            }
+        }
+        actor = actor->next;
+    }
+}
+
 bool Anchor::IsSaveLoaded() {
     if (gPlayState == nullptr) {
         return false;

@@ -153,6 +153,7 @@ class Anchor : public Network {
     bool IsSaveLoaded();
     bool CanTeleportTo(uint32_t clientId);
     uint32_t GetDummyPlayerClientId(const Actor* actor);
+    void RefreshClientNameTags();
 
     void SendPacket_ClearTeamState(std::string teamId);
     void SendPacket_DamagePlayer(u32 clientId, u8 damageEffect, u8 damage);

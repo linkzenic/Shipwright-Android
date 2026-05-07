@@ -58,14 +58,6 @@ void ExtEquip_Init(void) {
     // Clear reserved bits 28-31 (may contain garbage from old saves where equipment was u16 + padding)
     gSaveContext.inventory.equipment &= 0x0FFFFFFF;
 
-    // Migrate C-button items from old ext equipment IDs (0xD0-0xDB) to new (0xE0-0xEB)
-    for (int i = 0; i < ARRAY_COUNT(gSaveContext.equips.buttonItems); i++) {
-        u8 btn = gSaveContext.equips.buttonItems[i];
-        if (btn >= 0xD0 && btn <= 0xDB) {
-            gSaveContext.equips.buttonItems[i] = btn + 0x10; // 0xD0→0xE0, etc.
-        }
-    }
-
     // Load equipped state from save data (per-file, persisted only on game save)
     gExtEquipState.currentExtSword = gSaveContext.ship.extEquipSword;
     gExtEquipState.currentExtShield = gSaveContext.ship.extEquipShield;
@@ -314,10 +306,10 @@ void ExtEquip_ToggleFromCButton(u16 itemId) {
         return;
 
     // Map itemId to equipType + index
-    // ITEM_EXT_SWORD_1=0xD0, _2=0xD1, _3=0xD2
-    // ITEM_EXT_SHIELD_1=0xD3, _2=0xD4, _3=0xD5
-    // ITEM_EXT_TUNIC_1=0xD6, _2=0xD7, _3=0xD8
-    // ITEM_EXT_BOOTS_1=0xD9, _2=0xDA, _3=0xDB
+    // ITEM_EXT_SWORD_1=0xE0, _2=0xE1, _3=0xE2
+    // ITEM_EXT_SHIELD_1=0xE3, _2=0xE4, _3=0xE5
+    // ITEM_EXT_TUNIC_1=0xE6, _2=0xE7, _3=0xE8
+    // ITEM_EXT_BOOTS_1=0xE9, _2=0xEA, _3=0xEB
     u16 offset = itemId - ITEM_EXT_SWORD_1; // 0-11
     s16 equipType = offset / 3;             // 0=sword, 1=shield, 2=tunic, 3=boots
     u8 index = (offset % 3) + 1;            // 1-3
@@ -380,10 +372,10 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index) {
 
 u16 ExtEquip_GetItemId(s16 equipType, u8 index) {
     // Map (type, index) to ITEM_EXT_xxx
-    // type 0 (sword): 0xD0 + (index-1)
-    // type 1 (shield): 0xD3 + (index-1)
-    // type 2 (tunic): 0xD6 + (index-1)
-    // type 3 (boots): 0xD9 + (index-1)
+    // type 0 (sword): 0xE0 + (index-1)
+    // type 1 (shield): 0xE3 + (index-1)
+    // type 2 (tunic): 0xE6 + (index-1)
+    // type 3 (boots): 0xE9 + (index-1)
     if (index < 1 || index > 3 || equipType < 0 || equipType >= 4) {
         return 0;
     }

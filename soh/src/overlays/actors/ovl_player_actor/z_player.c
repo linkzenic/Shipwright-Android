@@ -3081,12 +3081,12 @@ s32 func_80834D2C(Player* this, PlayState* play) {
     } else {
         Player_SetUpperActionFunc(this, func_80835884);
         this->unk_834 = 10;
-        {
-            extern LinkAnimationHeader* MmForm_GetZoraBoomerangAnim(s32 phase);
-            LinkAnimationHeader* formAnim = TransformMasks_IsTransformed() ? MmForm_GetZoraBoomerangAnim(0) : NULL;
-            LinkAnimation_PlayOnce(play, &this->upperSkelAnime,
-                                   formAnim ? formAnim : &gPlayerAnim_link_boom_throw_wait2waitR);
-        }
+        // Entry transition: use OOT's short link_boom_throw_wait2waitR (~4 frames) so the
+        // user can release B and trigger the throw with minimal delay. The form's long
+        // cutterwaitanim is the LOOP anim played by func_80835884 once this short entry
+        // completes — it should NOT be used as the entry PlayOnce, otherwise the user has
+        // to wait for the entire ~30 frame loop before throw becomes possible.
+        LinkAnimation_PlayOnce(play, &this->upperSkelAnime, &gPlayerAnim_link_boom_throw_wait2waitR);
     }
 
     if (this->stateFlags1 & PLAYER_STATE1_ON_HORSE) {
@@ -10403,9 +10403,21 @@ void Player_Action_8084411C(Player* this, PlayState* play) {
 
                     // Transformation masks: Goron cannot grab ledges (MM z_player.c:6209)
                     // Other forms (Zora, Deku, FD) CAN grab ledges; Deku limited by unk_14=49
+                    // Zora form: allow ledge grab from water surface despite IN_WATER flag.
+                    // Buoyancy keeps Zora at yDistToWater~44.8 (equilibrium), which is above
+                    // unk_24=36 threshold that would naturally clear IN_WATER. Without this
+                    // bypass, Zora can never grab ledges to climb out of water — vanilla Link
+                    // doesn't have this issue because his swim equilibrium is also 44.8 but he
+                    // exits via shallow-water walk. MM's Zora exits via this jump-grab path.
+                    s32 inWaterBlocksGrab = (this->stateFlags1 & PLAYER_STATE1_IN_WATER) ? 1 : 0;
+                    if (inWaterBlocksGrab && TransformMasks_IsTransformed() &&
+                        MmForm_GetCurrentForm() == 2 /* MM_PLAYER_FORM_ZORA */ &&
+                        this->actor.yDistToWater < 50.0f) {
+                        inWaterBlocksGrab = 0;
+                    }
                     if (!GameInteractor_GetDisableLedgeGrabsActive() && !TransformMasks_BlocksLedgeGrab() &&
                         (this->actor.bgCheckFlags & 0x200) && !(this->stateFlags2 & PLAYER_STATE2_HOPPING) &&
-                        !(this->stateFlags1 & (PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_IN_WATER)) &&
+                        !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && !inWaterBlocksGrab &&
                         (this->linearVelocity > 0.0f)) {
                         if ((this->yDistToLedge >= 150.0f) &&
                             (this->controlStickDirections[this->controlStickDataIndex] == 0)) {

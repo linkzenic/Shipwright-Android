@@ -3,6 +3,10 @@
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
 
+#include <map>
+#include <string>
+#include <spdlog/spdlog.h>
+
 extern "C" {
 #include "macros.h"
 #include "variables.h"
@@ -21,6 +25,10 @@ extern PlayState* gPlayState;
 
 void Player_UseItem(PlayState* play, Player* player, s32 item);
 void Player_Draw(Actor* actor, PlayState* play);
+
+// Defined in z_player_lib.c:423 with C linkage. Declared here so dummy
+// hand-DL refresh can index into it.
+extern Gfx** sPlayerDListGroups[];
 }
 
 // =============================================================================
@@ -337,6 +345,17 @@ void HarpoonDummyPlayer_Init(Actor* actor, PlayState* play) {
     player->cylinder.dim.radius = 30;
     player->actor.colChkInfo.damageTable = &HarpoonDummyPlayerDamageTable;
 
+    // Boost render distance so distant teammates remain visible. Default
+    // Player_Init values (z_actor.c:1255-1257: 1000 / 350 / 700) cull the
+    // dummy as soon as the local camera moves a screen or two away, which
+    // makes large open scenes (Hyrule Field, Lake Hylia, Gerudo Valley) feel
+    // empty. Multiplying by ~5-8x keeps dummies on-screen across most overworld
+    // distances without disturbing local-player behaviour (these fields are
+    // per-actor; only this dummy's culling envelope grows).
+    player->actor.uncullZoneForward  = 8000.0f;
+    player->actor.uncullZoneScale    = 2000.0f;
+    player->actor.uncullZoneDownward = 2000.0f;
+
     gSaveContext.linkAge = originalAge;
 
     NameTag_RegisterForActorWithOptions(actor, client.name.c_str(), {});
@@ -378,6 +397,41 @@ void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
     player->stateFlags2 = client.stateFlags2;
     player->itemAction = client.itemAction;
     player->heldItemAction = client.heldItemAction;
+    // Hand types — direct sync so dummy's hand DL selection (open vs closed
+    // vs holding-sword vs holding-bow etc.) matches what the remote is
+    // actually doing. Player_OverrideLimbDrawGameplayCommon reads these at
+    // root limb to drive sLeftHandType / sRightHandType in z_player_lib.c.
+    player->leftHandType = client.leftHandType;
+    player->rightHandType = client.rightHandType;
+    player->sheathType = client.sheathType;
+    // Refresh the actual DL pointer arrays the engine uses based on hand type.
+    // Without this, leftHandDLists still points at the prior modelGroup's
+    // arrays even though leftHandType was updated. Defined in z_player_lib.c:423
+    // as `Gfx** sPlayerDListGroups[PLAYER_MODELTYPE_MAX]`.
+    // sPlayerDListGroups is declared at file scope under extern "C" above.
+    // PLAYER_MODELTYPE_MAX = 21 (z64player.h:348). Bound check before
+    // indexing to avoid OOB if the remote sent a corrupt value.
+    if (player->leftHandType < 21) {
+        player->leftHandDLists = &sPlayerDListGroups[player->leftHandType][client.linkAge];
+    }
+    if (player->rightHandType < 21) {
+        player->rightHandDLists = &sPlayerDListGroups[player->rightHandType][client.linkAge];
+    }
+    if (player->sheathType < 21) {
+        player->sheathDLists = &sPlayerDListGroups[player->sheathType][client.linkAge];
+    }
+    // Per-frame animation/state sync — these all flow into the engine's
+    // per-limb DL selection at draw time (Player_OverrideLimbDrawGameplayCommon).
+    // Without these the dummy's hands stay in their default pose even when
+    // the remote is running, drawing a bow, holding an item, or in FP.
+    player->actor.speedXZ = client.speedXZ;
+    player->meleeWeaponState = client.meleeWeaponState;
+    player->unk_6AD = client.fpModeFlag;
+    player->unk_858 = client.bowStringDraw;
+    player->unk_860 = client.bowArrowState;
+    player->unk_834 = client.bowDrawAnimFrame;
+    Math_Vec3s_Copy_Harpoon(&player->headLimbRot, &client.headLimbRot);
+    player->upperLimbYawSecondary = client.upperLimbYawSecondary;
     player->invincibilityTimer = client.invincibilityTimer;
     player->unk_862 = client.unk_862;
     player->unk_85C = client.unk_85C;
@@ -595,15 +649,76 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
 
     s32 syncBodyIdx = (LINK_AGE_IN_YEARS == YEARS_ADULT) ? syncAdult : syncChild;
 
-    // BeginRemoteRender routes the entire pak_loader pipeline (skeleton, eyes,
-    // mouth, equipment DL overrides, cached equip DLs) through syncBodyIdx for
-    // the duration of this Player_Draw — that's what gets faces and equipment
-    // to render consistently on remote players.
+    // Vanilla skeleton swap: the dummy's skelAnime.skeleton was resolved at
+    // HarpoonDummyPlayer_Init time through the GLOBAL ResourceManager and so
+    // points to whatever skeleton the LOCAL user has mounted from their own
+    // mods/. Walking that skeleton during Player_Draw queries limb DL paths
+    // defined by the local user's mods — every gSPDisplayList that misses
+    // both the override stack and the vanilla cache falls through to global
+    // and renders the LOCAL user's skin on the REMOTE's dummy. To prevent
+    // that, force the dummy to walk the vanilla limb table (pre-loaded
+    // BEFORE InitMods()) when no .pak body skin is active for the remote.
+    // .pak skin path already replaces the skeleton via PakLoader_BeginRemoteRender,
+    // so we only swap when syncBodyIdx < 0.
+    void** savedSkeleton = player->skelAnime.skeleton;
+    u8 savedDListCount = player->skelAnime.dListCount;
+    bool didSwapSkel = false;
+
+    // .pak skin sync — pak_loader swaps the dummy's body skeleton + equipment
+    // based on which sync .pak the remote selected.
     PakLoader_BeginRemoteRender(syncBodyIdx);
+    // .o2r override sync — activate matching overrides BEFORE picking the
+    // skeleton, since the override's own skel (if any) is what we want to
+    // walk when an override is active.
+    HarpoonSkinSync::BeginRemoteOverrides(client.enabledO2rMods);
+
+    if (syncBodyIdx < 0) {
+        bool isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
+        // Prefer an active override's own Link skeleton (so override-specific
+        // limb DL paths like `bone003_*_layer_Opaque` get queried by the
+        // engine and resolved via the override's dlsByPath). Fall back to
+        // vanilla skel when no override has one — this isolates the dummy
+        // from any LOCAL globally-mounted skin mod that would otherwise
+        // contaminate the limb-name namespace.
+        void** overrideLimbs = HarpoonSkinSync::GetActiveOverrideLinkLimbTable(isAdult);
+        int overrideDLs = HarpoonSkinSync::GetActiveOverrideLinkDListCount(isAdult);
+        const char* skelSource = "(none)";
+        if (overrideLimbs != nullptr && overrideDLs > 0) {
+            player->skelAnime.skeleton = overrideLimbs;
+            player->skelAnime.dListCount = (u8)overrideDLs;
+            didSwapSkel = true;
+            skelSource = "override";
+        } else {
+            void** vanillaLimbs = HarpoonSkinSync::GetVanillaLinkLimbTable(isAdult);
+            int vanillaDLs = HarpoonSkinSync::GetVanillaLinkDListCount(isAdult);
+            if (vanillaLimbs != nullptr && vanillaDLs > 0) {
+                player->skelAnime.skeleton = vanillaLimbs;
+                player->skelAnime.dListCount = (u8)vanillaDLs;
+                didSwapSkel = true;
+                skelSource = "vanilla fallback";
+            }
+        }
+        // Diagnostic — emit only when the (clientId, source, age) tuple
+        // changes so the log isn't spammed every frame.
+        static std::map<uint32_t, std::string> sLastDecision;
+        std::string decision = std::string(skelSource) + (isAdult ? " adult" : " child");
+        auto it = sLastDecision.find(clientId);
+        if (it == sLastDecision.end() || it->second != decision) {
+            sLastDecision[clientId] = decision;
+            SPDLOG_INFO("[HarpoonSkinSync] dummy '{}' (clientId={}) skel = {}",
+                        client.name, clientId, decision);
+        }
+    }
 
     Player_Draw((Actor*)player, play);
 
+    HarpoonSkinSync::EndRemoteOverrides();
     PakLoader_EndRemoteRender();
+
+    if (didSwapSkel) {
+        player->skelAnime.skeleton = savedSkeleton;
+        player->skelAnime.dListCount = savedDListCount;
+    }
 
     // Restore all overridden state
     CustomItems_ApplyVisualSync(&savedCustomItems);

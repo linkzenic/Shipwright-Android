@@ -29,18 +29,18 @@ static void BombArrows_FireArrow(Player* p, PlayState* play);
 static s8 sBombArrowPrevInvinc = 0;
 static s32 sBaAnimState = -1; // Tracks which animation state the upper action last initiated
 
-// Check if player can use bomb arrows
+// Check if player can use bomb arrows.
+// Adult uses bow ammo, child uses slingshot ammo.
 static u8 BombArrows_CanUse(Player* p, PlayState* play) {
-    if (AMMO(ITEM_BOW) <= 0 || AMMO(ITEM_BOMB) <= 0)
-        return 0;
-    if (!LINK_IS_ADULT && !CVarGetInteger(CVAR_ENHANCEMENT("BowSlingshotAmmoFix"), 0))
+    s32 ammoItem = LINK_IS_ADULT ? ITEM_BOW : ITEM_SLINGSHOT;
+    if (AMMO(ammoItem) <= 0 || AMMO(ITEM_BOMB) <= 0)
         return 0;
     return 1;
 }
 
-// Consume 1 arrow + 1 bomb
+// Consume 1 arrow/seed + 1 bomb (age-aware)
 static void BombArrows_ConsumeAmmo(void) {
-    Inventory_ChangeAmmo(ITEM_BOW, -1);
+    Inventory_ChangeAmmo(LINK_IS_ADULT ? ITEM_BOW : ITEM_SLINGSHOT, -1);
     Inventory_ChangeAmmo(ITEM_BOMB, -1);
 }
 
@@ -237,10 +237,11 @@ static void BombArrows_FireArrow(Player* p, PlayState* play) {
     // Consume ammo
     BombArrows_ConsumeAmmo();
 
-    // Spawn arrow
+    // Spawn arrow (or seed for child slingshot)
+    s8 arrowParam = LINK_IS_ADULT ? ARROW_NORMAL : ARROW_SEED;
     baArrowActor =
         Actor_SpawnAsChild(&play->actorCtx, &p->actor, play, ACTOR_EN_ARROW, p->actor.world.pos.x,
-                           p->actor.world.pos.y + 40.0f, p->actor.world.pos.z, aimPitch, aimYaw, 0, ARROW_NORMAL);
+                           p->actor.world.pos.y + 40.0f, p->actor.world.pos.z, aimPitch, aimYaw, 0, arrowParam);
 
     if (baArrowActor != NULL) {
         baArrowActor->world.rot.x = aimPitch;

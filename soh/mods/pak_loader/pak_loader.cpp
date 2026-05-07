@@ -30,10 +30,10 @@ extern PlayState* gPlayState;
 #include <map>
 #include <zlib.h>
 
-// Direct archive read without mounting — used to load .o2r as per-player skin
-// containers from mods/harpoon_skin_sync/ (see Harpoon Skin Sync API at bottom of file).
-#include <ship/resource/File.h>
-#include <ship/resource/archive/O2rArchive.h>
+// .pak files are scanned from mods/ at startup (and from mods/harpoon_skin_sync/
+// for the per-actor remote sync registry). All .o2r handling — both global mods
+// and per-actor overrides for Harpoon dummies — is OUT OF SCOPE for pak_loader;
+// that lives in its own subsystem and consumes its own archives.
 
 extern "C" {
 #include "objects/gameplay_keep/gameplay_keep.h"
@@ -2584,7 +2584,27 @@ static Gfx* MakeCombinedDL(Gfx* parts[], s32 count) {
     return dl;
 }
 
+// External hook implemented by the Harpoon skin-sync subsystem. Returns a
+// native Gfx* override that the currently-drawing remote dummy player has on
+// its active-override stack, or NULL if no remote-render is in flight or the
+// path doesn't match any override. Declared here as plain C so pak_loader
+// stays decoupled from the Harpoon module's full type set; the real definition
+// lives in soh/Network/Harpoon/HarpoonSkinSync.cpp. NULL means fall through to
+// pak_loader's own local .pak / equipment logic.
+extern "C" Gfx* HarpoonSkinSync_GetDLOverride(const char* otrPath);
+
 extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
+    if (otrPath == nullptr) return NULL;
+
+    // Harpoon dummy player .o2r override path: when a Harpoon dummy is being
+    // drawn, HarpoonSkinSync's BeginRemoteOverrides has pushed the remote's
+    // active .o2r overrides onto its stack. We delegate to it FIRST, before
+    // any local pak / equipment logic, so the dummy never inherits the local
+    // user's selections.
+    if (Gfx* harpoonDl = HarpoonSkinSync_GetDLOverride(otrPath)) {
+        return harpoonDl;
+    }
+
     // Check if any equipment source is active
     u8 hasPakEnabled = CVarGetInteger("gMods.PakLoader.Enabled", 0) != 0;
     u8 hasForcedEquip = (sForcedEquipIndex >= 0 && sForcedEquipIndex < (s32)sModels.size());
@@ -2730,11 +2750,29 @@ static void* PakLoader_GetFaceTexture(const u32* offsets, s32 index, s32 maxInde
     return (void*)(zobjData + offset);
 }
 
+// HarpoonSkinSync hooks: when a remote dummy is being drawn, route eye /
+// mouth lookups through pre-resolved vanilla bytes from oot.o2r so the
+// segment-0x08 / 0x09 references in the body DL bytecode don't resolve
+// through the global ResourceManager (which would pick up the LOCAL user's
+// modded eye / mouth textures and paint them on the REMOTE dummy). Returns
+// NULL when not inside a remote draw — local player's render path is
+// unaffected.
+extern "C" void* HarpoonSkinSync_GetVanillaEyeTexture(int32_t eyeIndex, int32_t isAdult);
+extern "C" void* HarpoonSkinSync_GetVanillaMouthTexture(int32_t mouthIndex, int32_t isAdult);
+
 extern "C" void* PakLoader_GetEyeTexture(s32 eyeIndex) {
+    if (void* harpoonEye = HarpoonSkinSync_GetVanillaEyeTexture(
+            eyeIndex, gSaveContext.linkAge == 0 /* LINK_AGE_ADULT */)) {
+        return harpoonEye;
+    }
     return PakLoader_GetFaceTexture(sEyeTextureOffsets, eyeIndex, 7, 0x800);
 }
 
 extern "C" void* PakLoader_GetMouthTexture(s32 mouthIndex) {
+    if (void* harpoonMouth = HarpoonSkinSync_GetVanillaMouthTexture(
+            mouthIndex, gSaveContext.linkAge == 0 /* LINK_AGE_ADULT */)) {
+        return harpoonMouth;
+    }
     return PakLoader_GetFaceTexture(sMouthTextureOffsets, mouthIndex, 3, 0x400);
 }
 
@@ -3304,11 +3342,6 @@ extern "C" void PakLoader_ClearForcedEquipment(void) {
 //     to the sync entry for the duration of a remote actor's draw — that way the
 //     existing pak_loader pipeline (eyes, mouth, equipment DL overrides in
 //     GbiWrap, cached equip DLs) all see the remote's skin naturally.
-//
-// .o2r support: O2rArchive is instantiated directly (no ArchiveManager::AddArchive),
-// mirroring the pattern in OTRGlobals.cpp::ReadPortVersionFromOTR. The archive's
-// internal OTR paths therefore do NOT participate in global path resolution, so
-// a skin .o2r cannot accidentally override the host game's Link model.
 
 // Saved state for BeginRemoteRender / EndRemoteRender. We override ALL selection
 // state (forced + adult + child + equipment) so the remote dummy's draw is
@@ -3322,69 +3355,15 @@ static std::string sSavedForcedModelPath;
 static s32  sSavedSelectedAdultIndex = -1;
 static s32  sSavedSelectedChildIndex = -1;
 static s32  sSavedSelectedEquipIndex = -1;
-
-static bool LoadO2rSkinModel(const std::string& o2rPath, PakModel& model) {
-    auto archive = std::make_shared<Ship::O2rArchive>(o2rPath);
-    if (!archive->Open()) {
-        PAK_LOG("Failed to open .o2r: %s", o2rPath.c_str());
-        return false;
-    }
-
-    auto pkgFile = archive->LoadFile("package.json");
-    if (!pkgFile || !pkgFile->IsLoaded || !pkgFile->Buffer || pkgFile->Buffer->empty()) {
-        PAK_LOG("No package.json in .o2r: %s", o2rPath.c_str());
-        return false;
-    }
-    std::string packageJson(pkgFile->Buffer->data(), pkgFile->Buffer->size());
-
-    std::string name = JsonFindString(packageJson, "name");
-    if (!name.empty()) {
-        snprintf(model.displayName, sizeof(model.displayName), "%s", name.c_str());
-    }
-
-    std::string adultZobjName = JsonFindModelFile(packageJson, "adult_model");
-    std::string childZobjName = JsonFindModelFile(packageJson, "child_model");
-
-    auto extractO2rZobj = [&](const std::string& zobjName, u8** outData, u32* outSize) -> bool {
-        if (zobjName.empty()) return false;
-        auto f = archive->LoadFile(zobjName);
-        if (!f || !f->IsLoaded || !f->Buffer || f->Buffer->empty()) return false;
-        u32 sz = (u32)f->Buffer->size();
-        *outData = (u8*)malloc(sz);
-        if (!*outData) return false;
-        memcpy(*outData, f->Buffer->data(), sz);
-        *outSize = sz;
-        return true;
-    };
-
-    if (!adultZobjName.empty() && extractO2rZobj(adultZobjName, &model.adultZobj, &model.adultZobjSize)) {
-        model.hasAdult = 1;
-        SwapContext adultSwapCtx = {};
-        if (ZobjBuildSkeleton(model.adultZobj, model.adultZobjSize, model.adultLimbs, model.adultLimbTable,
-                              &model.adultFlexHeader, model.adultTranslatedDLs, &adultSwapCtx)) {
-            model.adultReady = 1;
-            ZobjParseAliasTable(model.adultZobj, model.adultZobjSize, model.adultEquipDLs,
-                                model.adultTranslatedDLs, adultSwapCtx);
-        }
-    }
-    if (!childZobjName.empty() && extractO2rZobj(childZobjName, &model.childZobj, &model.childZobjSize)) {
-        model.hasChild = 1;
-        SwapContext childSwapCtx = {};
-        if (ZobjBuildSkeleton(model.childZobj, model.childZobjSize, model.childLimbs, model.childLimbTable,
-                              &model.childFlexHeader, model.childTranslatedDLs, &childSwapCtx)) {
-            model.childReady = 1;
-            ZobjParseAliasTable(model.childZobj, model.childZobjSize, model.childEquipDLs,
-                                model.childTranslatedDLs, childSwapCtx);
-        }
-    }
-
-    return model.adultReady || model.childReady;
-}
-
 extern "C" void PakLoader_InitSyncRegistry(void) {
-    // Accept the sync folder at either:
-    //   1. <exe>/harpoon_skin_sync/         (top-level catalog — preferred)
-    //   2. <exe>/mods/harpoon_skin_sync/    (legacy subfolder location)
+    // Accept the sync folder via several candidate paths so the behaviour is
+    // robust across launch contexts (Visual Studio debug, double-clicked exe,
+    // CLI launch from a different cwd, portable mode, etc.). Order:
+    //   1. <appdir>/harpoon_skin_sync/        — Ship-aware top-level catalog
+    //   2. <appdir>/mods/harpoon_skin_sync/   — legacy subfolder under mods/
+    //   3. <cwd>/harpoon_skin_sync/           — current working directory
+    //   4. <cwd>/mods/harpoon_skin_sync/      — cwd legacy fallback
+    //   5. ./harpoon_skin_sync/               — literal relative path
     std::vector<std::filesystem::path> candidates;
 
     std::string topPath = Ship::Context::LocateFileAcrossAppDirs("harpoon_skin_sync", appShortName);
@@ -3393,31 +3372,44 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
     std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
     if (!modsPath.empty()) candidates.push_back(std::filesystem::path(modsPath) / "harpoon_skin_sync");
 
+    std::error_code cwdErr;
+    auto cwd = std::filesystem::current_path(cwdErr);
+    if (!cwdErr) {
+        candidates.push_back(cwd / "harpoon_skin_sync");
+        candidates.push_back(cwd / "mods" / "harpoon_skin_sync");
+    }
+    candidates.push_back("./harpoon_skin_sync");
+
     std::filesystem::path syncPath;
     for (auto& c : candidates) {
-        if (std::filesystem::exists(c) && std::filesystem::is_directory(c)) {
+        std::error_code ec;
+        bool exists = std::filesystem::exists(c, ec) && std::filesystem::is_directory(c, ec);
+        PAK_LOG("harpoon_skin_sync: candidate '%s' exists=%d", c.string().c_str(), (int)exists);
+        if (exists && syncPath.empty()) {
             syncPath = c;
-            break;
+            // Don't break — keep logging the rest of the candidates for diagnostics,
+            // but the first hit wins.
         }
     }
 
     if (syncPath.empty()) {
-        PAK_LOG("No harpoon_skin_sync/ folder found; remote skin sync registry empty");
+        PAK_LOG("No harpoon_skin_sync/ folder found in any candidate path; remote skin sync registry empty");
         return;
     }
     PAK_LOG("harpoon_skin_sync: scanning '%s'", syncPath.string().c_str());
 
     std::vector<std::filesystem::path> pakFiles;
-    std::vector<std::filesystem::path> o2rFiles;
     for (auto& entry : std::filesystem::recursive_directory_iterator(syncPath)) {
         if (entry.is_directory()) continue;
         std::string ext = entry.path().extension().string();
         for (char& c : ext) c = (char)tolower((unsigned char)c);
         if (ext == ".pak") pakFiles.push_back(entry.path());
-        else if (ext == ".o2r") o2rFiles.push_back(entry.path());
+        // .o2r files in this folder are NOT pak_loader's concern — they are
+        // handled by the Harpoon skin sync subsystem, which scans the same
+        // folder independently and applies overrides to remote dummy actors.
     }
 
-    PAK_LOG("harpoon_skin_sync: found %d .pak + %d .o2r", (int)pakFiles.size(), (int)o2rFiles.size());
+    PAK_LOG("harpoon_skin_sync: found %d .pak", (int)pakFiles.size());
 
     auto fixupLimbTables = [](PakModel& m) {
         for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
@@ -3434,7 +3426,7 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
     // the local user selects a mods/ pak we crash in SkelAnime_DrawFlexLimbLod
     // chasing a stale limb pointer.
     size_t preSyncCount = sModels.size();
-    sModels.reserve(preSyncCount + pakFiles.size() + o2rFiles.size());
+    sModels.reserve(preSyncCount + pakFiles.size());
     for (auto& m : sModels) fixupLimbTables(m);
 
     for (auto& p : pakFiles) {
@@ -3451,23 +3443,6 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
             if (model.adultZobj) free(model.adultZobj);
             if (model.childZobj) free(model.childZobj);
             PAK_LOG("Sync failed to load .pak: %s", p.string().c_str());
-        }
-    }
-
-    for (auto& o : o2rFiles) {
-        PakModel model = {};
-        model.pakPath = o.string();
-        snprintf(model.displayName, sizeof(model.displayName), "Unknown");
-        if (LoadO2rSkinModel(o.string(), model)) {
-            model.isSyncOnly = 1;
-            sModels.push_back(std::move(model));
-            fixupLimbTables(sModels.back());
-            PAK_LOG("Sync loaded .o2r: '%s' (idx=%d, syncOnly)",
-                    sModels.back().displayName, (int)sModels.size() - 1);
-        } else {
-            if (model.adultZobj) free(model.adultZobj);
-            if (model.childZobj) free(model.childZobj);
-            PAK_LOG("Sync failed to load .o2r: %s", o.string().c_str());
         }
     }
 }
@@ -3490,12 +3465,12 @@ extern "C" s32 PakLoader_FindSyncIndexByName(const char* name) {
     return -1;
 }
 
-// Begin rendering a remote dummy player with the given SYNC-registry index.
-// Temporarily routes the entire pak_loader pipeline (skeleton, eye/mouth
-// textures, equipment DL overrides, cached equip DLs) through the sync model
-// by piggy-backing on sForcedModelIndex — the forced path already has priority
-// over local CVars and reuses every existing hook, so this automatically fixes
-// the face-texture/equipment corruption that plain skeleton-swap caused.
+// Begin rendering a remote dummy player with the given SYNC-registry index
+// (a .pak loaded from harpoon_skin_sync/). Temporarily routes the entire
+// pak_loader pipeline — skeleton, eye/mouth textures, equipment DL overrides,
+// cached equip DLs — through the sync model by piggy-backing on
+// sForcedModelIndex, the same path used by custom-item forced models. Pass -1
+// to render the dummy with vanilla Link.
 //
 // Must be paired with PakLoader_EndRemoteRender before any other actor draws
 // or before the frame ends.
@@ -3514,17 +3489,19 @@ extern "C" void PakLoader_BeginRemoteRender(s32 syncIdx) {
     sSelectedAdultIndex = -1;
     sSelectedChildIndex = -1;
     sSelectedEquipIndex = -1;
+    sForcedModelIndex = -1;
+    sForcedModelPath.clear();
 
-    if (syncIdx >= 0 && syncIdx < (s32)sModels.size() && sModels[syncIdx].isSyncOnly) {
-        // Route everything (skeleton, eyes, mouth, equipment) through the sync
-        // model via the existing forced-model path — all pak_loader hooks honour
-        // sForcedModelIndex automatically.
-        sForcedModelIndex = syncIdx;
-        sForcedModelPath = sModels[syncIdx].pakPath;
-    } else {
-        sForcedModelIndex = -1;
-        sForcedModelPath.clear();
+    if (syncIdx < 0 || syncIdx >= (s32)sModels.size() || !sModels[syncIdx].isSyncOnly) {
+        // Unknown / not-installed remote .pak skin → render the dummy as vanilla Link.
+        return;
     }
+
+    // Container-style .pak: route everything (skeleton, eyes, mouth, equipment)
+    // through the sync model via the existing forced-model path — all
+    // pak_loader hooks honour sForcedModelIndex automatically.
+    sForcedModelIndex = syncIdx;
+    sForcedModelPath = sModels[syncIdx].pakPath;
 }
 
 extern "C" void PakLoader_EndRemoteRender(void) {

@@ -184,14 +184,17 @@ void PakLoader_FrameBegin(void);
 void PakLoader_Shutdown(void);
 
 // ============================================================================
-// Harpoon Skin Sync API
+// Harpoon Sync — .pak only
 // ============================================================================
-// Skins loaded from mods/harpoon_skin_sync/ (or <exe>/harpoon_skin_sync/) share
-// the single sModels registry with local mods/ paks, but carry an isSyncOnly
-// flag so they are hidden from the local selection menu and never selected as
-// the local Adult/Child/Equipment model. They are only surfaced through the
-// BeginRemoteRender / EndRemoteRender API below, which temporarily routes the
-// forced-model slot to the sync entry for the duration of a remote actor draw.
+// Sync-only .pak files dropped into mods/harpoon_skin_sync/ are loaded into the
+// same sModels vector as local mods/ paks but carry isSyncOnly=1 so they are
+// hidden from the local selection menu. They are surfaced exclusively through
+// BeginRemoteRender / EndRemoteRender, which the Harpoon dummy-draw path uses
+// to render a remote player with the appropriate .pak skeleton.
+//
+// .o2r handling for Harpoon — both the global mod list broadcast and per-actor
+// override application — lives entirely in the Harpoon skin-sync subsystem
+// (soh/Network/Harpoon/HarpoonSkinSync*). pak_loader is .pak only.
 
 /**
  * Look up a LOCAL (mods/) pak by display name (package.json "name").
@@ -201,22 +204,22 @@ void PakLoader_Shutdown(void);
 s32 PakLoader_FindLocalIndexByName(const char* name);
 
 /**
- * Look up a SYNC (harpoon_skin_sync/) pak by display name.
+ * Look up a SYNC (harpoon_skin_sync/) .pak by display name.
  * @return index into sModels pointing at an isSyncOnly entry, or -1 if not found.
  */
 s32 PakLoader_FindSyncIndexByName(const char* name);
 
 /**
- * Begin rendering a remote dummy player with the given SYNC model index.
- * Temporarily overrides sForcedModelIndex so the pak_loader's eye/mouth/
- * equipment/DL pipelines all use the remote's skin. Pass -1 to render with
- * vanilla Link (e.g., when the remote's skin isn't installed locally).
+ * Begin rendering a remote dummy player with the given SYNC .pak index. Routes
+ * the pak_loader pipeline through that .pak's skeleton + equipment for the
+ * duration of one Player_Draw. Pass -1 to render the dummy with vanilla Link.
  * MUST be paired with PakLoader_EndRemoteRender.
  */
 void PakLoader_BeginRemoteRender(s32 syncIdx);
 
 /**
- * End a remote-render block, restoring whatever forced state was active before.
+ * End a remote-render block, restoring whatever forced/selected state was
+ * active before.
  */
 void PakLoader_EndRemoteRender(void);
 

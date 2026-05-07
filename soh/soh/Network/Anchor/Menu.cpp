@@ -155,6 +155,13 @@ void AnchorMainMenu(WidgetInfo& info) {
                          : "Cannot show other players because the room's Show Locations mode is set to None."));
     ImGui::EndDisabled();
 
+    if (UIWidgets::CVarCheckbox(
+            "Hide Player Nametags", CVAR_REMOTE_ANCHOR("HideNameTags"),
+            UIWidgets::CheckboxOptions().Color(THEME_COLOR).Tooltip(
+                "Hide the floating name tags above other players. Local-only setting."))) {
+        Anchor::Instance->RefreshClientNameTags();
+    }
+
     ImGui::Spacing();
 
     if (!SohGui::mAnchorRoomWindow->IsVisible()) {

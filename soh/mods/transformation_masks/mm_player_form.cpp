@@ -146,7 +146,7 @@ static const f32 sDekuFlightMaxDist[] = { 600.0f, 960.0f };
 
 // Water thresholds (from 2Ship/OOT ageProperties for Adult Link)
 #define ZORA_SWIM_THRESHOLD 30.0f
-#define ZORA_BUOYANCY_DEPTH 44.8f // ageProperties->unk_28 (buoyancy reference depth)
+#define ZORA_BUOYANCY_DEPTH 44.8f // ageProperties->unk_28 (buoyancy reference depth, MM-correct)
 #define ZORA_SURFACE_DEPTH 36.0f  // ageProperties->unk_24 (surface detection)
 #define ZORA_DEEP_THRESHOLD 68.0f // ageProperties->unk_30 (deep water / dolphin jump surface)
 
@@ -2419,13 +2419,15 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
             { 90.0f, 0.74f, 111.0f, 70.0f, 79.4f, 59.0f, 41.0f, 19.0f, 36.0f, 50.0f, 56.0f, 68.0f, 70.0f, 19.5f, 18.2f,
               80.0f, 70.0f },
             // ZORA (MM z_player.c:934-1029)
-            // unk_28 lowered from MM's 50.0f → 44.8f (Adult Link's value) so OOT's ledge
-            // climb-from-water threshold (z_player.c:5315 `yDistToWater < 50.0f`) is satisfied.
-            // MM uses 50.0 because MM's Zora is taller, but in SoH the actor matrix is OOT
-            // Link's — equilibrium at 50.0 puts Zora exactly AT the threshold, making ledge
-            // grab from water fail. 44.8 puts equilibrium safely below threshold + matches
-            // Link's surface position so Zora rises fully ("nunca llega a la superficie" fix).
-            { 90.0f, 1.0f, 111.0f, 70.0f, 79.4f, 59.0f, 41.0f, 19.0f, 36.0f, 44.8f, 56.0f, 68.0f, 70.0f, 18.0f, 23.0f,
+            // unk_28 = 50.0f restored to MM's original (buoyancy at MM's intended depth).
+            // unk_10 = 110.0f raised from 70 — Zora can grab water ledges higher above her
+            //   (Path A check: yDistToLedge <= unk_10 in z_player.c:5317).
+            // unk_14 = 130.0f raised from 79.4 — Zora's IN_WATER ledge-grab outer condition
+            //   (z_player.c:5310: unk_14 > yDistToLedge) accepts taller ledges.
+            // Why higher reach: in MM, Zora is taller relative to her actor matrix, so she
+            // can reach ledges further above her position. In SoH the actor matrix is OOT
+            // Link's height, so we extend Zora's reach via these properties to compensate.
+            { 90.0f, 1.0f, 111.0f, 110.0f, 130.0f, 59.0f, 41.0f, 19.0f, 36.0f, 50.0f, 56.0f, 68.0f, 70.0f, 18.0f, 23.0f,
               70.0f, 56.0f },
             // DEKU (MM z_player.c:1030-1125)
             { 50.0f, 0.3f, 71.0f, 50.0f, 49.0f, 39.0f, 27.0f, 19.0f, 8.0f, 13.6f, 24.0f, 24.0f, 70.0f, 14.0f, 12.0f,
@@ -2444,9 +2446,15 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
         gFormState.formAgeProperties.unk_08 = mmProps->unk_08;
         gFormState.formAgeProperties.unk_0C = mmProps->unk_0C;
         gFormState.formAgeProperties.unk_10 = mmProps->unk_10;
-        // Keep OOT Adult's unk_14/18/1C (ledge grab + step-up heights).
+        // Keep OOT Adult's unk_14/18/1C (ledge grab + step-up heights) by default.
         // MM form heights are shorter and cause ladder-top overshoot on OOT geometry.
-        // These values stay at OOT defaults from the initial copy above.
+        // EXCEPTION for Zora: extend unk_14 (water ledge grab max) so Zora can grab ledges
+        // from her swim equilibrium (44.8 below surface). Without this, ledges are out of
+        // reach because Zora's actor.world.pos.y is at swim depth — yDistToLedge exceeds
+        // Adult Link's 79.4 limit. 130 lets Zora grab ledges ~50 units above water.
+        if (form == MM_PLAYER_FORM_ZORA) {
+            gFormState.formAgeProperties.unk_14 = 130.0f;
+        }
         gFormState.formAgeProperties.unk_20 = mmProps->unk_20;
         gFormState.formAgeProperties.unk_24 = mmProps->unk_24;
         gFormState.formAgeProperties.unk_28 = mmProps->unk_28;
@@ -9983,11 +9991,13 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
 
     // --- Zora: air action entering water → swim ---
     // Jump attack, jump, fall, sidehop, backflip into water should start swimming,
-    // not continue sinking with land gravity. Also covers OOT yield actions (e.g. items mid-air).
+    // not continue sinking with land gravity. Also covers OOT yield actions (e.g. items mid-air)
+    // and damage knockback (when enemy hits player on land and they fall into water).
     if (MMFORM_IS_ZORA_SWIM() && gFormState.swimState == 0 && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
         s32 airAct = gFormState.goronAction;
         if (airAct == MMFORM_ACT_JUMP || airAct == MMFORM_ACT_FALL || airAct == MMFORM_ACT_JUMP_KICK ||
-            airAct == MMFORM_ACT_SIDEHOP || airAct == MMFORM_ACT_BACKFLIP || airAct == MMFORM_ACT_OOT_ACTION) {
+            airAct == MMFORM_ACT_SIDEHOP || airAct == MMFORM_ACT_BACKFLIP || airAct == MMFORM_ACT_OOT_ACTION ||
+            airAct == GORON_ACT_DAMAGE) {
             if (gFormState.jumpKickActive) {
                 MmForm_DisableJumpKickQuads(player);
                 gFormState.jumpKickActive = 0;
@@ -10245,13 +10255,18 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // joint copy then displays OOT's animation so the player can walk freely during flight.
     if (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.formSkelAnime.animation != NULL) {
         SkelAnime* sa = &gFormState.formSkelAnime;
+        // Each phase is gated by the boomerang state machine latch so the guard NEVER fires
+        // when no boomerang activity is in progress (prevents stuck states from blocking
+        // normal action dispatch — including mask-press detransform).
         u8 inAim = (sa->animation == gFormState.cutterWaitAnim &&
                     player->heldItemAction == PLAYER_IA_BOOMERANG &&
                     (player->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG) &&
                     !(player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN));
         u8 inThrowAnim = (sa->animation == gFormState.cutterAttack &&
+                          gFormState.boomerangCatchTimer == 1 &&
                           sa->curFrame < Animation_GetLastFrame(gFormState.cutterAttack));
         u8 inCatchAnim = (sa->animation == gFormState.cutterCatch &&
+                          gFormState.boomerangCatchTimer == 2 &&
                           sa->curFrame < Animation_GetLastFrame(gFormState.cutterCatch));
         if (inAim || inThrowAnim || inCatchAnim) {
             // Tick the form animation so the cutter anim progresses each frame.
@@ -11023,50 +11038,76 @@ static void MmForm_UpdateDetransforming(Player* player, PlayState* play) {
 static u8 MmForm_UsesOotAnim(void) {
     s32 act = gFormState.goronAction;
 
-    // Generic OOT yield (items, dialogue, carrying, etc.)
-    // Exception: gakki (instrument) mode plays form-specific animation on formSkelAnime,
-    // so we must NOT copy OOT's jointTable. From MM z_player.c: Player_Action_63.
+    // Default policy (per user spec): use OOT/Link animations for everything UNLESS
+    // the action is explicitly form-specific. This guarantees fall, damage, walk,
+    // run, jump, ledge, swim_idle, etc. fall back to Link's anims even if the form
+    // forgot to load a specific anim for that action.
+
+    // OOT yield: copy OOT joints unless gakki (instrument) overrides.
     if (act == MMFORM_ACT_OOT_ACTION) {
-        if (gFormState.gakkiActive)
-            return 0; // Use formSkelAnime (gakki animation)
-        return 1;     // Use OOT's jointTable (default yield behavior)
+        return gFormState.gakkiActive ? 0 : 1;
     }
 
-    // Shared link_normal_* / link_fighter_* animations played by OOT's skelAnime.
-    // Note: SIDEHOP, BACKFLIP, ROLL are NOT here — they play MM anims on formSkelAnime.
-    // DAMAGE and LAND: OOT handles all knockback/damage natively, form yields to OOT.
-    if (act == GORON_ACT_WALK || act == GORON_ACT_RUN || act == MMFORM_ACT_JUMP || act == MMFORM_ACT_FALL ||
-        act == MMFORM_ACT_ZTARGET_IDLE || act == MMFORM_ACT_ZTARGET_WALK || act == MMFORM_ACT_LEDGE_HANG ||
-        act == MMFORM_ACT_LEDGE_CLIMB || act == GORON_ACT_DAMAGE) {
-        return 1;
+    // Form-specific actions: animation comes from formSkelAnime (form-loaded anim).
+    // Joint copy is SKIPPED for these so the form-specific pose displays correctly.
+    switch (act) {
+        // Punch combo (Goron/Zora form-specific punch animations)
+        case GORON_ACT_PUNCH_A:
+        case GORON_ACT_PUNCH_B:
+        case GORON_ACT_PUNCH_C:
+        case GORON_ACT_PUNCH_END:
+        // Goron roll (form-specific)
+        case GORON_ACT_ROLL_INIT:
+        case GORON_ACT_GORON_ROLL:
+        case GORON_ACT_GORON_ROLL_JUMP:
+        case GORON_ACT_GORON_ROLL_POUND:
+        // Zora swim — all underwater states use form-specific fin animations.
+        case MMFORM_ACT_SWIM_MOVE:
+        case MMFORM_ACT_SWIM_FAST:
+        case MMFORM_ACT_SWIM_DASH:
+        case MMFORM_ACT_SWIM_SURFACE_WALK:
+        case MMFORM_ACT_SWIM_UNDERWATER_WALK:
+        case MMFORM_ACT_DOLPHIN_JUMP:
+        // Deku-specific
+        case MMFORM_ACT_DEKU_SPIN:
+        case MMFORM_ACT_DEKU_FLOWER:
+        case MMFORM_ACT_DEKU_FLY:
+        case MMFORM_ACT_DEKU_FALL_LOCKED:
+        // Other form-specific
+        case MMFORM_ACT_SHIELD:
+        case MMFORM_ACT_JUMP_KICK:
+        case MMFORM_ACT_HAZARD_VOID:
+        case MMFORM_ACT_WATER_VOID:
+        case MMFORM_ACT_BOOMERANG_THROW: // dead path, defensive
+        case MMFORM_ACT_SIDEHOP:
+        case MMFORM_ACT_BACKFLIP:
+        case MMFORM_ACT_ROLL:
+            return 0;
+        default:
+            break;
     }
 
-    // LAND: use OOT's animation UNLESS the form has a jumpKickEnd (e.g., Zora's pz_jumpATend).
-    // When jumpKickEnd is loaded and was just playing JUMP_KICK, formSkelAnime has the form's
-    // landing recovery — don't overwrite it with OOT's generic landing.
+    // Idle: Goron/Zora play their iconic standing pose (pg_wait/pz_wait); other forms
+    // (Deku, FD) fall back to Link's idle via OOT joint copy.
+    if (act == GORON_ACT_IDLE) {
+        u8 form = gFormState.currentForm;
+        return (form == MM_PLAYER_FORM_GORON || form == MM_PLAYER_FORM_ZORA) ? 0 : 1;
+    }
+
+    // Land: jumpkick recovery uses form-specific anim (e.g., Zora's pz_jumpATend); other
+    // landings fall back to Link's anim.
     if (act == GORON_ACT_LAND) {
         return (gFormState.jumpKickEnd != NULL) ? 0 : 1;
     }
 
-    // Swim idle: OOT handles swim, copy its animations (not during fast swim — that uses formSkelAnime)
-    if (act == MMFORM_ACT_SWIM_IDLE && !gFormState.fastSwimActive) {
-        return 1;
+    // Swim idle: form-specific only during fast swim; otherwise copy OOT (surface idle).
+    if (act == MMFORM_ACT_SWIM_IDLE) {
+        return gFormState.fastSwimActive ? 0 : 1;
     }
 
-    // Idle: Goron has pg_wait, Zora has pz_wait (form-specific).
-    // Deku and FD use link_normal_wait_free / link_fighter_wait_long (shared).
-    if (act == GORON_ACT_IDLE) {
-        return (gFormState.currentForm != MM_PLAYER_FORM_GORON && gFormState.currentForm != MM_PLAYER_FORM_ZORA) ? 1
-                                                                                                                 : 0;
-    }
-
-    // Climb: Goron has pg_climb_*, Zora has pz_climb_* (form-specific).
-    // Climbing yields to OOT (CLIMBING_LADDER in yield flags), so act == MMFORM_ACT_OOT_ACTION
-    // is already handled above. No special MMFORM_ACT_CLIMB check needed.
-
-    // Everything else is form-specific (punch, roll, swim, spin, boomerang,
-    // door, chest, shield, mask off, water void, etc.)
-    return 0;
+    // Default: use Link/OOT animation via joint copy. This covers walk, run, jump, fall,
+    // ledge hang/climb, damage, ztarget, and any new action not explicitly listed above.
+    return 1;
 }
 
 // =============================================================================
@@ -13031,8 +13072,16 @@ void MmForm_Draw(PlayState* play, Player* player) {
             // gPlayerAnim_link_boom_attack/catch on player->skelAnime, and copying those
             // joints overwrites our cutter anim, making the regular boomerang throw/catch
             // animation appear instead of the Zora fin-cutter animation.
+            // Only treat the formSkelAnime as a cutter anim (and skip joint copy) when the
+            // boomerang state machine is actually active. This prevents stale formSkelAnime
+            // pointers (e.g. left over from a prior throw that was interrupted) from blocking
+            // joint copy for unrelated actions like damage/fall.
+            u8 boomActive = ((player->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG) != 0) ||
+                            ((player->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) != 0) ||
+                            (gFormState.boomerangCatchTimer != 0);
             u8 isCutterAnim =
                 (gFormState.currentForm == MM_PLAYER_FORM_ZORA && gFormState.formSkelAnime.animation != NULL &&
+                 boomActive &&
                  (gFormState.formSkelAnime.animation == gFormState.cutterAttack ||
                   gFormState.formSkelAnime.animation == gFormState.cutterCatch ||
                   gFormState.formSkelAnime.animation == gFormState.cutterWaitAnim));
@@ -13041,7 +13090,16 @@ void MmForm_Draw(PlayState* play, Player* player) {
             // Zora/Goron/Deku, even if our action state didn't transition to OOT_ACTION
             // for any reason. Without this, the form falls back to its own idle anim
             // while OOT keeps the player static at the held-up pose.
-            u8 forceOotCopy = (player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) != 0;
+            // Force OOT joint copy in special OOT states where the form's own action
+            // doesn't transition (still GORON_ACT_IDLE) but OOT is playing a non-idle
+            // animation on player->skelAnime that we want the form to display instead
+            // of its own pz_wait/pg_wait pose:
+            //   - GETTING_ITEM: get-item-wait pose (held item raised)
+            //   - fallDamageStunTimer != 0: fall damage stun crouch (link_normal_landing_wait)
+            //   - invincibilityTimer != 0 (post-damage): keep showing whatever damage/recovery
+            //     anim OOT has on the player rather than the form's idle pose
+            u8 forceOotCopy = (player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM) != 0 ||
+                              player->av2.fallDamageStunTimer != 0 || player->invincibilityTimer != 0;
             if ((MmForm_UsesOotAnim() || forceOotCopy || gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY) &&
                 !isCutterAnim && player->skelAnime.jointTable != NULL &&
                 gFormState.formSkelAnime.jointTable != NULL) {
