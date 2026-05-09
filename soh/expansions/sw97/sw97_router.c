@@ -12,6 +12,9 @@
 #include "expansions/sw97/sw97_compat.h"
 #include "expansions/sw97/sw97_config.h"
 
+// Harpoon C bridge — exposes Harpoon_NotifyVfxSpawn() for spawn hooks below.
+#include "soh/Network/Harpoon/HarpoonBridge.h"
+
 // Player behavior hooks (spell/arrow dispatch)
 #include "expansions/sw97/player/sw97_player_behavior.inc.c"
 

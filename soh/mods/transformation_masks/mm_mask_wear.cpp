@@ -146,9 +146,13 @@ static Gfx sBlastMaskXluSeg9[] = {
 #define MM_MASK_IDX_BLAST 2
 #define MM_MASK_IDX_STONE 3
 #define MM_MASK_IDX_GREAT_FAIRY 4
+#define MM_MASK_IDX_DEKU 5
 #define MM_MASK_IDX_DON_GERO 9
+#define MM_MASK_IDX_GORON 11
 #define MM_MASK_IDX_ROMANI 12
+#define MM_MASK_IDX_ZORA 17
 #define MM_MASK_IDX_GIBDO 19
+#define MM_MASK_IDX_FIERCE_DEITY 23
 
 // Blast Mask cooldown: 310 frames matching MM (z_player.c line 3873: this->blastMaskTimer = 310)
 #define BLAST_MASK_COOLDOWN 310
@@ -814,7 +818,7 @@ extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
         if (PakLoader_HasForcedModel()) {
             PakLoader_ClearForcedModel();
         } else {
-            PakLoader_ForceModel("custom_items_resources/N64_Kafei.pak");
+            PakLoader_ForceModel("nei/N64_Kafei.pak");
         }
         Player_PlaySfx(&player->actor, NA_SE_PL_CHANGE_ARMS);
         player->stateFlags2 |= PLAYER_STATE2_FOOTSTEP;
@@ -875,6 +879,12 @@ extern "C" void MmMaskWear_Draw(PlayState* play, Player* player) {
 
     s32 idx = MaskItemToIndex(sCurrentMmMask);
     if (idx < 0 || idx >= MM_MASK_COUNT) {
+        return;
+    }
+
+    bool isTransformation = (idx == MM_MASK_IDX_DEKU || idx == MM_MASK_IDX_GORON ||
+                             idx == MM_MASK_IDX_ZORA || idx == MM_MASK_IDX_FIERCE_DEITY);
+    if (!isTransformation && CVarGetInteger(CVAR_ENHANCEMENT("HideNonTransformationMasks"), 0)) {
         return;
     }
 

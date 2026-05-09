@@ -22,9 +22,9 @@ void RegionTable_Init_ZorasFountain() {
         LOCATION(RC_ZF_NEAR_JABU_POT_2,              	  logic->IsChild && logic->CanBreakPots()),
         LOCATION(RC_ZF_NEAR_JABU_POT_3,              	  logic->IsChild && logic->CanBreakPots()),
         LOCATION(RC_ZF_NEAR_JABU_POT_4,              	  logic->IsChild && logic->CanBreakPots()),
-        LOCATION(RC_ZF_BOULDER,                           logic->BlastOrSmash()),
-        LOCATION(RC_ZF_SILVER_BOULDER,                    logic->CanUse(RG_SILVER_GAUNTLETS)),
-        LOCATION(RC_ZF_UNDERGROUND_BOULDER,               logic->CanUse(RG_SILVER_GAUNTLETS) && logic->BlastOrSmash()),
+        LOCATION(RC_ZF_BOULDER,                           logic->CanBreakBoulder()),
+        LOCATION(RC_ZF_SILVER_BOULDER,                    logic->CanBreakSilverBoulder()),
+        LOCATION(RC_ZF_UNDERGROUND_BOULDER,               logic->CanBreakSilverBoulder() && logic->CanBreakBoulder()),
         LOCATION(RC_ZF_TREE,                         	  logic->IsChild && logic->CanBonkTrees()),
         LOCATION(RC_ZF_BUSH_1,                       	  logic->IsChild),
         LOCATION(RC_ZF_BUSH_2,                       	  logic->IsChild),
@@ -42,10 +42,10 @@ void RegionTable_Init_ZorasFountain() {
         ENTRANCE(RR_ZF_ICEBERGS,               logic->IsAdult),
         ENTRANCE(RR_ZF_LAKEBED,                logic->CanUse(RG_IRON_BOOTS)),
         //child can break the brown rock without lifting the silver rock and it stays gone for adult, but it's not intuitive and there's no reasonable case where it matters.
-        ENTRANCE(RR_ZF_HIDDEN_CAVE,            logic->CanUse(RG_SILVER_GAUNTLETS) && logic->BlastOrSmash()),
+        ENTRANCE(RR_ZF_HIDDEN_CAVE,            logic->HasStrength(2) && logic->BlastOrSmash()),
         ENTRANCE(RR_ZF_ROCK,                   logic->IsAdult && logic->ReachScarecrow()),
         ENTRANCE(RR_JABU_JABUS_BELLY_ENTRYWAY, logic->IsChild && (ctx->GetOption(RSK_JABU_OPEN).Is(RO_JABU_OPEN) || logic->CanUse(RG_BOTTLE_WITH_FISH))),
-        ENTRANCE(RR_ZF_GREAT_FAIRY_FOUNTAIN,   logic->HasExplosives() || (ctx->GetTrickOption(RT_ZF_GREAT_FAIRY_WITHOUT_EXPLOSIVES) && logic->CanUse(RG_MEGATON_HAMMER) && logic->CanUse(RG_SILVER_GAUNTLETS))),
+        ENTRANCE(RR_ZF_GREAT_FAIRY_FOUNTAIN,   logic->HasExplosives() || (ctx->GetTrickOption(RT_ZF_GREAT_FAIRY_WITHOUT_EXPLOSIVES) && logic->CanUse(RG_MEGATON_HAMMER) && logic->HasStrength(2))),
     });
 
     areaTable[RR_ZF_ICEBERGS] = Region("ZF Icebergs", SCENE_ZORAS_FOUNTAIN, {}, {

@@ -20,6 +20,7 @@
 extern "C" {
 #include "mods/items/custom_items.h"
 #include "mods/extended_inventory.h"
+#include "mods/extended_equipment.h"
 }
 namespace Rando {
 
@@ -99,9 +100,9 @@ bool Logic::HasItem(RandomizerGet itemName) {
             return GetSaveContext()->magicLevel >= 1 || GetSaveContext()->isMagicAcquired;
             // Custom Item
         case RG_SHOVEL:
-            return CheckInventory(ITEM_SHOVEL, true);
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_SHOVEL, true);
         case RG_DEMISE_DESTRUCTION:
-            return CheckInventory(ITEM_DEMISE_DESTRUCTION, true);
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_DEMISE_DESTRUCTION, true);
             // Songs
         case RG_ZELDAS_LULLABY:
         case RG_EPONAS_SONG:
@@ -300,6 +301,147 @@ bool Logic::HasItem(RandomizerGet itemName) {
         case RG_BOTTLE_WITH_RED_POTION:
         case RG_EMPTY_BOTTLE:
             return HasBottle();
+
+        // ───── Custom Items (RSK_SKIJER_CUSTOM_ITEMS) ─────
+        case RG_DESIRE_SENSOR:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_DESIRE_SENSOR, true);
+        case RG_HYLIAS_GRACE:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_HYLIAS_GRACE, true);
+        case RG_ZONAI_PERMAFROST:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ZONAI_PERMAFROST, true);
+        case RG_DEKU_LEAF:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_DEKU_LEAF, true);
+        case RG_SWITCH_HOOK:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_SWITCH_HOOK, true);
+        case RG_MOGMA_MITTS:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_MOGMA_MITTS, true);
+        case RG_GUST_JAR:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_GUST_JAR, true);
+        case RG_BALL_AND_CHAIN:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_BALL_AND_CHAIN, true);
+        case RG_WHIP:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_WHIP, true);
+        case RG_SPINNER:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_SPINNER, true);
+        case RG_CANE_OF_SOMARIA:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_CANE_OF_SOMARIA, true);
+        case RG_DOMINION_ROD:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_DOMINION_ROD, true);
+        case RG_TIME_GATE:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_TIME_GATE, true);
+        case RG_BOMB_ARROWS:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_BOMB_ARROWS, true);
+        case RG_FIRE_ROD:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROD_FIRE, true);
+        case RG_ICE_ROD:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROD_ICE, true);
+        case RG_LIGHT_ROD:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROD_LIGHT, true);
+        case RG_BEETLE:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_BEETLE, true);
+        case RG_MINISH_CAP:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_MINISH_CAP, true);
+        case RG_LANTERN:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_LANTERN, true);
+        case RG_CHATEAU_ROMANI:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_CHATEAU_ROMANI, true);
+        case RG_ROCS_FEATHER:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROCS_FEATHER_SKIJER, true);
+        case RG_ROCS_CAPE:
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROCS_CAPE, true);
+        case RG_PROGRESSIVE_ROCS:
+            // Any value in the Roc's Feather slot counts (cycles Feather → Cape).
+            // Cycling logic handled in ProcessReceivedItem.
+            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROCS_FEATHER_SKIJER, false);
+
+        // ───── MM Masks (gMods.MmMasks.RandoAllMasks) ─────
+        case RG_MM_MASK_POSTMAN:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_POSTMAN, true);
+        case RG_MM_MASK_ALL_NIGHT:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_ALL_NIGHT, true);
+        case RG_MM_MASK_BLAST:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_BLAST, true);
+        case RG_MM_MASK_STONE:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_STONE, true);
+        case RG_MM_MASK_GREAT_FAIRY:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GREAT_FAIRY, true);
+        case RG_MM_MASK_DEKU:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_DEKU, true);
+        case RG_MM_MASK_KEATON:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_KEATON, true);
+        case RG_MM_MASK_BREMEN:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_BREMEN, true);
+        case RG_MM_MASK_BUNNY:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_BUNNY, true);
+        case RG_MM_MASK_DON_GERO:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_DON_GERO, true);
+        case RG_MM_MASK_SCENTS:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_SCENTS, true);
+        case RG_MM_MASK_GORON:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GORON, true);
+        case RG_MM_MASK_ROMANI:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_ROMANI, true);
+        case RG_MM_MASK_CIRCUS_LEADER:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_CIRCUS_LEADER, true);
+        case RG_MM_MASK_KAFEI:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_KAFEI, true);
+        case RG_MM_MASK_COUPLE:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_COUPLE, true);
+        case RG_MM_MASK_TRUTH:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_TRUTH, true);
+        case RG_MM_MASK_ZORA:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_ZORA, true);
+        case RG_MM_MASK_KAMARO:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_KAMARO, true);
+        case RG_MM_MASK_GIBDO:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GIBDO, true);
+        case RG_MM_MASK_GARO:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GARO, true);
+        case RG_MM_MASK_CAPTAIN:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_CAPTAIN, true);
+        case RG_MM_MASK_GIANT:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GIANT, true);
+        case RG_MM_MASK_FIERCE_DEITY:
+            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_FIERCE_DEITY, true);
+
+        // ───── Extended Equipment (gCheats.ExtEquip.Enabled) ─────
+        case RG_EXT_CANE_OF_BYRNA:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_1);
+        case RG_EXT_FOUR_SWORD:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_2);
+        case RG_EXT_IRON_KNUCKLE_AXE:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_3);
+        case RG_EXT_DIVINE_SHIELD:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_1);
+        case RG_EXT_SHEIKAH_SHIELD:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_2);
+        case RG_EXT_SHIELD_OF_IKANA:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_3);
+        case RG_EXT_MAGIC_CAPE:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_1);
+        case RG_EXT_SPIRIT_BREASTPLATE:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_2);
+        case RG_EXT_CHAMPIONS_TUNIC:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_3);
+        case RG_EXT_PEGASUS_ANKLET:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_1);
+        case RG_EXT_PENDANT_OF_MEMORIES:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_2);
+        case RG_EXT_WATER_DRAGON_SCALE:
+            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_3);
+
+        case RG_SW97_FIRE_PROJECTILE:
+        case RG_SW97_FIRE_SPELL:
+            return HasItem(RG_FIRE_MEDALLION);
+        case RG_SW97_ICE_PROJECTILE:
+        case RG_SW97_ICE_SPELL:
+            return HasItem(RG_WATER_MEDALLION);
+        case RG_SW97_LIGHT_PROJECTILE:
+        case RG_SW97_LIGHT_SPELL:
+            return HasItem(RG_LIGHT_MEDALLION);
+        case RG_SW97_SPIRIT_SPELL:
+            return HasItem(RG_SPIRIT_MEDALLION);
+
         default:
             break;
     }
@@ -328,6 +470,20 @@ bool Logic::CanUse(RandomizerGet itemName) {
         case RG_ICE_ARROWS:
         case RG_LIGHT_ARROWS:
             return CanUse(RG_MAGIC_SINGLE) && CanUse(RG_FAIRY_BOW);
+        case RG_SW97_FIRE_PROJECTILE:
+        case RG_SW97_ICE_PROJECTILE:
+        case RG_SW97_LIGHT_PROJECTILE:
+            return ctx->GetOption(RSK_SW97_SPELLS) && CanUse(RG_MAGIC_SINGLE) &&
+                   (CanUse(RG_FAIRY_BOW) || CanUse(RG_FAIRY_SLINGSHOT));
+        case RG_SW97_FIRE_SPELL:
+        case RG_SW97_ICE_SPELL:
+        case RG_SW97_LIGHT_SPELL:
+        case RG_SW97_SPIRIT_SPELL:
+            return ctx->GetOption(RSK_SW97_SPELLS) && CanUse(RG_MAGIC_SINGLE);
+        case RG_FIRE_ROD:
+        case RG_ICE_ROD:
+        case RG_LIGHT_ROD:
+            return CanUse(RG_MAGIC_SINGLE);
         case RG_DEMISE_DESTRUCTION:
             return CanUse(RG_MAGIC_SINGLE);
 
@@ -452,13 +608,19 @@ bool Logic::CanUse(RandomizerGet itemName) {
 }
 
 bool Logic::HasProjectile(HasProjectileAge age) {
+    bool childPath = CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_BOOMERANG) ||
+                     CanUse(RG_SWITCH_HOOK) || CanUse(RG_GUST_JAR) ||
+                     (CanUse(RG_MM_MASK_DEKU) && CanUse(RG_MAGIC_SINGLE)) ||
+                     CanUse(RG_MM_MASK_ZORA);
+    bool adultPath = CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_BOW) || CanUse(RG_BEETLE);
+    bool eitherAge = CanUse(RG_WHIP) ||
+                     CanUse(RG_FIRE_ROD) || CanUse(RG_ICE_ROD) || CanUse(RG_LIGHT_ROD);
+
     return HasExplosives() ||
-           (age == HasProjectileAge::Child && (CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_BOOMERANG))) ||
-           (age == HasProjectileAge::Adult && (CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_BOW))) ||
-           (age == HasProjectileAge::Both && (CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_BOOMERANG)) &&
-            (CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_BOW))) ||
-           (age == HasProjectileAge::Either &&
-            (CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_BOOMERANG) || CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_BOW)));
+           (age == HasProjectileAge::Child && (childPath || eitherAge)) ||
+           (age == HasProjectileAge::Adult && (adultPath || eitherAge)) ||
+           (age == HasProjectileAge::Both && (childPath || eitherAge) && (adultPath || eitherAge)) ||
+           (age == HasProjectileAge::Either && (childPath || adultPath || eitherAge));
 }
 
 bool Logic::HasBossSoul(RandomizerGet itemName) {
@@ -512,8 +674,9 @@ bool Logic::CanMiddairGroundJump(bool hasBombflower) {
 }
 
 bool Logic::CanOpenUnderwaterChest() {
-    return ctx->GetTrickOption(RT_OPEN_UNDERWATER_CHEST) && CanUse(RG_IRON_BOOTS) && CanUse(RG_HOOKSHOT) &&
-           HasItem(RG_OPEN_CHEST);
+    return HasItem(RG_OPEN_CHEST) &&
+           ((ctx->GetTrickOption(RT_OPEN_UNDERWATER_CHEST) && CanUse(RG_IRON_BOOTS) && CanUse(RG_HOOKSHOT)) ||
+            CanUse(RG_MM_MASK_ZORA));
 }
 
 uint8_t GetDifficultyValueFromString(Rando::Option& glitchOption) {
@@ -744,7 +907,7 @@ bool Logic::CanKillEnemy(RandomizerEnemy enemy, EnemyDistance distance, bool wal
                     (CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_BOMBCHU_5)));
         case RE_GIBDO:
         case RE_REDEAD:
-            return CanJumpslash() || CanUse(RG_DINS_FIRE);
+            return CanJumpslash() || CanUse(RG_DINS_FIRE) || CanUse(RG_LIGHT_ROD);
         case RE_MEG:
             return CanUse(RG_FAIRY_BOW) || CanUse(RG_HOOKSHOT) || HasExplosives();
         case RE_ARMOS:
@@ -1094,11 +1257,14 @@ bool Logic::CanGetDekuBabaSticks() {
 
 bool Logic::CanGetDekuBabaNuts() {
     return CanJumpslash() || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW) || HasExplosives() ||
-           CanUse(RG_DINS_FIRE);
+           CanUse(RG_DINS_FIRE) ||
+           (CanUse(RG_MM_MASK_DEKU) && CanUse(RG_MAGIC_SINGLE));
 }
 
 bool Logic::CanHitEyeTargets() {
-    return CanUse(RG_FAIRY_BOW) || CanUse(RG_FAIRY_SLINGSHOT);
+    return CanUse(RG_FAIRY_BOW) || CanUse(RG_FAIRY_SLINGSHOT) ||
+           CanUse(RG_FIRE_ROD) || CanUse(RG_ICE_ROD) || CanUse(RG_LIGHT_ROD) ||
+           (CanUse(RG_MM_MASK_DEKU) && CanUse(RG_MAGIC_SINGLE));
 }
 
 bool Logic::CanDetonateBombFlowers() {
@@ -1225,16 +1391,23 @@ bool Logic::HasBottle() {
 }
 
 bool Logic::CanUseSword() {
-    return CanUse(RG_KOKIRI_SWORD) || CanUse(RG_MASTER_SWORD) || CanUse(RG_BIGGORON_SWORD);
+    return CanUse(RG_KOKIRI_SWORD) || CanUse(RG_MASTER_SWORD) || CanUse(RG_BIGGORON_SWORD) ||
+           CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_MM_MASK_FIERCE_DEITY) ||
+           CanUse(RG_MM_MASK_DEKU) || CanUse(RG_MM_MASK_ZORA) ||
+           CanUse(RG_EXT_FOUR_SWORD) || CanUse(RG_EXT_CANE_OF_BYRNA);
 }
 
 bool Logic::CanJumpslashExceptHammer() {
-    // Not including hammer as hammer jump attacks can be weird;
-    return CanUse(RG_STICKS) || CanUseSword();
+    return CanUse(RG_STICKS) ||
+           CanUse(RG_KOKIRI_SWORD) || CanUse(RG_MASTER_SWORD) || CanUse(RG_BIGGORON_SWORD) ||
+           CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_MM_MASK_FIERCE_DEITY) ||
+           CanUse(RG_EXT_FOUR_SWORD) || CanUse(RG_EXT_CANE_OF_BYRNA);
 }
 
 bool Logic::CanJumpslash() {
-    return CanJumpslashExceptHammer() || CanUse(RG_MEGATON_HAMMER);
+    return CanJumpslashExceptHammer() || CanUse(RG_MEGATON_HAMMER) ||
+           CanUse(RG_BALL_AND_CHAIN) || CanUse(RG_EXT_IRON_KNUCKLE_AXE) ||
+           CanUse(RG_FIRE_ROD) || CanUse(RG_ICE_ROD) || CanUse(RG_LIGHT_ROD);
 }
 
 bool Logic::CanClearStalagmite() {
@@ -1247,7 +1420,8 @@ bool Logic::CanHitSwitch(EnemyDistance distance, bool inWater) {
     switch (distance) {
         case ED_CLOSE:
         case ED_SHORT_JUMPSLASH:
-            hit = CanUse(RG_KOKIRI_SWORD) || CanUse(RG_MEGATON_HAMMER) || CanUse(RG_GIANTS_KNIFE);
+            hit = CanUse(RG_KOKIRI_SWORD) || CanUse(RG_MEGATON_HAMMER) || CanUse(RG_GIANTS_KNIFE) ||
+                  CanUse(RG_BALL_AND_CHAIN) || CanUse(RG_MM_MASK_GORON);
             [[fallthrough]];
         case ED_MASTER_SWORD_JUMPSLASH:
             hit = hit || CanUse(RG_MASTER_SWORD);
@@ -1259,7 +1433,10 @@ bool Logic::CanHitSwitch(EnemyDistance distance, bool inWater) {
             hit = hit || (!inWater && CanUse(RG_BOMB_BAG));
             [[fallthrough]];
         case ED_BOOMERANG:
-            hit = hit || CanUse(RG_BOOMERANG);
+            hit = hit || CanUse(RG_BOOMERANG) ||
+                  CanUse(RG_BEETLE) || CanUse(RG_WHIP) || CanUse(RG_SWITCH_HOOK) ||
+                  CanUse(RG_MM_MASK_ZORA) ||
+                  (CanUse(RG_MM_MASK_DEKU) && CanUse(RG_MAGIC_SINGLE));
             [[fallthrough]];
         case ED_HOOKSHOT:
             // RANDOTODO test chu range in a practical example
@@ -1269,7 +1446,8 @@ bool Logic::CanHitSwitch(EnemyDistance distance, bool inWater) {
             hit = hit || CanUse(RG_LONGSHOT);
             [[fallthrough]];
         case ED_FAR:
-            hit = hit || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW);
+            hit = hit || CanUse(RG_FAIRY_SLINGSHOT) || CanUse(RG_FAIRY_BOW) ||
+                  CanUse(RG_FIRE_ROD) || CanUse(RG_ICE_ROD) || CanUse(RG_LIGHT_ROD);
             break;
     }
     return hit;
@@ -1277,7 +1455,7 @@ bool Logic::CanHitSwitch(EnemyDistance distance, bool inWater) {
 
 bool Logic::CanDamage() {
     return CanUse(RG_FAIRY_SLINGSHOT) || CanJumpslash() || HasExplosives() || CanUse(RG_DINS_FIRE) ||
-           CanUse(RG_FAIRY_BOW);
+           CanUse(RG_FAIRY_BOW) || CanUse(RG_BEETLE) || CanUse(RG_SPINNER);
 }
 
 bool Logic::CanAttack() {
@@ -1296,7 +1474,9 @@ bool Logic::BombchuRefill() {
 }
 
 bool Logic::HookshotOrBoomerang() {
-    return CanUse(RG_HOOKSHOT) || CanUse(RG_BOOMERANG);
+    return CanUse(RG_HOOKSHOT) || CanUse(RG_BOOMERANG) ||
+           CanUse(RG_BEETLE) || CanUse(RG_WHIP) || CanUse(RG_SWITCH_HOOK) ||
+           CanUse(RG_MM_MASK_ZORA);
 }
 
 bool Logic::ScarecrowsSong() {
@@ -1351,7 +1531,8 @@ bool Logic::CanBreakSmallCrates() {
 }
 
 bool Logic::CanBreakRocks() {
-    return BlastOrSmash() || HasItem(RG_POWER_BRACELET);
+    return BlastOrSmash() || HasItem(RG_POWER_BRACELET) ||
+           CanUse(RG_BALL_AND_CHAIN) || CanUse(RG_SPINNER);
 }
 
 bool Logic::CanBonkTrees() {
@@ -1363,11 +1544,26 @@ bool Logic::CanRead() {
 }
 
 bool Logic::HasExplosives() {
-    return CanUse(RG_BOMB_BAG) || CanUse(RG_BOMBCHU_5) || CanUse(RG_DEMISE_DESTRUCTION);
+    return CanUse(RG_BOMB_BAG) || CanUse(RG_BOMBCHU_5) ||
+           CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_MM_MASK_BLAST);
 }
 
 bool Logic::BlastOrSmash() {
-    return HasExplosives() || CanUse(RG_MEGATON_HAMMER);
+    return HasExplosives() || CanUse(RG_MEGATON_HAMMER) ||
+           CanUse(RG_BALL_AND_CHAIN) || CanUse(RG_EXT_IRON_KNUCKLE_AXE) ||
+           CanUse(RG_MM_MASK_GORON);
+}
+
+bool Logic::CanBreakBoulder() {
+    return BlastOrSmash() || CanUse(RG_SPINNER);
+}
+
+bool Logic::CanBreakBronzeBoulder() {
+    return CanUse(RG_MEGATON_HAMMER) || CanUse(RG_SPINNER);
+}
+
+bool Logic::CanBreakSilverBoulder() {
+    return HasStrength(2) || CanUse(RG_SPINNER);
 }
 
 bool Logic::CanSpawnSoilSkull(RandomizerGet bean) {
@@ -1375,13 +1571,17 @@ bool Logic::CanSpawnSoilSkull(RandomizerGet bean) {
 }
 
 bool Logic::CanReflectNuts() {
-    return CanUse(RG_DEKU_SHIELD) || (IsAdult && HasItem(RG_HYLIAN_SHIELD));
+    return CanUse(RG_DEKU_SHIELD) || (IsAdult && HasItem(RG_HYLIAN_SHIELD)) ||
+           CanUse(RG_EXT_DIVINE_SHIELD);
 }
 
 bool Logic::CanCutShrubs() {
     return CanUse(RG_KOKIRI_SWORD) || CanUse(RG_BOOMERANG) || HasExplosives() || CanUse(RG_MASTER_SWORD) ||
            CanUse(RG_MEGATON_HAMMER) || CanUse(RG_BIGGORON_SWORD) || CanUse(RG_GIANTS_KNIFE) ||
-           HasItem(RG_GORONS_BRACELET);
+           HasItem(RG_GORONS_BRACELET) ||
+           CanUse(RG_DEMISE_DESTRUCTION) || CanUse(RG_MM_MASK_FIERCE_DEITY) ||
+           CanUse(RG_EXT_FOUR_SWORD) || CanUse(RG_EXT_CANE_OF_BYRNA) ||
+           CanUse(RG_BALL_AND_CHAIN) || CanUse(RG_EXT_IRON_KNUCKLE_AXE) || CanUse(RG_MM_MASK_GORON);
 }
 
 bool Logic::CanStunDeku() {
@@ -1487,11 +1687,29 @@ bool Logic::CanBreakLowerBeehives() {
 }
 
 bool Logic::HasFireSource() {
-    return CanUse(RG_DINS_FIRE) || CanUse(RG_FIRE_ARROWS);
+    return CanUse(RG_DINS_FIRE) || CanUse(RG_FIRE_ARROWS) || CanUse(RG_SW97_FIRE_SPELL) ||
+           CanUse(RG_FIRE_ROD) || CanUse(RG_LANTERN);
 }
 
 bool Logic::HasFireSourceWithTorch() {
     return HasFireSource() || CanUse(RG_STICKS);
+}
+
+bool Logic::CanMeltRedIce() {
+    return CanUse(RG_BOTTLE_WITH_BLUE_FIRE) ||
+           (ctx->GetOption(RSK_BLUE_FIRE_ARROWS) &&
+            (CanUse(RG_ICE_ARROWS) || CanUse(RG_SW97_ICE_PROJECTILE))) ||
+           CanUse(RG_SW97_ICE_SPELL) ||
+           CanUse(RG_ICE_ROD) ||
+           CanUse(RG_BALL_AND_CHAIN);
+}
+
+bool Logic::HasStrength(uint8_t level) {
+    if (level <= 2 && CanUse(RG_MM_MASK_GORON)) return true;
+    if (level == 1) return CanUse(RG_GORONS_BRACELET);
+    if (level == 2) return CanUse(RG_SILVER_GAUNTLETS);
+    if (level == 3) return CanUse(RG_GOLDEN_GAUNTLETS);
+    return false;
 }
 
 bool Logic::SunlightArrows() {
@@ -1543,16 +1761,25 @@ bool Logic::TradeQuestStep(RandomizerGet rg) {
 }
 
 bool Logic::CanStandingShield() {
-    return CanUse(RG_MIRROR_SHIELD) || (IsAdult && HasItem(RG_HYLIAN_SHIELD)) || CanUse(RG_DEKU_SHIELD);
+    return CanUse(RG_MIRROR_SHIELD) || (IsAdult && HasItem(RG_HYLIAN_SHIELD)) || CanUse(RG_DEKU_SHIELD) ||
+           CanUse(RG_EXT_DIVINE_SHIELD) || CanUse(RG_EXT_SHEIKAH_SHIELD) || CanUse(RG_EXT_SHIELD_OF_IKANA) ||
+           CanUse(RG_MM_MASK_DEKU) || CanUse(RG_MM_MASK_GORON) || CanUse(RG_MM_MASK_ZORA);
 }
 
 bool Logic::CanShield() {
-    return CanUse(RG_MIRROR_SHIELD) || HasItem(RG_HYLIAN_SHIELD) || CanUse(RG_DEKU_SHIELD);
+    return CanUse(RG_MIRROR_SHIELD) || HasItem(RG_HYLIAN_SHIELD) || CanUse(RG_DEKU_SHIELD) ||
+           CanUse(RG_EXT_DIVINE_SHIELD) || CanUse(RG_EXT_SHEIKAH_SHIELD) || CanUse(RG_EXT_SHIELD_OF_IKANA) ||
+           CanUse(RG_MM_MASK_DEKU) || CanUse(RG_MM_MASK_GORON) || CanUse(RG_MM_MASK_ZORA);
 }
 
 bool Logic::CanUseProjectile() {
     return HasExplosives() || CanUse(RG_FAIRY_BOW) || CanUse(RG_HOOKSHOT) || CanUse(RG_FAIRY_SLINGSHOT) ||
-           CanUse(RG_BOOMERANG);
+           CanUse(RG_BOOMERANG) ||
+           CanUse(RG_BEETLE) || CanUse(RG_WHIP) || CanUse(RG_SWITCH_HOOK) ||
+           CanUse(RG_GUST_JAR) ||
+           CanUse(RG_FIRE_ROD) || CanUse(RG_ICE_ROD) || CanUse(RG_LIGHT_ROD) ||
+           (CanUse(RG_MM_MASK_DEKU) && CanUse(RG_MAGIC_SINGLE)) ||
+           CanUse(RG_MM_MASK_ZORA);
 }
 
 bool Logic::CanBuildRainbowBridge() {
@@ -2610,11 +2837,15 @@ bool Logic::ReachDistantScarecrow() {
 }
 
 bool Logic::CanClimbLadder() {
-    return HasItem(RG_CLIMB) || (ctx->GetTrickOption(RT_HOOKSHOT_LADDERS) && CanUse(RG_HOOKSHOT));
+    return HasItem(RG_CLIMB) || (ctx->GetTrickOption(RT_HOOKSHOT_LADDERS) && CanUse(RG_HOOKSHOT)) ||
+           (CanUse(RG_HYLIAS_GRACE) && CanUse(RG_MAGIC_SINGLE)) ||
+           CanUse(RG_SW97_SPIRIT_SPELL);
 }
 
 bool Logic::CanClimbHighLadder() {
-    return HasItem(RG_CLIMB) || (ctx->GetTrickOption(RT_HOOKSHOT_LADDERS) && CanUse(RG_LONGSHOT));
+    return HasItem(RG_CLIMB) || (ctx->GetTrickOption(RT_HOOKSHOT_LADDERS) && CanUse(RG_LONGSHOT)) ||
+           (CanUse(RG_HYLIAS_GRACE) && CanUse(RG_MAGIC_SINGLE)) ||
+           CanUse(RG_SW97_SPIRIT_SPELL);
 }
 
 bool Logic::SummonEpona() {

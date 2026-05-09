@@ -374,12 +374,29 @@ void AddFixedItemToPool(RandomizerGet item, int count = 1, bool iceTrapModel = t
     }
 }
 
+static bool IceTrapsAllowed() {
+    return ctx->GetOption(RSK_BASE_ICE_TRAPS).Get() != 0
+        || ctx->GetOption(RSK_ADDITIONAL_ICE_TRAPS).Get() > 0
+        || ctx->GetOption(RSK_ICE_TRAP_PERCENT).Get() > 0;
+}
+
+static RandomizerGet RandomJunkExcludingTraps() {
+    if (IceTrapsAllowed()) {
+        return RandomElement(JunkPoolItems);
+    }
+    RandomizerGet pick;
+    do {
+        pick = RandomElement(JunkPoolItems);
+    } while (pick == RG_ICE_TRAP);
+    return pick;
+}
+
 RandomizerGet GetJunkItem() {
     if (Rando::Traps::ShouldJunkItemBeTrap()) {
         return RG_ICE_TRAP;
     }
 
-    return RandomElement(JunkPoolItems);
+    return RandomJunkExcludingTraps();
 }
 
 // Replace junk items in the pool with pending junk
@@ -1356,7 +1373,7 @@ void GenerateItemPool() {
         if (junkToAdd > junkPool.size()) {
             itemPool.insert(itemPool.end(), junkPool.begin(), junkPool.end());
             while (itemPool.size() < locCount) {
-                itemPool.insert(itemPool.end(), RandomElement(JunkPoolItems));
+                itemPool.insert(itemPool.end(), RandomJunkExcludingTraps());
             }
         } else {
             while (itemPool.size() < locCount) {

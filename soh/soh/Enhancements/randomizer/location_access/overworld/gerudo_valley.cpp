@@ -21,10 +21,10 @@ void RegionTable_Init_GerudoValley() {
                                               (logic->IsAdult || logic->HasItem(RG_BRONZE_SCALE) || logic->CanUse(RG_BOOMERANG) || (ctx->GetTrickOption(RT_VOIDOUT_COLLECTION) && logic->HasItem(RG_POWER_BRACELET)))),
         LOCATION(RC_GV_UNDERWATER_ROCK_3,     (logic->CanUse(RG_BOMBCHU_5) || (logic->CanUse(RG_BOMB_BAG) && ctx->GetTrickOption(RT_BOMB_DETONATION)) || (logic->IsAdult && logic->HasItem(RG_POWER_BRACELET))) && 
                                               (logic->IsAdult || logic->HasItem(RG_BRONZE_SCALE) || logic->CanUse(RG_BOOMERANG) || (ctx->GetTrickOption(RT_VOIDOUT_COLLECTION) && logic->HasItem(RG_POWER_BRACELET)))),
-        LOCATION(RC_GV_BOULDER_1,             logic->IsAdult && logic->BlastOrSmash()),
-        LOCATION(RC_GV_BOULDER_2,             logic->IsAdult && logic->BlastOrSmash()),
-        LOCATION(RC_GV_BRONZE_BOULDER_1,      logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_GV_BRONZE_BOULDER_2,      logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
+        LOCATION(RC_GV_BOULDER_1,             logic->IsAdult && logic->CanBreakBoulder()),
+        LOCATION(RC_GV_BOULDER_2,             logic->IsAdult && logic->CanBreakBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_1,      logic->IsAdult && logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_2,      logic->IsAdult && logic->CanBreakBronzeBoulder()),
         LOCATION(RC_GV_BRIDGE_RECTANGLE_SIGN, logic->CanRead()),
         LOCATION(RC_GV_EAST_EXIT_ARROW_SIGN,  logic->CanRead()),
     }, {
@@ -87,12 +87,12 @@ void RegionTable_Init_GerudoValley() {
 
     areaTable[RR_GV_GROTTO_LEDGE] = Region("GV Grotto Ledge", SCENE_GERUDO_VALLEY, {}, {
         //Locations
-        LOCATION(RC_GV_SILVER_BOULDER, logic->CanUse(RG_SILVER_GAUNTLETS)),
+        LOCATION(RC_GV_SILVER_BOULDER, logic->CanBreakSilverBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_GV_UPPER_STREAM,   ctx->GetTrickOption(RT_DAMAGE_BOOST_SIMPLE) && logic->HasExplosives() && logic->TakeDamage()),
         ENTRANCE(RR_GV_LOWER_STREAM,   logic->HasItem(RG_BRONZE_SCALE) || logic->CanUse(RG_IRON_BOOTS)),
-        ENTRANCE(RR_GV_OCTOROK_GROTTO, logic->CanUse(RG_SILVER_GAUNTLETS)),
+        ENTRANCE(RR_GV_OCTOROK_GROTTO, logic->HasStrength(2)),
         ENTRANCE(RR_GV_CRATE_LEDGE,    logic->CanUse(RG_LONGSHOT)),
     });
 
@@ -120,13 +120,13 @@ void RegionTable_Init_GerudoValley() {
         LOCATION(RC_GV_ROCK_ACROSS_BRIDGE_2,           logic->IsAdult),
         LOCATION(RC_GV_ROCK_ACROSS_BRIDGE_3,           logic->IsAdult),
         LOCATION(RC_GV_ROCK_ACROSS_BRIDGE_4,           logic->IsAdult),
-        LOCATION(RC_GV_BOULDER_ACROSS_BRIDGE,          logic->IsAdult && logic->BlastOrSmash()),
-        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_1, logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_2, logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_3, logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_4, logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_5, logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_6, logic->IsAdult && logic->CanUse(RG_MEGATON_HAMMER)),
+        LOCATION(RC_GV_BOULDER_ACROSS_BRIDGE,          logic->IsAdult && logic->CanBreakBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_1, logic->IsAdult && logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_2, logic->IsAdult && logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_3, logic->IsAdult && logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_4, logic->IsAdult && logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_5, logic->IsAdult && logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_GV_BRONZE_BOULDER_ACROSS_BRIDGE_6, logic->IsAdult && logic->CanBreakBronzeBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_GF_OUTSKIRTS,          true),

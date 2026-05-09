@@ -1,4 +1,5 @@
 #include "Harpoon.h"
+#include "HarpoonSkinSync.h"
 #include "soh/SohGui/SohMenu.h"
 #include "soh/SohGui/MenuTypes.h"
 #include <libultraship/libultraship.h>
@@ -20,7 +21,7 @@ extern std::shared_ptr<SohMenu> mSohMenu;
 // ============================================================================
 
 static const char* OFFICIAL_HOST = "54.209.53.9";
-static const int OFFICIAL_PORT = 43384;
+static const int OFFICIAL_PORT = 8765; 
 
 static const char* sGameStateNames[] = {
     "Disconnected", "Lobby", "Map Select", "Countdown", "Hiding Phase", "Playing", "Spectating", "Finished",
@@ -64,7 +65,7 @@ static void HarpoonMainMenu(WidgetInfo& info) {
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 
-    s32 port = CVarGetInteger(CVAR_HARPOON("Port"), 43384);
+    s32 port = CVarGetInteger(CVAR_HARPOON("Port"), 8765);  // Harpoon v2 default
     ImGui::Text("Port:");
     ImGui::SameLine();
     if (ImGui::InputInt("##HarpoonPort", &port)) {
@@ -137,36 +138,6 @@ static void HarpoonMainMenu(WidgetInfo& info) {
     }
 
     // ====================================================================
-    // Settings (Sync & PVP)
-    // ====================================================================
-
-    ImGui::Separator();
-    ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.0f, 1.0f), "Settings");
-
-    bool syncItems = harpoon->syncItems;
-    if (ImGui::Checkbox("Sync Items & Flags##Harpoon", &syncItems)) {
-        harpoon->syncItems = syncItems;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        ImGui::Text("Sync items, flags, checks, entrances, and dungeon keys\n"
-                    "between all connected players (for Randomizer).");
-        ImGui::EndTooltip();
-    }
-
-    bool pvpEnabled = harpoon->pvpEnabled;
-    if (ImGui::Checkbox("PVP##Harpoon", &pvpEnabled)) {
-        harpoon->pvpEnabled = pvpEnabled;
-    }
-    if (ImGui::IsItemHovered()) {
-        ImGui::BeginTooltip();
-        ImGui::Text("When enabled, players can damage and knockback each other.\n"
-                    "When disabled, status effects (fire, ice, electric) are still\n"
-                    "received but damage and knockback are ignored.");
-        ImGui::EndTooltip();
-    }
-
-    // ====================================================================
     // Room Browser (connected but not in a room)
     // ====================================================================
 
@@ -177,6 +148,30 @@ static void HarpoonMainMenu(WidgetInfo& info) {
         static char roomIdBuf[64] = "";
         static char roomPassBuf[64] = "";
         static char roomNameBuf[64] = "";
+        static char gameModeBuf[64] = "";
+
+        // Discover installed gamemode packs (folders under harpoon/gamemodes/
+        // that contain a gamemode.yaml). Re-scanned only when the user clicks
+        // "Refresh", so the dropdown stays cheap to render.
+        std::vector<std::string> gamemodes = HarpoonSkinSync::GetInstalledGamemodes();
+        bool hasGamemodes = !gamemodes.empty();
+
+        // First-time default: pick the first installed gamemode.
+        if (gameModeBuf[0] == '\0' && hasGamemodes) {
+            strncpy(gameModeBuf, gamemodes.front().c_str(), sizeof(gameModeBuf) - 1);
+        }
+        // If the previously-selected gamemode disappeared (folder removed),
+        // reset to the first available so the dropdown isn't stuck on a stale
+        // entry the user can't actually create with.
+        if (hasGamemodes) {
+            bool stillPresent = false;
+            for (const auto& g : gamemodes) {
+                if (g == gameModeBuf) { stillPresent = true; break; }
+            }
+            if (!stillPresent) {
+                strncpy(gameModeBuf, gamemodes.front().c_str(), sizeof(gameModeBuf) - 1);
+            }
+        }
 
         ImGui::Text("Room Name:");
         ImGui::SameLine();
@@ -185,20 +180,62 @@ static void HarpoonMainMenu(WidgetInfo& info) {
         }
         ImGui::InputText("##RoomName", roomNameBuf, sizeof(roomNameBuf));
 
+        // Gamemode dropdown — populated from harpoon/gamemodes/.
+        ImGui::Text("Game Mode:");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!hasGamemodes);
+        const char* preview = hasGamemodes ? gameModeBuf : "(none installed)";
+        if (ImGui::BeginCombo("##GameMode", preview)) {
+            for (const auto& gm : gamemodes) {
+                bool isSelected = (gm == gameModeBuf);
+                if (ImGui::Selectable(gm.c_str(), isSelected)) {
+                    strncpy(gameModeBuf, gm.c_str(), sizeof(gameModeBuf) - 1);
+                    gameModeBuf[sizeof(gameModeBuf) - 1] = '\0';
+                }
+                if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Refresh##Gamemodes")) {
+            HarpoonSkinSync::GetInstalledGamemodes(/*forceRescan*/ true);
+        }
+
+        if (!hasGamemodes) {
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                               "No gamemodes installed.");
+            ImGui::TextWrapped("Drop pack folders into harpoon/gamemodes/ "
+                               "(each must contain gamemode.yaml), then click Refresh.");
+        }
+
         ImGui::Text("Password:");
         ImGui::SameLine();
         ImGui::InputText("##RoomPass", roomPassBuf, sizeof(roomPassBuf));
 
+        ImGui::BeginDisabled(!hasGamemodes);
         if (ImGui::Button("Create Room")) {
-            harpoon->SendPacket_RoomCreate(roomNameBuf, "randomizer", roomPassBuf);
+            harpoon->SendPacket_RoomCreate(roomNameBuf, gameModeBuf, roomPassBuf);
         }
+        ImGui::EndDisabled();
 
         ImGui::Separator();
+
+        // Helper: check if a gamemode_id is in the local installed list.
+        auto haveGamemode = [&gamemodes](const std::string& id) {
+            for (const auto& g : gamemodes) {
+                if (g == id) return true;
+            }
+            return false;
+        };
 
         ImGui::Text("Room ID:");
         ImGui::SameLine();
         ImGui::InputText("##RoomId", roomIdBuf, sizeof(roomIdBuf));
 
+        // Join-by-id can't tell us the gamemode in advance, so we let it
+        // through — the server will reject (or the client will auto-leave on
+        // ROOM.GAMEMODE_MANIFEST if the pack is missing).
         if (ImGui::Button("Join Room")) {
             harpoon->SendPacket_RoomJoin(roomIdBuf, roomPassBuf);
         }
@@ -207,18 +244,42 @@ static void HarpoonMainMenu(WidgetInfo& info) {
             harpoon->SendPacket_RoomList();
         }
 
-        // Room list
+        // Room list — disable Join for rooms whose gamemode isn't installed
+        // locally. The user gets a tooltip explaining why.
         if (!harpoon->roomList.empty()) {
             ImGui::Separator();
             ImGui::Text("Available Rooms:");
             for (auto& room : harpoon->roomList) {
                 ImGui::PushID(room.roomId.c_str());
-                ImGui::Text("  %s (%s) [%d/%d] %s%s", room.name.c_str(), room.gameMode.c_str(), room.playerCount,
-                            room.maxPlayers, room.state.c_str(), room.hasPassword ? " [PASS]" : "");
+                bool gmInstalled = haveGamemode(room.gameMode);
+                if (!gmInstalled) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
+                                       "  %s (%s) [%d/%d] %s%s",
+                                       room.name.c_str(), room.gameMode.c_str(),
+                                       room.playerCount, room.maxPlayers,
+                                       room.state.c_str(),
+                                       room.hasPassword ? " [PASS]" : "");
+                } else {
+                    ImGui::Text("  %s (%s) [%d/%d] %s%s",
+                                room.name.c_str(), room.gameMode.c_str(),
+                                room.playerCount, room.maxPlayers,
+                                room.state.c_str(),
+                                room.hasPassword ? " [PASS]" : "");
+                }
                 ImGui::SameLine();
+                ImGui::BeginDisabled(!gmInstalled);
                 if (ImGui::SmallButton("Join")) {
                     strncpy(roomIdBuf, room.roomId.c_str(), sizeof(roomIdBuf) - 1);
                     harpoon->SendPacket_RoomJoin(room.roomId.c_str(), roomPassBuf);
+                }
+                ImGui::EndDisabled();
+                if (!gmInstalled && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("Gamemode '%s' is not installed.\n"
+                                "Drop the pack folder into harpoon/gamemodes/\n"
+                                "and click Refresh.",
+                                room.gameMode.c_str());
+                    ImGui::EndTooltip();
                 }
                 ImGui::PopID();
             }

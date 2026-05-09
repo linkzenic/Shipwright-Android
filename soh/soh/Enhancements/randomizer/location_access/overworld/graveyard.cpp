@@ -153,7 +153,7 @@ void RegionTable_Init_Graveyard() {
     }, {
         //Exits
         ENTRANCE(RR_THE_GRAVEYARD,          true),
-        ENTRANCE(RR_SHADOW_TEMPLE_ENTRYWAY, logic->CanUse(RG_DINS_FIRE) || (ctx->GetTrickOption(RT_GY_SHADOW_FIRE_ARROWS) && logic->IsAdult && logic->CanUse(RG_FIRE_ARROWS))),
+        ENTRANCE(RR_SHADOW_TEMPLE_ENTRYWAY, (logic->CanUse(RG_DINS_FIRE) || logic->CanUse(RG_FIRE_ROD)) || (ctx->GetTrickOption(RT_GY_SHADOW_FIRE_ARROWS) && logic->IsAdult && (logic->CanUse(RG_FIRE_ARROWS) || logic->CanUse(RG_SW97_FIRE_PROJECTILE) || logic->CanUse(RG_FIRE_ROD)))),
     });
 
     // clang-format on

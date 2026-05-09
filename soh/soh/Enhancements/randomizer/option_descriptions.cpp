@@ -829,6 +829,12 @@ void Settings::CreateOptionDescriptions() {
     mOptionDescriptions[RSK_SUNLIGHT_ARROWS] =
         "Light Arrows can be used to light up the sun switches instead of using the Mirror Shield. "
         "Item placement logic will respect this option, so it might be required to use this to progress.";
+    mOptionDescriptions[RSK_SW97_SPELLS] =
+        "Sage Spells: the elemental medallions grant elemental damage with magic cost.\n"
+        "  - Spell: Medallion alone acts as a passive elemental source (Fire Medallion = Din's Fire equivalent for "
+        "lighting torches and burning webs, Water Medallion = melt red ice, etc.).\n"
+        "  - Projectile: Medallion + Bow (adult) or Slingshot (child) imbues the shot with the element.\n"
+        "Item placement logic will respect this option.";
     mOptionDescriptions[RSK_ROCS_FEATHER] =
         "Adds Roc's Feather to the item pool. Roc's Feather is a custom item granting the player a jump on demand. "
         "The jump can also be used when already in mid-air. Roc's Feather is not considered by logic.";

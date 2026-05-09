@@ -1,5 +1,6 @@
 #include "z_bg_ice_shelter.h"
 #include "objects/object_ice_objects/object_ice_objects.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/OTRGlobals.h"
 
 #define FLAGS 0
@@ -430,6 +431,37 @@ void BgIceShelter_BreakInstantly(Actor* thisx, PlayState* play) {
     }
 
     Actor_Kill(&this->dyna.actor);
+}
+
+// Public function for Ball and Chain: spawn shatter VFX/SFX, then trigger the
+// melt path so VB_RED_ICE_DROP_ITEM fires correctly (so randomizer rewards drop).
+void BgIceShelter_ShatterMelt(Actor* thisx, PlayState* play) {
+    BgIceShelter* this = (BgIceShelter*)thisx;
+    f32 height = (f32)this->cylinder1.dim.height;
+    static Vec3f accel = { 0.0f, -1.0f, 0.0f };
+    static Color_RGBA8 primColor = { 170, 255, 255, 255 };
+    static Color_RGBA8 envColor = { 0, 50, 100, 255 };
+    Vec3f vel;
+    Vec3f pos;
+    s32 i;
+    s32 j;
+
+    // Spawn ice fragment effect (same as BreakInstantly)
+    SoundSource_PlaySfxAtFixedWorldPos(play, &thisx->world.pos, 30, NA_SE_EV_ICE_BROKEN);
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < 10; j++) {
+            pos.x = thisx->world.pos.x + Rand_CenteredFloat(8.0f);
+            pos.y = thisx->world.pos.y + (Rand_ZeroOne() * height) + (i * height);
+            pos.z = thisx->world.pos.z + Rand_CenteredFloat(8.0f);
+            vel.x = Rand_CenteredFloat(7.0f);
+            vel.z = Rand_CenteredFloat(7.0f);
+            vel.y = (Rand_ZeroOne() * 4.0f) + 8.0f;
+            EffectSsEnIce_Spawn(play, &pos, (Rand_ZeroOne() * 0.2f) + 0.1f, &vel, &accel, &primColor, &envColor, 30);
+        }
+    }
+
+    // Trigger melt path so VB_RED_ICE_DROP_ITEM fires when alpha hits 0.
+    BgIceShelter_MeltInstantly(thisx, play);
 }
 
 // Public function for Ice Rod to melt red ice (like Blue Fire)

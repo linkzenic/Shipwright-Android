@@ -30,7 +30,7 @@ extern PlayState* gPlayState;
 #include <map>
 #include <zlib.h>
 
-// .pak files are scanned from mods/ at startup (and from mods/harpoon_skin_sync/
+// .pak files are scanned from mods/ at startup (and from harpoon/skins/
 // for the per-actor remote sync registry). All .o2r handling — both global mods
 // and per-actor overrides for Harpoon dummies — is OUT OF SCOPE for pak_loader;
 // that lives in its own subsystem and consumes its own archives.
@@ -163,7 +163,7 @@ struct PakModel {
     u8 adultReady;
     u8 childReady;
     u8 isEquipmentOnly; // 1 = zzequipment pak (no body, only equipment items)
-    u8 isSyncOnly;      // 1 = loaded from mods/harpoon_skin_sync/; hidden from local menu,
+    u8 isSyncOnly;      // 1 = loaded from harpoon/skins/; hidden from local menu,
                         //     only picked up via PakLoader_BeginRemoteRender for remote players
 };
 
@@ -2952,7 +2952,7 @@ extern "C" void PakLoader_Init(void) {
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 
-    // Populate the sync registry (mods/harpoon_skin_sync/) — forward declared at
+    // Populate the sync registry (harpoon/skins/) — forward declared at
     // global scope near the top of this file.
     PakLoader_InitSyncRegistry();
 }
@@ -2961,7 +2961,7 @@ extern "C" void PakLoader_Init(void) {
 static void PakLoader_CheckMaskForce(void) {
     // CVar disabled at runtime — clear kafei forced model if active
     if (!CVarGetInteger("gMods.KafeiMaskTransform", 0) && sForcedModelIndex >= 0 &&
-        sForcedModelPath == "custom_items_resources/N64_Kafei.pak") {
+        sForcedModelPath == "nei/N64_Kafei.pak") {
         PakLoader_ClearForcedModel();
     }
 }
@@ -3273,6 +3273,15 @@ extern "C" u8 PakLoader_HasForcedModel(void) {
     return (sForcedModelIndex >= 0 && sForcedModelIndex < (s32)sModels.size()) ? 1 : 0;
 }
 
+extern "C" const char* PakLoader_GetForcedModelName(void) {
+    if (sForcedModelIndex < 0 || sForcedModelIndex >= (s32)sModels.size())
+        return nullptr;
+    const char* name = sModels[sForcedModelIndex].displayName;
+    if (!name || !name[0])
+        return nullptr;
+    return name;
+}
+
 extern "C" void PakLoader_ForceEquipment(const char* pakPath) {
     if (!pakPath || !pakPath[0])
         return;
@@ -3332,8 +3341,8 @@ extern "C" void PakLoader_ClearForcedEquipment(void) {
 // ============================================================================
 // Harpoon Skin Sync
 // ============================================================================
-// Models loaded from mods/harpoon_skin_sync/ (or <exe>/harpoon_skin_sync/) live
-// in the same sModels vector as local mods/ paks but are tagged isSyncOnly=1 so
+// Models loaded from <appdir>/harpoon/skins/ live in the same sModels vector
+// as local mods/ paks but are tagged isSyncOnly=1 so
 // they are:
 //   - Hidden from the local selection menu (ModelHasAdult/Child/IsEquipmentOnly
 //     all return 0 for isSyncOnly entries, so they don't populate the dropdowns)
@@ -3348,7 +3357,7 @@ extern "C" void PakLoader_ClearForcedEquipment(void) {
 // isolated from whatever the local user has picked — otherwise, a remote without
 // a recognised skin would silently inherit the local user's pak (breaking the
 // consent model: remotes only wear skins you've explicitly placed in
-// harpoon_skin_sync/).
+// harpoon/skins/).
 static bool sRemoteRenderActive = false;
 static s32  sSavedForcedModelIndex = -1;
 static std::string sSavedForcedModelPath;
@@ -3356,47 +3365,22 @@ static s32  sSavedSelectedAdultIndex = -1;
 static s32  sSavedSelectedChildIndex = -1;
 static s32  sSavedSelectedEquipIndex = -1;
 extern "C" void PakLoader_InitSyncRegistry(void) {
-    // Accept the sync folder via several candidate paths so the behaviour is
-    // robust across launch contexts (Visual Studio debug, double-clicked exe,
-    // CLI launch from a different cwd, portable mode, etc.). Order:
-    //   1. <appdir>/harpoon_skin_sync/        — Ship-aware top-level catalog
-    //   2. <appdir>/mods/harpoon_skin_sync/   — legacy subfolder under mods/
-    //   3. <cwd>/harpoon_skin_sync/           — current working directory
-    //   4. <cwd>/mods/harpoon_skin_sync/      — cwd legacy fallback
-    //   5. ./harpoon_skin_sync/               — literal relative path
-    std::vector<std::filesystem::path> candidates;
-
-    std::string topPath = Ship::Context::LocateFileAcrossAppDirs("harpoon_skin_sync", appShortName);
-    if (!topPath.empty()) candidates.push_back(topPath);
-
-    std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
-    if (!modsPath.empty()) candidates.push_back(std::filesystem::path(modsPath) / "harpoon_skin_sync");
-
-    std::error_code cwdErr;
-    auto cwd = std::filesystem::current_path(cwdErr);
-    if (!cwdErr) {
-        candidates.push_back(cwd / "harpoon_skin_sync");
-        candidates.push_back(cwd / "mods" / "harpoon_skin_sync");
-    }
-    candidates.push_back("./harpoon_skin_sync");
-
+    // Canonical path: <appdir>/harpoon/skins/. HarpoonSkinSync scans this
+    // location for .o2r/.otr overrides; PakLoader scans the same folder for
+    // .pak files so PakLoader_FindSyncIndexByName can resolve remote players'
+    // selected paks.
+    std::string harpoonRoot = Ship::Context::LocateFileAcrossAppDirs("harpoon", appShortName);
     std::filesystem::path syncPath;
-    for (auto& c : candidates) {
-        std::error_code ec;
-        bool exists = std::filesystem::exists(c, ec) && std::filesystem::is_directory(c, ec);
-        PAK_LOG("harpoon_skin_sync: candidate '%s' exists=%d", c.string().c_str(), (int)exists);
-        if (exists && syncPath.empty()) {
-            syncPath = c;
-            // Don't break — keep logging the rest of the candidates for diagnostics,
-            // but the first hit wins.
-        }
+    if (!harpoonRoot.empty()) {
+        syncPath = std::filesystem::path(harpoonRoot) / "skins";
     }
 
-    if (syncPath.empty()) {
-        PAK_LOG("No harpoon_skin_sync/ folder found in any candidate path; remote skin sync registry empty");
+    std::error_code ec;
+    if (syncPath.empty() || !std::filesystem::exists(syncPath, ec) || !std::filesystem::is_directory(syncPath, ec)) {
+        PAK_LOG("No harpoon/skins/ folder found; remote skin sync registry empty");
         return;
     }
-    PAK_LOG("harpoon_skin_sync: scanning '%s'", syncPath.string().c_str());
+    PAK_LOG("harpoon/skins: scanning '%s'", syncPath.string().c_str());
 
     std::vector<std::filesystem::path> pakFiles;
     for (auto& entry : std::filesystem::recursive_directory_iterator(syncPath)) {
@@ -3409,7 +3393,7 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
         // folder independently and applies overrides to remote dummy actors.
     }
 
-    PAK_LOG("harpoon_skin_sync: found %d .pak", (int)pakFiles.size());
+    PAK_LOG("harpoon/skins: found %d .pak", (int)pakFiles.size());
 
     auto fixupLimbTables = [](PakModel& m) {
         for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
@@ -3466,7 +3450,7 @@ extern "C" s32 PakLoader_FindSyncIndexByName(const char* name) {
 }
 
 // Begin rendering a remote dummy player with the given SYNC-registry index
-// (a .pak loaded from harpoon_skin_sync/). Temporarily routes the entire
+// (a .pak loaded from harpoon/skins/). Temporarily routes the entire
 // pak_loader pipeline — skeleton, eye/mouth textures, equipment DL overrides,
 // cached equip DLs — through the sync model by piggy-backing on
 // sForcedModelIndex, the same path used by custom-item forced models. Pass -1

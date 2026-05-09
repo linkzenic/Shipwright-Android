@@ -82,6 +82,9 @@ class Logic {
     bool BlueFire();
     bool HasExplosives();
     bool BlastOrSmash();
+    bool CanBreakBoulder();
+    bool CanBreakBronzeBoulder();
+    bool CanBreakSilverBoulder();
     bool CanSpawnSoilSkull(RandomizerGet bean);
     bool CanReflectNuts();
     bool CanCutShrubs();
@@ -109,6 +112,8 @@ class Logic {
     bool CanRead();
     bool HasFireSource();
     bool HasFireSourceWithTorch();
+    bool CanMeltRedIce();
+    bool HasStrength(uint8_t level);
     bool SunlightArrows();
     bool TradeQuestStep(RandomizerGet rg);
     bool CanStandingShield();

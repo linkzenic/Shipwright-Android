@@ -17,7 +17,7 @@
  * Included by ext_equip_behavior.c (unity build).
  */
 
-#define FOURSWORD_PAK_PATH "custom_items_resources/Equip_Four_Sword.pak"
+#define FOURSWORD_PAK_PATH "nei/Equip_Four_Sword.pak"
 
 #define FS_CHARGE_HOLD 15 // frames R+B held to arm charge
 #define FS_CLONE_MAX 3

@@ -335,9 +335,9 @@ void RegionTable_Init_DekuTree() {
         //Locations
         LOCATION(RC_DEKU_TREE_MQ_GS_PAST_BOULDER_VINES, logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA, ED_BOOMERANG)),
         LOCATION(RC_DEKU_TREE_MQ_COMPASS_ROOM_HEART,    true),
-        LOCATION(RC_DEKU_TREE_MQ_BOULDER_1,             logic->BlastOrSmash()),
-        LOCATION(RC_DEKU_TREE_MQ_BOULDER_2,             logic->BlastOrSmash()),
-        LOCATION(RC_DEKU_TREE_MQ_BOULDER_3,             logic->BlastOrSmash()),
+        LOCATION(RC_DEKU_TREE_MQ_BOULDER_1,             logic->CanBreakBoulder()),
+        LOCATION(RC_DEKU_TREE_MQ_BOULDER_2,             logic->CanBreakBoulder()),
+        LOCATION(RC_DEKU_TREE_MQ_BOULDER_3,             logic->CanBreakBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_DEKU_TREE_MQ_COMPASS_ROOM, logic->BlastOrSmash()),
@@ -383,7 +383,7 @@ void RegionTable_Init_DekuTree() {
     areaTable[RR_DEKU_TREE_MQ_BASEMENT_WATER_ROOM_FRONT] = Region("Deku Tree MQ Basement Water Room Front", SCENE_DEKU_TREE, {
         //Events
         //It's possible to get this with bow if you have move while in first person and one-point skips on, noticeably harder and jankier as child, but that's a trick
-        EVENT_ACCESS(LOGIC_DEKU_TREE_MQ_WATER_ROOM_TORCHES, logic->CanUse(RG_FIRE_ARROWS) || (logic->CanUse(RG_STICKS) && (ctx->GetTrickOption(RT_DEKU_MQ_LOG) || (logic->IsChild && logic->CanShield())))),
+        EVENT_ACCESS(LOGIC_DEKU_TREE_MQ_WATER_ROOM_TORCHES, (logic->CanUse(RG_FIRE_ARROWS) || logic->CanUse(RG_SW97_FIRE_PROJECTILE) || logic->CanUse(RG_FIRE_ROD)) || (logic->CanUse(RG_STICKS) && (ctx->GetTrickOption(RT_DEKU_MQ_LOG) || (logic->IsChild && logic->CanShield())))),
     }, {
         //Locations
         LOCATION(RC_DEKU_TREE_MQ_BEFORE_SPINNING_LOG_CHEST,           logic->HasItem(RG_OPEN_CHEST)),

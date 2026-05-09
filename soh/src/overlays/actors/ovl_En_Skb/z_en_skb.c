@@ -428,7 +428,7 @@ void func_80AFD880(EnSkb* this, PlayState* play) {
         // Captain's Hat sentinel: guaranteed 50 rupee drop
         if (this->actor.home.rot.z == 0x7FFF) {
             Item_DropCollectible(play, &this->actor.world.pos, ITEM00_RUPEE_PURPLE);
-            this->unk_283 |= 8;
+            this->breakFlags |= 8;
             Actor_Kill(&this->actor);
             return;
         }

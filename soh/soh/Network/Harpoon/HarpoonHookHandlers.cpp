@@ -19,17 +19,15 @@ float OTRGetDimensionFromRightEdge(float v);
 
 void Harpoon::RegisterHooks() {
 
-    // Spawn dummy players when entering a new scene
+    // Spawn dummy players when entering a new scene. Push a fresh
+    // PLAYER.UPDATE_VISUAL_STATE so the server's AOI table knows our new
+    // sceneNum — the per-frame TRANSFORM packets are filtered by
+    // `same_scene_as=session` server-side, and without an updated VisualState
+    // the server still thinks we're in the previous scene (or, on first
+    // connect from title, scene 255).
     COND_HOOK(OnSceneSpawnActors, isConnected, [&]() {
         if (IsSaveLoaded()) {
-            nlohmann::json payload;
-            payload["type"] = "PVP_UPDATE_CLIENT_STATE";
-            payload["isSaveLoaded"] = true;
-            payload["sceneNum"] = gPlayState->sceneNum;
-            payload["entranceIndex"] = gSaveContext.entranceIndex;
-            payload["linkAge"] = gSaveContext.linkAge;
-            SendJsonToRemote(payload);
-
+            SendPacket_PlayerVisualState();
             RefreshClientActors();
         }
     });
@@ -55,12 +53,39 @@ void Harpoon::RegisterHooks() {
     COND_HOOK(OnPlayerUpdate, isConnected, [&]() {
         if (justLoadedSave) {
             justLoadedSave = false;
-            SendPacket_UpdateTeamState();
+            // PULL teammates' state into our save (we're a late joiner). The
+            // server forwards this to any teammate that responds with their
+            // UpdateTeamState. PUSH'ing on load would clobber the team's
+            // progress with our (likely empty) save.
+            SendPacket_RequestTeamState();
+        }
+
+        // Defensive: ensure server knows we're in-game. OnSceneSpawnActors
+        // normally fires this on every scene transition, but if the chain
+        // breaks (e.g. our save loaded mid-flight from a previous failed
+        // hook), the server's session.scene_num stays at 255 and AOI rejects
+        // every transform we send → teammates never see us.
+        if (!visualStateSentSinceLoad && IsSaveLoaded()) {
+            visualStateSentSinceLoad = true;
+            SendPacket_PlayerVisualState();
         }
 
         if (shouldRefreshActors) {
             shouldRefreshActors = false;
             RefreshClientActors();
+        }
+
+        // Cutscene trigger detection: when cutsceneIndex transitions from 0
+        // (or different) to a fresh value, broadcast it so other players in
+        // the same scene can replay it. Skip during incoming-packet apply to
+        // avoid loops.
+        static s32 lastCutsceneIndex = 0;
+        s32 csIdx = gSaveContext.cutsceneIndex;
+        if (csIdx != lastCutsceneIndex) {
+            lastCutsceneIndex = csIdx;
+            if (csIdx != 0 && !isProcessingIncomingPacket && gPlayState != nullptr) {
+                SendPacket_CutsceneTrigger(csIdx, gPlayState->sceneNum);
+            }
         }
 
         SendPacket_PlayerUpdate();
@@ -75,8 +100,17 @@ void Harpoon::RegisterHooks() {
     // Send SFX to other players
     COND_HOOK(OnPlayerSfx, isConnected, [&](u16 sfxId) { SendPacket_PlayerSfx(sfxId); });
 
+    // Ocarina notes — only forwarded to teammates in the same scene.
+    COND_HOOK(OnOcarinaNote, isConnected,
+              [&](uint8_t note, float modulator, int8_t bend) { SendPacket_OcarinaSfx(note, modulator, bend); });
+
     // Load game → request team state (from Anchor)
-    COND_HOOK(OnLoadGame, isConnected, [&](s16 fileNum) { justLoadedSave = true; });
+    COND_HOOK(OnLoadGame, isConnected, [&](s16 fileNum) {
+        justLoadedSave = true;
+        // Force a fresh VisualState on next OnPlayerUpdate so the server
+        // updates our session.scene_num / is_save_loaded promptly.
+        visualStateSentSinceLoad = false;
+    });
 
     // Sync full save state on save
     COND_HOOK(OnSaveFile, isConnected, [&](s16 fileNum, int sectionID) {
@@ -129,10 +163,10 @@ void Harpoon::RegisterHooks() {
     COND_HOOK(OnRandoEntranceDiscovered, isConnected,
               [&](u16 entranceIndex, u8 isReversedEntrance) { SendPacket_EntranceDiscovered(entranceIndex); });
 
-    // Boss defeat → game complete (from Anchor)
-    COND_ID_HOOK(OnBossDefeat, ACTOR_BOSS_GANON2, isConnected, [&](void* refActor) {
-        // Could send a game complete packet if needed
-    });
+    // Boss defeat → game complete (from Anchor). Only fires for the final
+    // Ganon (ACTOR_BOSS_GANON2 = Ganondorf phase 2).
+    COND_ID_HOOK(OnBossDefeat, ACTOR_BOSS_GANON2, isConnected,
+                 [&](void* refActor) { SendPacket_GameComplete(); });
 
     // Apply tunic color from Harpoon client data
     COND_VB_SHOULD(VB_APPLY_TUNIC_COLOR, isConnected, {

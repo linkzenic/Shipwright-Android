@@ -554,6 +554,15 @@ void SohMenu::AddMenuSettings() {
             "Press L on the equipment page to toggle between vanilla and extended equipment.\n"
             "This is a cheat — all items are unlocked when enabled."));
 
+    AddWidget(path, "Enable Sage Spells", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_RANDOMIZER_SETTING("SW97Spells"))
+        .Options(CheckboxOptions().Tooltip(
+            "Allows the elemental medallions to grant elemental damage (seed-locked rando setting).\n"
+            "Two paths (each consumes magic):\n"
+            "  • Spell: Medallion alone acts as a passive elemental source (Fire = Din's Fire equivalent, Water = melt red ice, etc.).\n"
+            "  • Projectile: Medallion + Bow (adult) or Slingshot (child) imbues the shot with the element.\n"
+            "Synced with the same setting in the Randomizer menu (Logic Tricks)."));
+
     // Roc's Items MM Animations - requires mm.o2r
     AddWidget(path, "Roc's Items Use MM Animations", WIDGET_CVAR_CHECKBOX)
         .CVar("gEnhancements.RocsItemsUseMmAnims")
@@ -607,16 +616,16 @@ void SohMenu::AddMenuSettings() {
         .CVar("gMods.KafeiMaskTransform")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
-            if (!std::filesystem::exists("custom_items_resources/N64_Kafei.pak")) {
+            if (!std::filesystem::exists("nei/N64_Kafei.pak")) {
                 CVarSetInteger("gMods.KafeiMaskTransform", 0);
                 info.options->disabled = true;
-                info.options->disabledTooltip = "Requires N64_Kafei.pak in custom_items_resources/ folder.";
+                info.options->disabledTooltip = "Requires N64_Kafei.pak in nei/ folder.";
             }
         })
         .Options(CheckboxOptions().Tooltip("Wearing the Kafei Mask transforms Link into Kafei.\n"
                                            "Adult Link becomes Adult Kafei, Child Link becomes Child Kafei.\n"
                                            "Remove the mask to revert.\n\n"
-                                           "REQUIRES: custom_items_resources/N64_Kafei.pak"));
+                                           "REQUIRES: nei/N64_Kafei.pak"));
 
     // ===================== COLUMN 2: MM Masks =====================
     path.column = SECTION_COLUMN_2;
@@ -689,6 +698,14 @@ void SohMenu::AddMenuSettings() {
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Removes the cooldown on Blast Mask.\n"
                                            "Normally there is a 310-frame (~5 second) cooldown between uses."));
+
+    AddWidget(path, "Invisible Non-Transformation Masks", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("HideNonTransformationMasks"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Turns all MM non-transformation masks invisible while still maintaining their effects.\n"
+            "Transformation masks (Deku, Goron, Zora, Fierce Deity) remain visible.\n"
+            "Only affects MM masks; vanilla OOT child masks are unaffected (use Invisible Bunny Hood for OOT bunny hood)."));
 
     // Pikachu Transformation is always enabled — use Pokeball item to transform
 
@@ -816,11 +833,11 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Randomizer", WIDGET_SEPARATOR_TEXT);
 
     AddWidget(path, "Enable Custom Items", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.CustomItems.Enabled")
-        .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip("Enables the 24 custom items on the second inventory page.\n"
-                                           "When enabled, these items are also added to the randomizer pool.\n"
-                                           "When disabled, page 2 is inaccessible and items are not in rando."));
+        .CVar(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"))
+        .Options(CheckboxOptions().Tooltip("Enables the 24 custom items on the second inventory page (seed-locked rando setting).\n"
+                                           "When enabled, these items are also added to the randomizer pool and gated logic paths.\n"
+                                           "When disabled, page 2 is inaccessible and items are not in rando.\n"
+                                           "Synced with the same setting in the Randomizer menu."));
 
     AddWidget(path, "Add All MM Masks to Rando", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.MmMasks.RandoAllMasks")

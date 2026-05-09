@@ -608,6 +608,25 @@ void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {
         flags |= CI_FLAG_ICE_ROD;
     if (s->lightRodActive)
         flags |= CI_FLAG_LIGHT_ROD;
+    // Phase 1 additions
+    if (s->rocsFeatherJumpActive)
+        flags |= CI_FLAG_ROCS_FEATHER;
+    if (s->bombArrowActive)
+        flags |= CI_FLAG_BOMB_ARROW;
+    if (s->demiseDestructionActive)
+        flags |= CI_FLAG_DEMISE_DESTRUCTION;
+    if (s->hyliasGraceActive)
+        flags |= CI_FLAG_HYLIAS_GRACE;
+    if (s->zonaiPermafrostActive)
+        flags |= CI_FLAG_ZONAI_PERMAFROST;
+    if (s->lanternEquipped || s->lanternSwinging)
+        flags |= CI_FLAG_LANTERN;
+    if (s->minishCapShrinking || s->minishCapGrowing || s->minishCapWarpMode)
+        flags |= CI_FLAG_MINISH_CAP;
+    if (s->postmanHatDashing || s->postmanHatArriving)
+        flags |= CI_FLAG_POSTMAN_HAT;
+    if (s->desireSensorActive)
+        flags |= CI_FLAG_DESIRE_SENSOR;
     out->activeFlags = flags;
 
     // Deku Leaf
@@ -686,6 +705,47 @@ void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {
     // Switch Hook
     out->switchHookState = s->switchHookState;
     out->switchHookProjPos = s->switchHookProjPos;
+
+    // ── Phase 1 additions ──────────────────────────────────────────────
+    // Roc's Feather / Cape
+    out->rocsFeatherJumpActive = s->rocsFeatherJumpActive;
+    out->rocsJumpCount = s->rocsJumpCount;
+    out->rocsMmAnimTimer = s->rocsMmAnimTimer;
+
+    // Bomb Arrows
+    out->bombArrowState = s->bombArrowState;
+
+    // Hylia's Grace
+    out->hyliasGraceState = s->hyliasGraceState;
+    out->hyliasGraceSubPhase = s->hyliasGraceSubPhase;
+    out->hyliasGraceTimer = s->hyliasGraceTimer;
+    out->hyliasGraceForcedBySpell = s->hyliasGraceForcedBySpell;
+
+    // Zonai Permafrost
+    out->zonaiPermafrostState = s->zonaiPermafrostState;
+    out->zonaiPermafrostSubPhase = s->zonaiPermafrostSubPhase;
+    out->zonaiPermafrostTimer = s->zonaiPermafrostTimer;
+
+    // Lantern
+    out->lanternFireType = s->lanternFireType;
+    out->lanternSwinging = s->lanternSwinging;
+    out->lanternEquipped = s->lanternEquipped;
+    out->lanternSwingFrame = s->lanternSwingFrame;
+
+    // Minish Cap
+    out->minishCapWarpMode = s->minishCapWarpMode;
+    out->minishCapShrinking = s->minishCapShrinking;
+    out->minishCapGrowing = s->minishCapGrowing;
+
+    // Postman Hat
+    out->postmanHatDashing = s->postmanHatDashing;
+    out->postmanHatArriving = s->postmanHatArriving;
+    out->postmanHatTransitionTimer = s->postmanHatTransitionTimer;
+
+    // Desire Sensor
+    out->desireSensorState = s->desireSensorState;
+    out->desireSensorTimer = s->desireSensorTimer;
+    out->desireSensorResult = s->desireSensorResult;
 }
 
 void CustomItems_ApplyVisualSync(const CustomItemVisualSync* sync) {
@@ -781,6 +841,54 @@ void CustomItems_ApplyVisualSync(const CustomItemVisualSync* sync) {
     // Switch Hook
     s->switchHookState = sync->switchHookState;
     s->switchHookProjPos = sync->switchHookProjPos;
+
+    // ── Phase 1 additions ──────────────────────────────────────────────
+    // Roc's Feather / Cape
+    s->rocsFeatherJumpActive = (sync->activeFlags & CI_FLAG_ROCS_FEATHER) ? 1 : 0;
+    s->rocsJumpCount = sync->rocsJumpCount;
+    s->rocsMmAnimTimer = sync->rocsMmAnimTimer;
+
+    // Bomb Arrows
+    s->bombArrowActive = (sync->activeFlags & CI_FLAG_BOMB_ARROW) ? 1 : 0;
+    s->bombArrowState = sync->bombArrowState;
+
+    // Demise Destruction
+    s->demiseDestructionActive = (sync->activeFlags & CI_FLAG_DEMISE_DESTRUCTION) ? 1 : 0;
+
+    // Hylia's Grace
+    s->hyliasGraceActive = (sync->activeFlags & CI_FLAG_HYLIAS_GRACE) ? 1 : 0;
+    s->hyliasGraceState = sync->hyliasGraceState;
+    s->hyliasGraceSubPhase = sync->hyliasGraceSubPhase;
+    s->hyliasGraceTimer = sync->hyliasGraceTimer;
+    s->hyliasGraceForcedBySpell = sync->hyliasGraceForcedBySpell;
+
+    // Zonai Permafrost
+    s->zonaiPermafrostActive = (sync->activeFlags & CI_FLAG_ZONAI_PERMAFROST) ? 1 : 0;
+    s->zonaiPermafrostState = sync->zonaiPermafrostState;
+    s->zonaiPermafrostSubPhase = sync->zonaiPermafrostSubPhase;
+    s->zonaiPermafrostTimer = sync->zonaiPermafrostTimer;
+
+    // Lantern
+    s->lanternFireType = sync->lanternFireType;
+    s->lanternSwinging = sync->lanternSwinging;
+    s->lanternEquipped = sync->lanternEquipped;
+    s->lanternSwingFrame = sync->lanternSwingFrame;
+
+    // Minish Cap
+    s->minishCapWarpMode = sync->minishCapWarpMode;
+    s->minishCapShrinking = sync->minishCapShrinking;
+    s->minishCapGrowing = sync->minishCapGrowing;
+
+    // Postman Hat
+    s->postmanHatDashing = sync->postmanHatDashing;
+    s->postmanHatArriving = sync->postmanHatArriving;
+    s->postmanHatTransitionTimer = sync->postmanHatTransitionTimer;
+
+    // Desire Sensor
+    s->desireSensorActive = (sync->activeFlags & CI_FLAG_DESIRE_SENSOR) ? 1 : 0;
+    s->desireSensorState = sync->desireSensorState;
+    s->desireSensorTimer = sync->desireSensorTimer;
+    s->desireSensorResult = sync->desireSensorResult;
 
     // Disable first-person reticles (never draw for remote players)
     s->bombArrowFirstPersonActive = 0;

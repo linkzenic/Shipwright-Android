@@ -48,7 +48,7 @@ void RegionTable_Init_LostWoods() {
         LOCATION(RC_LW_GRASS_1,                         logic->CanCutShrubs()),
         LOCATION(RC_LW_GRASS_2,                         logic->CanCutShrubs()),
         LOCATION(RC_LW_GRASS_3,                         logic->CanCutShrubs()),
-        LOCATION(RC_LW_BOULDER_BY_GORON_CITY,           logic->BlastOrSmash()),
+        LOCATION(RC_LW_BOULDER_BY_GORON_CITY,           logic->CanBreakBoulder()),
         LOCATION(RC_LW_WONDER_BACK_SKULL_KIDS_GRASS_1,  logic->IsChild),
         LOCATION(RC_LW_WONDER_BACK_SKULL_KIDS_GRASS_2,  logic->IsChild),
         LOCATION(RC_LW_WONDER_FRONT_SKULL_KIDS_GRASS,   logic->IsChild),
@@ -85,9 +85,9 @@ void RegionTable_Init_LostWoods() {
         //Locations
         LOCATION(RC_LW_DEKU_SCRUB_NEAR_DEKU_THEATER_RIGHT, logic->IsChild && logic->CanStunDeku() && logic->HasItem(RG_SPEAK_DEKU) && GetCheckPrice() <= GetWalletCapacity()),
         LOCATION(RC_LW_DEKU_SCRUB_NEAR_DEKU_THEATER_LEFT,  logic->IsChild && logic->CanStunDeku() && logic->HasItem(RG_SPEAK_DEKU) && GetCheckPrice() <= GetWalletCapacity()),
-        LOCATION(RC_LW_GS_ABOVE_THEATER,                   logic->IsAdult && ((CanPlantBean(RR_LW_BEYOND_MIDO, RG_LOST_WOODS_BEAN_SOUL) && logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA)) || (ctx->GetTrickOption(RT_LW_GS_BEAN) && logic->CanUse(RG_HOOKSHOT) && (logic->CanUse(RG_LONGSHOT) || logic->CanUse(RG_FAIRY_BOW) || logic->CanUse(RG_FAIRY_SLINGSHOT) || logic->CanUse(RG_BOMBCHU_5) || logic->CanUse(RG_DINS_FIRE)))) && logic->CanGetNightTimeGS()),
+        LOCATION(RC_LW_GS_ABOVE_THEATER,                   logic->IsAdult && ((CanPlantBean(RR_LW_BEYOND_MIDO, RG_LOST_WOODS_BEAN_SOUL) && logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA)) || (ctx->GetTrickOption(RT_LW_GS_BEAN) && logic->CanUse(RG_HOOKSHOT) && (logic->CanUse(RG_LONGSHOT) || logic->CanUse(RG_FAIRY_BOW) || logic->CanUse(RG_FAIRY_SLINGSHOT) || logic->CanUse(RG_BOMBCHU_5) || (logic->CanUse(RG_DINS_FIRE) || logic->CanUse(RG_FIRE_ROD))))) && logic->CanGetNightTimeGS()),
         LOCATION(RC_LW_GS_BEAN_PATCH_NEAR_THEATER,         logic->CanSpawnSoilSkull(RG_LOST_WOODS_BEAN_SOUL) && (logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA) || (ctx->GetOption(RSK_SHUFFLE_SCRUBS).Is(RO_SCRUBS_OFF) && logic->CanReflectNuts()))),
-        LOCATION(RC_LW_BOULDER_RUPEE,                      logic->BlastOrSmash()),
+        LOCATION(RC_LW_BOULDER_RUPEE,                      logic->CanBreakBoulder()),
         LOCATION(RC_LW_BEAN_SPROUT_NEAR_THEATER_FAIRY_1,   logic->IsChild && logic->HasItem(RG_MAGIC_BEAN) && logic->HasItem(RG_LOST_WOODS_BEAN_SOUL) && logic->CanUse(RG_SONG_OF_STORMS)),
         LOCATION(RC_LW_BEAN_SPROUT_NEAR_THEATER_FAIRY_2,   logic->IsChild && logic->HasItem(RG_MAGIC_BEAN) && logic->HasItem(RG_LOST_WOODS_BEAN_SOUL) && logic->CanUse(RG_SONG_OF_STORMS)),
         LOCATION(RC_LW_BEAN_SPROUT_NEAR_THEATER_FAIRY_3,   logic->IsChild && logic->HasItem(RG_MAGIC_BEAN) && logic->HasItem(RG_LOST_WOODS_BEAN_SOUL) && logic->CanUse(RG_SONG_OF_STORMS)),
@@ -97,8 +97,8 @@ void RegionTable_Init_LostWoods() {
         LOCATION(RC_LW_GRASS_7,                            logic->CanCutShrubs()),
         LOCATION(RC_LW_GRASS_8,                            logic->CanCutShrubs()),
         LOCATION(RC_LW_GRASS_9,                            logic->CanCutShrubs()),
-        LOCATION(RC_LW_BOULDER_BY_SACRED_FOREST_MEADOW,    logic->BlastOrSmash()),
-        LOCATION(RC_LW_RUPEE_BOULDER,                      logic->BlastOrSmash()),
+        LOCATION(RC_LW_BOULDER_BY_SACRED_FOREST_MEADOW,    logic->CanBreakBoulder()),
+        LOCATION(RC_LW_RUPEE_BOULDER,                      logic->CanBreakBoulder()),
         LOCATION(RC_LW_MEADOW_BUTTERFLY_FAIRY,             logic->IsChild && logic->CanUse(RG_STICKS)),
     }, {
         //Exits

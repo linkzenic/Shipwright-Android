@@ -88,8 +88,12 @@ void CustomItems_DrawLightRod(Player* player, PlayState* play) {
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, g_light_rod_xlu_dl);
 
-    // Draw all active light ball sets (up to 5 concurrent sets)
-    if (LightRod_HasAnyActiveSet()) {
+    // Draw active light ball sets. Local play uses sLightProjSets[]. Remote
+    // dummies fall back to gCustomItemState (single set, mirrored from sync).
+    u8 hasLocalSets = LightRod_HasAnyActiveSet();
+    u8 hasRemoteSync = !hasLocalSets && lightRodProjActive && gCustomItemState.lightRodProjCount > 0;
+
+    if (hasLocalSets || hasRemoteSync) {
         s16 rotZ = (play->gameplayFrames * 0x1000) + (s16)(Rand_ZeroOne() * 0x4000);
 
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
@@ -98,15 +102,51 @@ void CustomItems_DrawLightRod(Player* player, PlayState* play) {
         gDPSetEnvColor(POLY_XLU_DISP++, LIGHTROD_ORB_ENV_R, LIGHTROD_ORB_ENV_G, LIGHTROD_ORB_ENV_B, LIGHTROD_ORB_ENV_A);
         gDPPipeSync(POLY_XLU_DISP++);
 
-        RodProjSet* sets = LightRod_GetProjSets();
-        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
-            RodProjSet* set = &sets[s];
-            if (!set->active)
-                continue;
+        if (hasLocalSets) {
+            RodProjSet* sets = LightRod_GetProjSets();
+            for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+                RodProjSet* set = &sets[s];
+                if (!set->active)
+                    continue;
 
-            // Draw all light balls in this set (1-3)
-            for (s32 p = 0; p < set->count; p++) {
-                Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                for (s32 p = 0; p < set->count; p++) {
+                    Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                    Matrix_ReplaceRotation(&play->billboardMtxF);
+                    Matrix_Scale(LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, MTXMODE_APPLY);
+                    Matrix_RotateZ(((rotZ + (p * 0x5555)) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
+                    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
+                }
+
+                for (s32 i = 1; i < 4; i++) {
+                    Vec3f* trailPos = &set->trail[i];
+                    f32 trailScale = LIGHTROD_ORB_SCALE * (1.0f - (i * 0.25f));
+                    if (trailScale < 1.0f)
+                        continue;
+
+                    u8 trailAlpha = (u8)(LIGHTROD_ORB_PRIM_A * (1.0f - (i * 0.3f)));
+                    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, LIGHTROD_ORB_PRIM_R, LIGHTROD_ORB_PRIM_G,
+                                    LIGHTROD_ORB_PRIM_B, trailAlpha);
+
+                    Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
+                    Matrix_ReplaceRotation(&play->billboardMtxF);
+                    Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
+                    Matrix_RotateZ(((rotZ - (i * 0x2000)) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
+                    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
+                }
+            }
+        } else {
+            Vec3f remotePos[3] = { lightRodProjPos, gCustomItemState.lightRodProjPos2,
+                                   gCustomItemState.lightRodProjPos3 };
+            s32 remoteCount = gCustomItemState.lightRodProjCount;
+            if (remoteCount > 3)
+                remoteCount = 3;
+
+            for (s32 p = 0; p < remoteCount; p++) {
+                Matrix_Translate(remotePos[p].x, remotePos[p].y, remotePos[p].z, MTXMODE_NEW);
                 Matrix_ReplaceRotation(&play->billboardMtxF);
                 Matrix_Scale(LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, LIGHTROD_ORB_SCALE, MTXMODE_APPLY);
                 Matrix_RotateZ(((rotZ + (p * 0x5555)) / (f32)0x8000) * M_PI, MTXMODE_APPLY);
@@ -115,9 +155,8 @@ void CustomItems_DrawLightRod(Player* player, PlayState* play) {
                 gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
             }
 
-            // Draw trail for center light ball of this set (fading energy balls)
             for (s32 i = 1; i < 4; i++) {
-                Vec3f* trailPos = &set->trail[i];
+                Vec3f* trailPos = &lightRodProjTrail[i];
                 f32 trailScale = LIGHTROD_ORB_SCALE * (1.0f - (i * 0.25f));
                 if (trailScale < 1.0f)
                     continue;

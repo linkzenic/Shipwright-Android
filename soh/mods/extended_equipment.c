@@ -34,6 +34,40 @@ extern s32 CVarGetInteger(const char* name, s32 defaultValue);
 #include "equipment/ext_equip_names.c"
 #include "equipment/ext_equip_behavior.c"
 
+// Age requirements (mirror extended_inventory.h to avoid header cycle)
+#ifndef AGE_REQ_NONE
+#define AGE_REQ_NONE 9
+#endif
+#ifndef AGE_REQ_ADULT
+#define AGE_REQ_ADULT LINK_AGE_ADULT
+#endif
+#ifndef AGE_REQ_CHILD
+#define AGE_REQ_CHILD LINK_AGE_CHILD
+#endif
+
+// Per-piece age requirement: [equipType][index-1]
+//   SWORD:  Byrna,            Four Sword,    Drillshaft
+//   SHIELD: Divine Shield,    Gerudo Scim.,  Shield of Ikana
+//   TUNIC:  Magic Cape,       Pending4,      Champion's Tunic
+//   BOOTS:  Pegasus Anklet,   Pendant Mem.,  Water Dragon Scale
+static const u8 sExtEquipAgeReqs[4][3] = {
+    { AGE_REQ_NONE,  AGE_REQ_CHILD, AGE_REQ_ADULT },
+    { AGE_REQ_NONE,  AGE_REQ_NONE,  AGE_REQ_CHILD },
+    { AGE_REQ_NONE,  AGE_REQ_ADULT, AGE_REQ_ADULT },
+    { AGE_REQ_NONE,  AGE_REQ_NONE,  AGE_REQ_ADULT },
+};
+
+u8 ExtEquip_GetAgeReq(s16 equipType, u8 index) {
+    if (equipType < 0 || equipType >= 4 || index < 1 || index > 3)
+        return AGE_REQ_NONE;
+    return sExtEquipAgeReqs[equipType][index - 1];
+}
+
+u8 ExtEquip_CheckAgeReq(s16 equipType, u8 index) {
+    u8 req = ExtEquip_GetAgeReq(equipType, index);
+    return (req == AGE_REQ_NONE) || (req == gSaveContext.linkAge);
+}
+
 // ---------------------------------------------------------------------------
 // Global state
 // ---------------------------------------------------------------------------
@@ -204,6 +238,10 @@ void ExtEquip_Equip(s16 equipType, u8 index) {
     if (!ExtEquip_HasItem(equipType, index))
         return;
 
+    // Age restriction
+    if (!ExtEquip_CheckAgeReq(equipType, index))
+        return;
+
     // If already equipped, toggle off (unequip)
     u8 current = ExtEquip_GetCurrent(equipType);
     if (current == index) {
@@ -314,8 +352,15 @@ void ExtEquip_ToggleFromCButton(u16 itemId) {
     s16 equipType = offset / 3;             // 0=sword, 1=shield, 2=tunic, 3=boots
     u8 index = (offset % 3) + 1;            // 1-3
 
-    // Toggle: if already equipped with this index, unequip; otherwise equip
+    // Age restriction (allow unequip even if age fails — player can always remove)
     u8 current = ExtEquip_GetCurrent(equipType);
+    if (current != index && !ExtEquip_CheckAgeReq(equipType, index)) {
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    // Toggle: if already equipped with this index, unequip; otherwise equip
     if (current == index) {
         ExtEquip_Unequip(equipType);
         ExtEquip_ClearVanillaEquip(equipType);

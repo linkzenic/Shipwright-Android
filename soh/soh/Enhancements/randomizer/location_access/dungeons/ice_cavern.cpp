@@ -304,9 +304,9 @@ void RegionTable_Init_IceCavern() {
         LOCATION(RC_ICE_CAVERN_MQ_GS_SCARECROW,                logic->ReachScarecrow() || (logic->IsAdult && (logic->CanUse(RG_LONGSHOT) || logic->CanGroundJump() || ctx->GetTrickOption(RT_SLIDE_JUMP)))),
         LOCATION(RC_ICE_CAVERN_MQ_BEFORE_SCARECROW_STALAGMITE, logic->CanClearStalagmite()),
         LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_ROOM_STALACTITE,   true),
-        LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_LEFT_RED_ICE,      logic->IsChild && ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && logic->CanUse(RG_ICE_ARROWS) && logic->CanUse(RG_BOOMERANG)),
-        LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_MIDDLE_RED_ICE,    logic->IsChild && ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && logic->CanUse(RG_ICE_ARROWS) && logic->CanUse(RG_BOOMERANG)),
-        LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_RIGHT_RED_ICE,     logic->IsChild && ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && logic->CanUse(RG_ICE_ARROWS) && logic->CanUse(RG_BOOMERANG)),
+        LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_LEFT_RED_ICE,      logic->IsChild && ((ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && (logic->CanUse(RG_ICE_ARROWS) || logic->CanUse(RG_SW97_ICE_PROJECTILE) || logic->CanUse(RG_ICE_ROD))) || logic->CanUse(RG_SW97_ICE_SPELL)) && logic->CanUse(RG_BOOMERANG)),
+        LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_MIDDLE_RED_ICE,    logic->IsChild && ((ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && (logic->CanUse(RG_ICE_ARROWS) || logic->CanUse(RG_SW97_ICE_PROJECTILE) || logic->CanUse(RG_ICE_ROD))) || logic->CanUse(RG_SW97_ICE_SPELL)) && logic->CanUse(RG_BOOMERANG)),
+        LOCATION(RC_ICE_CAVERN_MQ_SCARECROW_RIGHT_RED_ICE,     logic->IsChild && ((ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && (logic->CanUse(RG_ICE_ARROWS) || logic->CanUse(RG_SW97_ICE_PROJECTILE) || logic->CanUse(RG_ICE_ROD))) || logic->CanUse(RG_SW97_ICE_SPELL)) && logic->CanUse(RG_BOOMERANG)),
     }, {
         //Exits
         ENTRANCE(RR_ICE_CAVERN_MQ_HUB,           logic->BlueFire()),
@@ -340,7 +340,7 @@ void RegionTable_Init_IceCavern() {
         LOCATION(RC_ICE_CAVERN_MQ_FREESTANDING_POH,           logic->HasExplosives()), // can get with rang trick
         //doing RT_ICE_MQ_RED_ICE_GS as child is untested, as I could not perform the trick reliably even as adult
         LOCATION(RC_ICE_CAVERN_MQ_GS_RED_ICE,                 (logic->CanUse(RG_BOTTLE_WITH_BLUE_FIRE) && (logic->CanUse(RG_SONG_OF_TIME) || (logic->IsAdult && ctx->GetTrickOption(RT_ICE_MQ_RED_ICE_GS))) && logic->CanGetEnemyDrop(RE_GOLD_SKULLTULA)) ||
-                                                              (ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && logic->CanUse(RG_ICE_ARROWS)) || (ctx->GetTrickOption(RT_ITEM_EXTENSION) && logic->CanUse(RG_SONG_OF_TIME) && logic->CanUse(RG_HOOKSHOT))),
+                                                              (ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && (logic->CanUse(RG_ICE_ARROWS) || logic->CanUse(RG_SW97_ICE_PROJECTILE) || logic->CanUse(RG_ICE_ROD))) || (ctx->GetTrickOption(RT_ITEM_EXTENSION) && logic->CanUse(RG_SONG_OF_TIME) && logic->CanUse(RG_HOOKSHOT)) || logic->CanUse(RG_SW97_ICE_SPELL)),
         LOCATION(RC_ICE_CAVERN_MQ_COMPASS_POT_1,              logic->CanBreakPots()),
         LOCATION(RC_ICE_CAVERN_MQ_COMPASS_POT_2,              logic->CanBreakPots()),
         LOCATION(RC_ICE_CAVERN_MQ_COMPASS_LEFT_STALAGMITE_1,  logic->CanClearStalagmite()),
@@ -348,7 +348,7 @@ void RegionTable_Init_IceCavern() {
         LOCATION(RC_ICE_CAVERN_MQ_COMPASS_RIGHT_STALAGMITE_1, logic->CanClearStalagmite()),
         LOCATION(RC_ICE_CAVERN_MQ_COMPASS_RIGHT_STALAGMITE_2, logic->CanClearStalagmite()),
         LOCATION(RC_ICE_CAVERN_MQ_COMPASS_RED_ICE,            (logic->CanUse(RG_BOTTLE_WITH_BLUE_FIRE) && (logic->CanUse(RG_SONG_OF_TIME) || (logic->IsAdult && ctx->GetTrickOption(RT_ICE_MQ_RED_ICE_GS))) && (logic->CanKillEnemy(RE_GOLD_SKULLTULA) || logic->TakeDamage())) ||
-                                                              (ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && logic->CanUse(RG_ICE_ARROWS))),
+                                                              (ctx->GetOption(RSK_BLUE_FIRE_ARROWS) && (logic->CanUse(RG_ICE_ARROWS) || logic->CanUse(RG_SW97_ICE_PROJECTILE) || logic->CanUse(RG_ICE_ROD))) || logic->CanUse(RG_SW97_ICE_SPELL)),
     }, {});
 
     areaTable[RR_ICE_CAVERN_MQ_STALFOS_ROOM] = Region("Ice Cavern MQ Stalfos Room", SCENE_ICE_CAVERN, {}, {

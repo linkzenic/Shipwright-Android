@@ -160,6 +160,13 @@ void PakLoader_ClearForcedModel(void);
 u8 PakLoader_HasForcedModel(void);
 
 /**
+ * Get the displayName of the currently forced body model (for network sync).
+ * Returns NULL when no forced model is active. Used by Harpoon to broadcast
+ * Kafei/Champion's Tunic/etc. force-overrides to remote clients.
+ */
+const char* PakLoader_GetForcedModelName(void);
+
+/**
  * Force a specific equipment .pak by file path (lazy-loaded).
  * Used by custom items (e.g., Four Sword).
  * Has priority over user-selected equipment from the menu.
@@ -186,7 +193,7 @@ void PakLoader_Shutdown(void);
 // ============================================================================
 // Harpoon Sync — .pak only
 // ============================================================================
-// Sync-only .pak files dropped into mods/harpoon_skin_sync/ are loaded into the
+// Sync-only .pak files dropped into harpoon/skins/ are loaded into the
 // same sModels vector as local mods/ paks but carry isSyncOnly=1 so they are
 // hidden from the local selection menu. They are surfaced exclusively through
 // BeginRemoteRender / EndRemoteRender, which the Harpoon dummy-draw path uses
@@ -204,7 +211,7 @@ void PakLoader_Shutdown(void);
 s32 PakLoader_FindLocalIndexByName(const char* name);
 
 /**
- * Look up a SYNC (harpoon_skin_sync/) .pak by display name.
+ * Look up a SYNC (harpoon/skins/) .pak by display name.
  * @return index into sModels pointing at an isSyncOnly entry, or -1 if not found.
  */
 s32 PakLoader_FindSyncIndexByName(const char* name);

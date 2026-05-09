@@ -23,6 +23,8 @@
 #include "functions.h"
 #include "variables.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "overlays/actors/ovl_En_Ishi/z_en_ishi.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
 static ColliderCylinder sSpinnerCol;
 static u8 sSpinnerColInitialized = 0;
@@ -51,19 +53,98 @@ static void Spinner_CheckHit(Player* p) {
     }
 }
 
-static void BreakRock(PlayState* play, Actor* rock) {
-    if (!rock || !rock->update)
+// ---------------------------------------------------------------------------
+// Breakable rock destruction: per-type helpers
+// ---------------------------------------------------------------------------
+// Each helper spawns its own VFX/SFX and fires the matching VB hook so the
+// randomizer can hand out the shuffled item for that check.
+//
+//   EN_ISHI ROCK_SMALL  → VB_ROCK_DROP_ITEM (drop collectible)
+//   EN_ISHI ROCK_LARGE  → Actor_OfferGetItem so rando intercepts the lift-check
+//   OBJ_HAMISHI         → VB_ROCK_DROP_ITEM (1-hit, vanilla needs 2 hammer hits)
+//   OBJ_BOMBIWA         → VB_ROCK_DROP_ITEM
+//   EN_GOROIWA          → no rando hook (not a check, just hazard removal)
+
+static void Spinner_SpawnBreakVFX(PlayState* play, Vec3f* pos, u8 big) {
+    if (big) {
+        func_80033480(play, pos, 140.0f, 6, 180, 90, 1);
+        func_80033480(play, pos, 140.0f, 12, 80, 90, 1);
+    } else {
+        func_80033480(play, pos, 60.0f, 3, 0x50, 0x3C, 1);
+    }
+    SoundSource_PlaySfxAtFixedWorldPos(play, pos, 40, NA_SE_EV_WALL_BROKEN);
+}
+
+static void Spinner_DropAtActor(PlayState* play, Actor* actor) {
+    Vec3f dropPos = actor->world.pos;
+    dropPos.y += 30.0f;
+    // Mirrors EnIshi_DropCollectible: dropParams in upper nibble of params >> 8,
+    // capped at 0xC. Falls back to 0 (random fixed drop) for non-ishi rocks.
+    s16 dropParams = (actor->params >> 8) & 0xF;
+    if (dropParams >= 0xD)
+        dropParams = 0;
+    Item_DropCollectibleRandom(play, NULL, &dropPos, dropParams << 4);
+}
+
+static void Spinner_DestroyIshi(PlayState* play, Actor* actor) {
+    s16 type = actor->params & 1;
+    Vec3f pos = actor->world.pos;
+
+    Spinner_SpawnBreakVFX(play, &pos, type == ROCK_LARGE);
+
+    // Fire VB_ROCK_DROP_ITEM with the vanilla-default condition:
+    //   ROCK_SMALL → vanilla drops a collectible (true)
+    //   ROCK_LARGE → vanilla doesn't drop (false), but the rando overrides
+    //                this hook (ShuffleRocks.cpp) to deliver the shuffled
+    //                silver-boulder check item directly.
+    u8 vanillaDrop = (type == ROCK_SMALL);
+    if (GameInteractor_Should(VB_ROCK_DROP_ITEM, vanillaDrop, actor)) {
+        Spinner_DropAtActor(play, actor);
+    }
+    Actor_Kill(actor);
+}
+
+static void Spinner_DestroyHamishi(PlayState* play, Actor* actor) {
+    Vec3f pos = actor->world.pos;
+    Spinner_SpawnBreakVFX(play, &pos, 1);
+    if (GameInteractor_Should(VB_ROCK_DROP_ITEM, true, actor)) {
+        Spinner_DropAtActor(play, actor);
+    }
+    Actor_Kill(actor);
+}
+
+static void Spinner_DestroyBombiwa(PlayState* play, Actor* actor) {
+    Vec3f pos = actor->world.pos;
+    Spinner_SpawnBreakVFX(play, &pos, 1);
+    if (GameInteractor_Should(VB_ROCK_DROP_ITEM, true, actor)) {
+        Spinner_DropAtActor(play, actor);
+    }
+    Actor_Kill(actor);
+}
+
+static void Spinner_DestroyGoroiwa(PlayState* play, Actor* actor) {
+    Vec3f pos = actor->world.pos;
+    Spinner_SpawnBreakVFX(play, &pos, 1);
+    Actor_Kill(actor);
+}
+
+static void DestroyBreakable(PlayState* play, Actor* actor) {
+    if (!actor || !actor->update)
         return;
-    Vec3f pos = rock->world.pos;
-
-    // Boulder destruction VFX (dust clouds, same as Obj_Hamishi)
-    func_80033480(play, &pos, 140.0f, 6, 180, 90, 1);
-    func_80033480(play, &pos, 140.0f, 12, 80, 90, 1);
-
-    // Boulder destruction SFX
-    SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 40, NA_SE_EV_WALL_BROKEN);
-
-    Actor_Kill(rock);
+    switch (actor->id) {
+        case ACTOR_EN_ISHI:
+            Spinner_DestroyIshi(play, actor);
+            break;
+        case ACTOR_OBJ_HAMISHI:
+            Spinner_DestroyHamishi(play, actor);
+            break;
+        case ACTOR_OBJ_BOMBIWA:
+            Spinner_DestroyBombiwa(play, actor);
+            break;
+        case ACTOR_EN_GOROIWA:
+            Spinner_DestroyGoroiwa(play, actor);
+            break;
+    }
 }
 
 static u8 IsBreakableRock(s16 id) {
@@ -83,7 +164,7 @@ static void CheckRocks(Player* p, PlayState* play, f32 r) {
                 f32 dx = a->world.pos.x - p->actor.world.pos.x;
                 f32 dz = a->world.pos.z - p->actor.world.pos.z;
                 if (SQ(dx) + SQ(dz) < rSq)
-                    BreakRock(play, a);
+                    DestroyBreakable(play, a);
             }
             a = next;
         }

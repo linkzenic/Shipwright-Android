@@ -389,6 +389,16 @@ extern CustomItemState gCustomItemState;
 #define CI_FLAG_FIRE_ROD (1 << 12)
 #define CI_FLAG_ICE_ROD (1 << 13)
 #define CI_FLAG_LIGHT_ROD (1 << 14)
+// Phase 1 additions — items previously missing from the visual sync.
+#define CI_FLAG_ROCS_FEATHER       (1 << 15)
+#define CI_FLAG_BOMB_ARROW         (1 << 16)
+#define CI_FLAG_DEMISE_DESTRUCTION (1 << 17)
+#define CI_FLAG_HYLIAS_GRACE       (1 << 18)
+#define CI_FLAG_ZONAI_PERMAFROST   (1 << 19)
+#define CI_FLAG_LANTERN            (1 << 20)
+#define CI_FLAG_MINISH_CAP         (1 << 21)
+#define CI_FLAG_POSTMAN_HAT        (1 << 22)
+#define CI_FLAG_DESIRE_SENSOR      (1 << 23)
 
 /**
  * Compact visual state for network sync.
@@ -479,6 +489,52 @@ typedef struct {
     // Switch Hook
     u8 switchHookState;
     Vec3f switchHookProjPos;
+
+    // ── Phase 1 additions ──────────────────────────────────────────────
+    // Roc's Feather / Cape — extra-jump animation state.
+    u8  rocsFeatherJumpActive;
+    u8  rocsJumpCount;
+    s16 rocsMmAnimTimer;
+
+    // Bomb Arrows — render of bomb-on-arrow + reticle suppressed remotely.
+    u8 bombArrowState;
+
+    // Demise Destruction — visual-only flag (aura around player).
+    // No additional fields; collider state is local-only.
+
+    // Hylia's Grace — fairy companion + spell phase. The fairy actor itself
+    // is spawned via APPEARANCE.SPAWN_VFX_ACTOR (Phase 2); these fields
+    // describe the caster's spell-active aura.
+    u8  hyliasGraceState;
+    u8  hyliasGraceSubPhase;
+    s16 hyliasGraceTimer;
+    u8  hyliasGraceForcedBySpell;
+
+    // Zonai Permafrost — frost effect around the caster.
+    u8  zonaiPermafrostState;
+    u8  zonaiPermafrostSubPhase;
+    s16 zonaiPermafrostTimer;
+
+    // Lantern — visible flame + swing animation in hand.
+    u8  lanternFireType;
+    u8  lanternSwinging;
+    u8  lanternEquipped;
+    s16 lanternSwingFrame;
+
+    // Minish Cap — shrink/grow scale for fast travel.
+    u8 minishCapWarpMode;
+    u8 minishCapShrinking;
+    u8 minishCapGrowing;
+
+    // Postman Hat — fade-in/fade-out streak animation.
+    u8  postmanHatDashing;
+    u8  postmanHatArriving;
+    s16 postmanHatTransitionTimer;
+
+    // Desire Sensor — visible meter glow.
+    u8  desireSensorState;
+    s16 desireSensorTimer;
+    u8  desireSensorResult;
 } CustomItemVisualSync;
 
 /**

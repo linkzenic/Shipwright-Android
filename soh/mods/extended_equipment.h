@@ -73,6 +73,16 @@ void ExtEquip_Update(void);
 /** @return Current equipment page (0=vanilla, 1=extended) */
 int ExtEquip_GetPage(void);
 
+// ---------------------------------------------------------------------------
+// Age requirements (per ext equipment piece)
+// ---------------------------------------------------------------------------
+
+/** @return Age requirement value (AGE_REQ_NONE=9, AGE_REQ_ADULT=0, AGE_REQ_CHILD=1) */
+u8 ExtEquip_GetAgeReq(s16 equipType, u8 index);
+
+/** @return 1 if Link's current age satisfies the requirement, 0 otherwise */
+u8 ExtEquip_CheckAgeReq(s16 equipType, u8 index);
+
 /** Toggle between vanilla and extended page */
 void ExtEquip_SwitchPage(void);
 

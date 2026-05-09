@@ -74,8 +74,13 @@ void CustomItems_DrawIceRod(Player* player, PlayState* play) {
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_XLU_DISP++, g_ice_rod_xlu_dl);
 
-    // Draw all active ice ball sets (up to 5 concurrent sets)
-    if (IceRod_HasAnyActiveSet()) {
+    // Draw active ice ball sets. Local play uses sIceProjSets[]. Remote dummies
+    // fall back to gCustomItemState (single set, mirrored from network sync).
+    u8 hasLocalSets = IceRod_HasAnyActiveSet();
+    u8 hasRemoteSync = !hasLocalSets && iceRodProjActive && iceRodProjScale > 0.001f &&
+                       gCustomItemState.iceRodProjCount > 0;
+
+    if (hasLocalSets || hasRemoteSync) {
         sIceRodBallScroll -= 10;
         sIceRodBallScroll &= 0x1FF;
 
@@ -87,19 +92,52 @@ void CustomItems_DrawIceRod(Player* player, PlayState* play) {
 
         s16 camYaw = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000;
 
-        RodProjSet* sets = IceRod_GetProjSets();
-        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
-            RodProjSet* set = &sets[s];
-            if (!set->active)
-                continue;
+        if (hasLocalSets) {
+            RodProjSet* sets = IceRod_GetProjSets();
+            for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+                RodProjSet* set = &sets[s];
+                if (!set->active)
+                    continue;
 
-            f32 iceScale = set->scale * 0.002f;
+                f32 iceScale = set->scale * 0.002f;
+                if (iceScale < 0.001f)
+                    iceScale = 0.001f;
+
+                for (s32 p = 0; p < set->count; p++) {
+                    Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                    Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                    Matrix_Scale(iceScale, iceScale, iceScale, MTXMODE_APPLY);
+                    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+                }
+
+                for (s32 i = 1; i < 4; i++) {
+                    Vec3f* trailPos = &set->trail[i];
+                    f32 trailScale = iceScale * (1.0f - (i * 0.25f));
+                    if (trailScale < 0.0005f)
+                        continue;
+
+                    Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
+                    Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                    Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
+                    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+                }
+            }
+        } else {
+            f32 iceScale = iceRodProjScale * 0.002f;
             if (iceScale < 0.001f)
                 iceScale = 0.001f;
 
-            // Draw all iceballs in this set (1-3)
-            for (s32 p = 0; p < set->count; p++) {
-                Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+            Vec3f remotePos[3] = { iceRodProjPos, gCustomItemState.iceRodProjPos2, gCustomItemState.iceRodProjPos3 };
+            s32 remoteCount = gCustomItemState.iceRodProjCount;
+            if (remoteCount > 3)
+                remoteCount = 3;
+
+            for (s32 p = 0; p < remoteCount; p++) {
+                Matrix_Translate(remotePos[p].x, remotePos[p].y, remotePos[p].z, MTXMODE_NEW);
                 Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
                 Matrix_Scale(iceScale, iceScale, iceScale, MTXMODE_APPLY);
                 gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
@@ -107,9 +145,8 @@ void CustomItems_DrawIceRod(Player* player, PlayState* play) {
                 gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
             }
 
-            // Draw trail for center iceball of this set
             for (s32 i = 1; i < 4; i++) {
-                Vec3f* trailPos = &set->trail[i];
+                Vec3f* trailPos = &iceRodProjTrail[i];
                 f32 trailScale = iceScale * (1.0f - (i * 0.25f));
                 if (trailScale < 0.0005f)
                     continue;

@@ -36,6 +36,7 @@
 #include "overlays/actors/ovl_En_Boom/z_en_boom.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "mods/items/helpers/camera_helper.h"
+#include "soh/Network/Harpoon/HarpoonBridge.h"
 #include "mods/items/helpers/equip_helper.h"
 #include "mods/items/custom_items.h"
 
@@ -2376,9 +2377,20 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
         player->currentTunic = PLAYER_TUNIC_GORON;
     }
 
-    // FD: force max strength (Gold Gauntlets = 3) for lifting heavy objects
+    // Per-form strength override (mirrors MM's body-mass / lifting rules):
+    //   FD     = Gold Gauntlets (3) — heavy + brute strength
+    //   Goron  = Gold Gauntlets (3) — Goron raw strength
+    //   Zora   = Goron's Bracelet (1) — light bushes, signs, regular pots
+    //   Deku   = none (0) — too small to lift bushes
+    // Saved value is restored on detransform via gFormState.savedStrength.
     if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
         Inventory_ChangeUpgrade(UPG_STRENGTH, 3);
+    } else if (form == MM_PLAYER_FORM_GORON) {
+        Inventory_ChangeUpgrade(UPG_STRENGTH, 3);
+    } else if (form == MM_PLAYER_FORM_ZORA) {
+        Inventory_ChangeUpgrade(UPG_STRENGTH, 1);
+    } else if (form == MM_PLAYER_FORM_DEKU) {
+        Inventory_ChangeUpgrade(UPG_STRENGTH, 0);
     }
 
     // Apply form properties
@@ -2513,17 +2525,16 @@ static void MmForm_RestoreOotState(Player* player) {
     // Restore original strength level (FD forces Gold Gauntlets)
     Inventory_ChangeUpgrade(UPG_STRENGTH, gFormState.savedStrength);
 
-    // Zora/Goron: always equip Kokiri tunic on detransform.
-    // They force Zora/Goron tunic on transform, so detransform gives Kokiri back.
-    if (gFormState.currentForm == MM_PLAYER_FORM_ZORA || gFormState.currentForm == MM_PLAYER_FORM_GORON) {
-        player->currentTunic = PLAYER_TUNIC_KOKIRI;
-        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
-                                        (EQUIP_VALUE_TUNIC_KOKIRI << gEquipShifts[EQUIP_TYPE_TUNIC]);
-    } else {
-        player->currentTunic = gFormState.savedTunic;
-        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
-                                        (gFormState.savedTunicEquip << gEquipShifts[EQUIP_TYPE_TUNIC]);
-    }
+    // Restore the tunic the player had as Human BEFORE transforming. savedTunic /
+    // savedTunicEquip were captured at the top of MmForm_ApplyFormProperties, so they
+    // hold the human-side equipment regardless of which form we're leaving.
+    //
+    // (Previously this branch hard-coded PLAYER_TUNIC_KOKIRI for Zora/Goron, which
+    // permanently downgraded any custom tunic — Goron Tunic, Hero's Tunic, an Ext
+    // tunic — to Kokiri after a single transform, and persisted across deaths.)
+    player->currentTunic = gFormState.savedTunic;
+    gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
+                                    (gFormState.savedTunicEquip << gEquipShifts[EQUIP_TYPE_TUNIC]);
 
     // Restore default OOT Link collider
     player->cylinder.dim.radius = 12;
@@ -3108,7 +3119,12 @@ static void MmForm_GoronAction_Idle(Player* player, PlayState* play) {
     // Goron/Deku: A ALWAYS does curl/spin (even during Z-target).
     // OOT's Handler_10 may fire first (jump/sidehop), but our code runs after
     // and overrides it. For other forms, we don't intercept A here.
-    if (CHECK_BTN_ALL(input->press.button, BTN_A) && MMFORM_ON_GROUND(player)) {
+    //
+    // GRAB GUARD: when OOT is offering push/pull (Player_ActionHandler_5 set
+    // PLAYER_STATE2_DO_ACTION_GRAB this frame, or grab is already active via
+    // GRABBING_DYNAPOLY), don't intercept A — let OOT enter grab/pull.
+    if (CHECK_BTN_ALL(input->press.button, BTN_A) && MMFORM_ON_GROUND(player) &&
+        !(player->stateFlags2 & (PLAYER_STATE2_DO_ACTION_GRAB | PLAYER_STATE2_GRABBING_DYNAPOLY))) {
         if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
             if (gFormState.maruChange != NULL) {
                 player->linearVelocity = 0.0f;
@@ -3247,7 +3263,11 @@ static void MmForm_GoronAction_Walk(Player* player, PlayState* play) {
     // From 2Ship func_80839A84 (line 8223): Deku A → spin attack
     // Other forms: A → jump
     // Ground check: in MM, action handlers only run from ground actions (implicit guarantee)
-    if (CHECK_BTN_ALL(input->press.button, BTN_A) && MMFORM_ON_GROUND(player)) {
+    //
+    // GRAB GUARD: skip the curl/spin intercept while OOT is offering or in
+    // push/pull on a movable wall, so A drives the OOT grab action instead.
+    if (CHECK_BTN_ALL(input->press.button, BTN_A) && MMFORM_ON_GROUND(player) &&
+        !(player->stateFlags2 & (PLAYER_STATE2_DO_ACTION_GRAB | PLAYER_STATE2_GRABBING_DYNAPOLY))) {
         if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
             // Goron: A while walking → curl init (Phase 6 placeholder)
             if (gFormState.maruChange != NULL) {
@@ -3384,7 +3404,11 @@ static void MmForm_GoronAction_Run(Player* player, PlayState* play) {
     // From 2Ship: Goron A+running → curl/ball roll (Phase 6 placeholder)
     // From 2Ship func_80839A84: Deku A → spin attack (works from any ground state)
     // Other forms: A → forward roll
-    if (CHECK_BTN_ALL(input->press.button, BTN_A) && MMFORM_ON_GROUND(player)) {
+    //
+    // GRAB GUARD: skip the curl/spin intercept while OOT is offering or in
+    // push/pull on a movable wall, so A drives the OOT grab action instead.
+    if (CHECK_BTN_ALL(input->press.button, BTN_A) && MMFORM_ON_GROUND(player) &&
+        !(player->stateFlags2 & (PLAYER_STATE2_DO_ACTION_GRAB | PLAYER_STATE2_GRABBING_DYNAPOLY))) {
         if (gFormState.currentForm == MM_PLAYER_FORM_GORON) {
             // Goron: A while running → curl init (Phase 6 placeholder)
             if (gFormState.maruChange != NULL) {
@@ -8031,6 +8055,9 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
                 leftBoom->returnTimer = 20; // Vanilla OOT boomerang distance
                 leftBoom->moveTo = player->focusActor;
                 gFormState.boomerangActorL = &leftBoom->actor;
+                // Tell teammates to spawn the same fin on their side (fire-and-forget;
+                // En_Boom physics is deterministic). Fin throws are PvP-able.
+                Harpoon_NotifyVfxSpawn(&leftBoom->actor, HARPOON_VFX_KIND_ZORA_FIN, /*attached=*/0);
             }
 
             // RIGHT BOOMERANG: spawn from right hand bodyPartsPos (from 2Ship: right fin position)
@@ -8052,6 +8079,7 @@ static void MmForm_Action_BoomerangThrow(Player* player, PlayState* play) {
                     leftBoom->actor.child = &rightBoom->actor;
                     rightBoom->actor.parent = &leftBoom->actor;
                 }
+                Harpoon_NotifyVfxSpawn(&rightBoom->actor, HARPOON_VFX_KIND_ZORA_FIN, /*attached=*/0);
             }
 
             // Set OOT state flag so En_Boom knows to return to player
@@ -9739,6 +9767,14 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         // arrival at target. Without this, pull never terminates → infinite flying.
         if (player->stateFlags3 & PLAYER_STATE3_FLYING_WITH_HOOKSHOT) {
             yieldFlags |= PLAYER_STATE1_FIRST_PERSON; // Reuse flag bit to trigger yield
+        }
+
+        // Push/pull on dynapoly walls: OOT sets PLAYER_STATE2_GRABBING_DYNAPOLY while
+        // running Player_Action_8084B78C/8084B898/8084B9E4 (grab → push → pull). Yield so
+        // the form skeleton copies OOT's push/pull animation via jointTable instead of
+        // showing the form's idle anim while OOT moves the block.
+        if (player->stateFlags2 & PLAYER_STATE2_GRABBING_DYNAPOLY) {
+            yieldFlags |= PLAYER_STATE1_CARRYING_ACTOR; // Reuse flag bit to trigger yield
         }
 
         // Don't yield for slingshot/boomerang pipeline flags (Deku bubble / Zora boomerang)
@@ -12518,6 +12554,15 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
     if (maskId == TRANSFORM_MASK_NONE)
         return;
 
+    // Already mid-transition: ignore the press. Without this guard, a second mask
+    // press during the cutscene falls through to the "Start transformation" block
+    // below, overwriting MMFORM_STATE_DETRANSFORMING with MMFORM_STATE_TRANSFORMING
+    // — the user sees "press mask, nothing happens" because the detransform that
+    // was in flight gets cancelled and re-promoted to a transform of the same form.
+    if (gFormState.state == MMFORM_STATE_TRANSFORMING || gFormState.state == MMFORM_STATE_DETRANSFORMING) {
+        return;
+    }
+
     // If Dragon Scale swim is active, deactivate it before transforming
     if (gFormState.zoraSwimEnabled) {
         MmForm_DragonScaleExitSwim(player);
@@ -13272,13 +13317,70 @@ void MmForm_Draw(PlayState* play, Player* player) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// Called from z_player.c when the death sequence starts. Synchronously rolls back
+// the equipment / strength / form-specific saved state so the player respawns
+// holding what they had pre-transform — same contract as a normal detransform,
+// but without the cutscene path that won't run during the death animation.
+//
+// Without this, the regular MmForm_Reset (which fires on scene unload after death)
+// goes through the "reload/death = stays unequipped" branch: the extended-equipment
+// backup is wiped (see comment in MmForm_Reset below) and saved strength is never
+// re-applied, so the player respawns with no Ext sword/shield/tunic/boots and with
+// the form's strength override (Goron=3, Zora=1, Deku=0) baked into the save.
+void MmForm_OnDeath(void) {
+    // 1. Restore extended equipment from the transform backup. Must run BEFORE
+    //    MmForm_Reset (which would otherwise clear the backup unconditionally).
+    ExtEquip_RestoreFromTransform();
+
+    // 2. Restore C-button equips (bottles / masks / items the form blocked).
+    //    Mirrors the loop inside MmForm_RestoreEquips, but works without a
+    //    PlayState (icon reload happens naturally on respawn).
+    if (sEquipsSaved) {
+        for (s32 i = 1; i < 8; i++) {
+            gSaveContext.equips.buttonItems[i] = sPreTransformEquips.buttonItems[i];
+            gSaveContext.equips.cButtonSlots[i - 1] = sPreTransformEquips.cButtonSlots[i - 1];
+        }
+        sEquipsSaved = 0;
+    }
+
+    // 3. Roll back the per-form strength override (Goron=3, Zora=1, Deku=0, FD=3)
+    //    to the player's actual upgrade level. savedStrength was captured in
+    //    MmForm_ApplyFormProperties before the form changed it.
+    if (gFormState.state == MMFORM_STATE_ACTIVE && gFormState.savedAgeProperties != NULL) {
+        Inventory_ChangeUpgrade(UPG_STRENGTH, gFormState.savedStrength);
+
+        // Roll back the form's tunic override (Zora→Zora Tunic, Goron→Goron Tunic).
+        // Without this, dying as Zora/Goron permanently changes the player's tunic
+        // because Player_Action_DeathRespawn only reads gSaveContext.equips.equipment.
+        gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
+                                        (gFormState.savedTunicEquip << gEquipShifts[EQUIP_TYPE_TUNIC]);
+        if (gPlayState != NULL) {
+            Player* player = GET_PLAYER(gPlayState);
+            if (player != NULL) {
+                player->currentTunic = gFormState.savedTunic;
+            }
+        }
+    }
+
+    // 4. Clear pending reactivation flags so the next scene doesn't re-transform
+    //    the corpse on respawn.
+    sPendingReactivate = 0;
+    sPendingSoftReload = 0;
+    sForceInstantTransform = 0;
+}
+
 void MmForm_Reset(void) {
     // Clear pending reactivation (manual detransform should not re-activate on next scene)
     sPendingReactivate = 0;
     sPendingSoftReload = 0;
     sForceInstantTransform = 0;
 
-    // Discard extended equipment backup (reload/death = stays unequipped)
+    // Discard extended equipment backup (reload/death = stays unequipped).
+    // Note: MmForm_OnDeath restores the backup BEFORE the death-triggered scene
+    // reload reaches this Reset, so by the time we get here on death the backup
+    // is already empty and this call is a no-op. For other reset paths (manual
+    // scene change while transformed, ResetGame), the backup is intentionally
+    // discarded.
     ExtEquip_ClearTransformBackup();
 
     // Restore pre-transform equips (no icon reload, HUD refreshes next frame)

@@ -38,7 +38,7 @@
 static ColliderCylinderInit sBallChainColInit = { { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER | AT_TYPE_OTHER, AC_NONE,
                                                     OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
                                                   { ELEMTYPE_UNK2,
-                                                    { DMG_JUMP_GIANT, 0x0F, BALLCHAIN_DAMAGE },
+                                                    { DMG_HAMMER, 0x0F, BALLCHAIN_DAMAGE },
                                                     { 0, 0, 0 },
                                                     TOUCH_ON | TOUCH_SFX_NORMAL,
                                                     BUMP_NONE,
@@ -288,7 +288,7 @@ static void BallChain_CheckDestructibles(PlayState* play, Vec3f* ballPos) {
             f32 xzDist = sqrtf(SQ(dx) + SQ(dz));
 
             if (xzDist < iceRadius && dy > -BALLCHAIN_COL_RADIUS && dy < iceHeight + BALLCHAIN_COL_RADIUS) {
-                BgIceShelter_BreakInstantly(actor, play);
+                BgIceShelter_ShatterMelt(actor, play);
             }
         }
         // Shadow Temple spinning pot

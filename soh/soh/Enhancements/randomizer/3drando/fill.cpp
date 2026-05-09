@@ -854,7 +854,7 @@ static void AssumedFill(const std::vector<RandomizerGet>& items, const std::vect
     }
 
     // keep retrying to place everything until it works or takes too long
-    int retries = 10;
+    int retries = 25;
     bool unsuccessfulPlacement = false;
     std::vector<RandomizerCheck> attemptedLocations;
     do {
@@ -1251,7 +1251,7 @@ int Fill() {
     auto ctx = Rando::Context::GetInstance();
     int retries = 0;
     SPDLOG_INFO("Starting seed generation...");
-    while (retries < 5) {
+    while (retries < 30) {
         SPDLOG_INFO("Attempt {}...", retries + 1);
         placementFailure = false;
         // showItemProgress = false;
@@ -1467,7 +1467,7 @@ int Fill() {
             return 1;
         }
         // Unsuccessful placement
-        if (retries < 4) {
+        if (retries < 29) {
             SPDLOG_DEBUG("Failed to generate a beatable seed. Retrying...");
             Regions::ResetAllLocations();
             logic->Reset();

@@ -260,9 +260,9 @@ void RegionTable_Init_DeathMountainCrater() {
         LOCATION(RC_DMC_CIRCLE_ROCK_8, logic->FireTimer() >= 8 && logic->CanBreakRocks()),
         //Boulders 1 and 2 are a bit separate, but are in 8 seconds from upper entry and closeer or the same distance
         //from all ways to reach upper grotto otherwise, so it works
-        LOCATION(RC_DMC_BOULDER_1,     logic->FireTimer() >= 8 && logic->BlastOrSmash()),
-        LOCATION(RC_DMC_BOULDER_2,     logic->FireTimer() >= 8 && logic->BlastOrSmash()),
-        LOCATION(RC_DMC_BOULDER_3,     logic->FireTimer() >= 8 && logic->BlastOrSmash()),
+        LOCATION(RC_DMC_BOULDER_1,     logic->FireTimer() >= 8 && logic->CanBreakBoulder()),
+        LOCATION(RC_DMC_BOULDER_2,     logic->FireTimer() >= 8 && logic->CanBreakBoulder()),
+        LOCATION(RC_DMC_BOULDER_3,     logic->FireTimer() >= 8 && logic->CanBreakBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_DMC_UPPER_GROTTO, AnyAgeTime([]{return logic->BlastOrSmash();})),
@@ -303,10 +303,10 @@ void RegionTable_Init_DeathMountainCrater() {
         LOCATION(RC_DMC_NEAR_GC_POT_2,           logic->CanBreakPots()),
         LOCATION(RC_DMC_NEAR_GC_POT_3,           logic->CanBreakPots()),
         LOCATION(RC_DMC_NEAR_GC_POT_4,           logic->CanBreakPots()),
-        LOCATION(RC_DMC_BRONZE_BOULDER_1,        logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_DMC_BRONZE_BOULDER_2,        logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_DMC_BRONZE_BOULDER_3,        logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_DMC_BRONZE_BOULDER_SHORTCUT, logic->CanUse(RG_MEGATON_HAMMER)),
+        LOCATION(RC_DMC_BRONZE_BOULDER_1,        logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_DMC_BRONZE_BOULDER_2,        logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_DMC_BRONZE_BOULDER_3,        logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_DMC_BRONZE_BOULDER_SHORTCUT, logic->CanBreakBronzeBoulder()),
         LOCATION(RC_DMC_BRIDGE_EXIT_ARROW_SIGN,  logic->CanRead()),
     }, {
         //Exits

@@ -10,6 +10,7 @@
 #include "expansions/sw97/sw97_config.h"
 
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Network/Harpoon/HarpoonBridge.h"
 #include "mods/transformation_masks/transformation_masks.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
@@ -538,8 +539,28 @@ void EnArrow_Update(Actor* thisx, PlayState* play) {
                                gSw97ActorId_ArrowDark, gSw97ActorId_ArrowSoul, gSw97ActorId_ArrowWind };
 
         if (this->actor.child == NULL) {
-            Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, sw97ActorIds[this->actor.params - ARROW_SW97_FIRE],
-                               this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, 0, 0, 0, 0);
+            Actor* effect = Actor_SpawnAsChild(
+                &play->actorCtx, &this->actor, play,
+                sw97ActorIds[this->actor.params - ARROW_SW97_FIRE],
+                this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z,
+                0, 0, 0, 0);
+
+            // Tell teammates to spawn the same trail/glow effect actor on
+            // their side. Fire-and-forget — it follows the parent EnArrow
+            // (which is a vanilla actor and exists locally on every client).
+            if (effect != NULL) {
+                static const s32 sVfxKindByArrowIdx[] = {
+                    HARPOON_VFX_KIND_SW97_ARROW_FIRE,
+                    HARPOON_VFX_KIND_SW97_ARROW_ICE,
+                    HARPOON_VFX_KIND_SW97_ARROW_LIGHT,
+                    HARPOON_VFX_KIND_SW97_ARROW_DARK,
+                    HARPOON_VFX_KIND_SW97_ARROW_SOUL,
+                    HARPOON_VFX_KIND_SW97_ARROW_WIND,
+                };
+                Harpoon_NotifyVfxSpawn(effect,
+                                       sVfxKindByArrowIdx[this->actor.params - ARROW_SW97_FIRE],
+                                       /*attachedToOwner=*/0);
+            }
         }
     }
 

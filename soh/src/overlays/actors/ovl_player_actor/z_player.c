@@ -8070,7 +8070,8 @@ s32 Player_ActionHandler_2(Player* this, PlayState* play) {
             }
         } else if (CHECK_BTN_ALL(sControlInput->press.button, BTN_A) &&
                    !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) &&
-                   !(this->stateFlags2 & PLAYER_STATE2_UNDERWATER)) {
+                   (!(this->stateFlags2 & PLAYER_STATE2_UNDERWATER) ||
+                    (this->currentBoots == PLAYER_BOOTS_IRON))) {
             if (this->getItemId != GI_NONE) {
                 if (GameInteractor_Should(VB_OPEN_CHEST, true)) {
                     GetItemEntry giEntry;

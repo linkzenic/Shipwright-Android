@@ -59,7 +59,7 @@ void RegionTable_Init_Kakariko() {
         LOCATION(RC_KAK_NEAR_FENCE_CHILD_CRATE,            logic->IsChild && logic->CanBreakCrates()),
         LOCATION(RC_KAK_NEAR_BOARDING_HOUSE_CHILD_CRATE,   logic->IsChild && logic->CanBreakCrates()),
         LOCATION(RC_KAK_NEAR_BAZAAR_CHILD_CRATE,           logic->IsChild && logic->CanBreakCrates()),
-        LOCATION(RC_KAK_SILVER_BOULDER,                    logic->IsAdult && logic->CanUse(RG_SILVER_GAUNTLETS) && 
+        LOCATION(RC_KAK_SILVER_BOULDER,                    logic->IsAdult && logic->CanBreakSilverBoulder() && 
                                                            (logic->HasItem(RG_CLIMB) || logic->CanUse(RG_HOVER_BOOTS) || (logic->HasItem(RG_LONGSHOT) && ((logic->AtDay && logic->HasItem(RG_POWER_BRACELET)) || (ctx->GetTrickOption(RT_UNINTUITIVE_JUMPS) && logic->CanJumpslash() && logic->TakeDamage()))))),
         LOCATION(RC_KAK_ROCK_1,                            logic->CanBreakRocks()),
         LOCATION(RC_KAK_ROCK_2,                            logic->CanBreakRocks()),
@@ -113,7 +113,7 @@ void RegionTable_Init_Kakariko() {
     areaTable[RR_KAK_WATCHTOWER] = Region("Kak Watchtower", SCENE_KAKARIKO_VILLAGE, {}, {
         //Locations
         //exists for when age change is in logic.
-        LOCATION(RC_KAK_GS_WATCHTOWER, logic->IsChild && logic->CanUse(RG_DINS_FIRE) && logic->CanGetNightTimeGS()),
+        LOCATION(RC_KAK_GS_WATCHTOWER, logic->IsChild && (logic->CanUse(RG_DINS_FIRE) || logic->CanUse(RG_FIRE_ROD)) && logic->CanGetNightTimeGS()),
     }, {
         //Exits
         ENTRANCE(RR_KAKARIKO_VILLAGE, true),

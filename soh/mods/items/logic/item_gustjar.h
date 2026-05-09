@@ -131,4 +131,12 @@ static const struct {
     { QUEST_MEDALLION_SPIRIT, GUST_ELEMENT_SPIRIT }, { QUEST_MEDALLION_LIGHT, GUST_ELEMENT_LIGHT },
 };
 
+// Particle spawn helpers — exposed so the Harpoon dummy update can replay the
+// suck/blow cones for remote players (the local Update path that normally
+// spawns these never runs for a dummy). This header is C-only (designated
+// initializers above), so C++ consumers must forward-declare these directly
+// rather than #include this file.
+void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw);
+void GustJar_SpawnBlowVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw, u8 element);
+
 #endif // ITEM_GUSTJAR_H

@@ -68,8 +68,25 @@ static Actor* Sw97_TrySpawnMagicSpell(PlayState* play, Player* player, s32 spell
         return NULL;
     }
 
-    return Actor_Spawn(&play->actorCtx, play, actorId, player->actor.world.pos.x, player->actor.world.pos.y,
-                       player->actor.world.pos.z, 0, 0, 0, 0);
+    Actor* spawned = Actor_Spawn(&play->actorCtx, play, actorId, player->actor.world.pos.x,
+                                 player->actor.world.pos.y, player->actor.world.pos.z, 0, 0, 0, 0);
+
+    // Tell teammates to spawn the same spell-effect actor on their side.
+    // Spells follow the caster (attached_to_owner=1) — their visual stays
+    // around the caster's dummy as long as the spell is active. Map the
+    // spell index back to the corresponding HARPOON_VFX_KIND_SW97_MAGIC_*.
+    if (spawned != NULL) {
+        s32 vfxKindByIndex[] = {
+            HARPOON_VFX_KIND_SW97_MAGIC_WIND,   // 0
+            HARPOON_VFX_KIND_SW97_MAGIC_SOUL,   // 1
+            HARPOON_VFX_KIND_SW97_MAGIC_DARK,   // 2
+            HARPOON_VFX_KIND_SW97_MAGIC_ICE,    // 3
+            HARPOON_VFX_KIND_SW97_MAGIC_LIGHT,  // 4
+            HARPOON_VFX_KIND_SW97_MAGIC_FIRE,   // 5
+        };
+        Harpoon_NotifyVfxSpawn(spawned, vfxKindByIndex[spell], /*attachedToOwner=*/1);
+    }
+    return spawned;
 }
 
 /**

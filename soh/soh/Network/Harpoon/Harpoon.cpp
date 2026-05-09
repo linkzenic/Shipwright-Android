@@ -2,6 +2,9 @@
 #include "HarpoonBridge.h"
 #include <nlohmann/json.hpp>
 #include <libultraship/libultraship.h>
+#include <fstream>
+#include <optional>
+#include <set>
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/ObjectExtension/ObjectExtension.h"
@@ -34,12 +37,50 @@ void Harpoon::Enable() {
         Anchor::Instance->Disable();
     }
 
-    Network::Enable(CVarGetString(CVAR_HARPOON("Host"), "localhost"), CVarGetInteger(CVAR_HARPOON("Port"), 43384));
+    if (isEnabled) return;
+
+    // Harpoon talks WebSocket (RFC 6455 plain ws://) — see HarpoonWebSocket.
+    // We do NOT call Network::Enable() because that opens raw TCP+\0 which is
+    // what the OTHER remotes (Anchor / Sail / CrowdControl) use. Network's
+    // base class is preserved unchanged for them.
+    if (!ws) {
+        ws = std::make_unique<HarpoonWebSocket>();
+        ws->SetOnConnected([this]() {
+            isConnected = true;
+            OnConnected();
+        });
+        ws->SetOnDisconnected([this]() {
+            bool wasConnected = isConnected;
+            isConnected = false;
+            if (wasConnected) OnDisconnected();
+        });
+        ws->SetOnText([this](const std::string& text) {
+            try {
+                auto j = nlohmann::json::parse(text);
+                OnIncomingJson(j);
+            } catch (const std::exception& e) {
+                SPDLOG_ERROR("[Harpoon] failed to parse incoming WS text: {}", e.what());
+            }
+        });
+    }
+
+    isEnabled = true;
     ownClientId = 0;
+    sessionToken.clear();
+    nextSeq = 1;
+
+    std::string host = CVarGetString(CVAR_HARPOON("Host"), "localhost");
+    int port = CVarGetInteger(CVAR_HARPOON("Port"), 8765);
+    ws->Connect(host, (uint16_t)port);
 }
 
 void Harpoon::Disable() {
-    Network::Disable();
+    if (ws) {
+        ws->Disconnect();
+    }
+    isEnabled = false;
+    isConnected = false;
+
     // Kill remote somaria cubes before clearing clients (pointers would be lost)
     if (IsSaveLoaded()) {
         for (auto& [clientId, client] : clients) {
@@ -59,7 +100,11 @@ void Harpoon::OnConnected() {
     // Lazy-init the skin sync registry the first time we connect. The call
     // is idempotent — subsequent reconnects skip the heavy load.
     HarpoonSkinSync::InitO2rOverrides();
+    // v2: handshake is just identity. Other state goes via separate primitives.
     SendPacket_Handshake();
+    if (IsSaveLoaded()) {
+        SendPacket_PlayerVisualState();
+    }
     HarpoonSkinSync::Reset();
     RegisterHooks();
 }
@@ -69,47 +114,46 @@ void Harpoon::OnDisconnected() {
     RegisterHooks();
 }
 
-void Harpoon::ProcessOutgoingPackets() {
-    std::queue<nlohmann::json> packetsToSend;
-    {
-        std::lock_guard<std::mutex> lock(outgoingPacketQueueMutex);
-        packetsToSend.swap(outgoingPacketQueue);
-    }
-
-    while (!packetsToSend.empty()) {
-        nlohmann::json payload = packetsToSend.front();
-        packetsToSend.pop();
-
-        if (!payload.contains("quiet")) {
-            SPDLOG_DEBUG("[Harpoon] Sending payload:\n{}", payload.dump());
-        }
-        Network::SendJsonToRemote(payload);
-    }
-}
-
 void Harpoon::SendJsonToRemote(nlohmann::json payload) {
-    if (!isConnected) {
+    if (!isConnected || !ws) {
         return;
     }
 
-    payload["clientId"] = ownClientId;
+    // Harpoon v2 envelope wrap: {type, seq, payload}.
+    // Existing call sites pass a payload that already has `type` set inside
+    // it; we extract it, drop it from the inner payload, and place it on the
+    // envelope. Any other fields go into the inner `payload`.
+    std::string type = payload.value("type", std::string(""));
+    payload.erase("type");
+    payload["clientId"] = ownClientId;  // kept inside payload as a convenience
 
-    if (payload["type"] == HPN_HANDSHAKE) {
-        Network::SendJsonToRemote(payload);
-        return;
-    }
+    nlohmann::json envelope;
+    envelope["type"] = type;
+    envelope["seq"] = nextSeq++;
+    envelope["payload"] = payload;
 
-    std::lock_guard<std::mutex> lock(outgoingPacketQueueMutex);
-    outgoingPacketQueue.push(payload);
+    // HarpoonWebSocket::SendText is thread-safe — send directly. The legacy
+    // outgoingPacketQueue + ProcessOutgoingPackets path was tied to
+    // Network::Run()'s SDL_net loop; Harpoon doesn't run that loop (uses its
+    // own WS thread), so anything we enqueued there sat forever.
+    ws->SendText(envelope.dump());
 }
 
-void Harpoon::OnIncomingJson(nlohmann::json payload) {
-    if (!payload.contains("type")) {
+void Harpoon::OnIncomingJson(nlohmann::json envelope) {
+    if (!envelope.contains("type")) {
         return;
     }
+
+    // Harpoon v2 envelope unwrap: incoming is {type, seq, payload}. We flatten
+    // to {type, ...inner...} so existing HandlePacket_* code keeps working.
+    nlohmann::json payload;
+    if (envelope.contains("payload") && envelope["payload"].is_object()) {
+        payload = envelope["payload"];
+    }
+    payload["type"] = envelope["type"];
 
     if (!payload.contains("quiet")) {
-        SPDLOG_DEBUG("[Harpoon] Received payload:\n{}", payload.dump());
+        SPDLOG_DEBUG("[Harpoon] Received envelope:\n{}", envelope.dump());
     }
 
     std::lock_guard<std::mutex> lock(incomingPacketQueueMutex);
@@ -130,63 +174,88 @@ void Harpoon::ProcessIncomingPacketQueue() {
         std::string packetType = payload["type"].get<std::string>();
 
         try {
-            if (packetType == HPN_ALL_CLIENTS)
-                HandlePacket_AllClients(payload);
-            else if (packetType == HPN_PLAYER_UPDATE)
-                HandlePacket_PlayerUpdate(payload);
-            else if (packetType == HPN_DAMAGE)
-                HandlePacket_Damage(payload);
-            else if (packetType == HPN_PLAYER_DIED)
-                HandlePacket_PlayerDied(payload);
-            else if (packetType == HPN_SERVER_MSG)
-                HandlePacket_ServerMsg(payload);
-            else if (packetType == HPN_PLAYER_SFX)
-                HandlePacket_PlayerSfx(payload);
-            else if (packetType == HPN_GIVE_ITEM)
-                HandlePacket_GiveItem(payload);
-            else if (packetType == HPN_UPDATE_TEAM_STATE)
-                HandlePacket_UpdateTeamState(payload);
-            // Scooter handlers
-            else if (packetType == HPN_GAME_STATE)
-                HandlePacket_GameState(payload);
-            else if (packetType == HPN_WINNER)
-                HandlePacket_Winner(payload);
-            else if (packetType == "HARPOON_SERVER_INFO")
-                HandlePacket_ServerInfo(payload);
-            else if (packetType == "ROOM_JOINED")
-                HandlePacket_RoomJoined(payload);
-            else if (packetType == "ROOM_LEFT")
-                HandlePacket_RoomLeft(payload);
-            else if (packetType == "ROOM_LIST")
-                HandlePacket_RoomList(payload);
-            else if (packetType == HPN_ROLE_CHANGE)
-                HandlePacket_RoleChange(payload);
-            else if (packetType == HPN_MAP_VOTE)
-                HandlePacket_MapVote(payload);
-            else if (packetType == HPN_DECOY_HIT)
-                HandlePacket_DecoyHit(payload);
-            else if (packetType == HPN_CUSTOM_DAMAGE)
-                HandlePacket_CustomDamage(payload);
-            else if (packetType == HPN_CUSTOM_EFFECT)
-                HandlePacket_CustomEffect(payload);
-            // Anchor rando handlers
-            else if (packetType == HPN_SET_FLAG)
-                HandlePacket_SetFlag(payload);
-            else if (packetType == HPN_UNSET_FLAG)
-                HandlePacket_UnsetFlag(payload);
-            else if (packetType == HPN_SET_CHECK_STATUS)
-                HandlePacket_SetCheckStatus(payload);
-            else if (packetType == HPN_ENTRANCE_DISCOVERED)
-                HandlePacket_EntranceDiscovered(payload);
-            else if (packetType == HPN_UPDATE_DUNGEON_ITEMS)
-                HandlePacket_UpdateDungeonItems(payload);
-            else if (packetType == HPN_TELEPORT_TO)
-                HandlePacket_TeleportTo(payload);
-            else if (packetType == HPN_UPDATE_BEANS_COUNT)
-                HandlePacket_UpdateBeansCount(payload);
-            // Skin sync
-            else if (packetType == HPN_O2R_MOD_LIST)
-                HandlePacket_O2rModList(payload);
+            // ================================================================
+            // HARPOON.* — connection lifecycle
+            // ================================================================
+            if (packetType == HPN_SERVER_INFO)               HandlePacket_ServerInfo(payload);
+            else if (packetType == HPN_HANDSHAKE_ACK)        HandlePacket_HandshakeAck(payload);
+            else if (packetType == HPN_ERROR)                HandlePacket_Error(payload);
+
+            // ================================================================
+            // ROOM.*
+            // ================================================================
+            else if (packetType == HPN_ROOM_JOINED)          HandlePacket_RoomJoined(payload);
+            else if (packetType == HPN_ROOM_LEFT)            HandlePacket_RoomLeft(payload);
+            else if (packetType == HPN_ROOM_LIST_RESPONSE)   HandlePacket_RoomList(payload);
+            else if (packetType == HPN_ROOM_MEMBERS)         HandlePacket_AllClients(payload);
+            else if (packetType == HPN_ROOM_MANIFEST)        HandlePacket_GamemodeManifest(payload);
+            else if (packetType == HPN_ROOM_PHASE_CHANGED)   HandlePacket_PhaseChanged(payload);
+            else if (packetType == HPN_ROOM_EVENT)           HandlePacket_RoomEvent(payload);
+
+            // ================================================================
+            // PLAYER.* — granular per-frame
+            // ================================================================
+            else if (packetType == HPN_PLAYER_TRANSFORM)         HandlePacket_PlayerTransform(payload);
+            else if (packetType == HPN_PLAYER_SKELETON)          HandlePacket_PlayerSkeleton(payload);
+            else if (packetType == HPN_PLAYER_LIMB_ROT)          HandlePacket_PlayerLimbRotations(payload);
+            else if (packetType == HPN_PLAYER_ANIM_FLAGS)        HandlePacket_PlayerAnimationFlags(payload);
+            else if (packetType == HPN_PLAYER_MOTION_VARS)       HandlePacket_PlayerMotionVars(payload);
+            else if (packetType == HPN_PLAYER_BOW_STATE)         HandlePacket_PlayerBowState(payload);
+            else if (packetType == HPN_PLAYER_HAND_TYPES)        HandlePacket_PlayerHandTypes(payload);
+            else if (packetType == HPN_PLAYER_VISUAL_STATE)      HandlePacket_PlayerVisualState(payload);
+            else if (packetType == HPN_PLAYER_EQUIP_VISIBLE)     HandlePacket_PlayerEquipVisible(payload);
+            else if (packetType == HPN_PLAYER_FACE)              HandlePacket_PlayerFace(payload);
+            else if (packetType == HPN_PLAYER_SCALE)             HandlePacket_PlayerScale(payload);
+            else if (packetType == HPN_PLAYER_TRANSFORMATION)    HandlePacket_PlayerTransformation(payload);
+            else if (packetType == HPN_PLAYER_GORON_STATE)       HandlePacket_PlayerGoronState(payload);
+            else if (packetType == HPN_PLAYER_INVINCIBILITY)     HandlePacket_PlayerInvincibility(payload);
+            else if (packetType == HPN_PLAYER_CUSTOM_ITEM)       HandlePacket_PlayerCustomItemState(payload);
+            else if (packetType == HPN_PLAYER_FULL_STATE)        HandlePacket_PlayerFullState(payload);
+            else if (packetType == HPN_PLAYER_KILL)              HandlePacket_PlayerDied(payload);
+
+            // ================================================================
+            // COMBAT.*
+            // ================================================================
+            else if (packetType == HPN_COMBAT_DAMAGE)         HandlePacket_Damage(payload);
+            else if (packetType == HPN_COMBAT_DECOY_HIT)      HandlePacket_DecoyHit(payload);
+            else if (packetType == HPN_COMBAT_CUSTOM_EFFECT)  HandlePacket_CustomEffect(payload);
+
+            // ================================================================
+            // INVENTORY.* / SAVE.* (Anchor rando + general save sync)
+            // ================================================================
+            else if (packetType == HPN_INV_GIVE_ITEM)         HandlePacket_GiveItem(payload);
+            else if (packetType == HPN_INV_DUNGEON_ITEMS)     HandlePacket_UpdateDungeonItems(payload);
+            else if (packetType == HPN_INV_AMMO)              HandlePacket_UpdateBeansCount(payload);
+            else if (packetType == HPN_SAVE_SET_FLAG)         HandlePacket_SetFlag(payload);
+            else if (packetType == HPN_SAVE_UNSET_FLAG)       HandlePacket_UnsetFlag(payload);
+            else if (packetType == HPN_SAVE_QUEST_STATE)      HandlePacket_SetCheckStatus(payload);
+            else if (packetType == HPN_SAVE_TEAM_STATE)       HandlePacket_UpdateTeamState(payload);
+            else if (packetType == HPN_SAVE_TEAM_REQUEST)     HandlePacket_RequestTeamState(payload);
+            else if (packetType == HPN_SAVE_CUTSCENE)         HandlePacket_CutsceneTrigger(payload);
+            else if (packetType == HPN_SAVE_GAME_COMPLETE)    HandlePacket_GameComplete(payload);
+            else if (packetType == HPN_AUDIO_OCARINA)         HandlePacket_OcarinaSfx(payload);
+            else if (packetType == HPN_APPEARANCE_SPAWN_VFX)  HandlePacket_SpawnVfxActor(payload);
+
+            // ================================================================
+            // WORLD.* / MAP.* / AUDIO.* / UI.*
+            // ================================================================
+            else if (packetType == HPN_WORLD_TRANSPORT)       HandlePacket_TeleportTo(payload);
+            else if (packetType == HPN_MAP_ENTRANCE)          HandlePacket_EntranceDiscovered(payload);
+            else if (packetType == HPN_AUDIO_SFX)             HandlePacket_PlayerSfx(payload);
+            else if (packetType == HPN_UI_MESSAGE)            HandlePacket_ServerMsg(payload);
+
+            // ================================================================
+            // APPEARANCE.SKIN_SYNC.*
+            // ================================================================
+            else if (packetType == HPN_SKIN_ANNOUNCE)         HandlePacket_SkinSyncAnnounceCatalog(payload);
+            else if (packetType == HPN_SKIN_UPDATE_SLOTS)     HandlePacket_SkinSyncUpdateSlots(payload);
+
+            // No-op handlers for primitives the engine doesn't react to yet.
+            // Keep them silent so we don't log "unknown" warnings for normal
+            // server traffic.
+            else if (packetType == "ROOM.GAMEMODE_CHANGED")   { /* no-op */ }
+            else if (packetType == HPN_ROOM_GM_CONFIG)        { /* manifest already handled */ }
+            else { SPDLOG_DEBUG("[Harpoon] unhandled type: {}", packetType); }
         } catch (const std::exception& e) { SPDLOG_ERROR("[Harpoon] Exception processing packet: {}", e.what()); }
     }
 }
@@ -209,6 +278,7 @@ void Harpoon::SetDummyPlayerClientId(const Actor* actor, uint32_t clientId) {
 
 void Harpoon::RefreshClientActors() {
     if (!IsSaveLoaded()) {
+        SPDLOG_DEBUG("[Harpoon] RefreshClientActors: skip (save not loaded)");
         return;
     }
 
@@ -232,8 +302,25 @@ void Harpoon::RefreshClientActors() {
         actor = actor->next;
     }
 
+    int spawned = 0, deferred = 0, skipped = 0;
     for (auto& [clientId, client] : clients) {
         if (!client.online || client.self) {
+            skipped++;
+            client.player = nullptr;
+            continue;
+        }
+        // Defer spawn until we have a real position. Spawning at world origin
+        // when no transform packet has arrived yet usually puts the dummy
+        // outside the playable area — invisible even if all the EXILE checks
+        // pass. HandlePacket_PlayerUpdate / Transform sets shouldRefreshActors
+        // when the first real posRot arrives, which re-enters this loop.
+        bool noPos = (client.posRot.pos.x == 0.0f && client.posRot.pos.y == 0.0f &&
+                      client.posRot.pos.z == 0.0f);
+        if (noPos) {
+            client.player = nullptr;
+            deferred++;
+            SPDLOG_INFO("[Harpoon] RefreshClientActors: cid={} '{}' DEFER (no posRot yet, scene={} saveLoaded={})",
+                        clientId, client.name, client.sceneNum, client.isSaveLoaded);
             continue;
         }
 
@@ -242,8 +329,15 @@ void Harpoon::RefreshClientActors() {
             Actor_Spawn(&gPlayState->actorCtx, gPlayState, ACTOR_PLAYER, client.posRot.pos.x, client.posRot.pos.y,
                         client.posRot.pos.z, client.posRot.rot.x, client.posRot.rot.y, client.posRot.rot.z, 0);
         client.player = (Player*)dummy;
+        spawned++;
+        SPDLOG_INFO("[Harpoon] RefreshClientActors: cid={} '{}' SPAWN at ({:.0f},{:.0f},{:.0f}) scene={} saveLoaded={}",
+                    clientId, client.name,
+                    client.posRot.pos.x, client.posRot.pos.y, client.posRot.pos.z,
+                    client.sceneNum, client.isSaveLoaded);
     }
     spawningDummyPlayerForClientId = 0;
+    SPDLOG_INFO("[Harpoon] RefreshClientActors done: spawned={} deferred={} skipped={} (own={})",
+                spawned, deferred, skipped, ownClientId);
 }
 
 bool Harpoon::IsSaveLoaded() {
@@ -251,7 +345,9 @@ bool Harpoon::IsSaveLoaded() {
         return false;
     if (GET_PLAYER(gPlayState) == nullptr)
         return false;
-    if (gSaveContext.fileNum > 2 && gSaveContext.fileNum < 0xFE)
+    // Match Anchor: only fileNums 0/1/2 are real save slots. Title sentinels
+    // (0xFE/0xFF) and any out-of-range values mean "not in a save".
+    if (gSaveContext.fileNum < 0 || gSaveContext.fileNum > 2)
         return false;
     if (gSaveContext.gameMode != GAMEMODE_NORMAL)
         return false;
@@ -282,11 +378,15 @@ nlohmann::json Harpoon::PrepClientState() {
     }
 
     // Skin sync: broadcast the display name of the LOCAL (mods/) pak selection.
-    // Remote clients look the name up in THEIR mods/harpoon_skin_sync/ — missing
+    // Remote clients look the name up in THEIR harpoon/skins/ — missing
     // skins fall back to vanilla Link + a one-shot UI notification.
     state["adultSkin"] = GetLocalSkinName("gMods.PakLoader.AdultModel");
     state["childSkin"] = GetLocalSkinName("gMods.PakLoader.ChildModel");
     state["equipSkin"] = GetLocalSkinName("gMods.PakLoader.Equipment");
+    {
+        const char* forcedPtr = PakLoader_GetForcedModelName();
+        state["forcedSkin"] = forcedPtr ? std::string(forcedPtr) : std::string("");
+    }
 
     // .o2r mod list (handshake-only) — not used for rendering, just for
     // informing peers of potential global visual divergence.
@@ -302,15 +402,33 @@ nlohmann::json Harpoon::PrepClientState() {
 // MARK: - Send Packets
 
 void Harpoon::SendPacket_Handshake() {
+    // Harpoon v2 HARPOON.HANDSHAKE — flat {name, color, clientVersion,
+    // installedGamemodes}. The server is gamemode-agnostic; we tell it which
+    // gamemodes we have installed locally so it can filter the room browser
+    // it sends back. Rooms whose gamemode_id we don't have are invisible to
+    // us — that's the privacy mechanism for custom packs.
+    nlohmann::json clientState = PrepClientState();
     nlohmann::json payload;
     payload["type"] = HPN_HANDSHAKE;
-    payload["clientState"] = PrepClientState();
+    // Protocol marker — server rejects anything else. Soft barrier to keep
+    // the server from being repurposed as a generic WS relay.
+    payload["protocol"] = "harpoon";
+    payload["name"] = clientState.value("name", std::string("Player"));
+    payload["color"] = clientState.value("color", nlohmann::json{ {"r", 100}, {"g", 255}, {"b", 100} });
+    payload["clientVersion"] = clientState.value("clientVersion", std::string(""));
+    nlohmann::json gms = nlohmann::json::array();
+    for (const auto& gid : HarpoonSkinSync::GetInstalledGamemodes()) {
+        gms.push_back(gid);
+    }
+    payload["installedGamemodes"] = gms;
     SendJsonToRemote(payload);
 }
 
 void Harpoon::SendPacket_O2rModList() {
+    // v2: APPEARANCE.SKIN_SYNC.ANNOUNCE_CATALOG. The server schema accepts
+    // `mods` and `syncMods` as aliases for `enabled_mods` and `sync_catalog`.
     nlohmann::json payload;
-    payload["type"] = HPN_O2R_MOD_LIST;
+    payload["type"] = HPN_SKIN_ANNOUNCE;
     nlohmann::json mods = nlohmann::json::array();
     std::string modsStr;
     for (const auto& m : ModMenu_GetEnabledMods()) {
@@ -319,7 +437,7 @@ void Harpoon::SendPacket_O2rModList() {
         modsStr += m;
     }
     payload["mods"] = mods;
-    // Also broadcast our harpoon_skin_sync registry — names of mods we
+    // Also broadcast our harpoon/skins registry — names of mods we
     // have available to render OTHER players. Lets remotes suppress the
     // "you have mod X they don't" notification when X is in this list
     // (we can render them correctly via our override path).
@@ -340,15 +458,11 @@ void Harpoon::SendPacket_PlayerUpdate() {
     if (!IsSaveLoaded())
         return;
 
-    uint32_t currentPlayerCount = 0;
-    for (auto& [clientId, client] : clients) {
-        if (client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded && !client.self) {
-            currentPlayerCount++;
-        }
-    }
-    if (currentPlayerCount == 0)
-        return;
-
+    // Server applies AOI (`same_scene_as=session`) — no need to duplicate the
+    // filter here. Anchor doesn't have one and works. Local filtering creates
+    // a chicken-and-egg race: if our roster's view of teammates is briefly
+    // stale (sceneNum lagging the server), we skip sending and the dummy on
+    // their side never gets a transform → spawned at world origin and exiled.
     Player* player = GET_PLAYER(gPlayState);
     nlohmann::json payload;
 
@@ -450,14 +564,20 @@ void Harpoon::SendPacket_PlayerUpdate() {
     payload["adultSkin"] = adultSkinName;
     payload["childSkin"] = childSkinName;
     payload["equipSkin"] = equipSkinName;
+    // Forced model overrides (Kafei mask transform, Champion's Tunic, etc.) —
+    // these are runtime PakLoader_ForceModel calls, NOT user menu selections.
+    // Broadcast separately so remotes can mirror Kafei when activated.
+    const char* forcedSkinPtr = PakLoader_GetForcedModelName();
+    std::string forcedSkinName = forcedSkinPtr ? std::string(forcedSkinPtr) : "";
+    payload["forcedSkin"] = forcedSkinName;
     {
         // Once-per-(name-fingerprint) diagnostic so we can see exactly what
         // skin we're broadcasting without spamming each frame.
         static std::string sLastFingerprint;
-        std::string fp = adultSkinName + "|" + childSkinName + "|" + equipSkinName;
+        std::string fp = adultSkinName + "|" + childSkinName + "|" + equipSkinName + "|" + forcedSkinName;
         if (sLastFingerprint != fp) {
-            SPDLOG_INFO("[Harpoon] Broadcast skin: adult='{}' child='{}' equip='{}'",
-                        adultSkinName, childSkinName, equipSkinName);
+            SPDLOG_INFO("[Harpoon] Broadcast skin: adult='{}' child='{}' equip='{}' forced='{}'",
+                        adultSkinName, childSkinName, equipSkinName, forcedSkinName);
             sLastFingerprint = fp;
         }
     }
@@ -586,6 +706,47 @@ void Harpoon::SendPacket_PlayerUpdate() {
             payload["ciTimeGatePortalAlpha"] = ci->timeGatePortalAlpha;
             payload["ciTimeGatePortalScale"] = ci->timeGatePortalScale;
         }
+        // ── Phase 1 sync ──────────────────────────────────────────────
+        if (ciFlags & CI_FLAG_ROCS_FEATHER) {
+            payload["ciRocsJumpCount"] = ci->rocsJumpCount;
+            payload["ciRocsMmAnimTimer"] = ci->rocsMmAnimTimer;
+        }
+        if (ciFlags & CI_FLAG_BOMB_ARROW) {
+            payload["ciBombArrowState"] = ci->bombArrowState;
+        }
+        // CI_FLAG_DEMISE_DESTRUCTION carries no extra fields beyond the flag.
+        if (ciFlags & CI_FLAG_HYLIAS_GRACE) {
+            payload["ciHyliasGraceState"]          = ci->hyliasGraceState;
+            payload["ciHyliasGraceSubPhase"]       = ci->hyliasGraceSubPhase;
+            payload["ciHyliasGraceTimer"]          = ci->hyliasGraceTimer;
+            payload["ciHyliasGraceForcedBySpell"]  = ci->hyliasGraceForcedBySpell;
+        }
+        if (ciFlags & CI_FLAG_ZONAI_PERMAFROST) {
+            payload["ciZonaiPermafrostState"]    = ci->zonaiPermafrostState;
+            payload["ciZonaiPermafrostSubPhase"] = ci->zonaiPermafrostSubPhase;
+            payload["ciZonaiPermafrostTimer"]    = ci->zonaiPermafrostTimer;
+        }
+        if (ciFlags & CI_FLAG_LANTERN) {
+            payload["ciLanternFireType"]    = ci->lanternFireType;
+            payload["ciLanternSwinging"]    = ci->lanternSwinging;
+            payload["ciLanternEquipped"]    = ci->lanternEquipped;
+            payload["ciLanternSwingFrame"]  = ci->lanternSwingFrame;
+        }
+        if (ciFlags & CI_FLAG_MINISH_CAP) {
+            payload["ciMinishCapWarpMode"]  = ci->minishCapWarpMode;
+            payload["ciMinishCapShrinking"] = ci->minishCapShrinking;
+            payload["ciMinishCapGrowing"]   = ci->minishCapGrowing;
+        }
+        if (ciFlags & CI_FLAG_POSTMAN_HAT) {
+            payload["ciPostmanHatDashing"]           = ci->postmanHatDashing;
+            payload["ciPostmanHatArriving"]          = ci->postmanHatArriving;
+            payload["ciPostmanHatTransitionTimer"]   = ci->postmanHatTransitionTimer;
+        }
+        if (ciFlags & CI_FLAG_DESIRE_SENSOR) {
+            payload["ciDesireSensorState"]   = ci->desireSensorState;
+            payload["ciDesireSensorTimer"]   = ci->desireSensorTimer;
+            payload["ciDesireSensorResult"]  = ci->desireSensorResult;
+        }
     }
 
     // Somaria cubes
@@ -608,12 +769,9 @@ void Harpoon::SendPacket_PlayerUpdate() {
 
     payload["quiet"] = true;
 
-    for (auto& [clientId, client] : clients) {
-        if (client.sceneNum == gPlayState->sceneNum && client.online && client.isSaveLoaded && !client.self) {
-            payload["targetClientId"] = clientId;
-            SendJsonToRemote(payload);
-        }
-    }
+    // v2: one send. Server broadcasts to same-scene members automatically
+    // based on the sender's `scene_num` (tracked from PLAYER.UPDATE_VISUAL_STATE).
+    SendJsonToRemote(payload);
 }
 
 void Harpoon::SendPacket_Damage(u32 clientId, u8 damageEffect, u8 damage) {
@@ -675,6 +833,19 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
         }
         roomMembershipChanged = (newOnlineCount != prevOnlineCount);
 
+        // Diagnostic: dump roster so we can see what each peer looks like to us.
+        std::string members;
+        for (auto& [id, c] : clients) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "%u'%s'(scn=%d sl=%d on=%d%s)%s",
+                     id, c.name.c_str(), c.sceneNum, (int)c.isSaveLoaded,
+                     (int)c.online, c.self ? " SELF" : "",
+                     members.empty() ? "" : ", ");
+            members = std::string(buf) + (members.empty() ? "" : (", " + members));
+        }
+        SPDLOG_INFO("[Harpoon] ROOM.MEMBERS_UPDATED own={} count={} -> [{}]",
+                    ownClientId, (int)clients.size(), members);
+
         shouldRefreshActors = true;
     }
 
@@ -716,6 +887,13 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
             client.posRot.rot.x = pr["rot"].value("x", (s16)0);
             client.posRot.rot.y = pr["rot"].value("y", (s16)0);
             client.posRot.rot.z = pr["rot"].value("z", (s16)0);
+        }
+        // If we deferred the spawn earlier (no posRot known), this is the
+        // packet that lets us actually spawn — schedule a refresh.
+        bool hasPos = (client.posRot.pos.x != 0.0f || client.posRot.pos.y != 0.0f ||
+                       client.posRot.pos.z != 0.0f);
+        if (client.player == nullptr && hasPos && client.online) {
+            shouldRefreshActors = true;
         }
     }
 
@@ -774,18 +952,20 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
     client.mmSpeedXZ = payload.value("mmSpeedXZ", (f32)0);
 
     // Skin sync — names of the remote's selected pak slots (resolved at draw time
-    // against mods/harpoon_skin_sync/). Absent / empty → fall back to vanilla Link.
+    // against harpoon/skins/). Absent / empty → fall back to vanilla Link.
     std::string newAdultSkin = payload.value("adultSkin", std::string(""));
     std::string newChildSkin = payload.value("childSkin", std::string(""));
     std::string newEquipSkin = payload.value("equipSkin", std::string(""));
+    std::string newForcedSkin = payload.value("forcedSkin", std::string(""));
     if (newAdultSkin != client.adultSkinName || newChildSkin != client.childSkinName ||
-        newEquipSkin != client.equipSkinName) {
-        SPDLOG_INFO("[Harpoon] Received skin update for '{}' (id={}): adult='{}' child='{}' equip='{}'",
-                    client.name, clientId, newAdultSkin, newChildSkin, newEquipSkin);
+        newEquipSkin != client.equipSkinName || newForcedSkin != client.forcedSkinName) {
+        SPDLOG_INFO("[Harpoon] Received skin update for '{}' (id={}): adult='{}' child='{}' equip='{}' forced='{}'",
+                    client.name, clientId, newAdultSkin, newChildSkin, newEquipSkin, newForcedSkin);
     }
     client.adultSkinName = newAdultSkin;
     client.childSkinName = newChildSkin;
     client.equipSkinName = newEquipSkin;
+    client.forcedSkinName = newForcedSkin;
 
     // OOT visual state
     client.currentMask = payload.value("currentMask", (u8)0);
@@ -892,6 +1072,52 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
         client.ciTimeGatePortalAlpha = payload.value("ciTimeGatePortalAlpha", 0.0f);
         client.ciTimeGatePortalScale = payload.value("ciTimeGatePortalScale", 0.0f);
     }
+    // ── Phase 1 sync receive ─────────────────────────────────────────────
+    client.ciRocsFeatherJumpActive    = (ciFlags & CI_FLAG_ROCS_FEATHER) ? 1 : 0;
+    client.ciBombArrowActive          = (ciFlags & CI_FLAG_BOMB_ARROW) ? 1 : 0;
+    client.ciDemiseDestructionActive  = (ciFlags & CI_FLAG_DEMISE_DESTRUCTION) ? 1 : 0;
+    client.ciHyliasGraceActive        = (ciFlags & CI_FLAG_HYLIAS_GRACE) ? 1 : 0;
+    client.ciZonaiPermafrostActive    = (ciFlags & CI_FLAG_ZONAI_PERMAFROST) ? 1 : 0;
+    client.ciDesireSensorActive       = (ciFlags & CI_FLAG_DESIRE_SENSOR) ? 1 : 0;
+    if (ciFlags & CI_FLAG_ROCS_FEATHER) {
+        client.ciRocsJumpCount    = payload.value("ciRocsJumpCount", (u8)0);
+        client.ciRocsMmAnimTimer  = payload.value("ciRocsMmAnimTimer", (s16)0);
+    }
+    if (ciFlags & CI_FLAG_BOMB_ARROW) {
+        client.ciBombArrowState = payload.value("ciBombArrowState", (u8)0);
+    }
+    if (ciFlags & CI_FLAG_HYLIAS_GRACE) {
+        client.ciHyliasGraceState         = payload.value("ciHyliasGraceState", (u8)0);
+        client.ciHyliasGraceSubPhase      = payload.value("ciHyliasGraceSubPhase", (u8)0);
+        client.ciHyliasGraceTimer         = payload.value("ciHyliasGraceTimer", (s16)0);
+        client.ciHyliasGraceForcedBySpell = payload.value("ciHyliasGraceForcedBySpell", (u8)0);
+    }
+    if (ciFlags & CI_FLAG_ZONAI_PERMAFROST) {
+        client.ciZonaiPermafrostState    = payload.value("ciZonaiPermafrostState", (u8)0);
+        client.ciZonaiPermafrostSubPhase = payload.value("ciZonaiPermafrostSubPhase", (u8)0);
+        client.ciZonaiPermafrostTimer    = payload.value("ciZonaiPermafrostTimer", (s16)0);
+    }
+    if (ciFlags & CI_FLAG_LANTERN) {
+        client.ciLanternFireType   = payload.value("ciLanternFireType", (u8)0);
+        client.ciLanternSwinging   = payload.value("ciLanternSwinging", (u8)0);
+        client.ciLanternEquipped   = payload.value("ciLanternEquipped", (u8)0);
+        client.ciLanternSwingFrame = payload.value("ciLanternSwingFrame", (s16)0);
+    }
+    if (ciFlags & CI_FLAG_MINISH_CAP) {
+        client.ciMinishCapWarpMode  = payload.value("ciMinishCapWarpMode", (u8)0);
+        client.ciMinishCapShrinking = payload.value("ciMinishCapShrinking", (u8)0);
+        client.ciMinishCapGrowing   = payload.value("ciMinishCapGrowing", (u8)0);
+    }
+    if (ciFlags & CI_FLAG_POSTMAN_HAT) {
+        client.ciPostmanHatDashing         = payload.value("ciPostmanHatDashing", (u8)0);
+        client.ciPostmanHatArriving        = payload.value("ciPostmanHatArriving", (u8)0);
+        client.ciPostmanHatTransitionTimer = payload.value("ciPostmanHatTransitionTimer", (s16)0);
+    }
+    if (ciFlags & CI_FLAG_DESIRE_SENSOR) {
+        client.ciDesireSensorState  = payload.value("ciDesireSensorState", (u8)0);
+        client.ciDesireSensorTimer  = payload.value("ciDesireSensorTimer", (s16)0);
+        client.ciDesireSensorResult = payload.value("ciDesireSensorResult", (u8)0);
+    }
 
     // Somaria cubes
     client.remoteCubeCount = 0;
@@ -984,8 +1210,40 @@ void Harpoon::HandlePacket_PlayerSfx(nlohmann::json payload) {
 
 // MARK: - Item Sync
 
+// Counter ported from Anchor (GiveItem.cpp). Bumped on every incoming ice trap
+// applied locally; decremented (not re-broadcast) on the next OUTGOING ice
+// trap. Without this, A's incoming ice trap fires the local OnItemReceive
+// hook → broadcasts back to A → ∞ loop.
+static uint8_t sIncomingIceTrapsFromHarpoon = 0;
+
 void Harpoon::SendPacket_GiveItem(u16 modId, s16 getItemId) {
-    if (!IsSaveLoaded() || isProcessingIncomingPacket || !syncItems) {
+    if (!IsSaveLoaded() || isProcessingIncomingPacket) {
+        return;
+    }
+    if (!syncItems) {
+        // Surface this once-per-session so a misconfigured pack (e.g. user
+        // joined a default room with sync_items=false) is visible in logs
+        // instead of silently dropping every pickup.
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            SPDLOG_WARN("[Harpoon] item not broadcast — current room has sync_items=false "
+                        "(modId={} getItemId={})", modId, getItemId);
+        }
+        return;
+    }
+
+    // Ice trap loop guard.
+    if (modId == MOD_RANDOMIZER && getItemId == RG_ICE_TRAP && sIncomingIceTrapsFromHarpoon > 0) {
+        sIncomingIceTrapsFromHarpoon--;
+        return;
+    }
+
+    // Don't broadcast a Master Sword pickup from inside the final Ganon fight —
+    // the engine forces-equips it temporarily and it doesn't represent real
+    // progression for the team.
+    if (modId == MOD_RANDOMIZER && getItemId == RG_MASTER_SWORD &&
+        gPlayState != nullptr && gPlayState->sceneNum == SCENE_GANON_BOSS) {
         return;
     }
 
@@ -1040,6 +1298,7 @@ void Harpoon::HandlePacket_GiveItem(nlohmann::json payload) {
     } else if (getItemEntry.modIndex == MOD_RANDOMIZER) {
         if (getItemEntry.getItemId == RG_ICE_TRAP) {
             gSaveContext.ship.pendingIceTrapCount++;
+            sIncomingIceTrapsFromHarpoon++;  // loop guard, see SendPacket_GiveItem
         } else {
             Randomizer_Item_Give(gPlayState, getItemEntry);
         }
@@ -1114,6 +1373,10 @@ void Harpoon::HandlePacket_UpdateTeamState(nlohmann::json payload) {
     }
 
     isProcessingIncomingPacket = true;
+    // Suppress OnRandoSetCheckStatus / OnRandoSetIsSkipped re-broadcasts that
+    // would otherwise rate-limit-storm the server: applying the team save
+    // touches every check, each of which would otherwise fire SendPacket_SetCheckStatus.
+    isHandlingUpdateTeamState = true;
 
     if (payload.contains("state")) {
         SaveContext loadedData = payload["state"].get<SaveContext>();
@@ -1165,6 +1428,10 @@ void Harpoon::HandlePacket_UpdateTeamState(nlohmann::json payload) {
             gSaveContext.gsFlags[i] = loadedData.gsFlags[i];
         }
 
+        // Anchor parity: keep team's earliest input timestamp + creation time.
+        gSaveContext.ship.stats.firstInput = loadedData.ship.stats.firstInput;
+        gSaveContext.ship.stats.fileCreatedAt = loadedData.ship.stats.fileCreatedAt;
+
         // Restore bottle contents (unless it's ruto's letter)
         for (int i = 0; i < 4; i++) {
             if (gSaveContext.inventory.items[SLOT_BOTTLE_1 + i] != ITEM_NONE &&
@@ -1196,6 +1463,7 @@ void Harpoon::HandlePacket_UpdateTeamState(nlohmann::json payload) {
         });
     }
 
+    isHandlingUpdateTeamState = false;
     isProcessingIncomingPacket = false;
 }
 
@@ -1419,15 +1687,114 @@ void Harpoon::HandlePacket_Winner(nlohmann::json payload) {
 }
 
 void Harpoon::HandlePacket_ServerInfo(nlohmann::json payload) {
-    if (payload.contains("ownClientId")) {
+    // v2: HARPOON.SERVER_INFO carries `client_id` and `session_token`.
+    // Legacy: HARPOON_SERVER_INFO carried `ownClientId`.
+    if (payload.contains("client_id")) {
+        ownClientId = payload["client_id"].get<uint32_t>();
+    } else if (payload.contains("ownClientId")) {
         ownClientId = payload["ownClientId"].get<uint32_t>();
     }
+    if (payload.contains("session_token")) {
+        sessionToken = payload["session_token"].get<std::string>();
+    } else if (payload.contains("sessionToken")) {
+        sessionToken = payload["sessionToken"].get<std::string>();
+    }
+    SPDLOG_INFO("[Harpoon] HARPOON.SERVER_INFO ownClientId={} token={}",
+                ownClientId, sessionToken.empty() ? std::string("<none>") : sessionToken.substr(0, 8) + "…");
+}
+
+// Tiny line-based reader for a few specific keys inside a gamemode.yaml's
+// top-level `default_config:` block. We only need the booleans pvp_enabled,
+// sync_items, sync_cutscenes — adding a yaml-cpp dependency for that would
+// be excessive. The parser scans for the `default_config:` line and then
+// reads indented `key: value` lines until indentation drops, so it correctly
+// ignores other `pvp_enabled` keys nested in unrelated sections.
+static void ApplyLocalGamemodeManifest(const std::string& gid, bool& pvpEnabled,
+                                       bool& syncItems, bool& syncCutscenes) {
+    auto path = HarpoonSkinSync::GetGamemodeManifestPath(gid);
+    if (path.empty()) {
+        SPDLOG_INFO("[Harpoon] no local manifest for '{}' — keeping current defaults "
+                    "(pvp={} syncItems={} syncCutscenes={})", gid, pvpEnabled, syncItems, syncCutscenes);
+        return;
+    }
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        SPDLOG_WARN("[Harpoon] failed to open manifest '{}'", path.string());
+        return;
+    }
+    auto trim = [](std::string s) {
+        size_t a = s.find_first_not_of(" \t\r\n");
+        size_t b = s.find_last_not_of(" \t\r\n");
+        return (a == std::string::npos) ? std::string() : s.substr(a, b - a + 1);
+    };
+    auto parseBool = [](std::string v) {
+        std::string lo;
+        for (char c : v) lo.push_back((char)tolower((unsigned char)c));
+        if (lo == "true" || lo == "yes" || lo == "1") return std::optional<bool>{true};
+        if (lo == "false" || lo == "no" || lo == "0") return std::optional<bool>{false};
+        return std::optional<bool>{};
+    };
+    bool inDefaultConfig = false;
+    int defaultConfigIndent = -1;
+    std::string line;
+    while (std::getline(f, line)) {
+        // Strip CR (Windows line endings).
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        // Skip pure-comment / blank lines.
+        std::string t = trim(line);
+        if (t.empty() || t[0] == '#') continue;
+
+        // Top-level `default_config:` switches us into the block. Anything
+        // un-indented (`key:` at column 0) drops us back out.
+        size_t indent = 0;
+        while (indent < line.size() && (line[indent] == ' ' || line[indent] == '\t')) indent++;
+
+        if (indent == 0) {
+            // Starting a new top-level key. Are we entering or exiting default_config?
+            if (t.rfind("default_config:", 0) == 0) {
+                inDefaultConfig = true;
+                defaultConfigIndent = -1; // Set on first nested line.
+                continue;
+            }
+            inDefaultConfig = false;
+            continue;
+        }
+        if (!inDefaultConfig) continue;
+
+        if (defaultConfigIndent < 0) defaultConfigIndent = (int)indent;
+        if ((int)indent < defaultConfigIndent) {
+            inDefaultConfig = false;
+            continue;
+        }
+
+        size_t colon = t.find(':');
+        if (colon == std::string::npos) continue;
+        std::string key = trim(t.substr(0, colon));
+        std::string val = trim(t.substr(colon + 1));
+        // Strip inline comments.
+        size_t hash = val.find('#');
+        if (hash != std::string::npos) val = trim(val.substr(0, hash));
+
+        if (key == "pvp_enabled") {
+            if (auto b = parseBool(val)) pvpEnabled = *b;
+        } else if (key == "sync_items") {
+            if (auto b = parseBool(val)) syncItems = *b;
+        } else if (key == "sync_cutscenes") {
+            if (auto b = parseBool(val)) syncCutscenes = *b;
+        }
+    }
+    SPDLOG_INFO("[Harpoon] applied local manifest '{}': pvp_enabled={} sync_items={} sync_cutscenes={}",
+                gid, pvpEnabled, syncItems, syncCutscenes);
 }
 
 void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
-    currentRoomId = payload.value("roomId", std::string(""));
-    currentRoomName = payload.value("roomName", std::string(""));
-    currentRoomGameMode = payload.value("gameMode", std::string(""));
+    // v2 uses snake_case (room_id / room_name / gamemode_id).
+    currentRoomId       = payload.value("room_id",
+                            payload.value("roomId", std::string("")));
+    currentRoomName     = payload.value("room_name",
+                            payload.value("roomName", std::string("")));
+    currentRoomGameMode = payload.value("gamemode_id",
+                            payload.value("gameMode", std::string("")));
     gameState = HARPOON_STATE_LOBBY;
 
     if (currentRoomGameMode == "randomizer") {
@@ -1436,13 +1803,21 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
         activeGameMode = HARPOON_MODE_HUNGER_GAMES;
     }
 
-    // Announce our .o2r mod list once we're actually in a room — the server's
-    // unknown-packet relay only forwards to room members, so this must happen
+    // Apply default_config from our locally-installed gamemode pack. The
+    // server is gamemode-agnostic and never broadcasts a manifest, so without
+    // this every joined room would inherit pvpEnabled's process default
+    // (true) — making PvP fire even in randomizer-no-pvp rooms, and damage
+    // never get filtered for receivers in coop rooms.
+    ApplyLocalGamemodeManifest(currentRoomGameMode, pvpEnabled, syncItems, syncCutscenes);
+
+    // Announce our .o2r mod list once we're actually in a room — the server
+    // relays room-scoped events only to room members, so this must happen
     // after room-joined (not right after handshake).
     HarpoonSkinSync::Reset();
     SendPacket_O2rModList();
 
-    SPDLOG_INFO("[Harpoon] Joined room '{}' ({}) mode={}", currentRoomName, currentRoomId, currentRoomGameMode);
+    SPDLOG_INFO("[Harpoon] Joined room '{}' ({}) mode={} pvp={}",
+                currentRoomName, currentRoomId, currentRoomGameMode, pvpEnabled);
 }
 
 void Harpoon::HandlePacket_RoomLeft(nlohmann::json payload) {
@@ -1463,13 +1838,20 @@ void Harpoon::HandlePacket_RoomList(nlohmann::json payload) {
     if (payload.contains("rooms")) {
         for (auto& roomJson : payload["rooms"]) {
             RoomInfo info;
-            info.roomId = roomJson.value("roomId", std::string(""));
-            info.name = roomJson.value("name", std::string(""));
-            info.gameMode = roomJson.value("gameMode", std::string(""));
-            info.hasPassword = roomJson.value("hasPassword", false);
-            info.playerCount = roomJson.value("playerCount", 0);
-            info.maxPlayers = roomJson.value("maxPlayers", 16);
-            info.state = roomJson.value("state", std::string("lobby"));
+            // v2 server emits camelCase aliases here too (Room.to_dict()).
+            info.roomId      = roomJson.value("roomId",
+                                   roomJson.value("room_id", std::string("")));
+            info.name        = roomJson.value("name", std::string(""));
+            info.gameMode    = roomJson.value("gameMode",
+                                   roomJson.value("gamemode_id", std::string("")));
+            info.hasPassword = roomJson.value("hasPassword",
+                                   roomJson.value("has_password", false));
+            info.playerCount = roomJson.value("playerCount",
+                                   roomJson.value("player_count", 0));
+            info.maxPlayers  = roomJson.value("maxPlayers",
+                                   roomJson.value("max_players", 16));
+            info.state       = roomJson.value("phase",
+                                   roomJson.value("state", std::string("lobby")));
             roomList.push_back(info);
         }
     }
@@ -1545,8 +1927,22 @@ void Harpoon::SendPacket_StartGame(const char* gameMode) {
 }
 
 void Harpoon::SendPacket_RoomCreate(const char* name, const char* gameMode, const char* password) {
+    SPDLOG_INFO("[Harpoon] SendPacket_RoomCreate name='{}' gameMode='{}' connected={}",
+                name ? name : "(null)", gameMode ? gameMode : "(null)", isConnected);
+    if (!isConnected) {
+        SPDLOG_WARN("[Harpoon] SendPacket_RoomCreate: not connected — packet dropped");
+        return;
+    }
+    if (!name || name[0] == '\0') {
+        SPDLOG_WARN("[Harpoon] SendPacket_RoomCreate: empty room name — packet dropped");
+        return;
+    }
+    if (!gameMode || gameMode[0] == '\0') {
+        SPDLOG_WARN("[Harpoon] SendPacket_RoomCreate: empty gameMode — packet dropped");
+        return;
+    }
     nlohmann::json payload;
-    payload["type"] = "ROOM_CREATE";
+    payload["type"] = HPN_ROOM_CREATE;
     payload["name"] = name;
     payload["gameMode"] = gameMode;
     if (password && password[0] != '\0') {
@@ -1557,8 +1953,8 @@ void Harpoon::SendPacket_RoomCreate(const char* name, const char* gameMode, cons
 
 void Harpoon::SendPacket_RoomJoin(const char* roomId, const char* password) {
     nlohmann::json payload;
-    payload["type"] = "ROOM_JOIN";
-    payload["roomId"] = roomId;
+    payload["type"] = HPN_ROOM_JOIN;
+    payload["roomId"] = roomId;       // server schema accepts both roomId and room_id
     if (password && password[0] != '\0') {
         payload["password"] = password;
     }
@@ -1567,19 +1963,20 @@ void Harpoon::SendPacket_RoomJoin(const char* roomId, const char* password) {
 
 void Harpoon::SendPacket_RoomLeave() {
     nlohmann::json payload;
-    payload["type"] = "ROOM_LEAVE";
+    payload["type"] = HPN_ROOM_LEAVE;
     SendJsonToRemote(payload);
 }
 
 void Harpoon::SendPacket_RoomList() {
     nlohmann::json payload;
-    payload["type"] = "ROOM_LIST";
+    payload["type"] = HPN_ROOM_LIST;
     SendJsonToRemote(payload);
 }
 
 void Harpoon::SendPacket_SetTeam(const char* team) {
+    // v2: TEAM.ASSIGN with target=self (server defaults to sender if no target).
     nlohmann::json payload;
-    payload["type"] = "PVP_SET_TEAM";
+    payload["type"] = "TEAM.ASSIGN";
     payload["team"] = team;
     SendJsonToRemote(payload);
 }
@@ -1643,7 +2040,15 @@ s32 Harpoon_IsPvpActive(void) {
 void Harpoon_SendCustomDamage(Actor* hitActor, s32 damageType, s32 damage) {
     if (!Harpoon::Instance)
         return;
-    if (!Harpoon_IsPvpActive())
+    // PvP gate is the per-room `pvpEnabled` flag. The previous gate
+    // (Harpoon_IsPvpActive) blocked sending unless gameState left LOBBY,
+    // which only Prop Hunt manipulates — randomizer-pvp rooms stay in LOBBY
+    // forever, so custom damage never transmitted there. Receiver still
+    // honours pvpEnabled in HandlePacket_Damage so a no-pvp room ignores
+    // the inbound damage even if a buggy sender transmits.
+    if (!Harpoon::Instance->isConnected)
+        return;
+    if (!Harpoon::Instance->pvpEnabled)
         return;
     if (!Harpoon_IsDummyPlayer(hitActor))
         return;
@@ -1655,7 +2060,7 @@ void Harpoon_SendCustomDamage(Actor* hitActor, s32 damageType, s32 damage) {
     Player* localPlayer = GET_PLAYER(gPlayState);
 
     nlohmann::json payload;
-    payload["type"] = "PVP_CUSTOM_DAMAGE";
+    payload["type"] = Harpoon::HPN_COMBAT_DAMAGE;  // v2: COMBAT.DEAL_DAMAGE
     payload["targetClientId"] = clientId;
     payload["customDamageType"] = damageType;
     payload["damage"] = damage;
@@ -1672,7 +2077,11 @@ void Harpoon_SendCustomDamage(Actor* hitActor, s32 damageType, s32 damage) {
 void Harpoon_SendCustomEffect(Actor* hitActor, s32 effectType, Vec3f* attackerPos, s16 attackerYaw) {
     if (!Harpoon::Instance)
         return;
-    if (!Harpoon_IsPvpActive())
+    // Same PvP gate logic as Harpoon_SendCustomDamage — pvpEnabled (per-room)
+    // instead of gameState (per-gamemode). See comment above.
+    if (!Harpoon::Instance->isConnected)
+        return;
+    if (!Harpoon::Instance->pvpEnabled)
         return;
     if (!Harpoon_IsDummyPlayer(hitActor))
         return;
@@ -1682,7 +2091,7 @@ void Harpoon_SendCustomEffect(Actor* hitActor, s32 effectType, Vec3f* attackerPo
         return;
 
     nlohmann::json payload;
-    payload["type"] = "PVP_CUSTOM_EFFECT";
+    payload["type"] = Harpoon::HPN_COMBAT_CUSTOM_EFFECT;  // v2: COMBAT.CUSTOM_EFFECT
     payload["targetClientId"] = clientId;
     payload["effectType"] = effectType;
     payload["attackerX"] = attackerPos->x;
@@ -1705,6 +2114,46 @@ s32 Harpoon_CheckAndSendDamage(ColliderCylinder* col, s32 damageType, s32 damage
     Harpoon_SendCustomDamage(hitActor, damageType, damage);
     col->base.atFlags &= ~AT_HIT;
     return 1;
+}
+
+void Harpoon_NotifyVfxSpawn(Actor* spawned, s32 vfxKindCode, u8 attachedToOwner) {
+    if (Harpoon::Instance == nullptr || !Harpoon::Instance->isConnected) {
+        return;
+    }
+    if (spawned == nullptr) return;
+
+    // Map enum → string. Receiver doesn't need this for the spawn itself,
+    // it's a tag for client-side filtering.
+    const char* kind = "generic";
+    switch (vfxKindCode) {
+        case HARPOON_VFX_KIND_SW97_ARROW_FIRE:  kind = "sw97_arrow_fire";  break;
+        case HARPOON_VFX_KIND_SW97_ARROW_ICE:   kind = "sw97_arrow_ice";   break;
+        case HARPOON_VFX_KIND_SW97_ARROW_LIGHT: kind = "sw97_arrow_light"; break;
+        case HARPOON_VFX_KIND_SW97_ARROW_DARK:  kind = "sw97_arrow_dark";  break;
+        case HARPOON_VFX_KIND_SW97_ARROW_SOUL:  kind = "sw97_arrow_soul";  break;
+        case HARPOON_VFX_KIND_SW97_ARROW_WIND:  kind = "sw97_arrow_wind";  break;
+        case HARPOON_VFX_KIND_SW97_MAGIC_FIRE:  kind = "sw97_magic_fire";  break;
+        case HARPOON_VFX_KIND_SW97_MAGIC_ICE:   kind = "sw97_magic_ice";   break;
+        case HARPOON_VFX_KIND_SW97_MAGIC_LIGHT: kind = "sw97_magic_light"; break;
+        case HARPOON_VFX_KIND_SW97_MAGIC_DARK:  kind = "sw97_magic_dark";  break;
+        case HARPOON_VFX_KIND_SW97_MAGIC_SOUL:  kind = "sw97_magic_soul";  break;
+        case HARPOON_VFX_KIND_SW97_MAGIC_WIND:  kind = "sw97_magic_wind";  break;
+        case HARPOON_VFX_KIND_FD_BEAM:          kind = "fd_beam";          break;
+        case HARPOON_VFX_KIND_ZORA_FIN:         kind = "zora_fin";         break;
+        case HARPOON_VFX_KIND_DEKU_BUBBLE:      kind = "deku_bubble";      break;
+        case HARPOON_VFX_KIND_GORON_ROCK:       kind = "goron_rock";       break;
+        case HARPOON_VFX_KIND_HYLIAS_FAIRY:     kind = "hylias_fairy";     break;
+        default: break;
+    }
+
+    // Tag the locally-spawned actor so its hits route through PvP.
+    Harpoon::Instance->SetVfxActorOwner(spawned, Harpoon::Instance->ownClientId);
+
+    Harpoon::Instance->SendPacket_SpawnVfxActor(
+        spawned->id,
+        spawned->world.pos.x, spawned->world.pos.y, spawned->world.pos.z,
+        spawned->world.rot.x, spawned->world.rot.y, spawned->world.rot.z,
+        spawned->params, kind, attachedToOwner != 0);
 }
 
 } // extern "C"
@@ -1752,4 +2201,649 @@ void Harpoon::HandlePacket_O2rModList(nlohmann::json payload) {
     // Divergence check (dedupe happens inside NotifyO2rDivergence via HarpoonSkinSync's set).
     HarpoonSkinSync::NotifyO2rDivergence(clientId, client.name, client.enabledO2rMods,
                                          client.harpoonSyncMods);
+}
+
+// ============================================================================
+// MARK: - Harpoon v2 protocol — connection lifecycle handlers
+// ============================================================================
+
+void Harpoon::HandlePacket_HandshakeAck(nlohmann::json payload) {
+    if (payload.contains("client_id")) {
+        ownClientId = payload["client_id"].get<uint32_t>();
+    } else if (payload.contains("clientId")) {
+        ownClientId = payload["clientId"].get<uint32_t>();
+    }
+    if (payload.contains("session_token")) {
+        sessionToken = payload["session_token"].get<std::string>();
+    } else if (payload.contains("sessionToken")) {
+        sessionToken = payload["sessionToken"].get<std::string>();
+    }
+    SPDLOG_INFO("[Harpoon] HANDSHAKE_ACK ownClientId={} token={}",
+                ownClientId, sessionToken.substr(0, 8) + "…");
+}
+
+void Harpoon::HandlePacket_Error(nlohmann::json payload) {
+    std::string code = payload.value("code", std::string("unknown"));
+    std::string message = payload.value("message", std::string(""));
+    SPDLOG_WARN("[Harpoon] server error: code={} message={}", code, message);
+    killFeed.push_back("[server] " + code + ": " + message);
+    if (killFeed.size() > 5) killFeed.erase(killFeed.begin());
+}
+
+void Harpoon::HandlePacket_GamemodeManifest(nlohmann::json payload) {
+    if (!payload.contains("manifest") || !payload["manifest"].is_object()) return;
+    currentGamemodeManifest = payload["manifest"];
+    std::string gid = currentGamemodeManifest.value("gamemode_id", std::string("?"));
+    std::string name = currentGamemodeManifest.value("name", gid);
+    SPDLOG_INFO("[Harpoon] received gamemode manifest: id={} name='{}'", gid, name);
+
+    // Verify the pack is actually installed locally. Joining a room whose
+    // gamemode we don't have means we can't load its assets (save preset,
+    // maps, prop tables, world modifications), so bail out gracefully.
+    auto installed = HarpoonSkinSync::GetInstalledGamemodes();
+    bool found = false;
+    for (const auto& g : installed) {
+        if (g == gid) { found = true; break; }
+    }
+    if (!found) {
+        SPDLOG_WARN("[Harpoon] room uses gamemode '{}' which is not installed locally — leaving room", gid);
+        // Throttle: only notify the user once per missing gid per session.
+        // Without this every spurious manifest broadcast (room list refresh,
+        // re-join after auto-leave, etc.) would stack a duplicate toast.
+        static std::set<std::string> alreadyWarnedMissing;
+        if (alreadyWarnedMissing.insert(gid).second) {
+            std::string msg = "Gamemode '" + gid + "' not installed — drop the pack into harpoon/gamemodes/";
+            killFeed.push_back(msg);
+            if (killFeed.size() > 5) killFeed.erase(killFeed.begin());
+            Notification::Emit({
+                .prefix = "Harpoon",
+                .message = msg,
+            });
+        }
+        SendPacket_RoomLeave();
+        return;
+    }
+
+    // Apply gamemode-driven defaults. The manifest's `default_config` is the
+    // authoritative source for sync_items / pvp_enabled — they're a property
+    // of the gamemode, not of the player. The user shouldn't be able to
+    // disable PvP in a Hunger Games room or enable item sync in a Story room.
+    if (currentGamemodeManifest.contains("default_config") &&
+        currentGamemodeManifest["default_config"].is_object()) {
+        const auto& cfg = currentGamemodeManifest["default_config"];
+        if (cfg.contains("sync_items")) {
+            syncItems = cfg["sync_items"].get<bool>();
+            SPDLOG_INFO("[Harpoon] gamemode '{}' sets sync_items={}", gid, syncItems);
+        }
+        if (cfg.contains("pvp_enabled")) {
+            pvpEnabled = cfg["pvp_enabled"].get<bool>();
+            SPDLOG_INFO("[Harpoon] gamemode '{}' sets pvp_enabled={}", gid, pvpEnabled);
+        }
+        if (cfg.contains("sync_cutscenes")) {
+            syncCutscenes = cfg["sync_cutscenes"].get<bool>();
+            SPDLOG_INFO("[Harpoon] gamemode '{}' sets sync_cutscenes={}", gid, syncCutscenes);
+        }
+    }
+}
+
+void Harpoon::HandlePacket_RoomEvent(nlohmann::json payload) {
+    // Generic broadcast event from another client (ROOM.BROADCAST_EVENT).
+    // No-op for now — gamemode-specific handlers will hook in here when added.
+    std::string eventName = payload.value("event_name", std::string(""));
+    SPDLOG_DEBUG("[Harpoon] ROOM.EVENT name={} (ignored)", eventName);
+}
+
+void Harpoon::HandlePacket_PhaseChanged(nlohmann::json payload) {
+    std::string phase = payload.value("phase", std::string("lobby"));
+    SPDLOG_INFO("[Harpoon] phase -> {}", phase);
+}
+
+// ============================================================================
+// MARK: - Harpoon v2 — granular PLAYER.UPDATE_* receivers
+//
+// These each populate a slice of the HarpoonClient struct so the dummy player
+// renders correctly even when the remote sends granular updates instead of
+// a single PLAYER.UPDATE_FULL_STATE blob.
+// ============================================================================
+
+static HarpoonClient* _LookupClient(nlohmann::json& payload) {
+    if (!payload.contains("clientId") && !payload.contains("source"))
+        return nullptr;
+    uint32_t clientId = payload.contains("clientId")
+                         ? payload["clientId"].get<uint32_t>()
+                         : payload["source"].get<uint32_t>();
+    auto& clients = Harpoon::Instance->clients;
+    auto it = clients.find(clientId);
+    return it == clients.end() ? nullptr : &it->second;
+}
+
+void Harpoon::HandlePacket_PlayerTransform(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    if (payload.contains("posRot")) {
+        auto& pr = payload["posRot"];
+        if (pr.contains("pos")) {
+            c->posRot.pos.x = pr["pos"].value("x", 0.0f);
+            c->posRot.pos.y = pr["pos"].value("y", 0.0f);
+            c->posRot.pos.z = pr["pos"].value("z", 0.0f);
+        }
+        if (pr.contains("rot")) {
+            c->posRot.rot.x = pr["rot"].value("x", (s16)0);
+            c->posRot.rot.y = pr["rot"].value("y", (s16)0);
+            c->posRot.rot.z = pr["rot"].value("z", (s16)0);
+        }
+        // Trigger deferred spawn if we now have a real position.
+        bool hasPos = (c->posRot.pos.x != 0.0f || c->posRot.pos.y != 0.0f ||
+                       c->posRot.pos.z != 0.0f);
+        if (c->player == nullptr && hasPos && c->online) {
+            shouldRefreshActors = true;
+        }
+    }
+    if (payload.contains("prevTransl")) {
+        c->prevTransl.x = payload["prevTransl"].value("x", (s16)0);
+        c->prevTransl.y = payload["prevTransl"].value("y", (s16)0);
+        c->prevTransl.z = payload["prevTransl"].value("z", (s16)0);
+    }
+    c->movementFlags = payload.value("movementFlags", c->movementFlags);
+}
+
+void Harpoon::HandlePacket_PlayerSkeleton(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    auto jointArray = payload.value("jointTable", std::vector<int>{});
+    jointArray.resize(24 * 3);
+    for (int i = 0; i < 24; i++) {
+        c->jointTable[i].x = jointArray[i * 3];
+        c->jointTable[i].y = jointArray[i * 3 + 1];
+        c->jointTable[i].z = jointArray[i * 3 + 2];
+    }
+    c->movementFlags = payload.value("movementFlags", c->movementFlags);
+}
+
+void Harpoon::HandlePacket_PlayerLimbRotations(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    if (payload.contains("upperLimbRot")) {
+        c->upperLimbRot.x = payload["upperLimbRot"].value("x", (s16)0);
+        c->upperLimbRot.y = payload["upperLimbRot"].value("y", (s16)0);
+        c->upperLimbRot.z = payload["upperLimbRot"].value("z", (s16)0);
+    }
+    c->headLimbRot.x = payload.value("headLimbRotX", c->headLimbRot.x);
+    c->headLimbRot.y = payload.value("headLimbRotY", c->headLimbRot.y);
+    c->headLimbRot.z = payload.value("headLimbRotZ", c->headLimbRot.z);
+    c->upperLimbYawSecondary = payload.value("upperLimbYawSecondary", c->upperLimbYawSecondary);
+}
+
+void Harpoon::HandlePacket_PlayerAnimationFlags(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->stateFlags1 = payload.value("stateFlags1", c->stateFlags1);
+    c->stateFlags2 = payload.value("stateFlags2", c->stateFlags2);
+    c->actionVar1 = payload.value("actionVar1", c->actionVar1);
+    c->modelGroup = payload.value("modelGroup", c->modelGroup);
+}
+
+void Harpoon::HandlePacket_PlayerMotionVars(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->speedXZ = payload.value("speedXZ", c->speedXZ);
+    c->meleeWeaponState = payload.value("meleeWeaponState", c->meleeWeaponState);
+    c->fpModeFlag = payload.value("fpModeFlag", c->fpModeFlag);
+}
+
+void Harpoon::HandlePacket_PlayerBowState(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->bowStringDraw = payload.value("bowStringDraw", c->bowStringDraw);
+    c->bowArrowState = payload.value("bowArrowState", c->bowArrowState);
+    c->bowDrawAnimFrame = payload.value("bowDrawAnimFrame", c->bowDrawAnimFrame);
+}
+
+void Harpoon::HandlePacket_PlayerHandTypes(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->leftHandType = payload.value("leftHandType", c->leftHandType);
+    c->rightHandType = payload.value("rightHandType", c->rightHandType);
+    c->sheathType = payload.value("sheathType", c->sheathType);
+}
+
+void Harpoon::HandlePacket_PlayerVisualState(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    s16 newScene = payload.value("sceneNum", c->sceneNum);
+    s32 newAge   = payload.value("linkAge",  c->linkAge);
+    bool newSaveLoaded = payload.value("isSaveLoaded", c->isSaveLoaded);
+    // Spawn or kill the teammate's dummy when their scene/age/save-loaded
+    // status changes. Without this, joining a teammate already in a scene or
+    // walking into their scene later wouldn't trigger the dummy spawn — they
+    // stayed invisible even though their TRANSFORM packets were arriving.
+    if (newScene != c->sceneNum || newAge != c->linkAge ||
+        newSaveLoaded != c->isSaveLoaded) {
+        SPDLOG_INFO("[Harpoon] VisualState cid={} scene {}->{} age {}->{} saveLoaded {}->{}",
+                    c->clientId, c->sceneNum, newScene, c->linkAge, newAge,
+                    (int)c->isSaveLoaded, (int)newSaveLoaded);
+        shouldRefreshActors = true;
+    }
+    c->isSaveLoaded   = newSaveLoaded;
+    c->sceneNum       = newScene;
+    c->entranceIndex  = payload.value("entranceIndex", c->entranceIndex);
+    c->linkAge        = newAge;
+}
+
+void Harpoon::HandlePacket_PlayerEquipVisible(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->currentBoots = payload.value("currentBoots", c->currentBoots);
+    c->currentShield = payload.value("currentShield", c->currentShield);
+    c->currentTunic = payload.value("currentTunic", c->currentTunic);
+    c->buttonItem0 = payload.value("buttonItem0", c->buttonItem0);
+    c->itemAction = payload.value("itemAction", c->itemAction);
+    c->heldItemAction = payload.value("heldItemAction", c->heldItemAction);
+    c->currentMask = payload.value("currentMask", c->currentMask);
+    c->wornMask = payload.value("wornMask", c->wornMask);
+}
+
+void Harpoon::HandlePacket_PlayerFace(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->face = payload.value("face", c->face);
+    c->eyeIndex = payload.value("eyeIndex", c->eyeIndex);
+}
+
+void Harpoon::HandlePacket_PlayerScale(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->scaleX = payload.value("scaleX", c->scaleX);
+    c->scaleY = payload.value("scaleY", c->scaleY);
+    c->scaleZ = payload.value("scaleZ", c->scaleZ);
+}
+
+void Harpoon::HandlePacket_PlayerTransformation(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->transformation = payload.value("transformation", c->transformation);
+    c->cylRadius = payload.value("cylRadius", c->cylRadius);
+    c->cylHeight = payload.value("cylHeight", c->cylHeight);
+    c->cylYShift = payload.value("cylYShift", c->cylYShift);
+    c->mmStateFlags3 = payload.value("mmStateFlags3", c->mmStateFlags3);
+    c->mmSpeedXZ = payload.value("mmSpeedXZ", c->mmSpeedXZ);
+}
+
+void Harpoon::HandlePacket_PlayerGoronState(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->goronAction = payload.value("goronAction", c->goronAction);
+    c->rollSquash = payload.value("rollSquash", c->rollSquash);
+    c->rollSpikeActive = payload.value("rollSpikeActive", c->rollSpikeActive);
+    c->rollChargeLevel = payload.value("rollChargeLevel", c->rollChargeLevel);
+}
+
+void Harpoon::HandlePacket_PlayerCustomItemState(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    // Custom items: unwrap a single-item payload that names the item via
+    // item_id/itemId and contains the rest of its state. Same handler logic
+    // as the legacy big-blob update — just smaller scope.
+    HandlePacket_PlayerUpdate(payload);
+}
+
+void Harpoon::HandlePacket_PlayerInvincibility(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    c->invincibilityTimer = payload.value("value", c->invincibilityTimer);
+}
+
+void Harpoon::HandlePacket_PlayerKill(nlohmann::json payload) {
+    HandlePacket_PlayerDied(payload);
+}
+
+void Harpoon::HandlePacket_PlayerFullState(nlohmann::json payload) {
+    // Backwards-compat: full per-frame blob. Reuses the old handler that
+    // already knows how to populate every field of HarpoonClient.
+    HandlePacket_PlayerUpdate(payload);
+}
+
+void Harpoon::HandlePacket_SkinSyncAnnounceCatalog(nlohmann::json payload) {
+    // Renamed from PVP_O2R_MOD_LIST. Server uses the same payload fields
+    // (mods, syncMods) thanks to the schema's `populate_by_name`.
+    HandlePacket_O2rModList(payload);
+}
+
+void Harpoon::HandlePacket_SkinSyncUpdateSlots(nlohmann::json payload) {
+    auto* c = _LookupClient(payload);
+    if (!c) return;
+    // Either flat fields (legacy) or { slots: { adult, child, equipment, forced } }
+    std::string adult, child, equip, forced;
+    if (payload.contains("slots") && payload["slots"].is_object()) {
+        adult = payload["slots"].value("adult", std::string(""));
+        child = payload["slots"].value("child", std::string(""));
+        equip = payload["slots"].value("equipment", std::string(""));
+        forced = payload["slots"].value("forced", std::string(""));
+    } else {
+        adult = payload.value("adultSkin", std::string(""));
+        child = payload.value("childSkin", std::string(""));
+        equip = payload.value("equipSkin", std::string(""));
+        forced = payload.value("forcedSkin", std::string(""));
+    }
+    if (adult != c->adultSkinName || child != c->childSkinName || equip != c->equipSkinName ||
+        forced != c->forcedSkinName) {
+        SPDLOG_INFO("[Harpoon] SKIN slots updated for '{}' (id={}): adult='{}' child='{}' equip='{}' forced='{}'",
+                    c->name, c->clientId, adult, child, equip, forced);
+    }
+    c->adultSkinName = adult;
+    c->childSkinName = child;
+    c->equipSkinName = equip;
+    c->forcedSkinName = forced;
+}
+
+// ============================================================================
+// MARK: - Harpoon v2 — granular PLAYER.UPDATE_* senders
+//
+// These read from the local Player object and emit ONE primitive each. By
+// default `SendPacket_PlayerUpdate` (the public one called by the per-frame
+// hook) bundles everything into PLAYER.UPDATE_FULL_STATE for efficiency, but
+// the granular methods are available for code that wants finer control or
+// for testing per-primitive rate limits.
+// ============================================================================
+
+void Harpoon::SendPacket_Resume(const std::string& token) {
+    nlohmann::json payload;
+    payload["type"] = HPN_RESUME;
+    payload["session_token"] = token;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerTransform() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_TRANSFORM;
+    payload["posRot"]["pos"] = { { "x", player->actor.world.pos.x },
+                                 { "y", player->actor.world.pos.y },
+                                 { "z", player->actor.world.pos.z } };
+    payload["posRot"]["rot"] = { { "x", player->actor.shape.rot.x },
+                                 { "y", player->actor.shape.rot.y },
+                                 { "z", player->actor.shape.rot.z } };
+    payload["prevTransl"] = { { "x", player->skelAnime.prevTransl.x },
+                              { "y", player->skelAnime.prevTransl.y },
+                              { "z", player->skelAnime.prevTransl.z } };
+    payload["movementFlags"] = player->skelAnime.movementFlags;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerSkeleton() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_SKELETON;
+
+    Vec3s* srcJointTable = player->skelAnime.jointTable;
+    s32 srcJointCount = 24;
+    u8 modelType = TransformMasks_GetModelType();
+    if (modelType > 0) {
+        Vec3s* mmJoints = TransformMasks_GetFormJointTable();
+        s32 mmCount = TransformMasks_GetFormJointCount();
+        if (mmJoints != NULL && mmCount > 0) { srcJointTable = mmJoints; srcJointCount = mmCount; }
+    }
+    std::vector<int> jointArray;
+    for (s32 i = 0; i < 24; i++) {
+        if (i < srcJointCount && srcJointTable != NULL) {
+            jointArray.push_back(srcJointTable[i].x);
+            jointArray.push_back(srcJointTable[i].y);
+            jointArray.push_back(srcJointTable[i].z);
+        } else {
+            jointArray.push_back(0); jointArray.push_back(0); jointArray.push_back(0);
+        }
+    }
+    payload["jointTable"] = jointArray;
+    payload["movementFlags"] = player->skelAnime.movementFlags;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerLimbRotations() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_LIMB_ROT;
+    payload["upperLimbRot"] = { { "x", player->upperLimbRot.x },
+                                { "y", player->upperLimbRot.y },
+                                { "z", player->upperLimbRot.z } };
+    payload["headLimbRotX"] = player->headLimbRot.x;
+    payload["headLimbRotY"] = player->headLimbRot.y;
+    payload["headLimbRotZ"] = player->headLimbRot.z;
+    payload["upperLimbYawSecondary"] = player->upperLimbYawSecondary;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerAnimationFlags() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_ANIM_FLAGS;
+    payload["stateFlags1"] = player->stateFlags1;
+    payload["stateFlags2"] = player->stateFlags2 & ~PLAYER_STATE2_DISABLE_DRAW;
+    payload["actionVar1"] = player->av1.actionVar1;
+    payload["modelGroup"] = player->modelGroup;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerMotionVars() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_MOTION_VARS;
+    payload["speedXZ"] = player->actor.speedXZ;
+    payload["meleeWeaponState"] = player->meleeWeaponState;
+    payload["fpModeFlag"] = player->unk_6AD;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerBowState() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_BOW_STATE;
+    payload["bowStringDraw"] = player->unk_858;
+    payload["bowArrowState"] = player->unk_860;
+    payload["bowDrawAnimFrame"] = player->unk_834;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerHandTypes() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_HAND_TYPES;
+    payload["leftHandType"] = player->leftHandType;
+    payload["rightHandType"] = player->rightHandType;
+    payload["sheathType"] = player->sheathType;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerVisualState() {
+    if (!IsSaveLoaded()) return;
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_VISUAL_STATE;
+    payload["isSaveLoaded"] = true;
+    payload["sceneNum"] = gPlayState->sceneNum;
+    payload["entranceIndex"] = gSaveContext.entranceIndex;
+    payload["linkAge"] = gSaveContext.linkAge;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerEquipVisible() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_EQUIP_VISIBLE;
+    payload["currentBoots"] = player->currentBoots;
+    payload["currentShield"] = player->currentShield;
+    payload["currentTunic"] = player->currentTunic;
+    payload["buttonItem0"] = gSaveContext.equips.buttonItems[0];
+    payload["itemAction"] = player->itemAction;
+    payload["heldItemAction"] = player->heldItemAction;
+    payload["currentMask"] = player->currentMask;
+    payload["wornMask"] = TransformMasks_WearGetCurrent();
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerFace() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_FACE;
+    payload["face"] = player->actor.shape.face;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerScale() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_SCALE;
+    payload["scaleX"] = player->actor.scale.x;
+    payload["scaleY"] = player->actor.scale.y;
+    payload["scaleZ"] = player->actor.scale.z;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerTransformation() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_TRANSFORMATION;
+    u8 modelType = TransformMasks_GetModelType();
+    payload["transformation"] = modelType;
+    payload["cylRadius"] = player->cylinder.dim.radius;
+    payload["cylHeight"] = player->cylinder.dim.height;
+    payload["cylYShift"] = player->cylinder.dim.yShift;
+    payload["mmStateFlags3"] = TransformMasks_GetMmStateFlags3();
+    payload["mmSpeedXZ"] = TransformMasks_GetMmSpeedXZ();
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerGoronState() {
+    if (!IsSaveLoaded()) return;
+    u8 modelType = TransformMasks_GetModelType();
+    if (modelType == 0) return;  // only meaningful when transformed
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_GORON_STATE;
+    payload["goronAction"] = TransformMasks_GetGoronAction();
+    payload["rollSquash"] = TransformMasks_GetRollSquash();
+    payload["rollSpikeActive"] = TransformMasks_GetRollSpikeActive();
+    payload["rollChargeLevel"] = TransformMasks_GetRollChargeLevel();
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerInvincibility() {
+    if (!IsSaveLoaded()) return;
+    Player* player = GET_PLAYER(gPlayState);
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_INVINCIBILITY;
+    payload["value"] = player->invincibilityTimer;
+    payload["quiet"] = true;
+    SendJsonToRemote(payload);
+}
+
+void Harpoon::SendPacket_PlayerCustomItemState() {
+    // Emits ONE primitive per active custom item with its full state.
+    // The new server primitive PLAYER.UPDATE_CUSTOM_ITEM_STATE is permissive
+    // (extra="allow") so we can dump all the per-item fields.
+    if (!IsSaveLoaded()) return;
+    CustomItemState* ci = &gCustomItemState;
+
+    auto emit = [&](const char* itemId, std::function<void(nlohmann::json&)> fill) {
+        nlohmann::json payload;
+        payload["type"] = HPN_PLAYER_CUSTOM_ITEM;
+        payload["itemId"] = itemId;
+        fill(payload);
+        payload["quiet"] = true;
+        SendJsonToRemote(payload);
+    };
+
+    if (ci->beetleActive) emit("beetle", [&](nlohmann::json& p) {
+        p["pos"] = { ci->beetlePos.x, ci->beetlePos.y, ci->beetlePos.z };
+        p["rot"] = { ci->beetleRot.x, ci->beetleRot.y, ci->beetleRot.z };
+        p["wingScale"] = ci->beetleWingScale;
+        p["state"] = ci->beetleState;
+    });
+    if (ci->gustJarMode > 0) emit("gust_jar", [&](nlohmann::json& p) {
+        p["mode"] = ci->gustJarMode;
+        p["element"] = ci->gustJarElement;
+        p["blowActive"] = ci->gustJarBlowActive;
+        p["heatTimer"] = ci->gustJarHeatTimer;
+    });
+    if (ci->fireRodActive) emit("fire_rod", [&](nlohmann::json& p) {
+        p["active"] = ci->fireRodProjActive;
+        p["count"] = ci->fireRodProjCount;
+        p["rodType"] = ci->fireRodProjType;
+        p["scale"] = ci->fireRodProjScale;
+        p["pos1"] = { ci->fireRodProjPos.x, ci->fireRodProjPos.y, ci->fireRodProjPos.z };
+        p["pos2"] = { ci->fireRodProjPos2.x, ci->fireRodProjPos2.y, ci->fireRodProjPos2.z };
+        p["pos3"] = { ci->fireRodProjPos3.x, ci->fireRodProjPos3.y, ci->fireRodProjPos3.z };
+    });
+    if (ci->iceRodActive) emit("ice_rod", [&](nlohmann::json& p) {
+        p["active"] = ci->iceRodProjActive;
+        p["count"] = ci->iceRodProjCount;
+        p["scale"] = ci->iceRodProjScale;
+        p["pos1"] = { ci->iceRodProjPos.x, ci->iceRodProjPos.y, ci->iceRodProjPos.z };
+        p["pos2"] = { ci->iceRodProjPos2.x, ci->iceRodProjPos2.y, ci->iceRodProjPos2.z };
+        p["pos3"] = { ci->iceRodProjPos3.x, ci->iceRodProjPos3.y, ci->iceRodProjPos3.z };
+    });
+    if (ci->lightRodActive) emit("light_rod", [&](nlohmann::json& p) {
+        p["active"] = ci->lightRodProjActive;
+        p["count"] = ci->lightRodProjCount;
+        p["pos1"] = { ci->lightRodProjPos.x, ci->lightRodProjPos.y, ci->lightRodProjPos.z };
+        p["pos2"] = { ci->lightRodProjPos2.x, ci->lightRodProjPos2.y, ci->lightRodProjPos2.z };
+        p["pos3"] = { ci->lightRodProjPos3.x, ci->lightRodProjPos3.y, ci->lightRodProjPos3.z };
+    });
+    if (ci->ballAndChainThrown) emit("ball_chain", [&](nlohmann::json& p) {
+        p["thrown"] = ci->ballAndChainThrown;
+        p["timer"] = ci->timer2;
+        p["pos"] = { ci->sharedProjectilePos.x, ci->sharedProjectilePos.y, ci->sharedProjectilePos.z };
+    });
+    if (ci->whipActive) emit("whip", [&](nlohmann::json& p) {
+        p["state"] = ci->whipState;
+        p["tipPos"] = { ci->whipTipPos.x, ci->whipTipPos.y, ci->whipTipPos.z };
+        p["attachPos"] = { ci->whipAttachPos.x, ci->whipAttachPos.y, ci->whipAttachPos.z };
+        p["attachNormal"] = { ci->whipAttachNormal.x, ci->whipAttachNormal.y, ci->whipAttachNormal.z };
+    });
+    if (ci->dekuLeafGliding || ci->dekuLeafBlowing) emit("deku_leaf", [&](nlohmann::json& p) {
+        p["gliding"] = ci->dekuLeafGliding;
+        p["blowing"] = ci->dekuLeafBlowing;
+        p["animTimer"] = ci->dekuLeafAnimTimer;
+    });
+    if (ci->shovelAnimating) emit("shovel", [&](nlohmann::json& p) {
+        p["animating"] = ci->shovelAnimating;
+    });
+    if (ci->dominionRodActive) emit("dominion_rod", [&](nlohmann::json& p) {
+        p["state"] = ci->dominionRodState;
+        p["orbPos"] = { ci->dominionRodOrbPos.x, ci->dominionRodOrbPos.y, ci->dominionRodOrbPos.z };
+    });
+    if (ci->switchHookActive) emit("switch_hook", [&](nlohmann::json& p) {
+        p["state"] = ci->switchHookState;
+        p["projPos"] = { ci->switchHookProjPos.x, ci->switchHookProjPos.y, ci->switchHookProjPos.z };
+    });
+    if (ci->timeGateActive) emit("time_gate", [&](nlohmann::json& p) {
+        p["itemVisible"] = ci->timeGateItemVisible;
+        p["portalActive"] = ci->timeGatePortalActive;
+        p["portalAlpha"] = ci->timeGatePortalAlpha;
+        p["portalScale"] = ci->timeGatePortalScale;
+    });
+}
+
+void Harpoon::SendPacket_PlayerKill() {
+    nlohmann::json payload;
+    payload["type"] = HPN_PLAYER_KILL;
+    SendJsonToRemote(payload);
 }

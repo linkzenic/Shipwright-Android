@@ -164,7 +164,7 @@ static void GustJar_ClearScaleCache(void) {
 // =============================================================================
 
 // Spawn smoke balls flowing TOWARD nozzle (suction cone)
-static void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw) {
+void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw) {
     // 6 particles per frame spread in a cone, moving toward nozzle
     for (s32 i = 0; i < 6; i++) {
         f32 dist = 80.0f + Rand_ZeroFloat(140.0f);
@@ -192,7 +192,7 @@ static void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw) {
 }
 
 // Spawn smoke balls flowing AWAY from nozzle (blow cone), colored by element
-static void GustJar_SpawnBlowVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw, u8 element) {
+void GustJar_SpawnBlowVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw, u8 element) {
     const GustElementColor* col = &sGustElementColors[element];
 
     for (s32 i = 0; i < 6; i++) {

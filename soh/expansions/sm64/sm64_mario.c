@@ -76,15 +76,9 @@ static s32 Sm64_LoadDll(void) {
     if (sDllHandle)
         return 1;
 
-    sDllHandle = SM64_LOAD_LIB("sm64.dll");
-    if (!sDllHandle)
-        sDllHandle = SM64_LOAD_LIB("./sm64.dll");
-    if (!sDllHandle)
-        sDllHandle = SM64_LOAD_LIB(".\\sm64.dll");
-    if (!sDllHandle)
-        sDllHandle = SM64_LOAD_LIB("x64/Release/sm64.dll");
+    sDllHandle = SM64_LOAD_LIB("nei/sm64.dll");
     if (!sDllHandle) {
-        lusprintf(__FILE__, __LINE__, 2, "[SM64] ERROR: Could not load sm64.dll\n");
+        lusprintf(__FILE__, __LINE__, 2, "[SM64] ERROR: Could not load nei/sm64.dll\n");
         return 0;
     }
 
@@ -254,29 +248,10 @@ static s32 Sm64_InitLibrary(void) {
 
     romPath = CVarGetString("gSm64RomPath", "");
     if (romPath == NULL || romPath[0] == '\0') {
-        romPath = "sm64.z64";
+        romPath = "nei/sm64.z64";
     }
 
     sSm64RomData = Sm64_LoadRomFile(romPath, &romSize);
-    if (sSm64RomData == NULL) sSm64RomData = Sm64_LoadRomFile("./sm64.z64", &romSize);
-    if (sSm64RomData == NULL) sSm64RomData = Sm64_LoadRomFile("x64/Release/sm64.z64", &romSize);
-
-#ifdef _WIN32
-    if (sSm64RomData == NULL) {
-        char exePath[512];
-        char romFullPath[512];
-        GetModuleFileNameA(NULL, exePath, sizeof(exePath));
-        {
-            char* lastSlash = strrchr(exePath, '\\');
-            if (!lastSlash) lastSlash = strrchr(exePath, '/');
-            if (lastSlash) {
-                lastSlash[1] = '\0';
-                snprintf(romFullPath, sizeof(romFullPath), "%ssm64.z64", exePath);
-                sSm64RomData = Sm64_LoadRomFile(romFullPath, &romSize);
-            }
-        }
-    }
-#endif
 
     if (sSm64RomData == NULL) {
         lusprintf(__FILE__, __LINE__, 2, "[SM64] FAIL: ROM not found");

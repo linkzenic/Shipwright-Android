@@ -545,6 +545,9 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
         if (!extEquipPage && !(CHECK_AGE_REQ_EQUIP(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP]))) {
             pauseCtx->nameColorSet = 1;
         }
+        if (extEquipPage && !ExtEquip_CheckAgeReq(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP])) {
+            pauseCtx->nameColorSet = 1;
+        }
 
         if (pauseCtx->cursorItem[PAUSE_EQUIP] == ITEM_BRACELET) {
             if (LINK_AGE_IN_YEARS == YEARS_CHILD || IS_RANDO) {
@@ -594,7 +597,11 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
             // Extended equipment page: A = equip on body, C buttons = assign to C button for toggle
             if (extEquipPage) {
-                if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+                u8 extAgeOk = ExtEquip_CheckAgeReq(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP]);
+                if (!extAgeOk) {
+                    Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                } else if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
                     ExtEquip_Equip(pauseCtx->cursorY[PAUSE_EQUIP], pauseCtx->cursorX[PAUSE_EQUIP]);
                     Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -819,7 +826,8 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
 
             if (((gBitFlags[bit] & gSaveContext.inventory.equipment) || extEquipPage) &&
                 (pauseCtx->cursorSpecialPos == 0)) {
-                if (extEquipPage || CHECK_AGE_REQ_EQUIP(i, k + 1)) {
+                if ((extEquipPage && ExtEquip_CheckAgeReq(i, k + 1)) ||
+                    (!extEquipPage && CHECK_AGE_REQ_EQUIP(i, k + 1))) {
                     if (temp == cursorSlot) {
                         pauseCtx->equipVtx[j].v.ob[0] = pauseCtx->equipVtx[j + 2].v.ob[0] =
                             pauseCtx->equipVtx[j].v.ob[0] - 2;
@@ -913,7 +921,15 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
                 if (ExtEquip_HasItem(i, k + 1)) {
                     void* extIcon = ExtEquip_GetIcon(i, k + 1); // i=row(0-3), k+1=col(1-3)
                     if (extIcon) {
+                        bool extAgeRestricted = !ExtEquip_CheckAgeReq(i, k + 1);
+                        if (extAgeRestricted) {
+                            gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
+                            gSPGrayscale(POLY_OPA_DISP++, true);
+                        }
                         KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, extIcon, 32, 32, point);
+                        if (extAgeRestricted) {
+                            gSPGrayscale(POLY_OPA_DISP++, false);
+                        }
                     }
                 }
             } else {

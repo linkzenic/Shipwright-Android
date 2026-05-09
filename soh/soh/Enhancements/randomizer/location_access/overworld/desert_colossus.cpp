@@ -19,7 +19,7 @@ void RegionTable_Init_DesertColossus() {
         LOCATION(RC_COLOSSUS_BEAN_SPROUT_FAIRY_3,     logic->IsChild && logic->CanUse(RG_MAGIC_BEAN) && logic->HasItem(RG_DESERT_COLOSSUS_BEAN_SOUL) && logic->CanUse(RG_SONG_OF_STORMS)),
         LOCATION(RC_COLOSSUS_GOSSIP_STONE_FAIRY,      logic->CallGossipFairy()),
         LOCATION(RC_COLOSSUS_GOSSIP_STONE_FAIRY_BIG,  logic->CanUse(RG_SONG_OF_STORMS)),
-        LOCATION(RC_COLOSSUS_SILVER_BOULDER,          logic->CanUse(RG_SILVER_GAUNTLETS)),
+        LOCATION(RC_COLOSSUS_SILVER_BOULDER,          logic->CanBreakSilverBoulder()),
         LOCATION(RC_COLOSSUS_ROCK,                    logic->CanBreakRocks()),
         LOCATION(RC_COLOSSUS_CIRCLE_1_ROCK_1,         logic->CanBreakRocks()),
         LOCATION(RC_COLOSSUS_CIRCLE_1_ROCK_2,         logic->CanBreakRocks()),
@@ -50,7 +50,7 @@ void RegionTable_Init_DesertColossus() {
         ENTRANCE(RR_COLOSSUS_GREAT_FAIRY_FOUNTAIN, logic->HasExplosives()),
         ENTRANCE(RR_SPIRIT_TEMPLE_ENTRYWAY,        true),
         ENTRANCE(RR_WASTELAND_NEAR_COLOSSUS,       true),
-        ENTRANCE(RR_COLOSSUS_GROTTO,               logic->CanUse(RG_SILVER_GAUNTLETS)),
+        ENTRANCE(RR_COLOSSUS_GROTTO,               logic->HasStrength(2)),
     });
 
     //specifically the full oasis, after the fairies have spawned

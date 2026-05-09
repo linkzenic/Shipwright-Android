@@ -2952,9 +2952,22 @@ void Interface_LoadActionLabelB(PlayState* play, u16 action) {
     interfaceCtx->unk_1FA = 1;
 }
 
+// Direct pre-damage hook for Spirit Breastplate. Defined in
+// equip_breastplate.c (unity-built into z_player.o via extended_equipment.c).
+// Called directly to avoid the GameInteractor registration path so we don't
+// depend on a separate .cpp registration file being in the build.
+extern void Breastplate_OnHealthChangeBefore(int16_t* amount);
+
 s32 Health_ChangeBy(PlayState* play, s16 healthChange) {
     u16 heartCount;
     u16 healthLevel;
+
+    // Pre-damage hook: lets the Spirit Breastplate intercept damage and
+    // mutate or zero it out before the engine applies it.
+    Breastplate_OnHealthChangeBefore(&healthChange);
+    if (healthChange == 0) {
+        return 1;
+    }
 
     // "＊＊＊＊＊ Fluctuation=%d (now=%d, max=%d) ＊＊＊"
     osSyncPrintf("＊＊＊＊＊  増減=%d (now=%d, max=%d)  ＊＊＊", healthChange, gSaveContext.health,

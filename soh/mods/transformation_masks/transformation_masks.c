@@ -37,6 +37,7 @@ extern void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item);
 extern void MmForm_Update(PlayState* play, Player* player);
 extern void MmForm_Draw(PlayState* play, Player* player);
 extern void MmForm_Reset(void);
+extern void MmForm_OnDeath(void);
 extern f32 MmForm_GetCameraHeight(void);
 extern u8 MmForm_BlocksLedgeGrab(void);
 extern u8 MmForm_IsZoraSwimEnabled(void);
@@ -174,22 +175,29 @@ void TransformMasks_Init(PlayState* play, Player* player) {
 
 void TransformMasks_Update(PlayState* play, Player* player) {
     // Scan C-button/D-pad for transformation mask presses.
-    // Two cases where OOT's item pipeline does NOT reach Player_UseItem:
-    //   1. Transformed: actionFunc = MmForm_OotNoopAction → pipeline bypassed entirely.
+    // OOT's Player_UseItem pipeline doesn't run in two cases, so we need a fallback:
+    //   1. Transformed (any form): the form's own action loop owns gameplay; OOT's
+    //      upper-body update never reaches Player_UseItem for mask items.
     //   2. Swimming (IN_WATER): surface swim actions (D610/D84C/DAB4) don't call
-    //      Player_UpdateUpperBody → pipeline never runs. Only Zora mask allowed in water.
-    u8 isNoop = (player->actionFunc == MmForm_OotNoopAction);
-    u8 isPikachu = (MmForm_GetCurrentForm() == MM_PLAYER_FORM_PIKACHU && MmForm_IsTransformedAny());
+    //      Player_UpdateUpperBody → pipeline never runs. In this case only the Zora
+    //      mask is meaningful (and it's the only one whose buttonStatus stays
+    //      enabled underwater — see z_parameter.c:1353).
+    //
+    // The water gate is filtered ONLY for the not-transformed case: a transformed
+    // form pressing its own mask must always be able to detransform, even underwater.
+    // (Bug previously: as Zora in water, pressing Zora mask did nothing because the
+    // `!isNoop` arm of the filter never went false — `isNoop` is dead code.)
+    u8 isTransformed = MmForm_IsTransformedAny();
     u8 isInWater = (player->stateFlags1 & PLAYER_STATE1_IN_WATER) != 0;
 
-    if ((isNoop || isPikachu || isInWater) && sControlInput != NULL) {
+    if ((isTransformed || isInWater) && sControlInput != NULL) {
         static const u16 sBtns[] = { BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT };
         for (s32 i = 0; i < 3; i++) {
             if (CHECK_BTN_ALL(sControlInput->press.button, sBtns[i])) {
                 s32 item = C_BTN_ITEM(i);
                 if (item != ITEM_NONE && MmForm_GetMaskType(item) != TRANSFORM_MASK_NONE) {
-                    // In water (not transformed): only Zora mask allowed
-                    if (!isNoop && MmForm_GetMaskType(item) != TRANSFORM_MASK_ZORA)
+                    // Not transformed + in water: only Zora mask allowed.
+                    if (!isTransformed && MmForm_GetMaskType(item) != TRANSFORM_MASK_ZORA)
                         break;
                     TransformMasks_HandleMaskUse(play, player, item);
                     break;
@@ -202,7 +210,7 @@ void TransformMasks_Update(PlayState* play, Player* player) {
                 if (CHECK_BTN_ALL(sControlInput->press.button, sDpad[i])) {
                     s32 item = DPAD_ITEM(i);
                     if (item != ITEM_NONE && MmForm_GetMaskType(item) != TRANSFORM_MASK_NONE) {
-                        if (!isNoop && MmForm_GetMaskType(item) != TRANSFORM_MASK_ZORA)
+                        if (!isTransformed && MmForm_GetMaskType(item) != TRANSFORM_MASK_ZORA)
                             break;
                         TransformMasks_HandleMaskUse(play, player, item);
                         break;
@@ -226,6 +234,10 @@ void TransformMasks_Reset(void) {
 
 void TransformMasks_OnDeath(void) {
     MmMaskWear_DeactivateChateauRomani();
+    // Roll back equipment / strength / pending-reactivate state synchronously.
+    // The scene reload that follows will call MmForm_Reset, but by then the
+    // backup is empty so the equipment stays restored (instead of being wiped).
+    MmForm_OnDeath();
 }
 
 u8 TransformMasks_IsFDSkinMode(void) {

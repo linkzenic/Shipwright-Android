@@ -540,11 +540,27 @@ static void DistributeAndPlaceHints(std::vector<HintDistributionSetting>& distTa
             totalWeight += distTable[i].weight;
         }
 
-        // No weighted types left, fill remaining with junk
+        // No weighted types left
         if (totalWeight == 0) {
-            for (size_t c = 0; c < totalStones; c++) {
-                // duplicate junk hints are possible for now
-                AddGossipStoneHintCopies(1, HINT_TYPE_HINT_KEY, "Junk", { GetRandomJunkHint() });
+            const HintSetting& hintSetting = hintSettingTable[ctx->GetOption(RSK_HINT_DISTRIBUTION).Get()];
+            if (hintSetting.junkWeight > 0) {
+                for (size_t c = 0; c < totalStones; c++) {
+                    // duplicate junk hints are possible for now
+                    AddGossipStoneHintCopies(1, HINT_TYPE_HINT_KEY, "Junk", { GetRandomJunkHint() });
+                }
+                return;
+            }
+
+            // junkWeight == 0 (Strong/Very Strong): respect the user's choice and
+            // fill remaining stones with random Item-Area hints over any hintable
+            // location instead of junk.
+            while (totalStones > 0) {
+                std::vector<RandomizerCheck> hintPool = FilterHintability(ctx->allLocations, NoFilter);
+                RandomizerCheck loc = CreateRandomHint(hintPool, 1, HINT_TYPE_ITEM_AREA, "Random Fallback");
+                if (loc == RC_UNKNOWN_CHECK) {
+                    AddGossipStoneHintCopies(1, HINT_TYPE_HINT_KEY, "Junk", { GetRandomJunkHint() });
+                }
+                totalStones -= 1;
             }
             return;
         }

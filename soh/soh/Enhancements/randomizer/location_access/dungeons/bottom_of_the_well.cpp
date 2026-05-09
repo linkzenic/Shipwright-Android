@@ -203,36 +203,36 @@ void RegionTable_Init_BottomOfTheWell() {
         LOCATION(RC_BOTTOM_OF_THE_WELL_BASEMENT_GRASS_1,   logic->CanCutShrubs()),
         LOCATION(RC_BOTTOM_OF_THE_WELL_BASEMENT_GRASS_2,   logic->CanCutShrubs()),
         LOCATION(RC_BOTTOM_OF_THE_WELL_BASEMENT_GRASS_3,   logic->CanCutShrubs()),
-        LOCATION(RC_BOTW_BOULDER_1,                        logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_BOULDER_2,                        logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_BOULDER_3,                        logic->BlastOrSmash() || logic->CanUse(RG_DINS_FIRE) || (logic->CanUse(RG_STICKS) && ctx->GetTrickOption(RT_BOTW_BASEMENT)) ||
+        LOCATION(RC_BOTW_BOULDER_1,                        logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_BOULDER_2,                        logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_BOULDER_3,                        logic->CanBreakBoulder() || (logic->CanUse(RG_DINS_FIRE) || logic->CanUse(RG_FIRE_ROD)) || (logic->CanUse(RG_STICKS) && ctx->GetTrickOption(RT_BOTW_BASEMENT)) ||
                                                            (ctx->GetTrickOption(RT_BOULDER_COLLISION) && logic->CanUse(RG_FAIRY_BOW))),
-        LOCATION(RC_BOTW_BOULDER_4,                        logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_BOULDER_5,                        logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_BOULDER_6,                        logic->BlastOrSmash()),
+        LOCATION(RC_BOTW_BOULDER_4,                        logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_BOULDER_5,                        logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_BOULDER_6,                        logic->CanBreakBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_BOTW_HIDDEN_POTS,      logic->CanClimbHighLadder()),
         //It's possible to abuse boulder's limited range of collision detection to detonate the flowers through the boulder with bow, but this is a glitch
         //the exact range is just past the furthest away plank in the green goo section
-        ENTRANCE(RR_BOTW_B3_BOMB_FLOWERS,  AnyAgeTime([]{return logic->BlastOrSmash() || logic->CanUse(RG_DINS_FIRE) || (ctx->GetTrickOption(RT_BOTW_BASEMENT) && logic->CanUse(RG_STICKS)) || (ctx->GetTrickOption(RT_BOULDER_COLLISION) && logic->CanUse(RG_FAIRY_BOW));})),
+        ENTRANCE(RR_BOTW_B3_BOMB_FLOWERS,  AnyAgeTime([]{return logic->BlastOrSmash() || (logic->CanUse(RG_DINS_FIRE) || logic->CanUse(RG_FIRE_ROD)) || (ctx->GetTrickOption(RT_BOTW_BASEMENT) && logic->CanUse(RG_STICKS)) || (ctx->GetTrickOption(RT_BOULDER_COLLISION) && logic->CanUse(RG_FAIRY_BOW));})),
         ENTRANCE(RR_BOTW_B3_BLOCKED_GRASS, AnyAgeTime([]{return logic->BlastOrSmash();})),
         ENTRANCE(RR_BOTW_B3_CHEST_AREA,    AnyAgeTime([]{return logic->BlastOrSmash();})),
     });
 
     areaTable[RR_BOTW_B3_BOMB_FLOWERS] = Region("Bottom of the Well B3 Bomb Flowers", SCENE_BOTTOM_OF_THE_WELL, {}, {
         //Locations
-        LOCATION(RC_BOTW_BOULDER_1, logic->HasItem(RG_GORONS_BRACELET)),
-        LOCATION(RC_BOTW_BOULDER_2, logic->HasItem(RG_GORONS_BRACELET)),
+        LOCATION(RC_BOTW_BOULDER_1, logic->HasStrength(1)),
+        LOCATION(RC_BOTW_BOULDER_2, logic->HasStrength(1)),
         LOCATION(RC_BOTW_BOULDER_3, logic->CanDetonateUprightBombFlower()),
-        LOCATION(RC_BOTW_BOULDER_4, logic->HasItem(RG_GORONS_BRACELET)),
-        LOCATION(RC_BOTW_BOULDER_5, logic->HasItem(RG_GORONS_BRACELET)),
-        LOCATION(RC_BOTW_BOULDER_6, logic->HasItem(RG_GORONS_BRACELET)),
+        LOCATION(RC_BOTW_BOULDER_4, logic->HasStrength(1)),
+        LOCATION(RC_BOTW_BOULDER_5, logic->HasStrength(1)),
+        LOCATION(RC_BOTW_BOULDER_6, logic->HasStrength(1)),
     }, {
         //Exits
         ENTRANCE(RR_BOTW_B3_OOZE,          logic->CanDetonateUprightBombFlower()),
-        ENTRANCE(RR_BOTW_B3_BLOCKED_GRASS, logic->HasItem(RG_GORONS_BRACELET)),
-        ENTRANCE(RR_BOTW_B3_CHEST_AREA,    logic->HasItem(RG_GORONS_BRACELET)),
+        ENTRANCE(RR_BOTW_B3_BLOCKED_GRASS, logic->HasStrength(1)),
+        ENTRANCE(RR_BOTW_B3_CHEST_AREA,    logic->HasStrength(1)),
     });
 
     areaTable[RR_BOTW_B3_BLOCKED_GRASS] = Region("Bottom of the Well B3 Blocked Grass", SCENE_BOTTOM_OF_THE_WELL, {}, {
@@ -248,7 +248,7 @@ void RegionTable_Init_BottomOfTheWell() {
         LOCATION(RC_BOTTOM_OF_THE_WELL_BASEMENT_BEHIND_ROCKS_GRASS_9, logic->CanCutShrubs()),
     }, {
         //Exits
-        ENTRANCE(RR_BOTW_B3_OOZE, AnyAgeTime([]{return logic->BlastOrSmash() || logic->HasItem(RG_GORONS_BRACELET);})),
+        ENTRANCE(RR_BOTW_B3_OOZE, AnyAgeTime([]{return logic->BlastOrSmash() || logic->HasStrength(1);})),
     });
 
     areaTable[RR_BOTW_B3_CHEST_AREA] = Region("Bottom of the Well B3 Chest Area", SCENE_BOTTOM_OF_THE_WELL, {}, {
@@ -299,9 +299,9 @@ void RegionTable_Init_BottomOfTheWell() {
 																	(ctx->GetTrickOption(RT_BOULDER_COLLISION) && logic->IsChild ? logic->CanHitEyeTargets() : logic->CanUse(RG_FAIRY_SLINGSHOT))),
         LOCATION(RC_BOTTOM_OF_THE_WELL_MQ_BOMB_LEFT_HEART,  		logic->HasExplosives()),
         LOCATION(RC_BOTTOM_OF_THE_WELL_MQ_BOMB_RIGHT_HEART, 		logic->HasExplosives()),
-        LOCATION(RC_BOTW_MQ_BOULDER_1,                              logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_MQ_BOULDER_2,                              logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_MQ_BOULDER_3,                              logic->BlastOrSmash()),
+        LOCATION(RC_BOTW_MQ_BOULDER_1,                              logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_MQ_BOULDER_2,                              logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_MQ_BOULDER_3,                              logic->CanBreakBoulder()),
         LOCATION(RC_BOTTOM_OF_THE_WELL_MQ_WONDER_MAIN_ROOM_LEFT_1,  logic->CanUse(RG_FAIRY_SLINGSHOT)),
         LOCATION(RC_BOTTOM_OF_THE_WELL_MQ_WONDER_MAIN_ROOM_LEFT_2,  logic->CanUse(RG_FAIRY_SLINGSHOT)),
         LOCATION(RC_BOTTOM_OF_THE_WELL_MQ_WONDER_MAIN_ROOM_LEFT_3,  logic->CanUse(RG_FAIRY_SLINGSHOT)),
@@ -382,8 +382,8 @@ void RegionTable_Init_BottomOfTheWell() {
         EVENT_ACCESS(LOGIC_BOTW_MQ_OPENED_WEST_ROOM, true),
     }, {
         //Locations
-        LOCATION(RC_BOTW_MQ_BOULDER_2, logic->BlastOrSmash()),
-        LOCATION(RC_BOTW_MQ_BOULDER_3, logic->BlastOrSmash()),
+        LOCATION(RC_BOTW_MQ_BOULDER_2, logic->CanBreakBoulder()),
+        LOCATION(RC_BOTW_MQ_BOULDER_3, logic->CanBreakBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_BOTW_MQ_PERIMETER, logic->BlastOrSmash() && (logic->CanPassEnemy(RE_BIG_SKULLTULA) || ctx->GetTrickOption(RT_BOTW_PITS))),

@@ -59,7 +59,7 @@ void RegionTable_Init_CastleGrounds() {
         EVENT_ACCESS(LOGIC_FAIRY_ACCESS, logic->CanUse(RG_STICKS)),
     }, {
         //Locations
-        LOCATION(RC_HC_BOULDER,                           logic->BlastOrSmash()),
+        LOCATION(RC_HC_BOULDER,                           logic->CanBreakBoulder()),
         LOCATION(RC_HC_NEAR_GUARDS_TREE_1,                logic->CanBonkTrees()),
         LOCATION(RC_HC_NEAR_GUARDS_TREE_2,                logic->CanBonkTrees()),
         LOCATION(RC_HC_NEAR_GUARDS_TREE_3,                logic->CanBonkTrees()),
@@ -192,18 +192,18 @@ void RegionTable_Init_CastleGrounds() {
         EVENT_ACCESS(LOGIC_BUILD_RAINBOW_BRIDGE, logic->CanBuildRainbowBridge()),
     }, {
         //Locations
-        LOCATION(RC_OGC_GS,               logic->HookshotOrBoomerang() || ((logic->CanJumpslashExceptHammer() || logic->CanUseProjectile() || (logic->CanShield() && logic->CanUse(RG_MEGATON_HAMMER)) || logic->CanUse(RG_DINS_FIRE)) && ctx->GetTrickOption(RT_VOIDOUT_COLLECTION))) ,
-        LOCATION(RC_OGC_BRONZE_BOULDER_1, logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_OGC_BRONZE_BOULDER_2, logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_OGC_BRONZE_BOULDER_3, logic->CanUse(RG_MEGATON_HAMMER)),
-        LOCATION(RC_OGC_SILVER_BOULDER_1, logic->CanUse(RG_SILVER_GAUNTLETS)),
-        LOCATION(RC_OGC_SILVER_BOULDER_2, logic->CanUse(RG_SILVER_GAUNTLETS)),
-        LOCATION(RC_OGC_SILVER_BOULDER_3, logic->CanUse(RG_SILVER_GAUNTLETS)),
-        LOCATION(RC_OGC_SILVER_BOULDER_4, logic->CanUse(RG_SILVER_GAUNTLETS)),
+        LOCATION(RC_OGC_GS,               logic->HookshotOrBoomerang() || ((logic->CanJumpslashExceptHammer() || logic->CanUseProjectile() || (logic->CanShield() && logic->CanUse(RG_MEGATON_HAMMER)) || (logic->CanUse(RG_DINS_FIRE) || logic->CanUse(RG_FIRE_ROD))) && ctx->GetTrickOption(RT_VOIDOUT_COLLECTION))) ,
+        LOCATION(RC_OGC_BRONZE_BOULDER_1, logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_OGC_BRONZE_BOULDER_2, logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_OGC_BRONZE_BOULDER_3, logic->CanBreakBronzeBoulder()),
+        LOCATION(RC_OGC_SILVER_BOULDER_1, logic->CanBreakSilverBoulder()),
+        LOCATION(RC_OGC_SILVER_BOULDER_2, logic->CanBreakSilverBoulder()),
+        LOCATION(RC_OGC_SILVER_BOULDER_3, logic->CanBreakSilverBoulder()),
+        LOCATION(RC_OGC_SILVER_BOULDER_4, logic->CanBreakSilverBoulder()),
     }, {
         //Exits
         ENTRANCE(RR_CASTLE_GROUNDS,           logic->AtNight),
-        ENTRANCE(RR_OGC_GREAT_FAIRY_FOUNTAIN, logic->CanUse(RG_GOLDEN_GAUNTLETS) && logic->AtNight),
+        ENTRANCE(RR_OGC_GREAT_FAIRY_FOUNTAIN, logic->HasStrength(3) && logic->AtNight),
         ENTRANCE(RR_GANONS_CASTLE_LEDGE,      logic->Get(LOGIC_BUILD_RAINBOW_BRIDGE)),
     });
 

@@ -68,8 +68,14 @@ void CustomItems_DrawFireRod(Player* player, PlayState* play) {
               G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
     gSPDisplayList(POLY_OPA_DISP++, g_fire_rod_dl);
 
-    // Draw all active fireball sets (up to 5 concurrent sets)
-    if (FireRod_HasAnyActiveSet()) {
+    // Draw active fireball sets. Local play uses sFireProjSets[] (multi-set).
+    // Remote dummies have no local sets — fall back to gCustomItemState fields
+    // (single set, mirrored from the network sync) so teammates see the projectile.
+    u8 hasLocalSets = FireRod_HasAnyActiveSet();
+    u8 hasRemoteSync = !hasLocalSets && fireRodProjActive && fireRodProjScale > 0.001f &&
+                       gCustomItemState.fireRodProjCount > 0;
+
+    if (hasLocalSets || hasRemoteSync) {
         sFireRodFlameScroll -= 20;
         sFireRodFlameScroll &= 0x1FF;
 
@@ -81,19 +87,52 @@ void CustomItems_DrawFireRod(Player* player, PlayState* play) {
 
         s16 camYaw = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000;
 
-        RodProjSet* sets = FireRod_GetProjSets();
-        for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
-            RodProjSet* set = &sets[s];
-            if (!set->active)
-                continue;
+        if (hasLocalSets) {
+            RodProjSet* sets = FireRod_GetProjSets();
+            for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+                RodProjSet* set = &sets[s];
+                if (!set->active)
+                    continue;
 
-            f32 flameScale = set->scale * 0.0015f;
+                f32 flameScale = set->scale * 0.0015f;
+                if (flameScale < 0.001f)
+                    flameScale = 0.001f;
+
+                for (s32 p = 0; p < set->count; p++) {
+                    Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+                    Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                    Matrix_Scale(flameScale, flameScale, flameScale, MTXMODE_APPLY);
+                    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+                }
+
+                for (s32 i = 1; i < 4; i++) {
+                    Vec3f* trailPos = &set->trail[i];
+                    f32 trailScale = flameScale * (1.0f - (i * 0.25f));
+                    if (trailScale < 0.0005f)
+                        continue;
+
+                    Matrix_Translate(trailPos->x, trailPos->y, trailPos->z, MTXMODE_NEW);
+                    Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+                    Matrix_Scale(trailScale, trailScale, trailScale, MTXMODE_APPLY);
+                    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+                              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                    gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
+                }
+            }
+        } else {
+            f32 flameScale = fireRodProjScale * 0.0015f;
             if (flameScale < 0.001f)
                 flameScale = 0.001f;
 
-            // Draw all fireballs in this set (1-3)
-            for (s32 p = 0; p < set->count; p++) {
-                Matrix_Translate(set->pos[p].x, set->pos[p].y, set->pos[p].z, MTXMODE_NEW);
+            Vec3f remotePos[3] = { fireRodProjPos, gCustomItemState.fireRodProjPos2, gCustomItemState.fireRodProjPos3 };
+            s32 remoteCount = gCustomItemState.fireRodProjCount;
+            if (remoteCount > 3)
+                remoteCount = 3;
+
+            for (s32 p = 0; p < remoteCount; p++) {
+                Matrix_Translate(remotePos[p].x, remotePos[p].y, remotePos[p].z, MTXMODE_NEW);
                 Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
                 Matrix_Scale(flameScale, flameScale, flameScale, MTXMODE_APPLY);
                 gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
@@ -101,9 +140,8 @@ void CustomItems_DrawFireRod(Player* player, PlayState* play) {
                 gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
             }
 
-            // Draw trail for center fireball of this set
             for (s32 i = 1; i < 4; i++) {
-                Vec3f* trailPos = &set->trail[i];
+                Vec3f* trailPos = &fireRodProjTrail[i];
                 f32 trailScale = flameScale * (1.0f - (i * 0.25f));
                 if (trailScale < 0.0005f)
                     continue;

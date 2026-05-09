@@ -2,6 +2,7 @@
 
 #ifdef __cplusplus
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -11,9 +12,17 @@ namespace HarpoonSkinSync {
 // Initialisation
 // ============================================================================
 // Called once at game startup (after Ship::Context is ready). Scans
-// harpoon_skin_sync/ for .o2r files, opens each via Ship::O2rArchive WITHOUT
-// mounting it globally, and pre-loads every DL whose name ends in "DL" into
-// the override map keyed by .o2r filename + OTR path.
+// `<SoH app dir>/harpoon/skins/` for .o2r files, opens each via
+// Ship::O2rArchive WITHOUT mounting it globally, and pre-loads every DL
+// whose name ends in "DL" into the override map keyed by .o2r filename +
+// OTR path.
+//
+// Layout, sibling of mods/ inside the SoH app dir (next to the executable):
+//     harpoon/
+//         skins/        — .o2r skin packs (THIS module)
+//         gamemodes/    — .o2r gamemode packs (loaded by Harpoon main)
+//
+// Both subfolders are auto-created on first run.
 void InitO2rOverrides();
 
 
@@ -57,27 +66,38 @@ int   GetActiveOverrideLinkDListCount(bool isAdult);
 // ============================================================================
 
 // Warn once per session when a remote player reports a pak skin name that
-// we can't resolve locally (not present in mods/harpoon_skin_sync/).
+// we can't resolve locally (not present in harpoon/skins/).
 void NotifyMissingPak(uint32_t clientId, const std::string& playerName, const std::string& skinName);
 
 // Compare our enabled .o2r mod list against a remote's and emit one
 // divergence notification per unique (clientId, direction, modName) tuple.
-// Suppressed for any mod the local user has installed in harpoon_skin_sync/
+// Suppressed for any mod the local user has installed in harpoon/skins/
 // (because the dummy is rendered with that override at draw time).
-// Same as above, but also takes the remote's harpoon_skin_sync registry
-// (the names of mods THEY have available to render others). Suppresses
-// the "you have mod X that they don't" notification when X is in their
-// sync registry (they CAN render us with it). Without this, the warning
-// fires even when the other side has the mod available — just not
-// mounted globally.
+// Also takes the remote's `harpoon/skins/` registry (the names of mods THEY
+// have available to render others). Suppresses the "you have mod X that they
+// don't" notification when X is in their sync registry (they CAN render us
+// with it). Without this, the warning fires even when the other side has
+// the mod available — just not mounted globally.
 void NotifyO2rDivergence(uint32_t clientId, const std::string& playerName,
                          const std::vector<std::string>& remoteMods,
                          const std::vector<std::string>& remoteSyncMods);
 
-// Returns the names of all overrides loaded from the local
-// harpoon_skin_sync/ folder. Broadcast to remotes so they can see what
-// mods we can render them with — suppressing one-sided warnings.
+// Returns the names of all overrides loaded from the local harpoon/skins/
+// folder. Broadcast to remotes so they can see what mods we can render them
+// with — suppressing one-sided warnings.
 std::vector<std::string> GetOverrideNames();
+
+// Returns the gamemode_ids of every pack found under harpoon/gamemodes/.
+// A pack is recognised when its folder contains a `gamemode.yaml` file.
+// Result is cached; pass `forceRescan=true` to refresh after the user drops
+// new packs into the folder.
+std::vector<std::string> GetInstalledGamemodes(bool forceRescan = false);
+
+// Returns the absolute path to harpoon/gamemodes/<gid>/gamemode.yaml if the
+// local pack exists, or an empty path otherwise. Used by Harpoon to apply
+// a room's `default_config` (pvp_enabled, sync_items, etc.) when the server
+// is gamemode-agnostic and never broadcasts a manifest.
+std::filesystem::path GetGamemodeManifestPath(const std::string& gamemodeId);
 
 // Clear the dedupe cache + active override stack (call on disconnect /
 // fresh connect).

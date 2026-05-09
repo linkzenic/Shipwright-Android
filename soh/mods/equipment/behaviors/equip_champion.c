@@ -20,7 +20,7 @@
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define CHAMPION_PAK_PATH "custom_items_resources/Adult_BOTWLink.pak"
+#define CHAMPION_PAK_PATH "nei/Adult_BOTWLink.pak"
 #define CHAMPION_FLURRY_DURATION 120 // real frames the slow window lasts (~2s)
 #define CHAMPION_FLURRY_HIT_MAX 7    // hits that end the window early
 #define CHAMPION_SLOW_FACTOR 0.15f   // world speed multiplier during both modes

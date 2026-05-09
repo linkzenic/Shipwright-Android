@@ -28,6 +28,7 @@ extern "C" {
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -53,7 +54,7 @@ extern "C" {
 // Override-style .o2r registry
 // =============================================================================
 //
-// Each .o2r file in harpoon_skin_sync/ that we can open and that contains at
+// Each .o2r file in harpoon/skins/ that we can open and that contains at
 // least one DL resource is loaded as a "skin override". Every DL inside the
 // archive is pre-parsed via the standard SOH ResourceLoader (DisplayListFactory
 // path) into a native Gfx* whose memory lives for the lifetime of the entry.
@@ -283,7 +284,7 @@ struct ArchiveHandle {
     // Local hash → path map built from archive->ListFiles(). CRITICAL:
     // Ship::Archive::LoadFile(hash) consults the GLOBAL HashToString from
     // ArchiveManager — which only knows about archives mounted globally.
-    // Override .o2r/.otr files in harpoon_skin_sync are deliberately NOT
+    // Override .o2r/.otr files in harpoon/skins/ are deliberately NOT
     // mounted globally, so a hash lookup against the global stack fails
     // for every texture / sub-DL inside the override → patcher can't
     // resolve them → at runtime the interpreter falls back to global
@@ -427,29 +428,56 @@ static bool ShouldNotify(const std::string& key) {
     return true;
 }
 
-// Locate harpoon_skin_sync/ across the same candidate paths that pak_loader's
-// own sync registry uses, so the two stay in lockstep regardless of how the
-// app was launched.
-static std::filesystem::path FindSyncFolder() {
-    std::vector<std::filesystem::path> candidates;
-    std::string topPath = Ship::Context::LocateFileAcrossAppDirs("harpoon_skin_sync", appShortName);
-    if (!topPath.empty()) candidates.push_back(topPath);
-    std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
-    if (!modsPath.empty()) candidates.push_back(std::filesystem::path(modsPath) / "harpoon_skin_sync");
-    std::error_code cwdErr;
-    auto cwd = std::filesystem::current_path(cwdErr);
-    if (!cwdErr) {
-        candidates.push_back(cwd / "harpoon_skin_sync");
-        candidates.push_back(cwd / "mods" / "harpoon_skin_sync");
-    }
-    candidates.push_back("./harpoon_skin_sync");
-    for (auto& c : candidates) {
+// Resolve and (if needed) create the Harpoon content root, ALWAYS relative
+// to the SoH app directory the user launched. Layout (sibling of `mods/`,
+// NOT inside it):
+//
+//     <SoH app dir>/harpoon/
+//         skins/        — .o2r files for skin sync (other players' Link skins)
+//         gamemodes/    — .o2r packs for gamemodes (manifest + assets)
+//
+// Both subfolders are auto-created on first run so the user just has to drop
+// content in.
+static std::filesystem::path EnsureHarpoonRoot() {
+    // Preferred: directly resolve `harpoon` if it already exists.
+    std::string existingHarpoon = Ship::Context::LocateFileAcrossAppDirs("harpoon", appShortName);
+    if (!existingHarpoon.empty()) {
+        std::filesystem::path root = existingHarpoon;
         std::error_code ec;
-        if (std::filesystem::exists(c, ec) && std::filesystem::is_directory(c, ec)) {
-            return c;
-        }
+        std::filesystem::create_directories(root / "skins", ec);
+        std::filesystem::create_directories(root / "gamemodes", ec);
+        return root;
     }
-    return {};
+
+    // Doesn't exist yet — find the SoH app dir by locating `mods/` (always
+    // present), then create `harpoon/` as a sibling of it (i.e. directly
+    // under the app dir, next to the executable).
+    std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
+    if (modsPath.empty()) {
+        HSS_LOG("Cannot locate SoH app directory — Harpoon content disabled");
+        return {};
+    }
+    std::filesystem::path appDir = std::filesystem::path(modsPath).parent_path();
+    std::filesystem::path root = appDir / "harpoon";
+    std::error_code ec;
+    std::filesystem::create_directories(root / "skins", ec);
+    std::filesystem::create_directories(root / "gamemodes", ec);
+    if (ec) {
+        HSS_LOG("Failed to create %s: %s", root.string().c_str(), ec.message().c_str());
+        return {};
+    }
+    HSS_LOG("Created Harpoon root: %s", root.string().c_str());
+    return root;
+}
+
+static std::filesystem::path FindSyncFolder() {
+    auto root = EnsureHarpoonRoot();
+    return root.empty() ? std::filesystem::path{} : root / "skins";
+}
+
+static std::filesystem::path FindGamemodesFolder() {
+    auto root = EnsureHarpoonRoot();
+    return root.empty() ? std::filesystem::path{} : root / "gamemodes";
 }
 
 // Open an override archive picking the right concrete type by extension.
@@ -1637,7 +1665,8 @@ void InitO2rOverrides() {
 
     auto syncPath = FindSyncFolder();
     if (syncPath.empty()) {
-        HSS_LOG("No harpoon_skin_sync/ folder found; override registry empty");
+        HSS_LOG("No harpoon/skins/ folder found; override registry empty. "
+                "Place .o2r skin packs under harpoon/skins/ to render other players' Link skins.");
         return;
     }
     HSS_LOG("Scanning '%s' for .o2r/.otr overrides", syncPath.string().c_str());
@@ -1771,7 +1800,7 @@ void NotifyO2rDivergence(uint32_t clientId, const std::string& playerName,
 
     for (const auto& m : localSet) {
         if (remoteSet.count(m)) continue;
-        // Suppress when the remote has our mod in their harpoon_skin_sync —
+        // Suppress when the remote has our mod in their harpoon/skins —
         // they CAN render us correctly even though they haven't enabled it
         // globally. This is the common case the user complained about: the
         // notification was firing despite both clients having each other's
@@ -1798,6 +1827,57 @@ std::vector<std::string> GetOverrideNames() {
         names.push_back(o.name);
     }
     return names;
+}
+
+// Cached list of installed gamemode pack ids (folder names under
+// harpoon/gamemodes/ that contain a gamemode.yaml).
+static std::vector<std::string> sInstalledGamemodes;
+static bool sGamemodesCached = false;
+
+std::filesystem::path GetGamemodeManifestPath(const std::string& gamemodeId) {
+    if (gamemodeId.empty()) return {};
+    auto root = FindGamemodesFolder();
+    if (root.empty()) return {};
+    auto manifest = root / gamemodeId / "gamemode.yaml";
+    std::error_code ec;
+    if (!std::filesystem::exists(manifest, ec) || !std::filesystem::is_regular_file(manifest, ec)) {
+        return {};
+    }
+    return manifest;
+}
+
+std::vector<std::string> GetInstalledGamemodes(bool forceRescan) {
+    // Only honour the cache when it actually found packs. A first call that
+    // ran before the user dropped any gamemode in (or before the folder was
+    // auto-created) would otherwise leave the dropdown permanently empty
+    // until they clicked "Refresh" — which the user has no reason to do
+    // when the folder visibly contains packs.
+    if (sGamemodesCached && !forceRescan && !sInstalledGamemodes.empty()) {
+        return sInstalledGamemodes;
+    }
+    sInstalledGamemodes.clear();
+
+    auto root = FindGamemodesFolder();
+    if (root.empty()) {
+        sGamemodesCached = true;
+        return sInstalledGamemodes;
+    }
+
+    std::error_code ec;
+    for (auto& entry : std::filesystem::directory_iterator(root, ec)) {
+        if (ec) break;
+        if (!entry.is_directory()) continue;
+        auto manifest = entry.path() / "gamemode.yaml";
+        std::error_code ec2;
+        if (std::filesystem::exists(manifest, ec2) && std::filesystem::is_regular_file(manifest, ec2)) {
+            sInstalledGamemodes.push_back(entry.path().filename().string());
+        }
+    }
+    std::sort(sInstalledGamemodes.begin(), sInstalledGamemodes.end());
+    sGamemodesCached = true;
+    HSS_LOG("Found %d gamemode pack(s) in %s",
+            (int)sInstalledGamemodes.size(), root.string().c_str());
+    return sInstalledGamemodes;
 }
 
 void** GetVanillaLinkLimbTable(bool isAdult) {

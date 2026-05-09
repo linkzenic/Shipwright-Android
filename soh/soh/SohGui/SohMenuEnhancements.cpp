@@ -861,6 +861,12 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Invisible Bunny Hood", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("HideBunnyHood"))
         .Options(CheckboxOptions().Tooltip("Turns Bunny Hood Invisible while still maintaining its effects."));
+    AddWidget(path, "Invisible Non-Transformation Masks", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("HideNonTransformationMasks"))
+        .Options(CheckboxOptions().Tooltip(
+            "Turns all MM non-transformation masks invisible while still maintaining their effects.\n"
+            "Transformation masks (Deku, Goron, Zora, Fierce Deity) remain visible.\n"
+            "Only affects MM masks; vanilla OOT child masks are unaffected (use Invisible Bunny Hood for OOT bunny hood)."));
     AddWidget(path, "Mask Select in Inventory", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("MaskSelect"))
         .PreFunc([](WidgetInfo& info) {
