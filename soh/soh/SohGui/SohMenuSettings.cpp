@@ -547,12 +547,12 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Custom Items", WIDGET_SEPARATOR_TEXT);
 
     AddWidget(path, "Enable Extra Equipment", WIDGET_CVAR_CHECKBOX)
-        .CVar("gCheats.ExtEquip.Enabled")
+        .CVar(CVAR_RANDOMIZER_SETTING("ExtEquipment"))
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip(
             "Adds 12 new equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots).\n"
             "Press L on the equipment page to toggle between vanilla and extended equipment.\n"
-            "This is a cheat — all items are unlocked when enabled."));
+            "Seed-locked rando setting."));
 
     AddWidget(path, "Enable Sage Spells", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_RANDOMIZER_SETTING("SW97Spells"))
@@ -832,6 +832,40 @@ void SohMenu::AddMenuSettings() {
 
     AddWidget(path, "Randomizer", WIDGET_SEPARATOR_TEXT);
 
+    AddWidget(path, "Enable All NEI Rando", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"), 1);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 1);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("SW97Spells"), 1);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("RocsFeather"), 1);
+            if (MmAssets_IsAvailable() && CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 1);
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
+            }
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Tooltip(
+            "One-click enables all NEI seed-locked rando settings:\n"
+            "  • Skijer's Custom Items\n"
+            "  • All MM Masks (requires mm.o2r + 'Include MM Masks Inventory')\n"
+            "  • Extended Equipment\n"
+            "  • Sage Spells (SW97)\n"
+            "  • Roc's Feather"));
+
+    AddWidget(path, "Disable All NEI Rando", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"), 0);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 0);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("SW97Spells"), 0);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("RocsFeather"), 0);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0);
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Tooltip("Turns off all 5 NEI seed-locked rando settings."));
+
     AddWidget(path, "Enable Custom Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"))
         .Options(CheckboxOptions().Tooltip("Enables the 24 custom items on the second inventory page (seed-locked rando setting).\n"
@@ -840,44 +874,45 @@ void SohMenu::AddMenuSettings() {
                                            "Synced with the same setting in the Randomizer menu."));
 
     AddWidget(path, "Add All MM Masks to Rando", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.MmMasks.RandoAllMasks")
+        .CVar(CVAR_RANDOMIZER_SETTING("MmMasksAll"))
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
             if (!MmAssets_IsAvailable()) {
-                CVarSetInteger("gMods.MmMasks.RandoAllMasks", 0);
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
             } else if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
-                CVarSetInteger("gMods.MmMasks.RandoAllMasks", 0);
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Enable 'Include MM Masks Inventory' first.";
             }
         })
         .PostFunc([](WidgetInfo& info) {
-            if (CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0)) {
-                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+            if (CVarGetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0)) {
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
                 Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
             }
         })
         .Options(CheckboxOptions().Tooltip("Adds all 24 MM masks to the randomizer item pool.\n"
                                            "Masks can be found at random locations like custom items.\n"
                                            "Removes OOT Goron/Zora masks from pool.\n\n"
+                                           "Seed-locked rando setting.\n"
                                            "REQUIRES: 'Include MM Masks Inventory' enabled"));
 
     AddWidget(path, "Add Transformation Masks to Rando", WIDGET_CVAR_CHECKBOX)
-        .CVar("gMods.MmMasks.RandoTransformOnly")
+        .CVar(CVAR_RANDOMIZER_SETTING("MmMasksTransform"))
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
             if (!MmAssets_IsAvailable()) {
-                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Requires mm.o2r from 2Ship2Harkinian Keiichi Alfa 4.0.0.";
             } else if (!CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
-                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Enable 'Include MM Masks Inventory' first.";
-            } else if (CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0)) {
-                CVarSetInteger("gMods.MmMasks.RandoTransformOnly", 0);
+            } else if (CVarGetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0)) {
+                CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "'Add All MM Masks to Rando' already includes transformation masks.";
             }
@@ -885,7 +920,16 @@ void SohMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip("Adds only the 4 transformation masks (Deku, Goron, Zora, Fierce Deity)\n"
                                            "to the randomizer item pool.\n"
                                            "Removes OOT Goron/Zora masks from pool.\n\n"
+                                           "Seed-locked rando setting.\n"
                                            "REQUIRES: 'Include MM Masks Inventory' enabled"));
+
+    AddWidget(path, "Add Extended Equipment to Rando", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_RANDOMIZER_SETTING("ExtEquipment"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Adds the 12 extended equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots) to the randomizer pool.\n"
+            "Press L on the equipment page to toggle between vanilla and extended equipment.\n\n"
+            "Seed-locked rando setting."));
 
     AddWidget(path, "Bomb Arrows: Auto-grant with Bomb Bag", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.BombArrows.AutoGrantOnBag")

@@ -1304,6 +1304,9 @@ void Settings::CreateOptions() {
     OPT_BOOL(RSK_SW97_SPELLS, "Sage Spells", CVAR_RANDOMIZER_SETTING("SW97Spells"), mOptionDescriptions[RSK_SW97_SPELLS]);
     OPT_BOOL(RSK_ROCS_FEATHER, "Roc's Feather", CVAR_RANDOMIZER_SETTING("RocsFeather"), mOptionDescriptions[RSK_ROCS_FEATHER]);
     OPT_BOOL(RSK_SKIJER_CUSTOM_ITEMS, "Skijer's Custom Items", CVAR_RANDOMIZER_SETTING("SkijerCustomItems"), mOptionDescriptions[RSK_SKIJER_CUSTOM_ITEMS], IMFLAG_NONE, WIDGET_CVAR_CHECKBOX, RO_GENERIC_ON);
+    OPT_BOOL(RSK_MM_MASKS_ALL, "Add All MM Masks to Rando", CVAR_RANDOMIZER_SETTING("MmMasksAll"), mOptionDescriptions[RSK_MM_MASKS_ALL]);
+    OPT_BOOL(RSK_MM_MASKS_TRANSFORM, "Add Transformation Masks to Rando", CVAR_RANDOMIZER_SETTING("MmMasksTransform"), mOptionDescriptions[RSK_MM_MASKS_TRANSFORM]);
+    OPT_BOOL(RSK_EXT_EQUIPMENT, "Extended Equipment", CVAR_RANDOMIZER_SETTING("ExtEquipment"), mOptionDescriptions[RSK_EXT_EQUIPMENT]);
     OPT_U8(RSK_INFINITE_UPGRADES, "Infinite Upgrades", {"Off", "Progressive", "Condensed Progressive"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("InfiniteUpgrades"), mOptionDescriptions[RSK_INFINITE_UPGRADES]);
     OPT_BOOL(RSK_SKELETON_KEY, "Skeleton Key", CVAR_RANDOMIZER_SETTING("SkeletonKey"), mOptionDescriptions[RSK_SKELETON_KEY]);
     OPT_BOOL(RSK_SLINGBOW_BREAK_BEEHIVES, "Slingshot/Bow Can Break Beehives", CVAR_RANDOMIZER_SETTING("SlingBowBeehives"), mOptionDescriptions[RSK_SLINGBOW_BREAK_BEEHIVES]);

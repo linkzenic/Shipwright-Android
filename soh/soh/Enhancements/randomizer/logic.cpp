@@ -354,81 +354,81 @@ bool Logic::HasItem(RandomizerGet itemName) {
             // Cycling logic handled in ProcessReceivedItem.
             return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROCS_FEATHER_SKIJER, false);
 
-        // ───── MM Masks (gMods.MmMasks.RandoAllMasks) ─────
+        // ───── MM Masks (RSK_MM_MASKS_ALL / RSK_MM_MASKS_TRANSFORM) ─────
         case RG_MM_MASK_POSTMAN:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_POSTMAN, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_POSTMAN, true);
         case RG_MM_MASK_ALL_NIGHT:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_ALL_NIGHT, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_ALL_NIGHT, true);
         case RG_MM_MASK_BLAST:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_BLAST, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_BLAST, true);
         case RG_MM_MASK_STONE:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_STONE, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_STONE, true);
         case RG_MM_MASK_GREAT_FAIRY:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GREAT_FAIRY, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_GREAT_FAIRY, true);
         case RG_MM_MASK_DEKU:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_DEKU, true);
+            return (ctx->GetOption(RSK_MM_MASKS_ALL) || ctx->GetOption(RSK_MM_MASKS_TRANSFORM)) && CheckInventory(ITEM_MM_MASK_DEKU, true);
         case RG_MM_MASK_KEATON:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_KEATON, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_KEATON, true);
         case RG_MM_MASK_BREMEN:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_BREMEN, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_BREMEN, true);
         case RG_MM_MASK_BUNNY:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_BUNNY, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_BUNNY, true);
         case RG_MM_MASK_DON_GERO:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_DON_GERO, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_DON_GERO, true);
         case RG_MM_MASK_SCENTS:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_SCENTS, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_SCENTS, true);
         case RG_MM_MASK_GORON:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GORON, true);
+            return (ctx->GetOption(RSK_MM_MASKS_ALL) || ctx->GetOption(RSK_MM_MASKS_TRANSFORM)) && CheckInventory(ITEM_MM_MASK_GORON, true);
         case RG_MM_MASK_ROMANI:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_ROMANI, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_ROMANI, true);
         case RG_MM_MASK_CIRCUS_LEADER:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_CIRCUS_LEADER, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_CIRCUS_LEADER, true);
         case RG_MM_MASK_KAFEI:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_KAFEI, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_KAFEI, true);
         case RG_MM_MASK_COUPLE:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_COUPLE, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_COUPLE, true);
         case RG_MM_MASK_TRUTH:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_TRUTH, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_TRUTH, true);
         case RG_MM_MASK_ZORA:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_ZORA, true);
+            return (ctx->GetOption(RSK_MM_MASKS_ALL) || ctx->GetOption(RSK_MM_MASKS_TRANSFORM)) && CheckInventory(ITEM_MM_MASK_ZORA, true);
         case RG_MM_MASK_KAMARO:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_KAMARO, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_KAMARO, true);
         case RG_MM_MASK_GIBDO:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GIBDO, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_GIBDO, true);
         case RG_MM_MASK_GARO:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GARO, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_GARO, true);
         case RG_MM_MASK_CAPTAIN:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_CAPTAIN, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_CAPTAIN, true);
         case RG_MM_MASK_GIANT:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_GIANT, true);
+            return ctx->GetOption(RSK_MM_MASKS_ALL) && CheckInventory(ITEM_MM_MASK_GIANT, true);
         case RG_MM_MASK_FIERCE_DEITY:
-            return CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) && CheckInventory(ITEM_MM_MASK_FIERCE_DEITY, true);
+            return (ctx->GetOption(RSK_MM_MASKS_ALL) || ctx->GetOption(RSK_MM_MASKS_TRANSFORM)) && CheckInventory(ITEM_MM_MASK_FIERCE_DEITY, true);
 
-        // ───── Extended Equipment (gCheats.ExtEquip.Enabled) ─────
+        // ───── Extended Equipment (RSK_EXT_EQUIPMENT) ─────
         case RG_EXT_CANE_OF_BYRNA:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_1);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_1);
         case RG_EXT_FOUR_SWORD:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_2);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_2);
         case RG_EXT_IRON_KNUCKLE_AXE:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_3);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_SWORD, EXT_EQUIP_3);
         case RG_EXT_DIVINE_SHIELD:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_1);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_1);
         case RG_EXT_SHEIKAH_SHIELD:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_2);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_2);
         case RG_EXT_SHIELD_OF_IKANA:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_3);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_SHIELD, EXT_EQUIP_3);
         case RG_EXT_MAGIC_CAPE:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_1);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_1);
         case RG_EXT_SPIRIT_BREASTPLATE:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_2);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_2);
         case RG_EXT_CHAMPIONS_TUNIC:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_3);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_TUNIC, EXT_EQUIP_3);
         case RG_EXT_PEGASUS_ANKLET:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_1);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_1);
         case RG_EXT_PENDANT_OF_MEMORIES:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_2);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_2);
         case RG_EXT_WATER_DRAGON_SCALE:
-            return CVarGetInteger("gCheats.ExtEquip.Enabled", 0) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_3);
+            return ctx->GetOption(RSK_EXT_EQUIPMENT) && ExtEquip_HasItem(EQUIP_TYPE_BOOTS, EXT_EQUIP_3);
 
         case RG_SW97_FIRE_PROJECTILE:
         case RG_SW97_FIRE_SPELL:

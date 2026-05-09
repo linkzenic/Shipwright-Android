@@ -711,12 +711,12 @@ void GenerateItemPool() {
 
     if (ctx->GetOption(RSK_MASK_QUEST).Is(RO_MASK_QUEST_SHUFFLE)) {
         // Remove OOT masks that have MM counterparts when MM masks are in the rando pool
-        bool mmMasksInPool = CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) != 0 ||
-                             CVarGetInteger("gMods.MmMasks.RandoTransformOnly", 0) != 0;
+        bool mmMasksInPool = ctx->GetOption(RSK_MM_MASKS_ALL) ||
+                             ctx->GetOption(RSK_MM_MASKS_TRANSFORM);
         if (!mmMasksInPool) {
             AddItemToPool(RG_GORON_MASK, 2, 1, 1, 1);
             AddItemToPool(RG_ZORA_MASK, 2, 1, 1, 1);
-        } else if(CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0) != 0){
+        } else if (ctx->GetOption(RSK_MM_MASKS_ALL)) {
             AddItemToPool(RG_KEATON_MASK, 2, 1, 1, 1);
             AddItemToPool(RG_BUNNY_HOOD, 2, 1, 1, 1);
             AddItemToPool(RG_MASK_OF_TRUTH, 2, 1, 1, 1);
@@ -731,7 +731,17 @@ void GenerateItemPool() {
     }
 
     // MM Masks (Third Inventory Page) - All 24 masks
-    if (CVarGetInteger("gMods.MmMasks.RandoAllMasks", 0)) {
+    SPDLOG_INFO("[NEI] RSK gates at GenerateItemPool: MM_MASKS_ALL={} MM_MASKS_TRANSFORM={} SKIJER_CUSTOM_ITEMS={} EXT_EQUIPMENT={}",
+                ctx->GetOption(RSK_MM_MASKS_ALL).Get(), ctx->GetOption(RSK_MM_MASKS_TRANSFORM).Get(),
+                ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS).Get(), ctx->GetOption(RSK_EXT_EQUIPMENT).Get());
+    SPDLOG_INFO("[NEI] CVar values at GenerateItemPool: MmMasksAll={} MmMasksTransform={} SkijerCustomItems={} ExtEquipment={}",
+                CVarGetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), -1),
+                CVarGetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), -1),
+                CVarGetInteger(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"), -1),
+                CVarGetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), -1));
+    SPDLOG_INFO("[NEI] itemPool.size() before NEI blocks = {}", itemPool.size());
+    if (ctx->GetOption(RSK_MM_MASKS_ALL)) {
+        SPDLOG_INFO("[NEI] MM_MASKS_ALL block ENTERED — adding 24 masks");
         AddItemToPool(RG_MM_MASK_POSTMAN, 2, 1, 1, 1);
         AddItemToPool(RG_MM_MASK_ALL_NIGHT, 2, 1, 1, 1);
         AddItemToPool(RG_MM_MASK_BLAST, 2, 1, 1, 1);
@@ -758,7 +768,8 @@ void GenerateItemPool() {
         AddItemToPool(RG_MM_MASK_FIERCE_DEITY, 2, 1, 1, 1);
     }
     // MM Masks - Transformation Only (4 masks)
-    else if (CVarGetInteger("gMods.MmMasks.RandoTransformOnly", 0)) {
+    else if (ctx->GetOption(RSK_MM_MASKS_TRANSFORM)) {
+        SPDLOG_INFO("[NEI] MM_MASKS_TRANSFORM block ENTERED — adding 4 masks");
         AddItemToPool(RG_MM_MASK_DEKU, 2, 1, 1, 1);
         AddItemToPool(RG_MM_MASK_GORON, 2, 1, 1, 1);
         AddItemToPool(RG_MM_MASK_ZORA, 2, 1, 1, 1);
@@ -771,7 +782,8 @@ void GenerateItemPool() {
     // pushes a duplicate into plentifulPool, which doubled the custom-item count and caused the
     // pool to overflow available major-item locations — symptom: most custom items silently
     // dropped from the placement and never appeared in generated seeds.
-    if (CVarGetInteger("gMods.CustomItems.Enabled", 0)) {
+    if (ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS)) {
+        SPDLOG_INFO("[NEI] SKIJER_CUSTOM_ITEMS block ENTERED — adding 24 custom items, itemPool.size() before = {}", itemPool.size());
         AddFixedItemToPool(RG_PROGRESSIVE_ROCS, 2); // Progressive: Feather then Cape
         AddFixedItemToPool(RG_WHIP);
         AddFixedItemToPool(RG_SPINNER);
@@ -800,7 +812,8 @@ void GenerateItemPool() {
 
     // Extended Equipment (12 items for equipment page 2). Same fixed-pool reasoning as above —
     // ensure each ext equipment piece is placed exactly once when the cheat is enabled.
-    if (CVarGetInteger("gCheats.ExtEquip.Enabled", 0)) {
+    if (ctx->GetOption(RSK_EXT_EQUIPMENT)) {
+        SPDLOG_INFO("[NEI] EXT_EQUIPMENT block ENTERED — adding 12 ext equipment items, itemPool.size() before = {}", itemPool.size());
         AddFixedItemToPool(RG_EXT_CANE_OF_BYRNA);
         AddFixedItemToPool(RG_EXT_FOUR_SWORD);
         AddFixedItemToPool(RG_EXT_IRON_KNUCKLE_AXE);
@@ -813,6 +826,25 @@ void GenerateItemPool() {
         AddFixedItemToPool(RG_EXT_PEGASUS_ANKLET);
         AddFixedItemToPool(RG_EXT_PENDANT_OF_MEMORIES);
         AddFixedItemToPool(RG_EXT_WATER_DRAGON_SCALE);
+    }
+
+    // Post-NEI snapshot: count how many of each NEI category survived in itemPool
+    {
+        size_t maskCount = 0, customCount = 0, extCount = 0;
+        for (const RandomizerGet rg : itemPool) {
+            if (rg >= RG_MM_MASK_POSTMAN && rg <= RG_MM_MASK_FIERCE_DEITY) maskCount++;
+            else if (rg == RG_WHIP || rg == RG_SPINNER || rg == RG_BEETLE || rg == RG_BALL_AND_CHAIN ||
+                     rg == RG_GUST_JAR || rg == RG_MOGMA_MITTS || rg == RG_SWITCH_HOOK ||
+                     rg == RG_CANE_OF_SOMARIA || rg == RG_DOMINION_ROD || rg == RG_SHOVEL ||
+                     rg == RG_LANTERN || rg == RG_BOMB_ARROWS || rg == RG_FIRE_ROD ||
+                     rg == RG_ICE_ROD || rg == RG_LIGHT_ROD || rg == RG_DEKU_LEAF ||
+                     rg == RG_TIME_GATE || rg == RG_DEMISE_DESTRUCTION || rg == RG_ZONAI_PERMAFROST ||
+                     rg == RG_HYLIAS_GRACE || rg == RG_DESIRE_SENSOR || rg == RG_PROGRESSIVE_ROCS ||
+                     rg == RG_PENDING_1 || rg == RG_PENDING_3) customCount++;
+            else if (rg >= RG_EXT_CANE_OF_BYRNA && rg <= RG_EXT_WATER_DRAGON_SCALE) extCount++;
+        }
+        SPDLOG_INFO("[NEI] After NEI blocks: itemPool.size()={} masks={} custom={} ext={}",
+                    itemPool.size(), maskCount, customCount, extCount);
     }
 
     int bronzeScale = ctx->GetOption(RSK_SHUFFLE_SWIM) ? 1 : 0;
