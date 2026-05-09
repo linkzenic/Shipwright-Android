@@ -56,7 +56,8 @@ android {
             def versionName = variant.versionName
             def versionCode = variant.versionCode
 
-            def newApkName = "soh_${buildType}_v${versionName}.apk"
+            def gitTag = System.getenv("GIT_TAG") ?: "v${versionName}"
+            def newApkName = "soh_${buildType}_${gitTag}.apk"
             outputFileName = newApkName
         }
     }

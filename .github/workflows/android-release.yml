@@ -1,0 +1,62 @@
+name: Android Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container:
+      image: djvdw7f2ro/android-builder-soh:v1.0.1
+    permissions:
+      id-token: write
+      attestations: write
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Write local.properties
+        run: |
+          echo "sdk.dir=${ANDROID_SDK_ROOT}" > Android/local.properties
+          echo "ndk.dir=${ANDROID_NDK_HOME}" >> Android/local.properties
+
+      - name: Build release APK
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: cd Android && ./gradlew assembleRelease
+
+      - name: Rename APK
+        run: |
+          APK=$(find Android/app/build/outputs/apk/release -name 'soh_release_*.apk' | head -1)
+          mv "$APK" "soh-${{ github.ref_name }}.apk"
+
+      - name: Compute SHA256
+        id: sha256
+        run: |
+          HASH=$(sha256sum "soh-${{ github.ref_name }}.apk" | awk '{print $1}')
+          echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: soh-${{ github.ref_name }}.apk
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "soh-${{ github.ref_name }}.apk" \
+            --title "${{ github.ref_name }}" \
+            --notes "## Changes
+          - Built from ${{ github.ref_name }} via CI
+
+          **SHA256:** ${{ steps.sha256.outputs.hash }}
+          **Verify:** \`gh attestation verify soh-${{ github.ref_name }}.apk --owner please-be-nice\`
+          **Build:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
