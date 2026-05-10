@@ -855,7 +855,14 @@ s32 Player_GetStrength(void) {
         return PLAYER_STR_NONE;
     }
 
-    if (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || LINK_IS_ADULT) {
+    // Transformed forms ignore the Child age cap so the per-form strength override
+    // (Goron=GoldGauntlets, Zora=Bracelet, Deku=None, FD=GoldGauntlets) applied in
+    // MmForm_ApplyFormProperties actually takes effect on Child Link too. Form
+    // abilities are about the form's body, not the human age — Child Goron should
+    // still be able to lift the same things Adult Goron can. Item equipping is
+    // unaffected (those gates are in CHECK_AGE_REQ_* / inventory checks).
+    if (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || LINK_IS_ADULT ||
+        TransformMasks_IsTransformed()) {
         return strengthUpgrade;
     } else if (strengthUpgrade != 0) {
         return PLAYER_STR_BRACELET;

@@ -549,10 +549,16 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Enable Extra Equipment", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_RANDOMIZER_SETTING("ExtEquipment"))
         .RaceDisable(false)
+        .PostFunc([](WidgetInfo& info) {
+            // Mirror to the runtime CVar that gates page-2 visibility, L-toggle, and ownership grants.
+            CVarSetInteger("gCheats.ExtEquip.Enabled",
+                           CVarGetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 0));
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
         .Options(CheckboxOptions().Tooltip(
             "Adds 12 new equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots).\n"
             "Press L on the equipment page to toggle between vanilla and extended equipment.\n"
-            "Seed-locked rando setting."));
+            "Seed-locked rando setting (also enables the in-game equipment system)."));
 
     AddWidget(path, "Enable Sage Spells", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_RANDOMIZER_SETTING("SW97Spells"))
@@ -839,6 +845,9 @@ void SohMenu::AddMenuSettings() {
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 1);
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("SW97Spells"), 1);
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("RocsFeather"), 1);
+            // Mirror to runtime CVars so page-2 inventory and ext-equip system are reachable in-game.
+            CVarSetInteger("gMods.CustomItems.Enabled", 1);
+            CVarSetInteger("gCheats.ExtEquip.Enabled", 1);
             if (MmAssets_IsAvailable() && CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0)) {
                 CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 1);
                 CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
@@ -862,12 +871,21 @@ void SohMenu::AddMenuSettings() {
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("RocsFeather"), 0);
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0);
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
+            // Mirror disable to runtime CVars (page-2 inventory + ext-equip system off).
+            CVarSetInteger("gMods.CustomItems.Enabled", 0);
+            CVarSetInteger("gCheats.ExtEquip.Enabled", 0);
             Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
         .Options(ButtonOptions().Tooltip("Turns off all 5 NEI seed-locked rando settings."));
 
     AddWidget(path, "Enable Custom Items", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"))
+        .PostFunc([](WidgetInfo& info) {
+            // Mirror to the runtime CVar that gates page-2 visibility in the pause menu.
+            CVarSetInteger("gMods.CustomItems.Enabled",
+                           CVarGetInteger(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"), 0));
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
         .Options(CheckboxOptions().Tooltip("Enables the 24 custom items on the second inventory page (seed-locked rando setting).\n"
                                            "When enabled, these items are also added to the randomizer pool and gated logic paths.\n"
                                            "When disabled, page 2 is inaccessible and items are not in rando.\n"
@@ -926,10 +944,15 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Add Extended Equipment to Rando", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_RANDOMIZER_SETTING("ExtEquipment"))
         .RaceDisable(false)
+        .PostFunc([](WidgetInfo& info) {
+            CVarSetInteger("gCheats.ExtEquip.Enabled",
+                           CVarGetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 0));
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
         .Options(CheckboxOptions().Tooltip(
             "Adds the 12 extended equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots) to the randomizer pool.\n"
             "Press L on the equipment page to toggle between vanilla and extended equipment.\n\n"
-            "Seed-locked rando setting."));
+            "Seed-locked rando setting (also enables the in-game equipment system)."));
 
     AddWidget(path, "Bomb Arrows: Auto-grant with Bomb Bag", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.BombArrows.AutoGrantOnBag")
