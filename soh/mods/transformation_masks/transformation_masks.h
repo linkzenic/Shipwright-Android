@@ -27,7 +27,8 @@ typedef enum MmPlayerTransformation {
     MM_PLAYER_FORM_DEKU = 3,
     MM_PLAYER_FORM_HUMAN = 4,
     MM_PLAYER_FORM_PIKACHU = 5,
-    MM_PLAYER_FORM_MAX = 6
+    MM_PLAYER_FORM_GARO = 6,
+    MM_PLAYER_FORM_MAX = 7
 } MmPlayerTransformation;
 
 // OOT mask type enum (for transformation mask identification)
@@ -37,7 +38,8 @@ typedef enum TransformMaskId {
     TRANSFORM_MASK_ZORA,
     TRANSFORM_MASK_DEKU,
     TRANSFORM_MASK_FIERCE_DEITY,
-    TRANSFORM_MASK_KEATON
+    TRANSFORM_MASK_KEATON,
+    TRANSFORM_MASK_GARO
 } TransformMaskId;
 
 // =============================================================================
@@ -218,6 +220,12 @@ u8 TransformMasks_HandleFormItemUse(PlayState* play, Player* player, s32 item);
 
 TransformMaskId TransformMasks_GetMaskType(s32 item);
 void TransformMasks_HandleMaskUse(PlayState* play, Player* player, s32 item);
+
+// Dev: trigger a transformation directly without a mask item. Toggles between
+// the requested form and Human if already in that form. Currently used for Garo
+// (no Garo Mask item exists yet). Skip-cutscene unconditional.
+void MmForm_DevTransformTo(PlayState* play, Player* player, MmPlayerTransformation form);
+
 void TransformMasks_Init(PlayState* play, Player* player);
 void TransformMasks_Update(PlayState* play, Player* player);
 void TransformMasks_Draw(PlayState* play, Player* player);

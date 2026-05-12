@@ -396,6 +396,17 @@ typedef enum {
     // SM64 Mario mode toggle item — locked to C-Down via gSm64MarioMaskForce
     // CVar; pressing C-Down with this item equipped toggles gSm64Mario.
     /* 0xD6 */ ITEM_MARIO_MASK,
+    // Prop Hunt button icons (Harpoon multiplayer mode). Slotted into the
+    // C-buttons + D-pad while a hider is in "prop mode" so they show the
+    // cycling controls instead of vanilla item icons. No gameplay action
+    // — used purely as render hints. Texture paths resolved in
+    // ExtInv_GetItemIcon → gItemIconPropHunt*Tex.
+    /* 0xD7 */ ITEM_PH_ICON_POT,
+    /* 0xD8 */ ITEM_PH_ICON_ENEMY,
+    /* 0xD9 */ ITEM_PH_ICON_NPC,
+    /* 0xDA */ ITEM_PH_ICON_CHANGE,
+    /* 0xDB */ ITEM_PH_ICON_PREV,
+    /* 0xDC */ ITEM_PH_ICON_NEXT,
     /* 0xFC */ ITEM_LAST_USED = 0xFC,
     /* 0xFE */ ITEM_NONE_FE = 0xFE,
     /* 0xFF */ ITEM_NONE = 0xFF

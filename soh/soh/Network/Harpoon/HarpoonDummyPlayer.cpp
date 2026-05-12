@@ -1,5 +1,6 @@
 #include "Harpoon.h"
 #include "HarpoonSkinSync.h"
+#include "PropHunt/PropHunt.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
 
@@ -269,7 +270,7 @@ static DamageTable HarpoonDummyPlayerDamageTable = {
     /* Kokiri jump   */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_NORMAL),
     /* Giant jump    */ DMG_ENTRY(8, HARPOON_HIT_RESPONSE_NORMAL),
     /* Master jump   */ DMG_ENTRY(4, HARPOON_HIT_RESPONSE_NORMAL),
-    /* Unknown 1     */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_NORMAL), // gust jar / generic custom
+    /* Unknown 1     */ DMG_ENTRY(0, HARPOON_HIT_RESPONSE_WIND_BLOW), // Deku Leaf gust / Gust Jar — zero dmg, big horizontal launch
     /* Unblockable   */ DMG_ENTRY(4, HARPOON_HIT_RESPONSE_NORMAL), // FD beam, custom heavy
     /* Hammer jump   */ DMG_ENTRY(6, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE),
     /* Unknown 2     */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_NORMAL),
@@ -373,7 +374,15 @@ void HarpoonDummyPlayer_Init(Actor* actor, PlayState* play) {
 
     gSaveContext.linkAge = originalAge;
 
-    NameTag_RegisterForActorWithOptions(actor, client.name.c_str(), {});
+    // Prop Hunt: hiders' identities must stay anonymous so seekers can't tell
+    // who is who by reading nametags. Triforce Thief (and everything else):
+    // names are visible above remote dummies so players can identify each
+    // other and the carrier.
+    bool hideNames = (Harpoon::Instance != nullptr &&
+                      Harpoon::Instance->currentRoomGameMode == "prop_hunt");
+    if (!hideNames) {
+        NameTag_RegisterForActorWithOptions(actor, client.name.c_str(), {});
+    }
 }
 
 void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
@@ -615,6 +624,33 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
         return;
     }
 
+    // Prop Hunt: if this remote client is a hider with a selected prop,
+    // render them as the prop's ghost actor at their world position and
+    // skip the vanilla skeleton draw entirely. The peer broadcasts their
+    // (propCat, propIndex, propState) via PROP_HUNT.SET_DISGUISE so we
+    // know what to draw. Without this branch, seekers see remote hiders
+    // as regular Link — defeats the disguise. If DrawHiderAsProp fails
+    // (ghost not spawned, object not loaded), fall through to vanilla
+    // skeleton draw — better to see Link than nothing.
+    if (Harpoon::Instance && Harpoon::Instance->isPropHuntMode &&
+        client.propIndex >= 0 &&
+        HarpoonPropHunt::AreGhostsReady()) {
+        // Gate on propIndex>=0 alone — the role string may not have
+        // arrived yet (ROLE_ASSIGN packet timing) but if the remote
+        // broadcast a SET_DISGUISE with a real prop, they're a hider.
+        // Without dropping the role check, the dummy renders as vanilla
+        // Link until ROLE_ASSIGN arrives (which only fires when the host
+        // clicks Start Game).
+        s32 mapIdx = Harpoon::Instance->confirmedMapIndex;
+        if (mapIdx < 0) mapIdx = 0;
+        bool drew = HarpoonPropHunt::DrawHiderAsProp(actor, play,
+                                         client.propCategory,
+                                         client.propIndex,
+                                         client.propState,
+                                         mapIdx);
+        if (drew) return;  // prop rendered, skip vanilla skel
+    }
+
     // MM transformations 1=Goron, 2=Zora, 3=Deku, 4=FierceDeity → custom MM
     // skeleton draw. Anything else (Pikachu=5 with SSBB skin, Mario via libsm64,
     // future forms) falls through to OOT Link draw as a Phase A placeholder so
@@ -821,7 +857,19 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
         }
     }
 
+    // Suppress sword-trail effects on the dummy. The vanilla
+    // Player_PostLimbDrawGameplay path reads `meleeWeaponEffectIndex` and
+    // calls Effect_GetByIndex → EffectBlure_ChangeType. That effect slot
+    // is owned by the LOCAL player; on a remote dummy it points at NULL or
+    // garbage, so the moment a dummy enters a sword-swing anim the engine
+    // crashes with a 0xc0000005 inside EffectBlure_ChangeType. Forcing
+    // meleeWeaponState=0 skips the entire blur path in vanilla draw.
+    u8 savedMeleeWeaponState = player->meleeWeaponState;
+    player->meleeWeaponState = 0;
+
     Player_Draw((Actor*)player, play);
+
+    player->meleeWeaponState = savedMeleeWeaponState;
 
     HarpoonSkinSync::EndRemoteOverrides();
     PakLoader_EndRemoteRender();

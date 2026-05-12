@@ -2886,6 +2886,11 @@ void Actor_Draw(PlayState* play, Actor* actor) {
         actor->shape.shadowDraw(actor, lights, play);
     }
 
+    // VB_ACTOR_POST_DRAW: subscribers (e.g. Harpoon's Triforce Thief carrier
+    // indicator) can draw extra geometry attached to this actor after its
+    // own draw + shadow pass.
+    GameInteractor_Should(VB_ACTOR_POST_DRAW, true, play, actor);
+
     CLOSE_DISPS(play->state.gfxCtx);
     FrameInterpolation_RecordCloseChild();
 

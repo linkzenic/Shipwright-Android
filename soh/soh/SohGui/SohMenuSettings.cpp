@@ -12,7 +12,9 @@ extern "C" {
 #include "include/z64audio.h"
 #include "variables.h"
 #include "transformation_masks/assets/mm_asset_loader.h"
+#include "mods/transformation_masks/transformation_masks.h"
 #include "mods/pak_loader/pak_loader.h"
+#include "mods/o2r_loader/o2r_loader.h"
 }
 
 namespace SohGui {
@@ -632,6 +634,23 @@ void SohMenu::AddMenuSettings() {
                                            "Adult Link becomes Adult Kafei, Child Link becomes Child Kafei.\n"
                                            "Remove the mask to revert.\n\n"
                                            "REQUIRES: nei/N64_Kafei.pak"));
+
+    AddWidget(path, "Toggle Garo Skin (dev)", WIDGET_BUTTON)
+        .PreFunc([](WidgetInfo& info) {
+            if (!std::filesystem::exists("nei/garo.o2r")) {
+                info.options->disabled = true;
+                info.options->disabledTooltip = "Requires garo.o2r in nei/ folder.\n"
+                                                "Generate it with tools/glb_to_o2r.py.";
+            }
+        })
+        .Callback([](WidgetInfo& info) {
+            const char* cur = O2rLoader_GetForcedName();
+            if (O2rLoader_HasActiveModel() && cur && std::string(cur) == "garo") {
+                O2rLoader_ClearForcedModel();
+            } else {
+                O2rLoader_ForceModel("garo");
+            }
+        });
 
     // ===================== COLUMN 2: MM Masks =====================
     path.column = SECTION_COLUMN_2;

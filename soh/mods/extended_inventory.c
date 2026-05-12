@@ -376,6 +376,16 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
         return gItemIcons[0]; // Fallback
     }
     switch (itemId) {
+        // Prop Hunt button icons (0xD7-0xDC). Shown only while a hider is
+        // in "prop mode" — the C-buttons + D-pad display these cycling/
+        // category hints instead of vanilla item art.
+        case ITEM_PH_ICON_POT:    return (void*)gItemIconPropHuntPotTex;
+        case ITEM_PH_ICON_ENEMY:  return (void*)gItemIconPropHuntEnemyTex;
+        case ITEM_PH_ICON_NPC:    return (void*)gItemIconPropHuntNpcTex;
+        case ITEM_PH_ICON_CHANGE: return (void*)gItemIconPropHuntChangeTex;
+        case ITEM_PH_ICON_PREV:   return (void*)gItemIconPropHuntPrevTex;
+        case ITEM_PH_ICON_NEXT:   return (void*)gItemIconPropHuntNextTex;
+
         case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
             return (void*)gItemIconRocsFeatherTex;
         case ITEM_ROCS_CAPE: // 0x9E

@@ -255,6 +255,10 @@ typedef struct {
     s32 mapSelectIndex;
     bool hasVoted;
 
+    // Triforce Thief — mirror of this client's carrier-timer broadcast.
+    // Refreshed by TRIFORCE_THIEF.CARRIER_TIMER_SYNC; HUD arrow label reads it.
+    s32 ttRupeesRemaining;
+
     // Game mode state (from Scooter)
     bool isAlive;
     bool isReady;
@@ -752,6 +756,7 @@ typedef enum {
     HARPOON_HIT_RESPONSE_STUN = 5,
     HARPOON_HIT_RESPONSE_FIRE,
     HARPOON_HIT_RESPONSE_NORMAL,
+    HARPOON_HIT_RESPONSE_WIND_BLOW,  // 8 — Deku Leaf / Gust Jar: zero dmg, big horizontal launch
 } HarpoonDamageResponseType;
 
 #endif // __cplusplus

@@ -69,6 +69,11 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 #include "mods/pak_loader/pak_loader.h"
 
 // ============================================================================
+// O2R LOADER - .o2r-based skeleton swap (Garo, etc.)
+// ============================================================================
+#include "mods/o2r_loader/o2r_loader.h"
+
+// ============================================================================
 // SSBB EXPANSION - Smash Bros Brawl characters (SkelAnime-based)
 // ============================================================================
 #include "expansions/ssbb/ssbb_anim.h"
@@ -3741,6 +3746,17 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                     Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
                 }
             } else if (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY) {
+                // Garo Mask: o2r-loader skin swap (NO mm.o2r required). Toggle on/off.
+                // Routed before TransformMasks_IsEnabled() gate so it works standalone.
+                if (item == ITEM_MM_MASK_GARO) {
+                    const char* cur = O2rLoader_GetForcedName();
+                    if (O2rLoader_HasActiveModel() && cur && strcmp(cur, "garo") == 0) {
+                        O2rLoader_ClearForcedModel();
+                    } else {
+                        O2rLoader_ForceModel("garo");
+                    }
+                    return;
+                }
                 // MM Mask items from 3rd inventory page
                 if (TransformMasks_IsEnabled()) {
                     TransformMaskId maskType = TransformMasks_GetMaskType(item);
@@ -13414,6 +13430,19 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         PakLoader_FrameBegin();
     }
 
+    // Harpoon Prop Hunt — direct prop-draw intercept. Mirrors Scooter's
+    // patch (HarpoonPropHunt_DrawProp + return). Only fires for the LOCAL
+    // player; remote dummies are handled separately in HarpoonDummyPlayer.
+    // The shim internally checks isPropHuntMode + IsLocalHiderWithProp +
+    // AreGhostsReady and only returns 1 when it actually rendered a prop;
+    // 0 falls through to vanilla Link draw.
+    if (thisx == &GET_PLAYER(play2)->actor) {
+        extern s32 HarpoonPropHunt_TryDrawLocalProp(Actor* thisx, PlayState* play);
+        if (HarpoonPropHunt_TryDrawLocalProp(thisx, play)) {
+            return;
+        }
+    }
+
     // SM64 MARIO: Draw Mario mesh instead of Link.
     // Uses HasMesh (stricter than IsReady) so Link falls back to normal draw
     // during the brief window between mario_create success and the first
@@ -13453,6 +13482,16 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     if (PakLoader_HasActiveModel() && !transformBlocks) {
         PakLoader_SwapSkeleton(this);
         pakActive = 1;
+    }
+
+    // O2R Loader: same skeleton-swap mechanism as PakLoader but reading from any
+    // .o2r in the resource manager (e.g. nei/garo.o2r). Independent of pak_loader;
+    // pak takes priority when both are forced. Skip when MM-transformed (form system
+    // owns the draw in that case).
+    u8 o2rActive = 0;
+    if (!pakActive && O2rLoader_HasActiveModel() && !transformBlocks) {
+        O2rLoader_SwapSkeleton(this);
+        o2rActive = 1;
     }
 
     // Transformation Masks: If transformed, draw MM form instead of OOT Link.
@@ -13633,6 +13672,9 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
     // PAK Loader: Restore original skeleton after draw
     if (pakActive) {
         PakLoader_RestoreSkeleton(this);
+    }
+    if (o2rActive) {
+        O2rLoader_RestoreSkeleton(this);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);

@@ -553,26 +553,6 @@ Randomizer::Randomizer() {
     }
 
     Ship::Context::GetInstance()->GetFileDropMgr()->RegisterDropHandler(Rando_HandleSpoilerDrop);
-
-    // Fix texture cache coherency for file select menu
-    // This ensures UI textures are properly loaded after randomizer initialization
-    // to prevent pink glitches/static artifacts on the file select screen
-    auto resMgr = Ship::Context::GetInstance()->GetResourceManager();
-    if (resMgr != nullptr) {
-        // Unload and reload critical UI textures to ensure cache coherency
-        // These textures are used in the file select menu and can have cache issues
-        // if loaded before the randomizer finishes initializing
-        const std::vector<std::string> criticalTextures = { "textures/parameter_static/*", "textures/title_static/*",
-                                                            "textures/icon_item_static/*",
-                                                            "textures/icon_item_24_static/*" };
-
-        for (const auto& texturePath : criticalTextures) {
-            // First unload to clear any stale cache entries
-            resMgr->UnloadResources(texturePath);
-            // Then immediately reload to ensure fresh, properly initialized textures
-            resMgr->LoadResources(texturePath);
-        }
-    }
 }
 
 Randomizer::~Randomizer() {

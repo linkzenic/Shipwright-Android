@@ -35,10 +35,12 @@
 // Static Data
 // =============================================================================
 
+// Initial flags only; BallChain_UpdateCollider rewrites toucher.dmgFlags every frame
+// to switch between DMG_HAMMER_SWING (overhead) and DMG_HAMMER_JUMP (ground level).
 static ColliderCylinderInit sBallChainColInit = { { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER | AT_TYPE_OTHER, AC_NONE,
                                                     OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
                                                   { ELEMTYPE_UNK2,
-                                                    { DMG_HAMMER, 0x0F, BALLCHAIN_DAMAGE },
+                                                    { DMG_HAMMER_SWING, 0, BALLCHAIN_DAMAGE },
                                                     { 0, 0, 0 },
                                                     TOUCH_ON | TOUCH_SFX_NORMAL,
                                                     BUMP_NONE,
@@ -119,7 +121,17 @@ static void BallChain_InitCollider(PlayState* play, Player* p) {
     sBallChainColInitialized = 1;
 }
 
-static void BallChain_UpdateCollider(PlayState* play, Vec3f* pos) {
+static void BallChain_UpdateCollider(PlayState* play, Player* p, Vec3f* pos) {
+    // Switch hammer damage type based on where the ball is striking:
+    //   ball overhead (in the air)     -> DMG_HAMMER_SWING
+    //   ball at/near player feet level -> DMG_HAMMER_JUMP (hammer floor)
+    f32 heightAbovePlayer = pos->y - p->actor.world.pos.y;
+    bcCollider.info.toucher.dmgFlags =
+        (heightAbovePlayer < 30.0f) ? DMG_HAMMER_JUMP : DMG_HAMMER_SWING;
+    bcCollider.info.toucher.damage = BALLCHAIN_DAMAGE;
+    bcCollider.info.toucher.effect = 0;
+    bcCollider.info.toucherFlags = TOUCH_ON | TOUCH_SFX_NORMAL;
+
     bcCollider.dim.pos.x = (s16)pos->x;
     bcCollider.dim.pos.y = (s16)(pos->y - (BALLCHAIN_COL_HEIGHT / 2));
     bcCollider.dim.pos.z = (s16)pos->z;
@@ -478,7 +490,7 @@ static void StateSpinning(Player* p, PlayState* play, ItemInputState* in) {
 
     BallChain_SetSpinPose(p, stickX, stickY);
 
-    BallChain_UpdateCollider(play, &bcBallPos);
+    BallChain_UpdateCollider(play, p, &bcBallPos);
     BallChain_CheckDestructibles(play, &bcBallPos);
     BallChain_CheckHit(&bcBallPos);
     BallChain_ApplyDamageBonus(play);
@@ -601,7 +613,7 @@ static void StateThrown(Player* p, PlayState* play) {
         }
     }
 
-    BallChain_UpdateCollider(play, &bcBallPos);
+    BallChain_UpdateCollider(play, p, &bcBallPos);
     BallChain_CheckDestructibles(play, &bcBallPos);
     BallChain_CheckHit(&bcBallPos);
     BallChain_ApplyDamageBonus(play);

@@ -249,6 +249,14 @@ static const MmFormProperties sFormProps[MM_PLAYER_FORM_MAX] = {
     // limbCount=23 (Armature from pikachu_skel.c: ROOT_POS/ROT + 21 body limbs).
     // cameraHeight: Pikachu is ~52 units tall at scale 0.05.
     { NULL, 23, NULL, 10, NULL, 6, NULL, 6, 44.0f, 50.0f, 16.0f, 40, 18.0f, 50.0f, 0.0f, 1.0f, 52.0f },
+    // GARO (index 6) - external skeleton from nei/garo.o2r (loaded via GaroForm_LoadSkeleton).
+    // skelPath=NULL → routed to GaroForm_LoadSkeleton in MmForm_LoadFormSkeleton.
+    // 21 limbs matching OOT Link rig. Uses Link's vanilla idle/walk/run animations.
+    { NULL, 21,
+      "misc/link_animetion/gPlayerAnim_link_normal_wait_free_Data", 72,
+      "misc/link_animetion/gPlayerAnim_link_normal_walk_free_Data", 17,
+      "misc/link_animetion/gPlayerAnim_link_normal_run_free_Data", 17,
+      60.0f, 70.0f, 18.0f, 70, 18.0f, 60.0f, 0.0f, 1.0f, 60.0f },
 };
 
 // =============================================================================
@@ -300,6 +308,15 @@ static const u8 sSlotAllowedPikachu[72] = {
     // Page 3: POST ANGT BLST STON GFRY DEKU KEAT BREM BUNA DONG SCEN GORN ROMN CIRC KAFE COUP TRTH ZORA KAMA GIBD GARO CAPT GIAN FIER
                 0,   0,   0,   0,   0,   1,   1,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,
 };
+// Garo: humanoid Link-rig form. Allow most standard weapons + masks; no shapeshifting items.
+static const u8 sSlotAllowedGaro[72] = {
+    // Page 1: STICK NUT  BOMB BOW  FIRE DIN  SLING OCA  BCHU HOOK ICE  FAR  BOOM LENS BEAN HAM  LITE NAY  BTL1 BTL2 BTL3 BTL4 TRD_A TRD_C
+                1,   1,   1,   1,   1,   1,   1,    1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,    1,
+    // Page 2: ROCS WHIP SPIN BARR FROD DEM  DLEF TGAT BEET SWHO IROD ZPER MOGM GJAR BCHN DSEN LROD HYLS PND2 PND1 PND3 CSOM SHVL DROD
+                1,   1,   0,   0,   1,   1,   1,   1,   1,   1,   1,   0,   0,   0,   1,   1,   1,   1,   0,   0,   0,   1,   1,   1,
+    // Page 3: POST ANGT BLST STON GFRY DEKU KEAT BREM BUNA DONG SCEN GORN ROMN CIRC KAFE COUP TRTH ZORA KAMA GIBD GARO CAPT GIAN FIER
+                0,   0,   0,   0,   0,   1,   1,   0,   0,   0,   0,   1,   0,   0,   0,   0,   0,   1,   0,   0,   1,   0,   0,   1,
+};
 // clang-format on
 static const u8* sFormSlotAllowed[MM_PLAYER_FORM_MAX] = {
     sSlotAllowedFD,    // FIERCE_DEITY
@@ -308,6 +325,7 @@ static const u8* sFormSlotAllowed[MM_PLAYER_FORM_MAX] = {
     sSlotAllowedDeku,  // DEKU
     NULL,              // HUMAN - No restrictions
     NULL,              // PIKACHU - No restrictions (can use all items)
+    sSlotAllowedGaro,  // GARO
 };
 
 // =============================================================================
@@ -441,6 +459,7 @@ static const FormItemEntry* sFormItemHandlers[MM_PLAYER_FORM_MAX] = {
     NULL,              // DEKU
     NULL,              // HUMAN
     sPikaItemHandlers, // PIKACHU
+    NULL,              // GARO - no special item handling, uses OOT defaults
 };
 
 // =============================================================================
@@ -497,6 +516,8 @@ static const char* sFormEyeTextures[MM_PLAYER_FORM_MAX][4] = {
     // HUMAN (not used)
     { NULL, NULL, NULL, NULL },
     // PIKACHU - Eye/mouth textures handled in PikachuForm_Draw via pikachuDL.h variant tables
+    { NULL, NULL, NULL, NULL },
+    // GARO - eyes baked into head DL (texture in garo.o2r)
     { NULL, NULL, NULL, NULL },
 };
 
@@ -1830,6 +1851,8 @@ static MmPlayerTransformation MmForm_MaskIdToForm(TransformMaskId maskId) {
             return MM_PLAYER_FORM_FIERCE_DEITY;
         case TRANSFORM_MASK_KEATON:
             return MM_PLAYER_FORM_PIKACHU;
+        case TRANSFORM_MASK_GARO:
+            return MM_PLAYER_FORM_GARO;
         default:
             return MM_PLAYER_FORM_HUMAN;
     }
@@ -1838,6 +1861,11 @@ static MmPlayerTransformation MmForm_MaskIdToForm(TransformMaskId maskId) {
 // Forward declarations (defined after MmForm_LoadFormSkeleton)
 static void MmForm_FreeRootMotion(void);
 static void MmForm_LoadPunchRootMotion(u8 punchIndex, MmAnimId animId);
+
+// Forward decl: defined in garo_form.cpp.
+// Loads g<Garo>Skel from nei/garo.o2r via ResourceMgr_LoadSkeletonByName and
+// returns its FlexSkeletonHeader. Returns NULL if garo.o2r is missing.
+extern "C" FlexSkeletonHeader* GaroForm_LoadSkeleton(PlayState* play);
 
 static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) {
     // Pikachu uses a local skeleton (not mm.o2r) — route to its own loader
@@ -1852,15 +1880,26 @@ static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) 
 
     const MmFormProperties* props = &sFormProps[form];
 
-    if (props->skelPath == NULL) {
+    // Garo: skeleton lives in nei/garo.o2r, not mm.o2r. props->skelPath is NULL by design.
+    // We still use the standard anim load + SkelAnime_InitLink flow below.
+    FlexSkeletonHeader* skelHeader = NULL;
+    if (form == MM_PLAYER_FORM_GARO) {
+        skelHeader = GaroForm_LoadSkeleton(play);
+        if (skelHeader == NULL) {
+            MMFORM_LOG("[MmForm] FAIL: gGaroSkel not found — is garo.o2r in nei/ folder?");
+            return 0;
+        }
+    } else if (props->skelPath == NULL) {
         MMFORM_LOG("[MmForm] No skeleton for form %d", form);
         return 0;
     }
 
     try {
 
-        // Load skeleton from mm.o2r
-        FlexSkeletonHeader* skelHeader = (FlexSkeletonHeader*)MmAssets_LoadResource(props->skelPath);
+        // Load skeleton from mm.o2r (Garo skipped — already loaded above)
+        if (skelHeader == NULL) {
+            skelHeader = (FlexSkeletonHeader*)MmAssets_LoadResource(props->skelPath);
+        }
         if (skelHeader == NULL) {
             MMFORM_LOG("[MmForm] FAIL: skeleton not found in mm.o2r: %s", props->skelPath);
             MMFORM_LOG("[MmForm] Check: mm.o2r loaded=%d, available=%d", MmAssets_IsLoaded(), MmAssets_IsAvailable());
@@ -2382,16 +2421,16 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
     //   Goron  = Gold Gauntlets (3) — Goron raw strength
     //   Zora   = Goron's Bracelet (1) — light bushes, signs, regular pots
     //   Deku   = none (0) — too small to lift bushes
-    // Saved value is restored on detransform via gFormState.savedStrength.
-    if (form == MM_PLAYER_FORM_FIERCE_DEITY) {
-        Inventory_ChangeUpgrade(UPG_STRENGTH, 3);
-    } else if (form == MM_PLAYER_FORM_GORON) {
-        Inventory_ChangeUpgrade(UPG_STRENGTH, 3);
-    } else if (form == MM_PLAYER_FORM_ZORA) {
-        Inventory_ChangeUpgrade(UPG_STRENGTH, 1);
-    } else if (form == MM_PLAYER_FORM_DEKU) {
-        Inventory_ChangeUpgrade(UPG_STRENGTH, 0);
-    }
+    //
+    // Applied virtually in Player_GetStrength() — we deliberately do NOT call
+    // Inventory_ChangeUpgrade here. Mutating the save bits would let any
+    // strength pickup during transform overwrite the form's lift power
+    // (downgrading Goron mid-form) and the prior restore-on-detransform path
+    // would then delete the pickup. Leaving save bits untouched means picked-up
+    // upgrades persist correctly and the form's body strength applies via the
+    // virtual override regardless of what the player has actually earned.
+    // savedStrength is no longer needed for strength itself, but is kept in
+    // case other code references it.
 
     // Apply form properties
     player->actor.colChkInfo.mass = props->mass;
@@ -2447,6 +2486,12 @@ static void MmForm_ApplyFormProperties(Player* player, MmPlayerTransformation fo
             // HUMAN (unused by transformation system)
             { 60.0f, 11.0f / 17.0f, 71.0f, 50.0f, 49.0f, 39.0f, 27.0f, 19.0f, 22.0f, 32.4f, 32.0f, 48.0f,
               70.0f * (11.0f / 17.0f), 14.0f, 12.0f, 55.0f, 40.0f },
+            // PIKACHU (small; values rarely consulted because Pikachu uses its own collider)
+            { 60.0f, 0.5f, 71.0f, 50.0f, 49.0f, 39.0f, 27.0f, 19.0f, 22.0f, 32.4f, 32.0f, 48.0f, 50.0f, 14.0f, 12.0f,
+              50.0f, 60.0f },
+            // GARO (humanoid, sized like Adult Link)
+            { 60.0f, 1.0f, 71.0f, 50.0f, 49.0f, 39.0f, 27.0f, 19.0f, 22.0f, 32.4f, 32.0f, 48.0f, 70.0f, 18.0f, 12.0f,
+              55.0f, 60.0f },
         };
 
         const auto* mmProps = &sMmAgeProps[form];
@@ -2522,8 +2567,9 @@ static void MmForm_RestoreOotState(Player* player) {
     // Restore OOT actor scale (FD sets 0.015f, OOT default is 0.01f)
     Actor_SetScale(&player->actor, 0.01f);
 
-    // Restore original strength level (FD forces Gold Gauntlets)
-    Inventory_ChangeUpgrade(UPG_STRENGTH, gFormState.savedStrength);
+    // Strength: no restore needed. The form's strength is computed virtually in
+    // Player_GetStrength() and the save upgrade bits were never mutated by the
+    // transform, so any upgrade picked up during transform is preserved here.
 
     // Restore the tunic the player had as Human BEFORE transforming. savedTunic /
     // savedTunicEquip were captured at the top of MmForm_ApplyFormProperties, so they
@@ -11942,10 +11988,8 @@ void MmForm_Init(PlayState* play, Player* player) {
 
     // === Cleanup from previous scene ===
     if (gFormState.state == MMFORM_STATE_ACTIVE || gFormState.state == MMFORM_STATE_TRANSFORMING) {
-        // Restore FD strength override (will be re-applied by SoftReload)
-        if (gFormState.currentForm == MM_PLAYER_FORM_FIERCE_DEITY && gFormState.savedStrength != 0) {
-            Inventory_ChangeUpgrade(UPG_STRENGTH, gFormState.savedStrength);
-        }
+        // (Strength is no longer mutated on transform — handled virtually in
+        // Player_GetStrength — so there is nothing to roll back here.)
 
         // Keep C-button equips as-is during soft-reload (no restore/re-save flip).
         // The equips are already restricted for the current form from the previous scene.
@@ -12515,6 +12559,9 @@ TransformMaskId MmForm_GetMaskType(s32 item) {
         case ITEM_MM_MASK_FIERCE_DEITY:
             result = TRANSFORM_MASK_FIERCE_DEITY;
             break;
+        case ITEM_MM_MASK_GARO:
+            result = TRANSFORM_MASK_GARO;
+            break;
         // Keaton Mask: cosmetic only (wearable, no transformation)
         case ITEM_MASK_KEATON:
         case ITEM_MM_MASK_KEATON:
@@ -12539,6 +12586,23 @@ TransformMaskId MmForm_GetMaskType(s32 item) {
 }
 
 void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
+
+    // Garo Mask: routes to the o2r_loader skin-swap system (nei/garo.o2r), NOT the
+    // MM transformation form pipeline. Toggling the same mask while active reverts.
+    // This bypasses MmForm_IsEnabled() / mm.o2r — Garo only needs garo.o2r in nei/.
+    if (item == ITEM_MM_MASK_GARO) {
+        extern u8 O2rLoader_HasActiveModel(void);
+        extern const char* O2rLoader_GetForcedName(void);
+        extern void O2rLoader_ForceModel(const char* name);
+        extern void O2rLoader_ClearForcedModel(void);
+        const char* cur = O2rLoader_GetForcedName();
+        if (O2rLoader_HasActiveModel() && cur && strcmp(cur, "garo") == 0) {
+            O2rLoader_ClearForcedModel();
+        } else {
+            O2rLoader_ForceModel("garo");
+        }
+        return;
+    }
 
     // Pikachu (Pokeball or Keaton Mask) does NOT require mm.o2r — check its own CVar first.
     if (item == ITEM_MASK_KEATON || item == ITEM_MM_MASK_KEATON || item == ITEM_POKEBALL) {
@@ -12619,6 +12683,27 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
 
     // Start transformation
     gFormState.targetForm = targetForm;
+    gFormState.state = MMFORM_STATE_TRANSFORMING;
+    gFormState.cutsceneTimer = 0;
+    gFormState.cutscenePhase = 0;
+    gFormState.flashAlpha = 0;
+}
+
+// Dev hook: trigger a transformation directly (no mask item required).
+// Used by the "Transform: Garo" toggle in SohMenuSettings while a custom Garo Mask
+// item doesn't exist yet. If already in the requested form, detransforms instead.
+void MmForm_DevTransformTo(PlayState* play, Player* player, MmPlayerTransformation form) {
+    if (gFormState.state == MMFORM_STATE_TRANSFORMING || gFormState.state == MMFORM_STATE_DETRANSFORMING) {
+        return;
+    }
+    if (gFormState.state == MMFORM_STATE_ACTIVE && gFormState.currentForm == form) {
+        gFormState.state = MMFORM_STATE_DETRANSFORMING;
+        gFormState.cutsceneTimer = 0;
+        gFormState.cutscenePhase = 0;
+        gFormState.flashAlpha = 0;
+        return;
+    }
+    gFormState.targetForm = form;
     gFormState.state = MMFORM_STATE_TRANSFORMING;
     gFormState.cutsceneTimer = 0;
     gFormState.cutscenePhase = 0;
@@ -13343,15 +13428,13 @@ void MmForm_OnDeath(void) {
         sEquipsSaved = 0;
     }
 
-    // 3. Roll back the per-form strength override (Goron=3, Zora=1, Deku=0, FD=3)
-    //    to the player's actual upgrade level. savedStrength was captured in
-    //    MmForm_ApplyFormProperties before the form changed it.
+    // 3. Roll back the form's tunic override (Zora→Zora Tunic, Goron→Goron Tunic).
+    //    Without this, dying as Zora/Goron permanently changes the player's tunic
+    //    because Player_Action_DeathRespawn only reads gSaveContext.equips.equipment.
+    //    Strength is NOT rolled back here — it's computed virtually in
+    //    Player_GetStrength(), so the save bits already hold the player's true
+    //    upgrade level (including anything picked up during transform).
     if (gFormState.state == MMFORM_STATE_ACTIVE && gFormState.savedAgeProperties != NULL) {
-        Inventory_ChangeUpgrade(UPG_STRENGTH, gFormState.savedStrength);
-
-        // Roll back the form's tunic override (Zora→Zora Tunic, Goron→Goron Tunic).
-        // Without this, dying as Zora/Goron permanently changes the player's tunic
-        // because Player_Action_DeathRespawn only reads gSaveContext.equips.equipment.
         gSaveContext.equips.equipment = (gSaveContext.equips.equipment & ~gEquipMasks[EQUIP_TYPE_TUNIC]) |
                                         (gFormState.savedTunicEquip << gEquipShifts[EQUIP_TYPE_TUNIC]);
         if (gPlayState != NULL) {

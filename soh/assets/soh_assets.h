@@ -552,6 +552,21 @@ static const ALIGN_ASSET(2) char gItemIconDominionRodTex[] = dgItemIconDominionR
 #define dgItemIconTimeGateTex "__OTR__textures/icon_item_custom/gItemIconTimeGateTex"
 static const ALIGN_ASSET(2) char gItemIconTimeGateTex[] = dgItemIconTimeGateTex;
 
+// Prop Hunt button icons — shown in the C-buttons + D-pad while a hider is
+// in "prop mode". Source PNGs under custom/textures/icon_item_custom/.
+#define dgItemIconPropHuntPotTex    "__OTR__textures/icon_item_custom/gItemIconPropHuntPotTex"
+static const ALIGN_ASSET(2) char gItemIconPropHuntPotTex[]    = dgItemIconPropHuntPotTex;
+#define dgItemIconPropHuntEnemyTex  "__OTR__textures/icon_item_custom/gItemIconPropHuntEnemyTex"
+static const ALIGN_ASSET(2) char gItemIconPropHuntEnemyTex[]  = dgItemIconPropHuntEnemyTex;
+#define dgItemIconPropHuntNpcTex    "__OTR__textures/icon_item_custom/gItemIconPropHuntNpcTex"
+static const ALIGN_ASSET(2) char gItemIconPropHuntNpcTex[]    = dgItemIconPropHuntNpcTex;
+#define dgItemIconPropHuntChangeTex "__OTR__textures/icon_item_custom/gItemIconPropHuntChangeTex"
+static const ALIGN_ASSET(2) char gItemIconPropHuntChangeTex[] = dgItemIconPropHuntChangeTex;
+#define dgItemIconPropHuntPrevTex   "__OTR__textures/icon_item_custom/gItemIconPropHuntPrevTex"
+static const ALIGN_ASSET(2) char gItemIconPropHuntPrevTex[]   = dgItemIconPropHuntPrevTex;
+#define dgItemIconPropHuntNextTex   "__OTR__textures/icon_item_custom/gItemIconPropHuntNextTex"
+static const ALIGN_ASSET(2) char gItemIconPropHuntNextTex[]   = dgItemIconPropHuntNextTex;
+
 #define dgItemIconBombArrowsTex "__OTR__textures/icon_item_custom/gItemIconBombArrowsTex"
 static const ALIGN_ASSET(2) char gItemIconBombArrowsTex[] = dgItemIconBombArrowsTex;
 

@@ -855,14 +855,38 @@ s32 Player_GetStrength(void) {
         return PLAYER_STR_NONE;
     }
 
-    // Transformed forms ignore the Child age cap so the per-form strength override
-    // (Goron=GoldGauntlets, Zora=Bracelet, Deku=None, FD=GoldGauntlets) applied in
-    // MmForm_ApplyFormProperties actually takes effect on Child Link too. Form
-    // abilities are about the form's body, not the human age — Child Goron should
-    // still be able to lift the same things Adult Goron can. Item equipping is
-    // unaffected (those gates are in CHECK_AGE_REQ_* / inventory checks).
-    if (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || LINK_IS_ADULT ||
-        TransformMasks_IsTransformed()) {
+    // Transformed forms have an INTRINSIC body strength independent of the player's
+    // upgrade bits. We compute it virtually here instead of mutating
+    // gSaveContext.inventory.upgrades on transform — that prior approach broke
+    // randomizer / pickup scenarios:
+    //   1. As Goron (override=GoldG, save bits=GoldG), the player picks up a
+    //      strength upgrade. Inventory_ChangeUpgrade overwrites the bits with the
+    //      pickup's level (e.g. Bracelet=1), DOWNGRADING Goron's lift power.
+    //   2. On detransform, the prior "restore to savedStrength" path snapped the
+    //      bits back to the pre-transform value, deleting the pickup.
+    // Returning the form's strength virtually lets the save bits track only what
+    // the player actually earned, and the form's body strength is applied per call.
+    // Item equipping is unaffected: those gates live in CHECK_AGE_REQ_* and
+    // inventory ownership checks, not here. Also covers Child Link transforms
+    // (the original Child age cap below doesn't apply when transformed).
+    if (TransformMasks_IsTransformed()) {
+        switch (MmForm_GetCurrentForm()) {
+            case 0 /* MM_PLAYER_FORM_FIERCE_DEITY */:
+                return PLAYER_STR_GOLD_G;
+            case 1 /* MM_PLAYER_FORM_GORON */:
+                return PLAYER_STR_GOLD_G;
+            case 2 /* MM_PLAYER_FORM_ZORA */:
+                return PLAYER_STR_BRACELET;
+            case 3 /* MM_PLAYER_FORM_DEKU */:
+                return PLAYER_STR_NONE;
+            // Pikachu (5) and anything else falls through to the normal path,
+            // so the player's real upgrade applies (no override).
+            default:
+                break;
+        }
+    }
+
+    if (CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0) || LINK_IS_ADULT) {
         return strengthUpgrade;
     } else if (strengthUpgrade != 0) {
         return PLAYER_STR_BRACELET;
@@ -1220,7 +1244,12 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
 
     sDListsLodOffset = lod * 2;
 
-    SkelAnime_DrawFlexLod(play, skeleton, jointTable, dListCount, overrideLimbDraw, postLimbDraw, data, lod);
+    // VB_PLAYER_DRAW: subscribers can suppress vanilla Link rendering by
+    // returning false (e.g. Harpoon's Prop Hunt hider draws as a prop and
+    // wants to hide Link entirely). Default keeps vanilla draw on.
+    if (GameInteractor_Should(VB_PLAYER_DRAW, true, play, data)) {
+        SkelAnime_DrawFlexLod(play, skeleton, jointTable, dListCount, overrideLimbDraw, postLimbDraw, data, lod);
+    }
 
     if (((CVarGetInteger(CVAR_ENHANCEMENT("FirstPersonGauntlets"), 0) && LINK_IS_ADULT) ||
          (overrideLimbDraw != Player_OverrideLimbDrawGameplayFirstPerson)) &&

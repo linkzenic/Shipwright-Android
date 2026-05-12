@@ -2965,7 +2965,36 @@ typedef enum {
     // ```
     // #### `args`
     // - `*int32_t (camId)`
-    VB_SHOULD_LOAD_BG_IMAGE
+    VB_SHOULD_LOAD_BG_IMAGE,
+
+    // Hook fired around `SkelAnime_DrawFlexLod` inside `Player_DrawImpl`.
+    // Subscribers may render their own visual in place of the vanilla Link
+    // skeleton (e.g. Harpoon's Prop Hunt hider disguise) by returning
+    // `false`. Returning `true` (default) keeps the vanilla draw.
+    //
+    // #### `result`
+    // ```c
+    // true   // draw vanilla Link
+    // ```
+    // #### `args`
+    // - `*PlayState` (play)
+    // - `*Player`     (this)
+    VB_PLAYER_DRAW,
+
+    // Hook fired at the end of `Actor_Draw` for every actor. Subscribers
+    // can use it to overlay extra visuals on an actor (e.g. Harpoon's
+    // Triforce indicator above the carrier). Has no return value — always
+    // executes — but routed through OnVanillaBehavior so the existing
+    // GameInteractor plumbing handles it.
+    //
+    // #### `result`
+    // ```c
+    // true
+    // ```
+    // #### `args`
+    // - `*PlayState` (play)
+    // - `*Actor`     (actor)
+    VB_ACTOR_POST_DRAW,
 } GIVanillaBehavior;
 
 #endif

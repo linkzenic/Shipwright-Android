@@ -28,6 +28,9 @@ extern PlayState* gPlayState;
 }
 #include "soh/Enhancements/mod_menu.h"
 #include "soh/Network/Harpoon/HarpoonSkinSync.h"
+#include "soh/Network/Harpoon/PropHunt/PropHunt.h"
+#include "soh/Network/Harpoon/TriforceThief/TriforceThief.h"
+#include "soh/Network/Harpoon/HarpoonGamemodeHud.h"
 
 // MARK: - Overrides
 
@@ -68,6 +71,16 @@ void Harpoon::Enable() {
     ownClientId = 0;
     sessionToken.clear();
     nextSeq = 1;
+
+    // Best-effort: pre-load the Prop Hunt + Triforce Thief gamemode packs at
+    // connect time so the data is ready by the time a room with that gamemode
+    // is joined. Failure here is non-fatal — the pack simply won't be
+    // advertised in installed_gamemodes.
+    HarpoonPropHunt::Init();
+    HarpoonTriforceThief::Init();
+    HarpoonHud::Register();
+    HarpoonPropHunt::RegisterMapSelectWindow();
+    HarpoonTriforceThief::RegisterMapSelectWindow();
 
     std::string host = CVarGetString(CVAR_HARPOON("Host"), "localhost");
     int port = CVarGetInteger(CVAR_HARPOON("Port"), 8765);
@@ -219,6 +232,37 @@ void Harpoon::ProcessIncomingPacketQueue() {
             else if (packetType == HPN_COMBAT_DAMAGE)         HandlePacket_Damage(payload);
             else if (packetType == HPN_COMBAT_DECOY_HIT)      HandlePacket_DecoyHit(payload);
             else if (packetType == HPN_COMBAT_CUSTOM_EFFECT)  HandlePacket_CustomEffect(payload);
+            else if (packetType == HPN_COMBAT_SPAWN_DECOY) {
+                // Mirror Scooter's decoy ring on the source client's
+                // HarpoonClient. We store {pos, rotY, propCat/Idx/State} so
+                // VB_ACTOR_POST_DRAW (or a dedicated decoy-draw hook) can
+                // render the ghost prop at the decoy's world position.
+                uint32_t src = payload.value("source", 0u);
+                nlohmann::json inner = payload.contains("payload") ? payload["payload"]
+                                       : payload.contains("data")    ? payload["data"]
+                                                                     : payload;
+                u8 slot = (u8)inner.value("slot", 0);
+                if (slot < 3 && clients.find(src) != clients.end()) {
+                    auto& c = clients[src];
+                    c.somariaDecoyPos[slot].x = inner.value("x", 0.0f);
+                    c.somariaDecoyPos[slot].y = inner.value("y", 0.0f);
+                    c.somariaDecoyPos[slot].z = inner.value("z", 0.0f);
+                    c.somariaDecoyRotY[slot]      = (s16)inner.value("rotY", 0);
+                    c.somariaDecoyPropCat[slot]   = inner.value("propCat", 0);
+                    c.somariaDecoyPropIdx[slot]   = inner.value("propIndex", 0);
+                    c.somariaDecoyPropState[slot] = inner.value("propState", 0);
+                    c.somariaDecoyActive[slot]    = 1;
+                }
+            }
+            else if (packetType == HPN_COMBAT_DESTROY_DECOY) {
+                uint32_t src = payload.value("source", 0u);
+                nlohmann::json inner = payload.contains("payload") ? payload["payload"]
+                                                                    : payload;
+                u8 slot = (u8)inner.value("slot", 0);
+                if (slot < 3 && clients.find(src) != clients.end()) {
+                    clients[src].somariaDecoyActive[slot] = 0;
+                }
+            }
 
             // ================================================================
             // INVENTORY.* / SAVE.* (Anchor rando + general save sync)
@@ -345,9 +389,14 @@ bool Harpoon::IsSaveLoaded() {
         return false;
     if (GET_PLAYER(gPlayState) == nullptr)
         return false;
-    // Match Anchor: only fileNums 0/1/2 are real save slots. Title sentinels
-    // (0xFE/0xFF) and any out-of-range values mean "not in a save".
-    if (gSaveContext.fileNum < 0 || gSaveContext.fileNum > 2)
+    // Allow real slots 0/1/2 AND high sentinels (0xFD = Harpoon multiplayer,
+    // 0xFE = Boss Rush, 0xFF = Debug). Using 0xFD for multiplayer keeps the
+    // engine from clobbering real save slots — SaveManager::Init only scans
+    // fileNum < MaxFiles (=3), so file254.sav is never parsed at startup
+    // and any autosave writes there are harmless on next launch.
+    if (gSaveContext.fileNum < 0)
+        return false;
+    if (gSaveContext.fileNum > 2 && gSaveContext.fileNum < 0xFD)
         return false;
     if (gSaveContext.gameMode != GAMEMODE_NORMAL)
         return false;
@@ -803,6 +852,13 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
     if (payload.contains("ownClientId")) {
         ownClientId = payload["ownClientId"].get<uint32_t>();
     }
+    // Server broadcasts the room's current host in every ROOM.MEMBERS_UPDATED.
+    // Persist it so the menu's "isHost" check (ownClientId == hostClientId)
+    // works — without this, hostClientId stays 0 forever and every "host
+    // only" UI gates closed regardless of who actually created the room.
+    if (payload.contains("hostClientId")) {
+        hostClientId = payload["hostClientId"].get<uint32_t>();
+    }
     bool roomMembershipChanged = false;
     if (payload.contains("clients")) {
         size_t prevOnlineCount = 0;
@@ -825,6 +881,12 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
             client.self = (clientId == ownClientId);
             client.isSaveLoaded = clientJson.value("isSaveLoaded", false);
             client.sceneNum = clientJson.value("sceneNum", (s16)SCENE_ID_MAX);
+            client.role = clientJson.value("role", std::string());
+            // Server-published admin flag, plus the room's current host is
+            // implicitly an admin so the very first member of a fresh room
+            // can manage even before promoting anyone.
+            client.isAdmin = clientJson.value("isAdmin", false)
+                             || (hostClientId != 0 && clientId == hostClientId);
         }
 
         size_t newOnlineCount = 0;
@@ -1159,20 +1221,66 @@ void Harpoon::HandlePacket_Damage(nlohmann::json payload) {
         return;
     }
 
-    self->actor.colChkInfo.damage = damage * 8;
+    // Per-response knockback/element tuning. The damage table on the dummy
+    // side already maps each weapon to one of these response codes; the
+    // receiver branches on it to pick knockback speed/yVel/invincibility and
+    // (for utility weapons like the wind blow) zero out damage.
+    f32 knockSpeed  = 4.0f;
+    f32 knockYVel   = 5.0f;
+    s32 invTimer    = 20;
+    s32 finalDamage = damage;
 
-    if (damageEffect == HARPOON_HIT_RESPONSE_STUN) {
+    switch (damageEffect) {
+    case PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE:  // Megaton Hammer, Ball & Chain
+        knockSpeed = 14.0f; knockYVel = 10.0f; invTimer = 25;
+        break;
+    case HARPOON_HIT_RESPONSE_WIND_BLOW:       // Deku Leaf gust / Gust Jar
+        knockSpeed = 18.0f; knockYVel = 4.0f;  invTimer = 15;
+        finalDamage = 0;                        // pure utility — strips carrier without HP loss
+        break;
+    case PLAYER_HIT_RESPONSE_ICE_TRAP:         // Ice arrow / Ice rod
+        self->actor.freezeTimer = 60;
+        Actor_SetColorFilter(&self->actor, 0, 0xFF, 0, 60);
+        knockSpeed = 0.0f; knockYVel = 0.0f; invTimer = 60;
+        break;
+    case PLAYER_HIT_RESPONSE_ELECTRIC_SHOCK:   // Light arrow
         self->actor.freezeTimer = 20;
         Actor_SetColorFilter(&self->actor, 0, 0xFF, 0, 24);
-    } else if (damageEffect == HARPOON_HIT_RESPONSE_FIRE) {
-        self->actor.colChkInfo.damage = damage * 8;
+        knockSpeed = 2.0f; knockYVel = 3.0f; invTimer = 20;
+        break;
+    case HARPOON_HIT_RESPONSE_STUN:
+        self->actor.freezeTimer = 20;
+        Actor_SetColorFilter(&self->actor, 0, 0xFF, 0, 24);
+        knockSpeed = 0.0f; knockYVel = 0.0f;
+        break;
+    case HARPOON_HIT_RESPONSE_FIRE:            // Fire arrow / Fire rod / Din's Fire
+        knockSpeed = 5.0f; knockYVel = 6.0f; invTimer = 30;
+        break;
+    default:  // NORMAL + unknown — keep legacy feel
+        break;
     }
 
+    self->actor.colChkInfo.damage = finalDamage * 8;
+
+    // The server's relay tags the attacker as both `clientId` (legacy /
+    // Scooter compat) and `source` (Python idiom). Read both — whichever
+    // exists. Without this the lookup falls back to 0 → clients.contains(0)
+    // is false → func_80837C0C never fires → receiver feels nothing.
     uint32_t attackerClientId = payload.value("clientId", (uint32_t)0);
+    if (attackerClientId == 0) {
+        attackerClientId = payload.value("source", (uint32_t)0);
+    }
     if (clients.contains(attackerClientId) && clients[attackerClientId].player != nullptr) {
         Player* attacker = clients[attackerClientId].player;
-        func_80837C0C(gPlayState, self, damageEffect, 4.0f, 5.0f,
-                      Actor_WorldYawTowardActor(&attacker->actor, &self->actor), 20);
+        func_80837C0C(gPlayState, self, damageEffect, knockSpeed, knockYVel,
+                      Actor_WorldYawTowardActor(&attacker->actor, &self->actor), invTimer);
+    } else {
+        // Still apply damage even if we can't find the attacker (e.g. they
+        // disconnected mid-hit). Use yaw 0 — knockback won't aim correctly
+        // but at least HP drops.
+        func_80837C0C(gPlayState, self, damageEffect, knockSpeed, knockYVel, 0, invTimer);
+        SPDLOG_DEBUG("[Harpoon] damage from unknown attacker cid={} — applied without knockback target",
+                     attackerClientId);
     }
 }
 
@@ -1801,6 +1909,20 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
         activeGameMode = HARPOON_MODE_RANDOMIZER;
     } else if (currentRoomGameMode == "hunger_games") {
         activeGameMode = HARPOON_MODE_HUNGER_GAMES;
+    } else if (currentRoomGameMode == "prop_hunt") {
+        activeGameMode = HARPOON_MODE_PROP_HUNT;
+        isPropHuntMode = true;
+        // Lobby auto-transport: as soon as we're in a prop_hunt room, kick
+        // every client into Hyrule Field as child Link with the hider preset.
+        // Matches Scooter's "joining the room = entering the game" UX.
+        // Roles get reassigned later when the host clicks Start Game.
+        localRole = "hider";
+        HarpoonPropHunt::BigStartGameAs(HarpoonPropHunt::Role::Hider);
+    } else if (currentRoomGameMode == "triforce_thief") {
+        // Adult Link, full inventory thief preset, drop into Hyrule Field
+        // as the round lobby. Round actually starts when the host confirms
+        // a map (the menu's "Confirm Map" or in-overlay A button).
+        HarpoonTriforceThief::BigStartGame();
     }
 
     // Apply default_config from our locally-installed gamemode pack. The
@@ -2011,7 +2133,103 @@ void Harpoon::SendPacket_DecoyHit(u32 targetClientId, u8 decoySlot) {
 }
 
 void Harpoon::UpdateDecoys() {
-    // Placeholder — prop hunt decoy sparkle/hit detection will be added when prop hunt is fully ported
+    // Prop Hunt seeker-vs-decoy collision. Mirrors Scooter's logic
+    // (HarpoonHookHandlers.cpp:1704 there). When a seeker swings their
+    // sword and is within ~50 units of a remote hider's decoy, the
+    // seeker takes a 40-frame ice-freeze + the decoy is destroyed +
+    // an ice VFX bursts. Decoys are stored on each remote hider's
+    // HarpoonClient::somariaDecoy* fields (synced via the existing
+    // COMBAT.SPAWN_DECOY / COMBAT.DESTROY_DECOY messages).
+    if (!isPropHuntMode || gPlayState == nullptr) return;
+    // Only seekers can trigger a decoy hit. Hiders' own decoys are not
+    // authoritative — they only broadcast position and render.
+    if (!HarpoonPropHunt::IsSeeker()) return;
+
+    Player* player = GET_PLAYER(gPlayState);
+    if (player == nullptr) return;
+
+    // Hit conditions — seeker triggers a decoy by ANY contact form:
+    //   - swinging melee (sword/hammer/etc.) — meleeWeaponState != 0
+    //   - pressing A (action) or B (item use: bombs, arrows, etc.)
+    //   - just walking into the decoy (proximity within 35u)
+    // The proximity radius is tighter than the swing radius (50u) so that
+    // it's intentional contact, not passive flyby.
+    Input* input = (gPlayState != nullptr) ? &gPlayState->state.input[0] : nullptr;
+    bool swinging      = (player->meleeWeaponState != 0);
+    bool pressedAttack = (input != nullptr) &&
+                         CHECK_BTN_ANY(input->press.button,
+                                       BTN_A | BTN_B | BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT);
+    bool wantSwingHit  = swinging || pressedAttack;
+
+    Vec3f sp = player->actor.world.pos;
+    constexpr f32 kHitRadiusSq    = 50.0f * 50.0f;   // sword/attack radius
+    constexpr f32 kContactRadiusSq = 35.0f * 35.0f;  // walk-into radius
+
+    for (auto& [cid, cl] : clients) {
+        if (cl.self) continue;
+        if (cl.role != "hider") continue;
+        if (cl.sceneNum != gPlayState->sceneNum) continue;
+        for (u8 i = 0; i < 3; i++) {
+            if (!cl.somariaDecoyActive[i]) continue;
+            if (cl.somariaDecoyPropIdx[i] < 0) continue;
+            f32 dx = sp.x - cl.somariaDecoyPos[i].x;
+            f32 dy = sp.y - cl.somariaDecoyPos[i].y;
+            f32 dz = sp.z - cl.somariaDecoyPos[i].z;
+            f32 d2 = dx * dx + dy * dy + dz * dz;
+            // Trigger when:
+            //   (a) within attack radius AND swinging/pressing attack, OR
+            //   (b) within contact radius (walked into it, any state).
+            bool hit = (d2 < kContactRadiusSq) ||
+                       (wantSwingHit && d2 < kHitRadiusSq);
+            if (!hit) continue;
+
+            // Hit! Ice shatter at decoy position, freeze seeker, kill decoy.
+            Vec3f hitPos = cl.somariaDecoyPos[i];
+            Vec3f zv = { 0.0f, 0.0f, 0.0f };
+            EffectSsDeadDb_Spawn(gPlayState, &hitPos, &zv, &zv,
+                                 100, 10, 150, 200, 255, 200, 100, 150, 255, 0, 14, 1);
+            Color_RGBA8 icP = { 200, 230, 255, 220 };
+            Color_RGBA8 icE = { 100, 150, 255, 160 };
+            for (int j = 0; j < 8; j++) {
+                Vec3f pp = hitPos;
+                pp.x += Rand_CenteredFloat(30.0f);
+                pp.y += Rand_ZeroFloat(40.0f);
+                pp.z += Rand_CenteredFloat(30.0f);
+                Vec3f pv = { Rand_CenteredFloat(3.0f),
+                             Rand_ZeroFloat(4.0f) + 1.0f,
+                             Rand_CenteredFloat(3.0f) };
+                EffectSsKiraKira_SpawnFocused(gPlayState, &pp, &pv, &zv, &icP, &icE, 800, 30);
+            }
+            Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_REFLECT_SW, &hitPos, 4,
+                                   &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultReverb);
+
+            // Local kill — peer will resync on next SPAWN_DECOY broadcast.
+            cl.somariaDecoyActive[i] = 0;
+            if (cl.somariaDecoyCount > 0) cl.somariaDecoyCount--;
+
+            // Freeze the seeker (us) as the penalty.
+            player->actor.freezeTimer = 40;
+            Actor_SetColorFilter(&player->actor, 0x4000, 0xFF, 0, 40);
+            Audio_PlayActorSound2(&player->actor, NA_SE_PL_FREEZE_S);
+
+            // Ice encasing VFX bursting around the frozen seeker.
+            Vec3f seekerCenter = player->actor.world.pos;
+            seekerCenter.y += 30.0f;
+            EffectSsIcePiece_SpawnBurst(gPlayState, &seekerCenter, 0.8f);
+
+            // Tell the hider their decoy got triggered (so they can VFX +
+            // mark it dead in their local ring). v2 uses COMBAT.DECOY_HIT.
+            nlohmann::json payload;
+            payload["type"]           = HPN_COMBAT_DECOY_HIT;
+            payload["targetClientId"] = cid;
+            payload["decoySlot"]      = (s32)i;
+            SendJsonToRemote(payload);
+
+            return;  // one hit per frame is enough
+        }
+    }
 }
 
 // MARK: - HarpoonBridge C-callable implementations
@@ -2228,6 +2446,14 @@ void Harpoon::HandlePacket_Error(nlohmann::json payload) {
     SPDLOG_WARN("[Harpoon] server error: code={} message={}", code, message);
     killFeed.push_back("[server] " + code + ": " + message);
     if (killFeed.size() > 5) killFeed.erase(killFeed.begin());
+    // Surface as a toast too so users see it outside the in-room view (e.g.
+    // when ROOM.CREATE is rejected and the user is still on the lobby screen
+    // — kill feed only renders inside a room).
+    Notification::Emit({
+        .prefix = "Harpoon error",
+        .message = code + (message.empty() ? "" : " — " + message),
+        .remainingTime = 6.0f,
+    });
 }
 
 void Harpoon::HandlePacket_GamemodeManifest(nlohmann::json payload) {
@@ -2288,8 +2514,20 @@ void Harpoon::HandlePacket_GamemodeManifest(nlohmann::json payload) {
 
 void Harpoon::HandlePacket_RoomEvent(nlohmann::json payload) {
     // Generic broadcast event from another client (ROOM.BROADCAST_EVENT).
-    // No-op for now — gamemode-specific handlers will hook in here when added.
+    // Dispatch by event-name prefix so gamemodes can carry their own
+    // sub-protocol on top of the relay channel.
     std::string eventName = payload.value("event_name", std::string(""));
+    if (eventName.empty() && payload.contains("event")) {
+        eventName = payload.value("event", std::string(""));
+    }
+    if (eventName.rfind("PROP_HUNT.", 0) == 0) {
+        HarpoonPropHunt::HandleEvent(payload);
+        return;
+    }
+    if (eventName.rfind("TRIFORCE_THIEF.", 0) == 0) {
+        HarpoonTriforceThief::HandleEvent(payload);
+        return;
+    }
     SPDLOG_DEBUG("[Harpoon] ROOM.EVENT name={} (ignored)", eventName);
 }
 
