@@ -706,6 +706,18 @@ const MmAnimDef gMmAnims[MM_ANIM_MAX] = {
     // Kamaro's Mask dance (from gameplay_keep, 145 frames)
     [MM_ANIM_ALINK_DANCE_LOOP] = LINK_ANIM("gPlayerAnim_alink_dance_loop", 145),
 
+    // ========================================
+    // Bremen Mask + Mask of Scents (child Link)
+    // ========================================
+    // Bremen Mask: child Link marching with ocarina raised. MM Player_Action_11
+    // uses this anim during the march. Frame count from MM decomp.
+    [MM_ANIM_CLINK_NORMAL_OKARINA_WALK]  = LINK_ANIM("gPlayerAnim_clink_normal_okarina_walk", 20),
+    [MM_ANIM_CLINK_NORMAL_OKARINA_WALKB] = LINK_ANIM("gPlayerAnim_clink_normal_okarina_walkB", 20),
+
+    // Mask of Scents: child Link sniff/idle "msbowait" anim. Replaces the
+    // default idle anim while wearing the mask. ~80 frames per MM analysis.
+    [MM_ANIM_CL_MSBOWAIT] = LINK_ANIM("gPlayerAnim_cl_msbowait", 80),
+
     // Remaining animations use placeholder definitions
     // Each entry that isn't explicitly defined will have NULL path and 0 frames
 };

@@ -40,6 +40,19 @@ extern void Player_InitMinishCapIA(PlayState* play, Player* this);
 extern void Player_InitLanternIA(PlayState* play, Player* this);
 extern void Player_InitPending3IA(PlayState* play, Player* this);
 
+// Decide whether an SW97 elemental arrow item should fire from bow or slingshot.
+// Default: bow for adult, slingshot for child (vanilla age-based weapon).
+// With BowSlingshotAmmoFix + TimelessEquipment both enabled, child can own and
+// fire the bow — so prefer bow whenever the bow is in inventory regardless of age.
+static s32 Sw97_PreferBow(void) {
+    s32 useBow = LINK_IS_ADULT;
+    if (CVarGetInteger(CVAR_ENHANCEMENT("BowSlingshotAmmoFix"), 0) &&
+        CVarGetInteger(CVAR_CHEAT("TimelessEquipment"), 0)) {
+        useBow = (INV_CONTENT(ITEM_BOW) == ITEM_BOW);
+    }
+    return useBow;
+}
+
 /**
  * Get the PLAYER_IA_xxx value for a given ITEM_xxx value.
  * Uses switch statement for custom items (following extended_inventory pattern).
@@ -192,19 +205,25 @@ int8_t ExtPlayer_GetItemAction(int32_t item) {
         case ITEM_MEDALLION_FIRE:
             return PLAYER_IA_DINS_FIRE;
 
-        // SW97 Arrow items: adult uses bow IAs, child uses slingshot IA
+        // SW97 Arrow items: bow IA if Sw97_PreferBow() (adult by default, or
+        // child-with-bow when both BowSlingshotAmmoFix and TimelessEquipment are on),
+        // slingshot IA otherwise.
         case ITEM_SW97_ARROW_FIRE:
-            return LINK_IS_ADULT ? PLAYER_IA_BOW_FIRE : PLAYER_IA_SLINGSHOT;
+            return Sw97_PreferBow() ? PLAYER_IA_BOW_FIRE : PLAYER_IA_SLINGSHOT;
         case ITEM_SW97_ARROW_ICE:
-            return LINK_IS_ADULT ? PLAYER_IA_BOW_ICE : PLAYER_IA_SLINGSHOT;
+            return Sw97_PreferBow() ? PLAYER_IA_BOW_ICE : PLAYER_IA_SLINGSHOT;
         case ITEM_SW97_ARROW_LIGHT:
-            return LINK_IS_ADULT ? PLAYER_IA_BOW_LIGHT : PLAYER_IA_SLINGSHOT;
+            return Sw97_PreferBow() ? PLAYER_IA_BOW_LIGHT : PLAYER_IA_SLINGSHOT;
         case ITEM_SW97_ARROW_DARK:
-            return LINK_IS_ADULT ? PLAYER_IA_BOW_0C : PLAYER_IA_SLINGSHOT;
+            return Sw97_PreferBow() ? PLAYER_IA_BOW_0C : PLAYER_IA_SLINGSHOT;
         case ITEM_SW97_ARROW_SOUL:
-            return LINK_IS_ADULT ? PLAYER_IA_BOW_0D : PLAYER_IA_SLINGSHOT;
+            return Sw97_PreferBow() ? PLAYER_IA_BOW_0D : PLAYER_IA_SLINGSHOT;
         case ITEM_SW97_ARROW_WIND:
-            return LINK_IS_ADULT ? PLAYER_IA_BOW_0E : PLAYER_IA_SLINGSHOT;
+            return Sw97_PreferBow() ? PLAYER_IA_BOW_0E : PLAYER_IA_SLINGSHOT;
+
+        // Mask of Scents reward — bottle with magic mushroom (drops as empty bottle on swing)
+        case ITEM_BOTTLE_WITH_MAGIC_MUSHROOM:
+            return PLAYER_IA_BOTTLE_MAGIC_MUSHROOM;
 
         default:
             break;
@@ -305,6 +324,9 @@ uint8_t ExtPlayer_GetActionModelGroup(int32_t itemAction) {
         case PLAYER_IA_MM_MASK_GIANT:
         case PLAYER_IA_MM_MASK_FIERCE_DEITY:
             return PLAYER_MODELGROUP_DEFAULT;
+        // Bottle with Magic Mushroom — same handling as bottle items (BUG model group)
+        case PLAYER_IA_BOTTLE_MAGIC_MUSHROOM:
+            return PLAYER_MODELGROUP_DEFAULT;
         default:
             break;
     }
@@ -403,6 +425,9 @@ ItemActionUpdateFunc ExtPlayer_GetItemActionUpdateFunc(int32_t itemAction) {
         case PLAYER_IA_MM_MASK_GIANT:
         case PLAYER_IA_MM_MASK_FIERCE_DEITY:
             return func_8083485C;
+        // Bottle with Magic Mushroom — no special update (drop on B-swing via vanilla bottle path)
+        case PLAYER_IA_BOTTLE_MAGIC_MUSHROOM:
+            return func_8083485C;
         default:
             break;
     }
@@ -499,6 +524,9 @@ ItemActionInitFunc ExtPlayer_GetItemActionInitFunc(int32_t itemAction) {
         case PLAYER_IA_MM_MASK_CAPTAIN:
         case PLAYER_IA_MM_MASK_GIANT:
         case PLAYER_IA_MM_MASK_FIERCE_DEITY:
+            return Player_InitDefaultIA;
+        // Bottle with Magic Mushroom — default init (bottle behavior)
+        case PLAYER_IA_BOTTLE_MAGIC_MUSHROOM:
             return Player_InitDefaultIA;
         default:
             break;

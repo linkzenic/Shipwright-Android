@@ -293,6 +293,35 @@ static void ArrowSoul_LerpPos(Vec3f* unkPos, Vec3f* soulPos, f32 scale) {
     unkPos->z += ((soulPos->z - unkPos->z) * scale);
 }
 
+// Strict mapping per design:
+//   Undead (ReDead, Gibdo share EN_RD; Stalfos = EN_TEST) → Poe (EN_PO_FIELD)
+//   Small (Keese = EN_FIREFLY, Tektite = EN_TITE) → Healing Fairy (EN_ELF FAIRY_HEAL=6)
+// TODO: Cucco hit → Cucco mode (deferred per user, end-of-feature).
+static void ArrowSoul_TryTransform(EnArrow* arrow, PlayState* play) {
+    Actor* hit = arrow->hitActor;
+    if (hit == NULL || hit->update == NULL) {
+        return;
+    }
+    Vec3f pos = hit->world.pos;
+    s16 actorId = hit->id;
+
+    s16 spawnId = -1;
+    s16 spawnParams = 0;
+
+    if (actorId == ACTOR_EN_RD || actorId == ACTOR_EN_TEST) {
+        spawnId = ACTOR_EN_PO_FIELD;
+        spawnParams = 0;
+    } else if (actorId == ACTOR_EN_FIREFLY || actorId == ACTOR_EN_TITE) {
+        spawnId = ACTOR_EN_ELF;
+        spawnParams = 6; // FAIRY_HEAL — Link absorbs on contact
+    } else {
+        return;
+    }
+
+    Actor_Kill(hit);
+    Actor_Spawn(&play->actorCtx, play, spawnId, pos.x, pos.y, pos.z, 0, 0, 0, spawnParams);
+}
+
 static void ArrowSoul_Hit(ArrowSoul* this, PlayState* play) {
     f32 scale;
     f32 offset;
@@ -370,6 +399,7 @@ static void ArrowSoul_Fly(ArrowSoul* this, PlayState* play) {
         ArrowSoul_SetupAction(this, ArrowSoul_Hit);
         this->timer = 32;
         this->alpha = 255;
+        ArrowSoul_TryTransform(arrow, play);
     } else if (arrow->timer < 34) {
         if (this->alpha < 35) {
             Actor_Kill(&this->actor);

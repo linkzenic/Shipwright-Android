@@ -407,6 +407,11 @@ typedef enum {
     /* 0xDA */ ITEM_PH_ICON_CHANGE,
     /* 0xDB */ ITEM_PH_ICON_PREV,
     /* 0xDC */ ITEM_PH_ICON_NEXT,
+    // Magic Mushroom — caught from Mask of Scents spots in Lost Woods.
+    // ITEM_MAGIC_MUSHROOM is the bottle-contents id (analogous to ITEM_BUG),
+    // ITEM_BOTTLE_WITH_MAGIC_MUSHROOM is the filled bottle id stored in SLOT_BOTTLE_*.
+    /* 0xDD */ ITEM_MAGIC_MUSHROOM,
+    /* 0xDE */ ITEM_BOTTLE_WITH_MAGIC_MUSHROOM,
     /* 0xFC */ ITEM_LAST_USED = 0xFC,
     /* 0xFE */ ITEM_NONE_FE = 0xFE,
     /* 0xFF */ ITEM_NONE = 0xFF

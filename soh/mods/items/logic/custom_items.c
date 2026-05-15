@@ -60,5 +60,11 @@
 // item_postman_hat.c appends `#include "../helpers/postman_kaleido.c"` at
 // its tail so the kaleido body ends up in the same TU.
 
+// Bremen Mask: chick + adult cucco follower actor (unity-included).
+#include "../helpers/bremen_follower_actor.c"
+
+// Mask of Scents: hidden Lost Woods mushroom spot prop actor (unity-included).
+#include "../helpers/mushroom_spot_actor.c"
+
 // Transformation Masks: REMOVED - now included directly in z_player.c
 // (transformation_masks.c includes mask_goron.c internally)

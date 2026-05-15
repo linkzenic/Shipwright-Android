@@ -65,6 +65,13 @@ void MmMaskWear_DrawOverlay(PlayState* play);
 // Returns true if Kamaro dance is active (used by z_player.c to freeze input).
 s32 MmMaskWear_IsKamaroDancing(void);
 
+// Returns true if Bremen Mask march is active (used by z_player.c to zero stick input).
+s32 MmMaskWear_IsBremenMarching(void);
+
+// Death hook — reset Bremen progression (chick + cucco). Same persistence
+// model as Chateau Romani: cleared only on Link's death.
+void MmMaskWear_OnDeath(void);
+
 // Returns true if Great Fairy warp menu is active (used by z_play.c to override pause).
 s32 MmMaskWear_IsGreatFairyWarpActive(void);
 

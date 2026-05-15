@@ -15,6 +15,7 @@ extern "C" {
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/pak_loader/pak_loader.h"
 #include "mods/o2r_loader/o2r_loader.h"
+#include "mods/voice_pack/voice_pack.h"
 }
 
 namespace SohGui {
@@ -635,6 +636,22 @@ void SohMenu::AddMenuSettings() {
                                            "Remove the mask to revert.\n\n"
                                            "REQUIRES: nei/N64_Kafei.pak"));
 
+    AddWidget(path, "Gerudo Mask Transform", WIDGET_CVAR_CHECKBOX)
+        .CVar("gMods.GerudoMaskTransform")
+        .RaceDisable(false)
+        .Options(CheckboxOptions().Tooltip(
+            "Wearing the vanilla Gerudo Mask transforms Link into a Gerudo — uses a\n"
+            "Link-rigged gerudo mesh, so all of Link's animations and equipment work\n"
+            "exactly as normal. The body just looks gerudo.\n"
+            "Effects while the mask is worn:\n"
+            "  - Haunted Wasteland sandstorm is suppressed (no more getting lost).\n"
+            "  - All Gerudos treat you as a fellow Gerudo (Ge1/Ge2/Ge3 are friendly,\n"
+            "    GTG guard lets you in). Access is TEMPORARY — no Gerudo Card is granted.\n"
+            "Remove the mask to revert.\n\n"
+            "REQUIRES: nei/gerudo.o2r — built by tools/repack_gerudo_player.py from\n"
+            "an artist-authored \"00 - Gerudo Player.o2r\" (Link-21-bone-rigged gerudo skin).\n"
+            "Also ships 11 baked gerudo anims (visible in the anim viewer)."));
+
     AddWidget(path, "Toggle Garo Skin (dev)", WIDGET_BUTTON)
         .PreFunc([](WidgetInfo& info) {
             if (!std::filesystem::exists("nei/garo.o2r")) {
@@ -833,22 +850,87 @@ void SohMenu::AddMenuSettings() {
             AddWidget(path, "Equipment Pack", WIDGET_CVAR_COMBOBOX)
                 .CVar("gMods.PakLoader.Equipment")
                 .RaceDisable(false)
-                .PreFunc([](WidgetInfo& info) {
-                    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
-                        info.options->disabled = true;
-                    }
-                })
                 .PostFunc([](WidgetInfo& info) {
-                    if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
-                        PakLoader_SelectEquipment(CVarGetInteger("gMods.PakLoader.Equipment", -1));
-                    }
+                    // Equipment works independently of the body-model toggle —
+                    // pak_loader resolves vanilla fists/hands at draw time so an
+                    // equipment-only selection (e.g. just a custom sword) is
+                    // valid even when Enable Custom Player Model is off.
+                    PakLoader_SelectEquipment(CVarGetInteger("gMods.PakLoader.Equipment", -1));
                 })
                 .Options(ComboboxOptions()
                              .ComboMap(equipModelMap)
                              .DefaultIndex(-1)
                              .Tooltip("Choose a custom equipment pack.\n"
                                       "Replaces swords, shields, and other items.\n"
-                                      "Overrides equipment from the body model."));
+                                      "Works on its own — you do NOT have to enable Custom Player Model."));
+        }
+
+        // ----- Voice Packs (Z64Online .pak with sounds/<HEX>/*.ogg) -----
+        AddWidget(path, "Custom Link Voice", WIDGET_SEPARATOR_TEXT);
+
+        std::map<int32_t, const char*> voicePackMap;
+        voicePackMap[-1] = "None";
+        for (s32 i = 0; i < VoicePack_GetCount(); i++) {
+            voicePackMap[i] = VoicePack_GetName(i);
+        }
+
+        AddWidget(path, "Enable Custom Voice", WIDGET_CVAR_CHECKBOX)
+            .CVar("gMods.VoicePack.Enabled")
+            .RaceDisable(false)
+            .PreFunc([](WidgetInfo& info) {
+                if (VoicePack_GetCount() == 0) {
+                    CVarSetInteger("gMods.VoicePack.Enabled", 0);
+                    info.options->disabled = true;
+                    info.options->disabledTooltip =
+                        "No voice packs found.\nPlace Z64Online voice .pak files in the mods/ folder.";
+                }
+            })
+            .PostFunc([](WidgetInfo& info) {
+                if (CVarGetInteger("gMods.VoicePack.Enabled", 0)) {
+                    VoicePack_Select(CVarGetInteger("gMods.VoicePack.Selection", -1));
+                } else {
+                    VoicePack_Select(-1);
+                }
+            })
+            .Options(CheckboxOptions().Tooltip(
+                "Replaces Link's voice grunts (sword swings, falls, damage, etc.)\n"
+                "with samples from a Z64Online-format voice pak.\n"
+                "Voice samples play as 2D audio (no positional attenuation)."));
+
+        if (voicePackMap.size() > 1) {
+            AddWidget(path, "Voice Pack", WIDGET_CVAR_COMBOBOX)
+                .CVar("gMods.VoicePack.Selection")
+                .RaceDisable(false)
+                .PreFunc([](WidgetInfo& info) {
+                    if (!CVarGetInteger("gMods.VoicePack.Enabled", 0)) {
+                        info.options->disabled = true;
+                    }
+                })
+                .PostFunc([](WidgetInfo& info) {
+                    if (CVarGetInteger("gMods.VoicePack.Enabled", 0)) {
+                        VoicePack_Select(CVarGetInteger("gMods.VoicePack.Selection", -1));
+                    }
+                })
+                .Options(ComboboxOptions()
+                             .ComboMap(voicePackMap)
+                             .DefaultIndex(-1)
+                             .Tooltip("Choose a voice pack.\n"
+                                      "Selecting a pack decodes its OGG samples (lazy, ~one-time cost)."));
+
+            AddWidget(path, "Voice Pack Volume", WIDGET_CVAR_SLIDER_FLOAT)
+                .CVar("gMods.VoicePack.Volume")
+                .RaceDisable(false)
+                .PreFunc([](WidgetInfo& info) {
+                    if (!CVarGetInteger("gMods.VoicePack.Enabled", 0)) {
+                        info.options->disabled = true;
+                    }
+                })
+                .Options(FloatSliderOptions()
+                             .Tooltip("Mix gain for voice pack samples.")
+                             .Min(0.0f)
+                             .Max(2.0f)
+                             .DefaultValue(1.0f)
+                             .IsPercentage());
         }
     }
 

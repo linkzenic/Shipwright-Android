@@ -262,9 +262,24 @@ typedef struct {
     // Game mode state (from Scooter)
     bool isAlive;
     bool isReady;
-    bool isAdmin;
     s16 kills;
     std::string team;
+    // Pre-staged role for the NEXT round (set by host's per-peer Hider/Seeker
+    // buttons while in lobby). "hider" / "seeker" / "" (= unset / use seeker
+    // priority queue). Consumed and cleared by HostStartRound. Distinct from
+    // `role` (the live role for the current round).
+    std::string pendingRole;
+
+    // GM-imposed movement restrictions. Host toggles via the GM menu;
+    // broadcast via HARPOON.FLAG_OVERRIDE. Target client applies them each
+    // frame by clearing the corresponding PLAYER_STATE1_* / STATE2_* bits
+    // on the local player. Defaulted to false at struct value-init (we
+    // omit explicit `= false` because this is an unnamed typedef'd struct
+    // and MSVC's C7626 rejects member initializers in that form).
+    bool restrictNoClimb;
+    bool restrictNoGrab;
+    bool restrictNoCrawl;
+    bool restrictNoTalk;
 
     // Remote somaria cubes
     struct {
@@ -570,6 +585,27 @@ class Harpoon : public Network {
     // get silently dropped client-side.
     bool syncItems = true;
     bool pvpEnabled = true; // When false: no damage/knockback from other players, status effects still apply
+
+    // ---------------------------------------------------------------------
+    // Gamemode capability flags (loaded from gamemode.yaml default_config).
+    // Generic features that future gamemodes can opt into. Each gamemode's
+    // manifest sets these explicitly; defaults below cover the "Anchor coop"
+    // baseline where none of these match-style features apply.
+    //
+    // supportsVoting     — peers vote on next map via A+START, host A alone.
+    // supportsMapSelect  — fullscreen map-select overlay + 15s timeout +
+    //                      MAP_CONFIRMED broadcast on tally.
+    // supportsZTarget    — dummy players are Z-targetable. PH explicitly off
+    //                      so disguised hiders aren't auto-locked; TT on so
+    //                      thieves can lock onto each other for PvP.
+    // supportsRoundFlow  — round end is silent (no winner text), TickFrame
+    //                      runs the "all hiders found / win condition met"
+    //                      check, host re-starts manually from lobby.
+    // ---------------------------------------------------------------------
+    bool supportsVoting     = false;
+    bool supportsMapSelect  = false;
+    bool supportsZTarget    = false;
+    bool supportsRoundFlow  = false;
     bool isProcessingIncomingPacket = false;
     bool isHandlingUpdateTeamState = false;
     bool justLoadedSave = false;
@@ -609,6 +645,12 @@ class Harpoon : public Network {
     };
     std::vector<RoomInfo> roomList;
 
+    // Distributed dropped-item ledger. Owned by HarpoonDroppedItems but
+    // stored here so persistence-of-Harpoon-Instance keeps it across
+    // scenes. Use HarpoonDroppedItems::* helpers — don't touch the
+    // raw vector from outside the module.
+    uint64_t nextLocalDropId = 1;
+
     // Map selection (from Scooter)
     s32 selectedMapIndex = 0;
     HarpoonMapSelectMode mapSelectMode = MAP_SELECT_HOST_CHOOSES;
@@ -642,6 +684,12 @@ class Harpoon : public Network {
     void ProcessIncomingPacketQueue();
     bool IsSaveLoaded();
     uint32_t GetDummyPlayerClientId(const Actor* actor);
+
+    // GM event handlers (HARPOON.*). Targeted at this client when
+    // payload.targetClientId == ownClientId.
+    void HandleHarpoonFlagOverride(const nlohmann::json& data);
+    void HandleHarpoonPeerTeleport(const nlohmann::json& data);
+    void HandleHarpoonHostTransfer(const nlohmann::json& data);
 
     // ============================================================================
     // Send packets — Harpoon v2 protocol (envelope-wrapped)

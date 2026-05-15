@@ -343,6 +343,20 @@ void InstantReloadScene();
 // fallback for invalid indices.
 s32 GetEntranceForMapIndex(s32 mapIndex);
 
+// Per-round scene-lock. Returns true if `sceneNum` belongs to the allowed
+// scene cluster for the round whose host-selected map is `mapIndex`. Used
+// by the OnGameFrameUpdate scene-transition interceptor to decide whether
+// to let a load happen or redirect it back to the round map.
+bool IsSceneInRoundCluster(s32 mapIndex, s32 sceneNum);
+
+// "Full-circle" return entrance for an invalid out-of-cluster exit. Given
+// the current round map and the destination scene the player is trying to
+// load, returns the entrance index that should be used INSTEAD to land
+// them back in the round map. For v1 this is just the round map's main
+// entrance (same as GetEntranceForMapIndex). Per-(destination,return)
+// precision can be added later by extending the lookup table.
+s32 GetReturnEntranceForInvalidExit(s32 mapIndex, s32 destSceneNum);
+
 // Centralised "map was confirmed for this round" logic. Sets gameState
 // to HIDING_PHASE, stores confirmedMapIndex, resets the round timer, and
 // (if local is hider) teleports to the map's entrance + queues the hider
@@ -391,10 +405,23 @@ void ChangeRoleAndReload(Role role);
 // Not implemented here yet.
 // ---------------------------------------------------------------------------
 
+// Returns the prop variant's visual scale (1.0 = vanilla Link size). Used by
+// HarpoonDummyPlayer + Harpoon::UpdateDecoys to size the collision cylinder
+// to match what the player sees on screen, so a small prop (rupee, mushroom)
+// has a small hitbox and a big prop (chest, boulder) has a big one. Returns
+// 1.0 if the lookup misses (unknown cat/idx/state/map).
+f32 GetPropVisualScale(s32 category, s32 propIndex, s32 propState, s32 mapIdx);
+
 }  // namespace HarpoonPropHunt
 
 // C bridge for code that needs to query state without pulling in the namespace.
 extern "C" {
+    // True whenever the local client is currently in a Prop Hunt room (regardless
+    // of round phase or local role). Used by C-only custom item mods to suppress
+    // gameplay behaviors that don't belong in PropHunt (e.g. Cane of Somaria
+    // summoning Elegy shell statues that look like child-Link dummies and
+    // confuse the disguise system).
+    s32 HarpoonPropHunt_IsActive(void);
     s32 HarpoonPropHunt_IsHider(void);
     s32 HarpoonPropHunt_IsSeeker(void);
     s32 HarpoonPropHunt_IsEliminated(void);

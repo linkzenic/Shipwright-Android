@@ -10,6 +10,11 @@
  * - Medallion-to-arrow item conversion
  */
 
+// Set non-zero while the Wind Medallion jetpack window is active. Read by
+// soh/mods/extended_inventory.c (ExtInv_GetItemIcon) to swap the Forest
+// medallion's C-slot icon for the wind-jetpack placeholder.
+s32 gSw97WindJetpackIconActive = 0;
+
 // Runtime actor IDs (set by sw97_init.cpp via ActorDB)
 extern s16 gSw97ActorId_MagicFire;
 extern s16 gSw97ActorId_MagicIce;
@@ -53,6 +58,11 @@ static Actor* Sw97_TrySpawnMagicSpell(PlayState* play, Player* player, s32 spell
     if (spell < 0 || spell >= 6) {
         return NULL;
     }
+
+    // Shadow medallion heart→magic exchange is handled out-of-band in
+    // soh/Enhancements/ShadowMedallionExchange.cpp via an OnPlayerUpdate hook,
+    // so the exchange works even when the player has zero magic (otherwise the
+    // cast flow short-circuits before reaching this function).
 
     s16* spellActorIds[] = {
         &gSw97ActorId_MagicWind,  // 0 = Forest
@@ -124,4 +134,74 @@ s32 Sw97_MedallionToArrowItem(s32 medallionItem) {
         default:
             return ITEM_NONE;
     }
+}
+
+/**
+ * Returns true while the Shadow Medallion spell (MagicDark) is active.
+ * MagicDark drives gSaveContext.nayrusLoveTimer for its lifetime; in SW97 mode
+ * the Shadow medallion replaces Nayru's Love (Light medallion is the new NL slot),
+ * so a nonzero timer + SW97 enabled uniquely identifies "Shadow stealth is on".
+ *
+ * Consumed by z_actor.c so enemies/NPCs can't detect Link (same hook point as
+ * MmMaskWear_IsStoneMaskActive).
+ */
+s32 Sw97_ShadowStealthActive(void) {
+    if (!SW97_MEDALLIONS_ENABLED()) return 0;
+    return gSaveContext.nayrusLoveTimer > 0;
+}
+
+/**
+ * Shadow Medallion heart→magic exchange.
+ *
+ * Hold the C-button that has ITEM_MEDALLION_SHADOW for SHADOW_EXCHANGE_HOLD_FRAMES
+ * frames → spend 3 hearts, gain 24 magic. Disarmed until release.
+ *
+ * Must work even at zero magic (the vanilla cast pipeline short-circuits before
+ * reaching Sw97_TrySpawnMagicSpell when magic is insufficient — playing only the
+ * "no magic" error sound — so the exchange has to live in a per-frame tick).
+ *
+ * Called from z_player.c Player_UpdateCommon each frame.
+ */
+#define SHADOW_EXCHANGE_HOLD_FRAMES 20
+#define SHADOW_EXCHANGE_HEART_COST  (3 * 0x10)  // 3 hearts × 16 HP
+#define SHADOW_EXCHANGE_MAGIC_GAIN  24
+
+void Sw97_TickShadowExchange(PlayState* play, Player* player) {
+    if (!SW97_MEDALLIONS_ENABLED()) return;
+    if (play == NULL || player == NULL) return;
+
+    // Find which C-slot has the Shadow medallion. buttonItems[0]=B, [1..3]=C-LDR.
+    u16 medallionMask = 0;
+    if (gSaveContext.equips.buttonItems[1] == ITEM_MEDALLION_SHADOW) medallionMask |= BTN_CLEFT;
+    if (gSaveContext.equips.buttonItems[2] == ITEM_MEDALLION_SHADOW) medallionMask |= BTN_CDOWN;
+    if (gSaveContext.equips.buttonItems[3] == ITEM_MEDALLION_SHADOW) medallionMask |= BTN_CRIGHT;
+
+    static s16 sShadowHoldFrames = 0;
+    static u8 sShadowExchanged = 0;
+
+    if (medallionMask == 0) {
+        sShadowHoldFrames = 0;
+        sShadowExchanged = 0;
+        return;
+    }
+
+    u16 cur = play->state.input[0].cur.button;
+    if (!(cur & medallionMask)) {
+        sShadowHoldFrames = 0;
+        sShadowExchanged = 0;
+        return;
+    }
+
+    sShadowHoldFrames++;
+    if (sShadowExchanged) return;
+    if (sShadowHoldFrames < SHADOW_EXCHANGE_HOLD_FRAMES) return;
+    if (gSaveContext.health <= SHADOW_EXCHANGE_HEART_COST) return;
+
+    gSaveContext.health -= SHADOW_EXCHANGE_HEART_COST;
+    gSaveContext.magic += SHADOW_EXCHANGE_MAGIC_GAIN;
+    if (gSaveContext.magic > gSaveContext.magicCapacity) {
+        gSaveContext.magic = gSaveContext.magicCapacity;
+    }
+    Audio_PlayActorSound2(&player->actor, NA_SE_SY_GET_RUPY);
+    sShadowExchanged = 1;
 }

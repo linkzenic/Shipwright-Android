@@ -29,7 +29,11 @@ static void EquipCache_Update(PlayState* play) {
     u8 dpadEnabled = CVarGetInteger("gEnhancements.DpadEquips", 0);
     u8 maxSlot = dpadEnabled ? 8 : 4;
 
-    for (u8 slot = 1; slot < maxSlot; slot++) {
+    // Slot 0 = B button (sButtonMasks[0] = BTN_B). Start at 0 so custom
+    // items equipped to B (e.g. Roc's Feather, transformation masks) get
+    // registered alongside C-buttons / D-pad slots. Previously the loop
+    // started at slot 1, so B-equipped custom items never received input.
+    for (u8 slot = 0; slot < maxSlot; slot++) {
         u8 itemId = gSaveContext.equips.buttonItems[slot];
         sEquipCache.cachedItems[slot] = itemId;
         if (itemId != ITEM_NONE && itemId < 256) {

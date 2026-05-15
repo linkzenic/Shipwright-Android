@@ -76,6 +76,7 @@ std::shared_ptr<ColViewerWindow> mColViewerWindow;
 std::shared_ptr<SaveEditorWindow> mSaveEditorWindow;
 std::shared_ptr<HookDebuggerWindow> mHookDebuggerWindow;
 std::shared_ptr<DLViewerWindow> mDLViewerWindow;
+std::shared_ptr<AnimationViewerWindow> mAnimationViewerWindow;
 std::shared_ptr<ValueViewerWindow> mValueViewerWindow;
 std::shared_ptr<MessageViewer> mMessageViewerWindow;
 std::shared_ptr<GameplayStatsWindow> mGameplayStatsWindow;
@@ -158,6 +159,9 @@ void SetupGuiElements() {
     mDLViewerWindow =
         std::make_shared<DLViewerWindow>(CVAR_WINDOW("DisplayListViewer"), "Display List Viewer", ImVec2(520, 600));
     gui->AddGuiWindow(mDLViewerWindow);
+    mAnimationViewerWindow = std::make_shared<AnimationViewerWindow>(CVAR_WINDOW("AnimationViewer"),
+                                                                     "Animation Viewer", ImVec2(520, 600));
+    gui->AddGuiWindow(mAnimationViewerWindow);
     mValueViewerWindow =
         std::make_shared<ValueViewerWindow>(CVAR_WINDOW("ValueViewer"), "Value Viewer", ImVec2(520, 600));
     gui->AddGuiWindow(mValueViewerWindow);
@@ -213,6 +217,7 @@ void Destroy() {
     mCheckTrackerSettingsWindow = nullptr;
     mGameplayStatsWindow = nullptr;
     mDLViewerWindow = nullptr;
+    mAnimationViewerWindow = nullptr;
     mValueViewerWindow = nullptr;
     mMessageViewerWindow = nullptr;
     mSaveEditorWindow = nullptr;

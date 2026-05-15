@@ -69,6 +69,34 @@ struct LocalState {
     s32      drainTickCounter       = 0;   // frames-until-next-rupee-decrement
     bool     roundEnded             = false;
 
+    // 3-second "GET READY" countdown at round start. Decrements every tick
+    // (20 fps), freezes the local player while > 0, releases on 0.
+    s32      preRoundCountdownFrames = 0;
+
+    // True once StepDropPhysics has detected a floor landing AND the
+    // horizontal speed has settled below the threshold. New drops (knockout
+    // / spawn / void respawn) reset this to false.
+    bool     triforceLanded = true;
+
+    // Bunny Hood speed buff bookkeeping. When we set the local player's
+    // currentMask to PLAYER_MASK_BUNNY because they picked up the Triforce,
+    // save the mask they had before so we can restore it on drop. Without
+    // this, dropping the Triforce would clear any legitimately equipped mask.
+    bool     appliedBunnyHood     = false;
+    s8       savedMaskBeforeBuff  = 0;        // PLAYER_MASK_NONE
+    s32      savedBunnyHoodCVar   = 0;        // user's prior MMBunnyHood setting
+    // C-button slot where we placed ITEM_MASK_BUNNY (so Player_Update's
+    // mask-sync sees it on a button and doesn't clear currentMask). Saved
+    // item from that slot lives in `savedMaskSlotItem` so we can restore
+    // on drop.
+    s32      buffMaskSlot         = -1;       // -1 = no slot occupied
+    u8       savedMaskSlotItem    = 0;        // ITEM_NONE
+
+    // One-shot "GO!" flash counter. Set to 20 (1 sec at 20 fps) when the
+    // pre-round countdown reaches 0; decremented in DrawHud each frame.
+    // Once it hits 0, never re-arms during the same round.
+    s32      goFlashFrames = 0;
+
     // Drop fly-away physics. While > 0, the Triforce is airborne; pickups
     // are blocked. Velocity is integrated with gravity each frame; the
     // engine's BgCheck_* APIs detect walls / floor / ceiling and reflect
@@ -136,6 +164,15 @@ const std::vector<MapDef>& GetMaps();
 const MapDef* GetMap(s32 mapIdx);
 const SpawnPoint* GetSpawnPoint(s32 mapIdx, s32 spawnIdx);
 s32 GetEntranceForMap(s32 mapIdx);
+
+// Per-round scene-lock (parity with PropHunt). Returns true if `sceneNum`
+// belongs to the allowed scene cluster for the round whose host-selected
+// map is `mapIndex`. Used by the OnGameFrameUpdate loading-zone interceptor.
+bool IsSceneInRoundClusterTT(s32 mapIndex, s32 sceneNum);
+
+// Full-circle return entrance for an invalid out-of-cluster exit. v1
+// returns the round map's main entrance (same simplification as PH).
+s32 GetReturnEntranceForInvalidExitTT(s32 mapIndex, s32 destSceneNum);
 
 // ---------------------------------------------------------------------------
 // Save preset — mirrors Scooter's TriforceThief_InitSave().

@@ -30,6 +30,7 @@ extern GameState* gGameState;
 
 #include "soh/SaveManager.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/enhancementTypes.h"  // BUNNY_HOOD_VANILLA / BUNNY_HOOD_FAST_AND_JUMP
 extern "C" void Save_InitFile(int isDebug);
 
 // Forward declaration — defined in soh/ResourceManagerHelpers.cpp. No public
@@ -50,6 +51,19 @@ HarpoonTriforceThief::LocalState         sLocal;
 nlohmann::json                           sSavePresetRaw;
 bool                                     sLoaded = false;
 s16                                       sTriforceSpinAngle = 0;
+
+// Final-standings leaderboard. Populated by HandleRoundResult from the
+// `leaderboard` array in the ROUND_RESULT payload. Sorted desc by
+// carrySecs; ties share placement (rank stays the same, next rank
+// skips ahead by the size of the tied group). Cleared in
+// LocallyConfirmMap when the host starts the next round.
+struct LeaderboardRow {
+    u32         clientId;
+    std::string name;
+    s32         carrySecs;
+    s32         rank;
+};
+std::vector<LeaderboardRow> sLeaderboard;
 
 std::string ResolvePackRoot() {
     std::string harpoonRoot = Ship::Context::LocateFileAcrossAppDirs("harpoon", "soh");
@@ -192,6 +206,47 @@ const SpawnPoint* GetSpawnPoint(s32 mapIdx, s32 spawnIdx) {
 s32 GetEntranceForMap(s32 mapIdx) {
     const MapDef* m = GetMap(mapIdx);
     return m ? m->entranceIndex : 205;
+}
+
+// ---------------------------------------------------------------------------
+// Per-round scene-lock cluster (parity with PropHunt). One entry per TT map.
+// All 6 TT maps are strict single-scene — no sub-area extensions.
+// ---------------------------------------------------------------------------
+
+namespace {
+struct ClusterDef { const s8* scenes; s32 count; };
+
+static const s8 sCluster_HyruleField[] = { SCENE_HYRULE_FIELD };
+static const s8 sCluster_ZorasRiver[]  = { SCENE_ZORAS_RIVER };
+static const s8 sCluster_Gerudo[]      = { SCENE_GERUDOS_FORTRESS };
+static const s8 sCluster_Kokiri[]      = { SCENE_KOKIRI_FOREST };
+static const s8 sCluster_Kakariko[]    = { SCENE_KAKARIKO_VILLAGE };
+static const s8 sCluster_SFM[]         = { SCENE_SACRED_FOREST_MEADOW };
+
+static const ClusterDef sClusterByMap[HarpoonTriforceThief::kMapCount] = {
+    { sCluster_HyruleField, (s32)ARRAY_COUNT(sCluster_HyruleField) },
+    { sCluster_ZorasRiver,  (s32)ARRAY_COUNT(sCluster_ZorasRiver)  },
+    { sCluster_Gerudo,      (s32)ARRAY_COUNT(sCluster_Gerudo)      },
+    { sCluster_Kokiri,      (s32)ARRAY_COUNT(sCluster_Kokiri)      },
+    { sCluster_Kakariko,    (s32)ARRAY_COUNT(sCluster_Kakariko)    },
+    { sCluster_SFM,         (s32)ARRAY_COUNT(sCluster_SFM)         },
+};
+}  // anon
+
+bool IsSceneInRoundClusterTT(s32 mapIndex, s32 sceneNum) {
+    if (mapIndex < 0 || mapIndex >= (s32)ARRAY_COUNT(sClusterByMap)) return false;
+    const ClusterDef& def = sClusterByMap[mapIndex];
+    for (s32 i = 0; i < def.count; i++) {
+        if ((s32)def.scenes[i] == sceneNum) return true;
+    }
+    return false;
+}
+
+s32 GetReturnEntranceForInvalidExitTT(s32 mapIndex, s32 destSceneNum) {
+    // v1: redirect to the round map's main entrance. Same simplification
+    // as PropHunt. Per-(map, dest) precision can be layered later.
+    (void)destSceneNum;
+    return GetEntranceForMap(mapIndex);
 }
 
 // ---------------------------------------------------------------------------
@@ -560,6 +615,12 @@ bool CycleHoveredMap(s32 delta) {
 
 namespace {
 
+// Forward declaration — `BuildLeaderboardFromPayload` is defined in a
+// later anonymous namespace block (after `BuildRoundResultPayload`).
+// `HandleRoundResult` below calls it, so without this forward declare
+// the call doesn't resolve.
+void BuildLeaderboardFromPayload(const nlohmann::json& p);
+
 void HandleMapSelectBegin(const nlohmann::json& p) {
     sLocal.inMapSelect = true;
     sLocal.inRound = false;
@@ -597,6 +658,33 @@ void HandleMapConfirmed(const nlohmann::json& p) {
     sLocal.inMapSelect = false;
     sLocal.inRound = true;
     sLocal.roundIndex += 1;
+
+    // Reset per-round state that carries over from the previous round.
+    // Without these resets, peers enter round 2+ with `roundEnded = true`
+    // from the previous HandleRoundResult — the leaderboard modal stays
+    // up, pickup paths that gate on `!roundEnded` reject every attempt,
+    // and the carrier rupee drain doesn't even tick. The host clears all
+    // of this in HostConfirmMap; peers need the same in this handler.
+    sLocal.roundEnded             = false;
+    sLocal.carrierClientId        = 0;
+    sLocal.carrierRupeesRemaining = 0;
+    sLocal.drainTickCounter       = 0;
+    sLocal.preRoundCountdownFrames = 60;       // 3-second GET READY
+    sLocal.triforceLanded         = true;
+    sLocal.appliedBunnyHood       = false;
+    sLocal.goFlashFrames          = 0;
+    sLocal.dropFlyTimer           = 0;
+    sLocal.dropVelX = sLocal.dropVelY = sLocal.dropVelZ = 0.0f;
+    sLocal.pickupCooldownByCid.clear();
+    sLocal.idleOnGroundFrames     = 0;
+    sLeaderboard.clear();
+    // Reset peer mirrors so leaderboard data + HUD don't show stale values.
+    if (Harpoon::Instance != nullptr) {
+        for (auto& [cid, c] : Harpoon::Instance->clients) {
+            c.ttRupeesRemaining = 0;
+        }
+    }
+
     // CRITICAL: flip the room-wide state off MAP_SELECT so the overlay
     // closes on every peer (the overlay's first gate is
     // `gameState != HARPOON_STATE_MAP_SELECT → return`). Without this,
@@ -691,23 +779,19 @@ void HandleTriforceDrop(const nlohmann::json& p) {
 }
 
 void HandleRoundResult(const nlohmann::json& p) {
+    // Silent round end (parity with PropHunt's HandleRoundResult). Per user
+    // spec: no winner notification text — players just see the leaderboard
+    // modal. The winnerClientId is still logged for diagnostics.
     u32 winner = p.value("winnerClientId", 0u);
     s32 round  = p.value("roundIndex", sLocal.roundIndex);
-    SPDLOG_INFO("[Harpoon][TriforceThief] round {} winner=cid{}", round, winner);
+    SPDLOG_INFO("[Harpoon][TriforceThief] round {} ended winner=cid{} (silent)",
+                round, winner);
+    (void)winner;
 
-    // Announce by display name.
-    std::string who = "cid" + std::to_string(winner);
-    if (Harpoon::Instance != nullptr && winner != 0) {
-        auto it = Harpoon::Instance->clients.find(winner);
-        if (it != Harpoon::Instance->clients.end() && !it->second.name.empty()) {
-            who = it->second.name;
-        }
-    }
-    Notification::Emit({
-        .prefix = "Triforce Thief",
-        .message = "Round " + std::to_string(round) + " winner: " + who,
-        .remainingTime = 5.0f,
-    });
+    // Build the leaderboard so DrawHud can render the centered modal.
+    // Stays visible until LocallyConfirmMap / HostConfirmMap clears it on
+    // the next round start.
+    BuildLeaderboardFromPayload(p);
 
     // Reset round state and teleport back to the lobby. The lobby is Hyrule
     // Field (map index 0); ApplyThiefSave on teleport resets gSaveContext.rupees
@@ -888,8 +972,82 @@ nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex) {
     nlohmann::json d;
     d["winnerClientId"] = winnerClientId;
     d["roundIndex"]     = roundIndex;
+
+    // Embed a per-client leaderboard snapshot. Carry seconds is derived
+    // from the rupee-drain timer: `roundWinSeconds - rupeesRemaining`.
+    // Local row uses `carrierRupeesRemaining` (authoritative for us);
+    // peer rows use `ttRupeesRemaining` (mirrored from their
+    // CARRIER_TIMER_SYNC heartbeats).
+    nlohmann::json lb = nlohmann::json::array();
+    if (Harpoon::Instance != nullptr) {
+        for (auto& [cid, c] : Harpoon::Instance->clients) {
+            if (!c.online) continue;
+            s32 rem;
+            if (cid == Harpoon::Instance->ownClientId) {
+                rem = sLocal.carrierRupeesRemaining;
+            } else {
+                rem = c.ttRupeesRemaining;
+            }
+            // Non-carriers / never-carried players show as 0 carry secs
+            // (their counter is the initial 0 — treat as "never decremented
+            // from full" by clamping to roundWinSeconds).
+            if (rem <= 0) rem = sLocal.roundWinSeconds;
+            s32 carrySecs = sLocal.roundWinSeconds - rem;
+            if (carrySecs < 0) carrySecs = 0;
+            nlohmann::json row;
+            row["clientId"]  = cid;
+            row["carrySecs"] = carrySecs;
+            lb.push_back(row);
+        }
+    }
+    d["leaderboard"] = lb;
     return _Envelope(kEvtRoundResult, std::move(d));
 }
+
+namespace {
+// Build sLeaderboard from a ROUND_RESULT payload. Sort descending by
+// carrySecs, then assign shared placement to ties (e.g. two 1st-place
+// rows both get rank 1; the next group's rank is 3).
+void BuildLeaderboardFromPayload(const nlohmann::json& p) {
+    sLeaderboard.clear();
+    if (!p.contains("leaderboard") || !p["leaderboard"].is_array()) return;
+    for (const auto& e : p["leaderboard"]) {
+        LeaderboardRow r;
+        r.clientId  = e.value("clientId", 0u);
+        r.carrySecs = e.value("carrySecs", 0);
+        std::string fallback = "cid" + std::to_string(r.clientId);
+        if (Harpoon::Instance != nullptr) {
+            auto it = Harpoon::Instance->clients.find(r.clientId);
+            if (it != Harpoon::Instance->clients.end() &&
+                !it->second.name.empty()) {
+                r.name = it->second.name;
+            } else {
+                r.name = fallback;
+            }
+        } else {
+            r.name = fallback;
+        }
+        r.rank = 0;
+        sLeaderboard.push_back(r);
+    }
+    std::sort(sLeaderboard.begin(), sLeaderboard.end(),
+              [](const LeaderboardRow& a, const LeaderboardRow& b) {
+                  return a.carrySecs > b.carrySecs;
+              });
+    // Shared placement on ties: 1, 1, 3, 3, 5, ...
+    s32 rank = 1, sameCount = 0;
+    s32 prevSecs = -1;
+    for (auto& r : sLeaderboard) {
+        if (r.carrySecs != prevSecs) {
+            rank += sameCount;
+            sameCount = 0;
+        }
+        r.rank = rank;
+        sameCount++;
+        prevSecs = r.carrySecs;
+    }
+}
+}  // anon
 
 nlohmann::json BuildRoundConfigPayload(s32 winSeconds) {
     nlohmann::json d;
@@ -956,73 +1114,108 @@ void DrawHud() {
                                 "Triforce: dropped");
         }
 
-        // Directional arrows — one per other online player, plus one for
-        // the Triforce when it's on the ground. Drawn on the foreground
-        // draw list so they sit on top of the gameworld. Each arrow is
-        // tinted with the player's chosen color; the carrier (if any) is
-        // overridden to gold and gets a "<name>: <s>s" label showing
-        // their carrier-timer broadcast.
+        // Triforce HUD icon — single always-visible indicator. If the
+        // Triforce world position projects to a point inside the viewport,
+        // draw the icon there (visible through walls — ImGui foreground
+        // sits on top of the 3D scene). If off-screen (behind camera or
+        // outside the viewport rect), snap to the nearest screen edge
+        // with a small rotation arrow pointing toward the off-screen
+        // Triforce. Replaces the previous per-player compass arrows.
         if (gPlayState != nullptr && Harpoon::Instance != nullptr) {
-            Player* localPlayer = GET_PLAYER(gPlayState);
-            if (localPlayer != nullptr) {
-                Camera* cam = gPlayState->cameraPtrs[gPlayState->activeCamera];
-                f32 camAngle = cam ? cam->camDir.y * (3.14159265f / 32768.0f) : 0.0f;
-                auto vp = ImGui::GetMainViewport();
-                float cx = vp->Pos.x + vp->Size.x * 0.5f;
-                float cy = vp->Pos.y + vp->Size.y * 0.5f;
-                float radius = fminf(vp->Size.x, vp->Size.y) * 0.4f;
-                ImDrawList* fg = ImGui::GetForegroundDrawList(vp);
-
-                auto drawArrow = [&](f32 tx, f32 tz, ImU32 col, const char* label) {
-                    f32 dx = tx - localPlayer->actor.world.pos.x;
-                    f32 dz = tz - localPlayer->actor.world.pos.z;
-                    f32 dist = sqrtf(dx * dx + dz * dz);
-                    if (dist <= 100.0f) return;
-                    // See comment in old code re: sinf sign flip — OoT cam
-                    // yaw rotates opposite to atan2's convention.
-                    f32 angle    = atan2f(dx, dz);
-                    f32 relAngle = angle - camAngle;
-                    float ax = cx - sinf(relAngle) * radius;
-                    float ay = cy - cosf(relAngle) * radius;
-                    float sz = 13.0f;
-                    float perpX =  cosf(relAngle) * sz;
-                    float perpY =  sinf(relAngle) * sz;
-                    float backX =  sinf(relAngle) * sz * 1.5f;
-                    float backY =  cosf(relAngle) * sz * 1.5f;
-                    fg->AddTriangleFilled(
-                        ImVec2(ax, ay),
-                        ImVec2(ax + perpX + backX, ay + perpY + backY),
-                        ImVec2(ax - perpX + backX, ay - perpY + backY),
-                        col);
-                    if (label != nullptr && label[0] != '\0') {
-                        ImVec2 ts = ImGui::CalcTextSize(label);
-                        fg->AddText(ImVec2(ax - ts.x * 0.5f, ay + sz + 2),
-                                    IM_COL32(255, 255, 255, 220), label);
-                    }
-                };
-
-                // (1) Triforce on the ground.
-                if (sLocal.carrierClientId == 0) {
-                    drawArrow(sLocal.triforceX, sLocal.triforceZ,
-                              IM_COL32(255, 215, 0, 230), "Triforce");
+            Vec3f world = { sLocal.triforceX, sLocal.triforceY + 30.0f,
+                            sLocal.triforceZ };
+            // If the Triforce is currently being carried, draw above the
+            // carrier's head instead of at the stale ground coord.
+            if (sLocal.carrierClientId != 0) {
+                auto it = Harpoon::Instance->clients.find(sLocal.carrierClientId);
+                if (it != Harpoon::Instance->clients.end()) {
+                    world.x = it->second.posRot.pos.x;
+                    world.y = it->second.posRot.pos.y + 80.0f;
+                    world.z = it->second.posRot.pos.z;
                 }
+            }
 
-                // (2) Every other online player.
-                for (auto& [cid, c] : Harpoon::Instance->clients) {
-                    if (!c.online || c.self) continue;
-                    bool isCarrier = (cid == sLocal.carrierClientId);
-                    ImU32 col = isCarrier
-                        ? IM_COL32(255, 215, 0, 235)
-                        : IM_COL32(c.color.r, c.color.g, c.color.b, 200);
-                    char buf[64];
-                    if (isCarrier) {
-                        snprintf(buf, sizeof(buf), "%s: %ds",
-                                 c.name.c_str(), c.ttRupeesRemaining);
-                    } else {
-                        snprintf(buf, sizeof(buf), "%s", c.name.c_str());
-                    }
-                    drawArrow(c.posRot.pos.x, c.posRot.pos.z, col, buf);
+            Vec3f proj; f32 w;
+            func_8002BE04(gPlayState, &world, &proj, &w);
+            auto vp = ImGui::GetMainViewport();
+            ImDrawList* fg = ImGui::GetForegroundDrawList(vp);
+
+            // NDC → viewport pixels. w<=0 means the target is behind the
+            // camera; clamp it to a tiny positive number so we can still
+            // derive a stable direction for the edge-snap path.
+            bool behind = (w <= 0.0f);
+            f32 ndcX = proj.x * w;
+            f32 ndcY = proj.y * w * -1.0f;
+            f32 vpx  = vp->Pos.x + vp->Size.x * (ndcX + 1.0f) * 0.5f;
+            f32 vpy  = vp->Pos.y + vp->Size.y * (ndcY + 1.0f) * 0.5f;
+            f32 cx   = vp->Pos.x + vp->Size.x * 0.5f;
+            f32 cy   = vp->Pos.y + vp->Size.y * 0.5f;
+
+            bool onScreen = !behind &&
+                            vpx >= vp->Pos.x && vpx <= vp->Pos.x + vp->Size.x &&
+                            vpy >= vp->Pos.y && vpy <= vp->Pos.y + vp->Size.y;
+
+            auto drawTriforceIcon = [&](f32 px, f32 py, f32 scale) {
+                // Three small filled triangles arranged in the Triforce
+                // pattern (top + bottom-left + bottom-right). Gold.
+                ImU32 gold = IM_COL32(255, 215, 0, 235);
+                f32 s = 12.0f * scale;
+                // Top triangle
+                fg->AddTriangleFilled(ImVec2(px,         py - s),
+                                       ImVec2(px - s*0.5f, py),
+                                       ImVec2(px + s*0.5f, py),
+                                       gold);
+                // Bottom-left
+                fg->AddTriangleFilled(ImVec2(px - s*0.5f, py),
+                                       ImVec2(px - s,     py + s),
+                                       ImVec2(px,         py + s),
+                                       gold);
+                // Bottom-right
+                fg->AddTriangleFilled(ImVec2(px + s*0.5f, py),
+                                       ImVec2(px,         py + s),
+                                       ImVec2(px + s,     py + s),
+                                       gold);
+            };
+
+            if (onScreen) {
+                drawTriforceIcon(vpx, vpy, 1.0f);
+            } else {
+                // Off-screen: snap to nearest edge. Compute direction from
+                // viewport center to the projected (possibly off-screen)
+                // point and intersect with the viewport rect.
+                f32 dx = vpx - cx, dy = vpy - cy;
+                // If behind camera, the projection inverts direction —
+                // flip so the icon shows on the opposite edge from camera
+                // forward (i.e. behind us).
+                if (behind) { dx = -dx; dy = -dy; }
+                if (fabsf(dx) < 0.001f && fabsf(dy) < 0.001f) {
+                    dy = -1.0f; // arbitrary up
                 }
+                f32 halfW = vp->Size.x * 0.45f;
+                f32 halfH = vp->Size.y * 0.45f;
+                f32 sx = (fabsf(dx) > 0.001f) ? halfW / fabsf(dx) : 1e9f;
+                f32 sy = (fabsf(dy) > 0.001f) ? halfH / fabsf(dy) : 1e9f;
+                f32 scl = fminf(sx, sy);
+                f32 ex = cx + dx * scl;
+                f32 ey = cy + dy * scl;
+                drawTriforceIcon(ex, ey, 0.85f);
+
+                // Small directional arrow next to the icon, pointing
+                // away from the screen center (i.e. toward the off-screen
+                // Triforce). Filled triangle.
+                f32 a = atan2f(dy, dx);
+                f32 arSize = 8.0f;
+                f32 ax = ex + cosf(a) * 18.0f;
+                f32 ay = ey + sinf(a) * 18.0f;
+                f32 perpX =  sinf(a) * arSize * 0.7f;
+                f32 perpY = -cosf(a) * arSize * 0.7f;
+                f32 backX = -cosf(a) * arSize;
+                f32 backY = -sinf(a) * arSize;
+                fg->AddTriangleFilled(
+                    ImVec2(ax, ay),
+                    ImVec2(ax + backX + perpX, ay + backY + perpY),
+                    ImVec2(ax + backX - perpX, ay + backY - perpY),
+                    IM_COL32(255, 235, 100, 220));
             }
         }
     } else {
@@ -1031,6 +1224,86 @@ void DrawHud() {
     }
 
     ImGui::End();
+
+    // "GET READY" pre-round countdown — big centered text over the HUD.
+    // Decrements in TickFrame; renders 3 / 2 / 1 / GO! as the frames count
+    // down from 60 (3 sec at 20 fps).
+    if (sLocal.preRoundCountdownFrames > 0) {
+        auto vp = ImGui::GetMainViewport();
+        ImDrawList* fg = ImGui::GetForegroundDrawList(vp);
+        // 60..41 = "3", 40..21 = "2", 20..1 = "1", 0 = (handled by TickFrame which clears)
+        const char* label;
+        if (sLocal.preRoundCountdownFrames > 40)      label = "3";
+        else if (sLocal.preRoundCountdownFrames > 20) label = "2";
+        else                                          label = "1";
+        ImFont* font = ImGui::GetFont();
+        f32 scale = 6.0f;
+        ImVec2 ts = font->CalcTextSizeA(font->FontSize * scale, FLT_MAX, 0.0f, label);
+        f32 px = vp->Pos.x + vp->Size.x * 0.5f - ts.x * 0.5f;
+        f32 py = vp->Pos.y + vp->Size.y * 0.5f - ts.y * 0.5f;
+        // Shadow + foreground for legibility.
+        fg->AddText(font, font->FontSize * scale, ImVec2(px + 3, py + 3),
+                    IM_COL32(0, 0, 0, 200), label);
+        fg->AddText(font, font->FontSize * scale, ImVec2(px, py),
+                    IM_COL32(255, 215, 0, 255), label);
+    } else if (sLocal.goFlashFrames > 0) {
+        // One-shot "GO!" flash. Armed by TickFrame when the countdown hits
+        // 0; decremented here each frame until it reaches 0 and the flash
+        // disappears for the rest of the round.
+        sLocal.goFlashFrames--;
+        auto vp = ImGui::GetMainViewport();
+        ImDrawList* fg = ImGui::GetForegroundDrawList(vp);
+        ImFont* font = ImGui::GetFont();
+        f32 scale = 6.0f;
+        const char* label = "GO!";
+        ImVec2 ts = font->CalcTextSizeA(font->FontSize * scale, FLT_MAX, 0.0f, label);
+        f32 px = vp->Pos.x + vp->Size.x * 0.5f - ts.x * 0.5f;
+        f32 py = vp->Pos.y + vp->Size.y * 0.5f - ts.y * 0.5f;
+        u8 alpha = (u8)(255 * sLocal.goFlashFrames / 20);
+        fg->AddText(font, font->FontSize * scale, ImVec2(px + 3, py + 3),
+                    IM_COL32(0, 0, 0, alpha * 200 / 255), label);
+        fg->AddText(font, font->FontSize * scale, ImVec2(px, py),
+                    IM_COL32(120, 255, 120, alpha), label);
+    }
+
+    // Final-standings leaderboard modal at round end. Centered, persistent
+    // until the host starts the next round (sLeaderboard.clear() in
+    // LocallyConfirmMap clears it). Populated by HandleRoundResult.
+    if (sLocal.roundEnded && !sLeaderboard.empty()) {
+        auto vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(
+            ImVec2(vp->Pos.x + vp->Size.x * 0.5f,
+                   vp->Pos.y + vp->Size.y * 0.5f),
+            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGuiWindowFlags lbFlags = ImGuiWindowFlags_NoResize |
+                                    ImGuiWindowFlags_NoMove |
+                                    ImGuiWindowFlags_AlwaysAutoResize |
+                                    ImGuiWindowFlags_NoCollapse |
+                                    ImGuiWindowFlags_NoSavedSettings |
+                                    ImGuiWindowFlags_NoInputs;
+        ImGui::SetNextWindowBgAlpha(0.85f);
+        if (ImGui::Begin("Final Standings", nullptr, lbFlags)) {
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
+                                "  ROUND OVER  ");
+            ImGui::Separator();
+            for (const auto& r : sLeaderboard) {
+                const char* suffix = (r.rank == 1) ? "st"
+                                   : (r.rank == 2) ? "nd"
+                                   : (r.rank == 3) ? "rd" : "th";
+                ImVec4 col = (r.rank == 1) ? ImVec4(1.0f, 0.85f, 0.2f, 1.0f)
+                            : (r.rank == 2) ? ImVec4(0.8f, 0.8f, 0.85f, 1.0f)
+                            : (r.rank == 3) ? ImVec4(0.85f, 0.55f, 0.3f, 1.0f)
+                                            : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                ImGui::TextColored(col, "  %d%s  %-16s  %02d:%02d",
+                                    r.rank, suffix, r.name.c_str(),
+                                    r.carrySecs / 60, r.carrySecs % 60);
+            }
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                "  Host starts the next round to dismiss.  ");
+        }
+        ImGui::End();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1196,6 +1469,15 @@ void HostConfirmMap(s32 mapIdx) {
     sLocal.roundIndex            += 1;
     Harpoon::Instance->gameState  = HARPOON_STATE_PLAYING;
 
+    // 3-second "GET READY" pre-round countdown. While > 0, TickFrame freezes
+    // the local player and short-circuits the rupee drain. 3 s × 20 fps = 60.
+    sLocal.preRoundCountdownFrames = 60;
+    sLocal.triforceLanded          = true;   // not airborne yet
+    sLocal.appliedBunnyHood        = false;
+
+    // Clear last round's leaderboard so the modal stops rendering.
+    sLeaderboard.clear();
+
     // 2) Broadcast: MAP_CONFIRMED + ROUND_CONFIG.
     s32 entrance = GetEntranceForMap(mapIdx);
     Harpoon::Instance->SendJsonToRemote(BuildMapConfirmedPayload(mapIdx, entrance));
@@ -1307,10 +1589,24 @@ bool StepDropPhysics() {
     }
 
     // (3) Floor — snap to floor Y when we'd fall below it; bounce or settle.
+    //     CRITICAL: BgCheck_EntityRaycastFloor4 shoots a ray DOWN from the
+    //     query position. If we already dropped BELOW the floor in this
+    //     single frame (gravity * |vy| can be 20+ units / tick), the ray
+    //     starts below the floor and returns BGCHECK_Y_MIN — the
+    //     Triforce phases through the world and falls forever.
+    //
+    //     Fix: query from a Y above the max of prev/next position so the
+    //     ray catches any floor we crossed during this step. Then snap up
+    //     if nextPos.y is now below it.
     CollisionPoly* floorPoly = nullptr;
     s32 floorBgId = 0;
+    Vec3f floorQueryPos = {
+        nextPos.x,
+        fmaxf(sLocal.dropPrevY, nextPos.y) + 20.0f,
+        nextPos.z
+    };
     f32 floorY = BgCheck_EntityRaycastFloor4(&gPlayState->colCtx, &floorPoly,
-                                              &floorBgId, nullptr, &nextPos);
+                                              &floorBgId, nullptr, &floorQueryPos);
     bool onFloor = false;
     if (floorY > BGCHECK_Y_MIN && nextPos.y <= floorY + 0.5f) {
         nextPos.y = floorY;
@@ -1334,14 +1630,51 @@ bool StepDropPhysics() {
     return onFloor && speedSq < (SETTLE_SPEED * SETTLE_SPEED);
 }
 
+// Pick a new random spawn point on the current map and teleport the
+// Triforce there. Used on out-of-bounds (void / Y below -4000). Host
+// broadcasts TRIFORCE_SPAWN so every peer sees the same new location.
+void RespawnTriforceRandom() {
+    if (Harpoon::Instance == nullptr) return;
+    const MapDef* m = GetMap(sLocal.confirmedMap);
+    if (m == nullptr || m->spawnPoints.empty()) return;
+    s32 idx = (s32)(rand() % m->spawnPoints.size());
+    const SpawnPoint& sp = m->spawnPoints[idx];
+    sLocal.triforceX = sp.x;
+    sLocal.triforceY = sp.y;
+    sLocal.triforceZ = sp.z;
+    sLocal.dropVelX = sLocal.dropVelY = sLocal.dropVelZ = 0.0f;
+    sLocal.dropFlyTimer    = 0;
+    sLocal.triforceLanded  = true;
+    sLocal.currentSpawn    = idx;
+    sLocal.carrierClientId = 0;
+    bool isHost = (Harpoon::Instance->ownClientId != 0 &&
+                   Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
+    if (isHost) {
+        Harpoon::Instance->SendJsonToRemote(
+            BuildTriforceSpawnPayload(sLocal.confirmedMap, idx, sp.x, sp.y, sp.z));
+    }
+    SPDLOG_INFO("[Harpoon][TriforceThief] Triforce out-of-bounds — respawned at idx={} "
+                "({:.0f}, {:.0f}, {:.0f})", idx, sp.x, sp.y, sp.z);
+}
+
 // Called each frame; returns when ttl runs out or physics settle.
 void AnimateDropFly() {
     if (sLocal.dropFlyTimer <= 0) return;
     bool settled = StepDropPhysics();
     sLocal.dropFlyTimer--;
+    // Out-of-bounds detection: if the Triforce fell into the void, respawn
+    // at a fresh random spawn point. Same threshold the engine uses for
+    // player void-out in z_player.c:5633.
+    if (sLocal.triforceY < -4000.0f) {
+        RespawnTriforceRandom();
+        return;
+    }
     if (settled || sLocal.dropFlyTimer == 0) {
-        sLocal.dropFlyTimer = 0;
+        sLocal.dropFlyTimer    = 0;
         sLocal.dropVelX = sLocal.dropVelY = sLocal.dropVelZ = 0.0f;
+        sLocal.triforceLanded  = true;
+    } else {
+        sLocal.triforceLanded  = false;
     }
 }
 
@@ -1472,6 +1805,29 @@ void TickCutscene() {
 void TickFrame() {
     if (Harpoon::Instance == nullptr || !Harpoon::Instance->isConnected) return;
 
+    // (a-1) "GET READY" pre-round countdown. While > 0, freeze the local
+    //       player and skip every other gameplay tick path. Runs BEFORE
+    //       the cutscene tick so the cutscene's own freeze logic doesn't
+    //       clobber the player state we're forcing here.
+    if (sLocal.preRoundCountdownFrames > 0 && gPlayState != nullptr) {
+        Player* lp = GET_PLAYER(gPlayState);
+        if (lp != nullptr) {
+            // Re-apply freeze every tick — the engine may clear it after
+            // its own subsystems run.
+            lp->actor.freezeTimer = 2;
+            lp->stateFlags1 |= PLAYER_STATE1_IN_CUTSCENE;
+        }
+        sLocal.preRoundCountdownFrames--;
+        if (sLocal.preRoundCountdownFrames == 0 && lp != nullptr) {
+            // Final tick — release. Arm the one-shot "GO!" flash (decremented
+            // in DrawHud; resets to 0 and never re-arms during this round).
+            lp->stateFlags1 &= ~PLAYER_STATE1_IN_CUTSCENE;
+            lp->actor.freezeTimer = 0;
+            sLocal.goFlashFrames = 20;  // 1 sec at 20 fps
+        }
+        return;  // skip everything else during pre-round
+    }
+
     // (a0) Triforce-appear cutscene (round start). Runs before everything
     //      else so we don't process pickups / damage while frozen.
     TickCutscene();
@@ -1488,6 +1844,61 @@ void TickFrame() {
     //     Auto-drop on damage lives in the OnPlayerHealthChange engine hook.
     if (sLocal.inRound && !sLocal.roundEnded) {
         TickPassiveRegen();
+    }
+
+    // (a.5) Bunny Hood speed buff. The engine's speed math at z_player.c:7829
+    //       is gated on TWO conditions:
+    //         (1) player->currentMask == PLAYER_MASK_BUNNY
+    //         (2) CVar MMBunnyHood == BUNNY_HOOD_FAST_AND_JUMP
+    //       Additionally, Player_Update at z_player.c:2637-2651 CLEARS
+    //       currentMask each frame if the Bunny Hood isn't equipped on a
+    //       C-button (or D-pad with DpadEquips). Setting currentMask alone
+    //       gets wiped on the next frame — the buff lasts ~1 frame.
+    //
+    //       Full fix: while carrying, we (a) force the CVar to FAST_AND_JUMP,
+    //       (b) write ITEM_MASK_BUNNY to a C-button slot, (c) write
+    //       PLAYER_MASK_BUNNY to currentMask. On drop we restore all three.
+    if (gPlayState != nullptr) {
+        Player* lp = GET_PLAYER(gPlayState);
+        if (lp != nullptr) {
+            bool shouldBuff =
+                (sLocal.inRound && !sLocal.roundEnded && IsLocalCarrier());
+            if (shouldBuff && !sLocal.appliedBunnyHood) {
+                sLocal.savedMaskBeforeBuff = lp->currentMask;
+                sLocal.savedBunnyHoodCVar  = CVarGetInteger(
+                    CVAR_ENHANCEMENT("MMBunnyHood"), BUNNY_HOOD_VANILLA);
+                CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"),
+                                BUNNY_HOOD_FAST_AND_JUMP);
+                // Hijack a C-button slot (CDown = slot 2) so the mask-sync
+                // at z_player.c:2637 sees the bunny mask on a button.
+                sLocal.buffMaskSlot      = 2;
+                sLocal.savedMaskSlotItem = gSaveContext.equips.buttonItems[2];
+                gSaveContext.equips.buttonItems[2] = ITEM_MASK_BUNNY;
+                sLocal.appliedBunnyHood = true;
+            }
+            if (sLocal.appliedBunnyHood) {
+                if (shouldBuff) {
+                    // Reassert each frame in case some other system clears
+                    // the slot (e.g. inventory refresh on scene change).
+                    if (sLocal.buffMaskSlot >= 0 &&
+                        gSaveContext.equips.buttonItems[sLocal.buffMaskSlot] != ITEM_MASK_BUNNY) {
+                        gSaveContext.equips.buttonItems[sLocal.buffMaskSlot] = ITEM_MASK_BUNNY;
+                    }
+                    lp->currentMask = PLAYER_MASK_BUNNY;
+                } else {
+                    // Restore everything we replaced.
+                    lp->currentMask = sLocal.savedMaskBeforeBuff;
+                    CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"),
+                                    sLocal.savedBunnyHoodCVar);
+                    if (sLocal.buffMaskSlot >= 0) {
+                        gSaveContext.equips.buttonItems[sLocal.buffMaskSlot] =
+                            sLocal.savedMaskSlotItem;
+                        sLocal.buffMaskSlot = -1;
+                    }
+                    sLocal.appliedBunnyHood = false;
+                }
+            }
+        }
     }
 
     // (a) Carrier rupee drain.
@@ -1572,6 +1983,12 @@ void TickFrame() {
     //     no one's carrying it, count frames; after 10 sec respawn it at
     //     a random spawn point. Also respawn immediately if the Y has
     //     dropped well below the original ground (void / pit).
+    //
+    //     User spec: if the Triforce is currently resting AT a valid
+    //     spawn point, do NOT run the idle timer. It only ticks when the
+    //     Triforce was dropped somewhere else (after a knockout) and
+    //     remained untouched. Sitting at a spawn point indefinitely is
+    //     fine — players race to it on round start / after an OOB respawn.
     if (sLocal.inRound && !sLocal.roundEnded && sLocal.carrierClientId == 0 &&
         sLocal.dropFlyTimer == 0 && Harpoon::Instance != nullptr) {
         const MapDef* m = GetMap(sLocal.confirmedMap);
@@ -1581,7 +1998,26 @@ void TickFrame() {
             f32 spawnY = m->spawnPoints[sLocal.currentSpawn].y;
             if (sLocal.triforceY < spawnY - 200.0f) inVoid = true;
         }
-        sLocal.idleOnGroundFrames++;
+        // Is the Triforce currently within ~40u of ANY spawn point on
+        // this map? If so, skip the idle counter entirely.
+        bool atSpawnPoint = false;
+        if (m != nullptr) {
+            constexpr f32 kAtSpawnRadiusSq = 40.0f * 40.0f;
+            for (const auto& sp : m->spawnPoints) {
+                f32 dx = sLocal.triforceX - sp.x;
+                f32 dy = sLocal.triforceY - sp.y;
+                f32 dz = sLocal.triforceZ - sp.z;
+                if (dx * dx + dy * dy + dz * dz < kAtSpawnRadiusSq) {
+                    atSpawnPoint = true;
+                    break;
+                }
+            }
+        }
+        if (!atSpawnPoint) {
+            sLocal.idleOnGroundFrames++;
+        } else {
+            sLocal.idleOnGroundFrames = 0;
+        }
         if (inVoid || sLocal.idleOnGroundFrames >= 600) {
             sLocal.idleOnGroundFrames = 0;
             // Only the host respawns it so we don't double-spawn. Peers

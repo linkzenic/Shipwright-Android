@@ -64,6 +64,8 @@ u8 ExtEquip_GetAgeReq(s16 equipType, u8 index) {
 }
 
 u8 ExtEquip_CheckAgeReq(s16 equipType, u8 index) {
+    if (CVarGetInteger("gCheats.TimelessEquipment", 0))
+        return 1;
     u8 req = ExtEquip_GetAgeReq(equipType, index);
     return (req == AGE_REQ_NONE) || (req == gSaveContext.linkAge);
 }

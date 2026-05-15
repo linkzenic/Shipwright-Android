@@ -479,24 +479,29 @@ void GenerateItemPool() {
     lesserPool.clear();
     int reservedSlots = 0;
 
+    // When this is on, vanilla OOT "tool/spell" majors are skipped so the NEI custom items
+    // can take their pool slots. Equipment (tunics, boots, shields, swords) and capacity
+    // upgrades (bomb bag, magic meter, etc.) are intentionally kept.
+    bool removeVanillaMajors = CVarGetInteger(CVAR_RANDOMIZER_SETTING("RemoveVanillaMajors"), 0) != 0;
+
     // clang-format off
-    AddItemToPool(RG_BOOMERANG, 2, 1, 1, 1);
-    AddItemToPool(RG_LENS_OF_TRUTH, 2, 1, 1, 1);
-    AddItemToPool(RG_MEGATON_HAMMER, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_BOOMERANG, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_LENS_OF_TRUTH, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_MEGATON_HAMMER, 2, 1, 1, 1);
     AddItemToPool(RG_IRON_BOOTS, 2, 1, 1, 1);
     AddItemToPool(RG_GORON_TUNIC, 2, 1, 1, 1);
     AddItemToPool(RG_ZORA_TUNIC, 2, 1, 1, 1);
     AddItemToPool(RG_HOVER_BOOTS, 2, 1, 1, 1);
     AddItemToPool(RG_MIRROR_SHIELD, 2, 1, 1, 1);
     AddItemToPool(RG_STONE_OF_AGONY, 2, 1, 1, 1);
-    AddItemToPool(RG_FIRE_ARROWS, 2, 1, 1, 1);
-    AddItemToPool(RG_ICE_ARROWS, 2, 1, 1, 1);
-    AddItemToPool(RG_LIGHT_ARROWS, 2, 1, 1, 1);
-    AddItemToPool(RG_DINS_FIRE, 2, 1, 1, 1);
-    AddItemToPool(RG_FARORES_WIND, 2, 1, 1, 0);
-    AddItemToPool(RG_NAYRUS_LOVE, 2, 1, 1, 0);
+    if (!removeVanillaMajors) AddItemToPool(RG_FIRE_ARROWS, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_ICE_ARROWS, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_LIGHT_ARROWS, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_DINS_FIRE, 2, 1, 1, 1);
+    if (!removeVanillaMajors) AddItemToPool(RG_FARORES_WIND, 2, 1, 1, 0);
+    if (!removeVanillaMajors) AddItemToPool(RG_NAYRUS_LOVE, 2, 1, 1, 0);
     AddItemToPool(RG_GREG_RUPEE, 1, 1, 1, 1);
-    AddItemToPool(RG_PROGRESSIVE_HOOKSHOT, 2, 2, 2, 2);
+    if (!removeVanillaMajors) AddItemToPool(RG_PROGRESSIVE_HOOKSHOT, 2, 2, 2, 2);
     AddItemToPool(RG_HYLIAN_SHIELD, 1, 1, 1, 1);
     AddItemToPool(RG_DOUBLE_DEFENSE, 2, 1, 0, 0);
     AddItemToPool(RG_BIGGORON_SWORD, 2, 1, 1, 0);
@@ -523,14 +528,16 @@ void GenerateItemPool() {
     }
 
     int infiniteProgressive = ctx->GetOption(RSK_INFINITE_UPGRADES).Is(RO_INF_UPGRADES_PROGRESSIVE) ? 1 : 0;
-    AddItemToPool(RG_PROGRESSIVE_BOW, 4 + infiniteProgressive, 
-                                      3 + infiniteProgressive, 
-                                      2 + infiniteProgressive,
-                                      1 + infiniteProgressive);
-    AddItemToPool(RG_PROGRESSIVE_SLINGSHOT, 4 + infiniteProgressive, 
-                                            3 + infiniteProgressive, 
-                                            2 + infiniteProgressive,
-                                            1 + infiniteProgressive);
+    if (!removeVanillaMajors) {
+        AddItemToPool(RG_PROGRESSIVE_BOW, 4 + infiniteProgressive,
+                                          3 + infiniteProgressive,
+                                          2 + infiniteProgressive,
+                                          1 + infiniteProgressive);
+        AddItemToPool(RG_PROGRESSIVE_SLINGSHOT, 4 + infiniteProgressive,
+                                                3 + infiniteProgressive,
+                                                2 + infiniteProgressive,
+                                                1 + infiniteProgressive);
+    }
     AddItemToPool(RG_PROGRESSIVE_BOMB_BAG,  4 + infiniteProgressive, 
                                             3 + infiniteProgressive, 
                                             2 + infiniteProgressive,

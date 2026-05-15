@@ -364,6 +364,13 @@ u8 PikaItem_PassThrough(PlayState* play, Player* player, s32 item);
 u8 PikaItem_BlockSword(PlayState* play, Player* player, s32 item);
 u8 PikaItem_Shield(PlayState* play, Player* player, s32 item);
 u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item);
+
+// OOT door action functions (defined in z_player.c, non-static). Used to detect when
+// OOT is in a door cutscene so the form can yield correctly even from swim states.
+// Declared early because MmForm_Action_SwimIdle (~line 8500) compares actionFunc to
+// these pointers, before later code blocks would otherwise re-declare them.
+void Player_Action_80845EF8(Player* this_, PlayState* play); // knob open
+void Player_Action_80845CA4(Player* this_, PlayState* play); // walk through
 }
 
 // Pikachu item handler table.
@@ -1205,6 +1212,15 @@ static const char* sFormObjectPaths[MM_PLAYER_FORM_MAX] = {
 };
 
 // Pin ALL resources for the given form's object from mm.o2r.
+//
+// IMPORTANT: We cannot use resMgr->LoadResources(mask) here. That call submits a batch
+// task to mThreadPool and blocks on the future. The batch task itself runs inside a pool
+// worker and calls LoadResource(file) per file, which dispatches yet more sub-tasks to
+// the same pool. On CPUs with ≤4 logical cores the pool is sized to 1 worker, so the
+// worker ends up waiting on a sub-task that has nowhere to run → deadlock at transform.
+//
+// Replicate the iteration manually using the synchronous LoadResourceProcess API, which
+// runs entirely inline without touching the thread pool.
 static void MmForm_PinFormResources(MmPlayerTransformation form) {
     sPinnedFormResources.reset();
 
@@ -1213,13 +1229,31 @@ static void MmForm_PinFormResources(MmPlayerTransformation form) {
     }
 
     auto resMgr = Ship::Context::GetInstance()->GetResourceManager();
-    sPinnedFormResources = resMgr->LoadResources(sFormObjectPaths[form]);
-    if (sPinnedFormResources != nullptr) {
-        MMFORM_LOG("[MmForm] Deep-pinned %zu resources for form %d from %s", sPinnedFormResources->size(), form,
-                   sFormObjectPaths[form]);
-    } else {
-        MMFORM_LOG("[MmForm] WARNING: Failed to bulk-load resources for form %d: %s", form, sFormObjectPaths[form]);
+    auto archiveManager = resMgr->GetArchiveManager();
+    if (!archiveManager) {
+        MMFORM_LOG("[MmForm] WARNING: No archive manager available for form %d", form);
+        return;
     }
+
+    auto fileList = archiveManager->ListFiles(sFormObjectPaths[form]);
+    if (!fileList) {
+        MMFORM_LOG("[MmForm] WARNING: ListFiles returned null for form %d: %s", form, sFormObjectPaths[form]);
+        return;
+    }
+
+    auto loadedList = std::make_shared<std::vector<std::shared_ptr<Ship::IResource>>>();
+    loadedList->reserve(fileList->size());
+    for (size_t i = 0; i < fileList->size(); i++) {
+        auto fileName = std::string(fileList->operator[](i));
+        auto resource = resMgr->LoadResourceProcess(fileName);
+        if (resource) {
+            loadedList->push_back(resource);
+        }
+    }
+
+    sPinnedFormResources = loadedList;
+    MMFORM_LOG("[MmForm] Deep-pinned %zu resources for form %d from %s", sPinnedFormResources->size(), form,
+               sFormObjectPaths[form]);
 }
 
 static void MmForm_UnpinFormResources(void) {
@@ -1866,6 +1900,11 @@ static void MmForm_LoadPunchRootMotion(u8 punchIndex, MmAnimId animId);
 // Loads g<Garo>Skel from nei/garo.o2r via ResourceMgr_LoadSkeletonByName and
 // returns its FlexSkeletonHeader. Returns NULL if garo.o2r is missing.
 extern "C" FlexSkeletonHeader* GaroForm_LoadSkeleton(PlayState* play);
+// Garo's draw path runs through z_player.c's O2rLoader hook
+// (GaroForm_TryDrawSmoothSkin), NOT through the MM form system — the
+// Garo Mask activates via ITEM_MM_MASK_GARO → O2rLoader_ForceModel("garo")
+// directly, bypassing gFormState entirely. The MmForm_Draw branch below
+// was dead code for Garo; removed to fix the unresolved-symbol link error.
 
 static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) {
     // Pikachu uses a local skeleton (not mm.o2r) — route to its own loader
@@ -3716,13 +3755,18 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
     u8 hitEnd = punchFrames[step][1];
     f32 earlyStart = isGoron ? 5.0f : (f32)hitStart;
     u8 damage = isGoron ? GORON_PUNCH_DAMAGE : ZORA_PUNCH_DAMAGE;
+    // MM's D_8085D09C: Goron punches use DMG_GORON_PUNCH (mapped to DMG_HAMMER_SWING in OOT
+    // — same heavy blunt impact as the Megaton Hammer). Zora punches use DMG_ZORA_PUNCH;
+    // the closest OOT analog for the combo swing is DMG_SLASH_MASTER (sword slash damage).
+    // Jump kick keeps DMG_JUMP_MASTER via EnableJumpKickQuad.
+    u32 dmgFlags = isGoron ? DMG_HAMMER_SWING : DMG_SLASH_MASTER;
 
     if (curFrame > (f32)hitEnd) {
         // Past hit window (func_8083FCF0: arg4 < curFrame → func_8082DC38)
         MmForm_DisablePunchQuad(player);
     } else if (curFrame >= earlyStart) {
         // In hit detection range - set up directional quad and submit to collision
-        MmForm_EnablePunchQuad(player, play, step, damage);
+        MmForm_EnablePunchQuad(player, play, step, damage, dmgFlags);
 
         // Goron butt punch (step 2) ground impact burst (from 2Ship Player_Action_84 line 18788)
         // Spawns debris/dust at impact frame when butt hits ground
@@ -8463,7 +8507,14 @@ static void MmForm_Action_SwimIdle(Player* player, PlayState* play) {
         }
 
         // A press = fast swim (instant, deactivates boots, exits floor)
-        if (CHECK_BTN_ALL(input->press.button, BTN_A) && gFormState.waterRoll != NULL) {
+        // EXCEPT when OOT just started a door action this frame. OOT runs HANDLER_1
+        // before us, so by the time we get here actionFunc is already the door function.
+        // Without this guard, fast_swim would still fire and clobber the door interaction.
+        // (player->doorType can't be used — Player_UpdateCommon clears it every frame
+        // before form code runs. Door action externs declared near MmForm_GakkiInterpScales.)
+        u8 inDoorAction =
+            (player->actionFunc == Player_Action_80845EF8 || player->actionFunc == Player_Action_80845CA4);
+        if (CHECK_BTN_ALL(input->press.button, BTN_A) && gFormState.waterRoll != NULL && !inDoorAction) {
             goto enter_fast_swim;
         }
         // Moving on floor: OOT handles everything (roll, hookshot, sidehop, backflip, etc.)
@@ -9219,6 +9270,7 @@ static void MmForm_DrawZoraBarrier(Player* player, PlayState* play) {
 
 // Forward declaration (defined in z_player.c line 352, non-static)
 extern "C" void Player_Action_8084E3C4(Player* this_, PlayState* play);
+// Player_Action_80845EF8 / 80845CA4 (door actions) are declared earlier in the file.
 
 // OOT idle action + setup helper — used to sync the lower body to idle when entering
 // boomerang aim from a non-idle action (e.g. jumpkick recovery).
@@ -9555,7 +9607,15 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         // Without this, entering a loading zone underwater as Zora causes a softlock:
         // the IN_CUTSCENE flag from the scene transition overrides swim with idle,
         // the player stands underwater unable to move until the cutscene flag clears.
+        // EXCEPTION: door cutscenes. The door handling block below uses the form's
+        // MM doorOpen anim (which has full root motion to walk through). Without this
+        // exception, A-only door open in swim would skip handling → Link stays idle on
+        // the original side. Discovered via the B+A workaround: pressing B first
+        // moves goronAction out of SWIM_IDLE, which is why B+A worked but A alone didn't.
+        u8 inDoorActionFunc =
+            (player->actionFunc == Player_Action_80845EF8 || player->actionFunc == Player_Action_80845CA4);
         u8 inSwimAction =
+            (!inDoorActionFunc) &&
             (gFormState.goronAction == MMFORM_ACT_SWIM_IDLE || gFormState.goronAction == MMFORM_ACT_SWIM_MOVE ||
              gFormState.goronAction == MMFORM_ACT_SWIM_FAST || gFormState.goronAction == MMFORM_ACT_SWIM_DASH ||
              gFormState.goronAction == MMFORM_ACT_SWIM_SURFACE_WALK ||
@@ -9619,12 +9679,16 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 MmForm_UpdateBlink();
                 return;
             }
-            // Other cutscenes (non-get-item, non-door) → play idle
-            if (gFormState.goronAction != GORON_ACT_IDLE) {
-                MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
-                player->linearVelocity = 0.0f;
+            // Other cutscenes (non-get-item, non-door, non-chest) → yield to OOT.
+            // Default policy: don't block what isn't explicitly declared form-specific.
+            // Forcing idle here would freeze the form in its idle pose during arbitrary
+            // cutscenes (NPC events, scripted scenes) while OOT plays a real animation —
+            // the form copies OOT's jointTable in MmForm_Draw when in OOT_ACTION, so this
+            // shows the OOT animation (Link humano) instead of a frozen form idle.
+            if (gFormState.goronAction != MMFORM_ACT_OOT_ACTION) {
+                gFormState.goronAction = MMFORM_ACT_OOT_ACTION;
+                gFormState.actionTimer = 0;
             }
-            LinkAnimation_Update(play, &gFormState.formSkelAnime);
             MmForm_UpdateBlink();
             return;
         }
@@ -9832,11 +9896,19 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         // Don't yield for IN_CUTSCENE when in a swim action. Scene-transition cutscenes
         // set IN_CUTSCENE, but the swim must keep running or the player gets stuck standing
         // underwater unable to move after loading a zone as Zora.
-        if (gFormState.goronAction == MMFORM_ACT_SWIM_IDLE || gFormState.goronAction == MMFORM_ACT_SWIM_MOVE ||
-            gFormState.goronAction == MMFORM_ACT_SWIM_FAST || gFormState.goronAction == MMFORM_ACT_SWIM_DASH ||
-            gFormState.goronAction == MMFORM_ACT_SWIM_SURFACE_WALK ||
-            gFormState.goronAction == MMFORM_ACT_SWIM_UNDERWATER_WALK ||
-            gFormState.goronAction == MMFORM_ACT_DOLPHIN_JUMP) {
+        // EXCEPTION: door action functions. Detected via actionFunc pointer comparison
+        // (player->doorActor is unreliable — OOT never clears it once set). Without this,
+        // swim_idle's A intercept hijacks the A press → fast_swim, breaking the door
+        // interaction entirely (chests work because they yield via GETTING_ITEM instead).
+        // Externs declared earlier in this file (search "Player_Action_80845EF8").
+        u8 inDoorAction =
+            (player->actionFunc == Player_Action_80845EF8 || player->actionFunc == Player_Action_80845CA4);
+        if (!inDoorAction &&
+            (gFormState.goronAction == MMFORM_ACT_SWIM_IDLE || gFormState.goronAction == MMFORM_ACT_SWIM_MOVE ||
+             gFormState.goronAction == MMFORM_ACT_SWIM_FAST || gFormState.goronAction == MMFORM_ACT_SWIM_DASH ||
+             gFormState.goronAction == MMFORM_ACT_SWIM_SURFACE_WALK ||
+             gFormState.goronAction == MMFORM_ACT_SWIM_UNDERWATER_WALK ||
+             gFormState.goronAction == MMFORM_ACT_DOLPHIN_JUMP)) {
             yieldFlags &= ~PLAYER_STATE1_IN_CUTSCENE;
         }
 
@@ -9925,7 +9997,13 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
             // Zora underwater during yield (e.g. damage knockback): maintain buoyancy
             // so the player doesn't sink to the ocean floor with OOT's normal gravity.
             // Without this, taking damage while swimming → sinks → softlock.
-            if (MMFORM_IS_ZORA_SWIM() && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD) {
+            // EXCEPT door actions: the door cutscene uses animation root motion to
+            // walk Link through the doorway, which only works if Link stays grounded.
+            // Forcing gravity=0 + buoyancy lifts him off the floor → root motion
+            // can't move him through → he stays idle on the original side.
+            u8 inDoorActionYield =
+                (player->actionFunc == Player_Action_80845EF8 || player->actionFunc == Player_Action_80845CA4);
+            if (MMFORM_IS_ZORA_SWIM() && player->actor.yDistToWater > ZORA_SWIM_THRESHOLD && !inDoorActionYield) {
                 player->actor.gravity = 0.0f;
                 MmForm_WaterBuoyancy(player);
 
@@ -10292,8 +10370,13 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
                 // On the floor: A = surface + fast swim (A is the swim button)
                 // But NOT when Z-targeting — Z-target+A should do roll/sidehop/backflip
                 // (handled by MmForm_Action_ZTargetIdle in the action dispatch)
+                // Also NOT when OOT is in a door action — A press already triggered
+                // HANDLER_1 this frame, surfacing now would clobber the door cutscene.
+                // (player->doorType is unusable: Player_UpdateCommon clears it before us.)
                 Input* input = &play->state.input[0];
-                if (CHECK_BTN_ALL(input->press.button, BTN_A) && !MmForm_IsZTargeting(player)) {
+                u8 inDoorAction =
+                    (player->actionFunc == Player_Action_80845EF8 || player->actionFunc == Player_Action_80845CA4);
+                if (CHECK_BTN_ALL(input->press.button, BTN_A) && !MmForm_IsZTargeting(player) && !inDoorAction) {
                     // Deactivate dive → return to swim_wait (same as MM boot toggle).
                     // User can then hold A to enter fast swim normally.
                     // MmForm_EnterSwimIdle sets DISABLE_ROTATION_ALWAYS (prevents OOT yaw interference)
@@ -12891,6 +12974,12 @@ void MmForm_Draw(PlayState* play, Player* player) {
         PikachuForm_Draw(play, player);
         return;
     }
+
+    // Garo form: handled outside of the MM form system. The Garo Mask
+    // activates via O2rLoader_ForceModel("garo") (z_player.c:3756) without
+    // setting gFormState.currentForm, so this branch was unreachable. The
+    // actual Skin-skeleton draw runs from z_player.c's o2rActive hook
+    // (GaroForm_TryDrawSmoothSkin in garo_form.cpp).
 
     OPEN_DISPS(play->state.gfxCtx);
 

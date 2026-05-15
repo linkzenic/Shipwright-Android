@@ -41,6 +41,8 @@ extern "C" {
 // For Postman's Hat warp
 extern "C" {
 #include "mods/items/logic/item_postman_hat.h"
+#include "mods/items/helpers/bremen_follower_actor.h"
+#include "mods/items/helpers/mushroom_spot_actor.h"
 }
 
 // For Great Fairy Mask map overlay (same textures as minish_kaleido)
@@ -182,6 +184,23 @@ static s32 sKamaroDancing = 0;
 static LinkAnimationHeader* sKamaroDanceAnim = NULL;
 static f32 sKamaroDanceFrame = 0.0f;
 static s32 sDaruniaDanceTimer = 0; // Frames Darunia has been dancing with player
+
+// Bremen Mask state — transient (cleared in MmMaskWear_Clear)
+static s32 sBremenMarching = 0;
+static LinkAnimationHeader* sBremenMarchAnim = NULL;
+static f32 sBremenMarchFrame = 0.0f;
+static s32 sBremenBgmStarted = 0;
+static s32 sBremenWallTurnLockout = 0;
+
+// Mask of Scents state — transient
+static LinkAnimationHeader* sScentsSniffAnim = NULL;
+static f32 sScentsSniffFrame = 0.0f;
+static s32 sScentsSniffActive = 0; // 1 = sniff anim playing (Link idle on ground)
+static s32 sScentsPrevSfxFrame = -1; // last frame where we fired the pig-grunt SFX (avoids spam)
+// Bremen Mask state — persistent (NOT cleared in MmMaskWear_Clear; cleared on death)
+#define BREMEN_CHICK_GROWTH_FRAMES 1200 // 60 s @ 20 fps
+static s32 sBremenWornTotalFrames = 0;
+static s32 sBremenAdultCuccoSpawned = 0;
 
 // Great Fairy Mask state
 static s32 sGreatFairyMenuOpen = 0;
@@ -1194,8 +1213,134 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 break;
             case 6: // Keaton Mask
                 break;
-            case 7: // Bremen Mask
+            case 7: // Bremen Mask — 1:1 MM march + chick/cucco follower
+            {
+                // === Persistent wear-time counter (cucco upgrade gate) ===
+                // Cap at threshold + 10 so we never overflow but still drive
+                // the upgrade exactly once.
+                if (sBremenWornTotalFrames < BREMEN_CHICK_GROWTH_FRAMES + 10) {
+                    sBremenWornTotalFrames++;
+                }
+
+                // === Threshold transition: chick → adult cucco ===
+                if (sBremenWornTotalFrames >= BREMEN_CHICK_GROWTH_FRAMES && !sBremenAdultCuccoSpawned) {
+                    BremenFollower_UpgradeToAdult(play, player);
+                    sBremenAdultCuccoSpawned = 1;
+                }
+
+                // === Follower tick (spawn/respawn + trail) ===
+                BremenFollower_Tick(play, player);
+
+                // === Bail during cutscenes / dead / loading ===
+                if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
+                                           PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
+                                           PLAYER_STATE1_GETTING_ITEM)) {
+                    sBremenMarching = 0;
+                    if (sBremenBgmStarted) {
+                        if (MmSfx_IsAvailable()) {
+                            // SFX-loop stop: stop the closest available MM SFX
+                            // (Phase A fallback — see plan §2).
+                            MmSfx_Stop(0xFE01);
+                        }
+                        sBremenBgmStarted = 0;
+                    }
+                    break;
+                }
+
+                // === Start march on B press (ground + not already marching) ===
+                if (!sBremenMarching &&
+                    (player->actor.bgCheckFlags & 1 /* BGCHECKFLAG_GROUND */) &&
+                    CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+
+                    // Try to load the MM march anim. NOTE: the OOT anim
+                    // `gPlayerAnim_clink_normal_okarina_walk` doesn't exist as
+                    // a static symbol in SoH (it was MM-only) and the MM_ANIM
+                    // enum entry currently has no path mapping in mm_anims_data.c,
+                    // so this load may return NULL — the march still starts.
+                    if (sBremenMarchAnim == NULL && MmAssets_IsAvailable()) {
+                        sBremenMarchAnim = MmAnim_Load(MM_ANIM_CLINK_NORMAL_OKARINA_WALK);
+                    }
+
+                    // Activate march regardless of anim availability. Animation
+                    // is cosmetic; the actual march mechanic (auto-walk +
+                    // wall-bonk-spin) is independent.
+                    sBremenMarching = 1;
+                    sBremenMarchFrame = 0.0f;
+                    sBremenWallTurnLockout = 0;
+                    player->itemAction = PLAYER_IA_OCARINA_OF_TIME;
+                    if (!sBremenBgmStarted) {
+                        if (MmSfx_IsAvailable()) {
+                            // SFX-loop start. The exact MM SFX/seq ID needs
+                            // to be registered in sContinuousSfxIds[] —
+                            // until then this is a placeholder.
+                            MmSfx_PlayAtPos(0xFE01, NULL);
+                        }
+                        sBremenBgmStarted = 1;
+                    }
+                }
+
+                // === While marching: animate + fixed forward speed + wall bonk ===
+                if (sBremenMarching) {
+                    // Release B = stop (1:1 MM stop condition)
+                    if (!CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B)) {
+                        sBremenMarching = 0;
+                        if (sBremenBgmStarted) {
+                            if (MmSfx_IsAvailable()) {
+                                MmSfx_Stop(0xFE01);
+                            }
+                            sBremenBgmStarted = 0;
+                        }
+                        break;
+                    }
+
+                    // Drive MM march anim (Kamaro pattern: PlayLoop + SetLoadFrame + manual frame).
+                    if (sBremenMarchAnim != NULL) {
+                        LinkAnimation_PlayLoop(play, &player->skelAnime, sBremenMarchAnim);
+                        player->skelAnime.curFrame = sBremenMarchFrame;
+                        AnimationContext_SetLoadFrame(play, sBremenMarchAnim, (s32)sBremenMarchFrame,
+                                                      player->skelAnime.limbCount, player->skelAnime.jointTable);
+                        sBremenMarchFrame += 1.0f;
+                        if (sBremenMarchFrame >= player->skelAnime.animLength) {
+                            sBremenMarchFrame = 0.0f;
+                        }
+                    }
+
+                    // NOTE: MM's PLAYER_STATE3_20000000 is (1 << 29), which would
+                    // overflow OOT's u8 stateFlags3. The sBremenMarching static +
+                    // MmMaskWear_IsBremenMarching() query provide the routing
+                    // signal for the z_player.c stick-zero hook instead.
+
+                    // Oscillating march speed — matches MM Player_Action_11:
+                    //   speedXZ *= cos(frame * 1000) * 0.4f
+                    // This creates the rhythmic step-step-step movement.
+                    f32 yaw = player->actor.shape.rot.y;
+                    const f32 BREMEN_BASE_SPEED = 6.0f;
+                    f32 frame = sBremenMarchFrame; // animation phase (0..animLength)
+                    f32 cycle = Math_CosS((s16)((s32)(frame * 1000.0f) & 0xFFFF)) * 0.4f;
+                    f32 step = BREMEN_BASE_SPEED * (0.6f + cycle); // never below 0.2 * BASE
+                    if (step < 1.0f) step = 1.0f;                  // floor so Link still moves
+                    player->linearVelocity = step;
+                    player->actor.velocity.x = Math_SinS(yaw) * step;
+                    player->actor.velocity.z = Math_CosS(yaw) * step;
+                    player->yaw = yaw;
+
+                    // Even without the anim, advance the phase for the speed cycle.
+                    if (sBremenMarchAnim == NULL) {
+                        sBremenMarchFrame += 1.0f;
+                        if (sBremenMarchFrame >= 30.0f) sBremenMarchFrame = 0.0f;
+                    }
+
+                    // Wall bonk → spin 180° and keep marching (MM 1:1).
+                    if (sBremenWallTurnLockout > 0) {
+                        sBremenWallTurnLockout--;
+                    } else if (player->actor.bgCheckFlags & 8 /* BGCHECKFLAG_WALL */) {
+                        player->actor.shape.rot.y += 0x8000;
+                        player->yaw = player->actor.shape.rot.y;
+                        sBremenWallTurnLockout = 8; // ~0.4 s debounce
+                    }
+                }
                 break;
+            }
             case 8: // Bunny Hood
                 break;
             case 9: // Don Gero's Mask — collect all frog rewards at Zora's River
@@ -1268,8 +1413,69 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 Actor_OfferGetItem(&player->actor, play, sDonGeroReward, 30.0f, 100.0f);
                 break;
             }
-            case 10: // Mask of Scents
+            case 10: // Mask of Scents — sniff fidget anim + SFX + Lost Woods spots
+            {
+                // === Sniff fidget anim (MM gPlayerAnim_cl_msbowait, 1:1) ===
+                // Plays while Link is on the ground, idle (no velocity, no
+                // cutscene), no item-use action. Override the idle every frame
+                // with our tracked phase, same Kamaro pattern.
+                u8 onGround = (player->actor.bgCheckFlags & 1) != 0;
+                u8 idle = (player->linearVelocity < 0.5f) && onGround;
+                u8 blocked = (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
+                                                     PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
+                                                     PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_TALKING)) != 0;
+
+                if (idle && !blocked) {
+                    // Lazy-load the MM sniff anim.
+                    if (sScentsSniffAnim == NULL && MmAssets_IsAvailable()) {
+                        sScentsSniffAnim = MmAnim_Load(MM_ANIM_CL_MSBOWAIT);
+                    }
+                    if (sScentsSniffAnim != NULL) {
+                        if (!sScentsSniffActive) {
+                            sScentsSniffActive = 1;
+                            sScentsSniffFrame = 0.0f;
+                            sScentsPrevSfxFrame = -1;
+                        }
+                        LinkAnimation_PlayLoop(play, &player->skelAnime, sScentsSniffAnim);
+                        player->skelAnime.curFrame = sScentsSniffFrame;
+                        AnimationContext_SetLoadFrame(play, sScentsSniffAnim, (s32)sScentsSniffFrame,
+                                                      player->skelAnime.limbCount, player->skelAnime.jointTable);
+
+                        // === Pig-grunt SFX at MM frames 4 / 12 / 30 / 61 / 68 ===
+                        // NA_SE_VO_LI_POO_WAIT is MM-only — load from mm.o2r via MmSfx.
+                        // (Custom MM SFX ID placeholder — register once the real ID
+                        // is exposed by mm_asset_loader.)
+                        s32 fi = (s32)sScentsSniffFrame;
+                        if (fi != sScentsPrevSfxFrame) {
+                            if (fi == 4 || fi == 12 || fi == 30 || fi == 61 || fi == 68) {
+                                if (MmSfx_IsAvailable()) {
+                                    MmSfx_PlayAtPos(0xFE02 /* NA_SE_VO_LI_POO_WAIT */,
+                                                    &player->actor.world.pos);
+                                } else {
+                                    // Fallback: OOT voice sound that vaguely fits.
+                                    Sfx_PlaySfxCentered(NA_SE_VO_LI_RELAX);
+                                }
+                            }
+                            sScentsPrevSfxFrame = fi;
+                        }
+
+                        // Advance phase.
+                        sScentsSniffFrame += 1.0f;
+                        if (sScentsSniffFrame >= player->skelAnime.animLength) {
+                            sScentsSniffFrame = 0.0f;
+                            sScentsPrevSfxFrame = -1;
+                        }
+                    }
+                } else {
+                    sScentsSniffActive = 0;
+                }
+
+                // Spot spawn detector (mailbox-style frame-rewind detection).
+                // Gated internally on MmAssets_IsLoaded() — gracefully no-ops
+                // when mm.o2r isn't available.
+                MushroomSpots_Tick(play);
                 break;
+            }
             case 11: // Goron Mask (transformation - shouldn't reach here)
                 break;
             case 12: // Romani Mask — cow interaction handled in z_en_cow.c
@@ -1493,10 +1699,35 @@ extern "C" void MmMaskWear_Clear(void) {
     sFairyStickHeld = 0;
     sFairyHairInited = 0;
     sHairLastPhysicsFrame = 0xFFFFFFFFu;
+    // Bremen transient state (persistent counter + cucco flag handled separately on death)
+    sBremenMarching = 0;
+    sBremenMarchFrame = 0.0f;
+    sBremenWallTurnLockout = 0;
+    if (sBremenBgmStarted && MmSfx_IsAvailable()) {
+        MmSfx_Stop(0xFE01);
+    }
+    sBremenBgmStarted = 0;
+    // Mask of Scents transient state (anim cache persists, like Kamaro's).
+    sScentsSniffActive = 0;
+    sScentsSniffFrame = 0.0f;
+    sScentsPrevSfxFrame = -1;
     // NOTE: sFairyWarpPhase is NOT cleared here — it must persist through scene transitions
     // so void-in animation plays after arriving at the fountain. It self-clears when done.
     // NOTE: sChateauRomaniActive is NOT cleared here (persists across scenes, cleared on death)
     // NOTE: sKamaroDanceAnim is NOT cleared (cached animation, reusable)
+    // NOTE: sBremenWornTotalFrames / sBremenAdultCuccoSpawned are NOT cleared here (only on death,
+    //       same persistence model as sChateauRomaniActive). See MmMaskWear_OnDeath.
+}
+
+extern "C" void MmMaskWear_OnDeath(void) {
+    // Death = full reset of Bremen progression (chick + cucco follower).
+    sBremenWornTotalFrames = 0;
+    sBremenAdultCuccoSpawned = 0;
+    BremenFollower_OnDeath();
+}
+
+extern "C" s32 MmMaskWear_IsBremenMarching(void) {
+    return sBremenMarching != 0;
 }
 
 extern "C" s32 MmMaskWear_IsStoneMaskActive(void) {

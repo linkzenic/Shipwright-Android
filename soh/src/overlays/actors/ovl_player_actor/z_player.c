@@ -38,8 +38,13 @@
 #include <stdlib.h>
 #include <assert.h>
 
-// Forward declarations needed by custom items
+// Forward declarations needed by custom items / sw97 / other early includes.
 BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
+// sw97_router.c → z_magic_wind.inc.c calls Player_AnimPlayOnce before its
+// definition (line ~1681). Without this declaration the compiler generates
+// an implicit int() prototype, then errors at the real definition with
+// "different basic types".
+void Player_AnimPlayOnce(PlayState* play, Player* this, LinkAnimationHeader* anim);
 
 // ============================================================================
 // CUSTOM ITEMS IMPLEMENTATION
@@ -72,6 +77,16 @@ BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
 // O2R LOADER - .o2r-based skeleton swap (Garo, etc.)
 // ============================================================================
 #include "mods/o2r_loader/o2r_loader.h"
+
+// ============================================================================
+// GERUDO FORM — OOT Gerudo Mask transformation. Link-rigged gerudo mesh
+// packaged at a custom namespace (objects/gerudoPlayer/) in nei/gerudo.o2r;
+// gerudo_hybrid_render.h's path-swap override redirects vanilla Link DL
+// references to the gerudo namespace at draw time, conditionally on the
+// mask being equipped. Outside the transformation Link draws vanilla.
+// ============================================================================
+#include "mods/transformation_masks/gerudo_form.h"
+#include "mods/transformation_masks/gerudo_hybrid_render.h"
 
 // ============================================================================
 // SSBB EXPANSION - Smash Bros Brawl characters (SkelAnime-based)
@@ -13114,15 +13129,9 @@ void Player_Update(Actor* thisx, PlayState* play) {
                 sp44.press.button &= ~(BTN_A | BTN_B | BTN_CUP);
             }
 
-            // Block BTN_B from reaching Player_UpdateCommon for masks that use B for effects.
-            // The actual B handling is in MmMaskWear_Update which reads raw input.
-            {
-                s32 wornMask = TransformMasks_WearGetCurrent();
-                if (wornMask == ITEM_MM_MASK_BLAST || wornMask == ITEM_MM_MASK_GREAT_FAIRY) {
-                    sp44.cur.button &= ~BTN_B;
-                    sp44.press.button &= ~BTN_B;
-                }
-            }
+            // Strip BTN_B for systems that reserve it (Blast/Great Fairy masks,
+            // Garo attack kit). All routing lives in transformation_masks.c.
+            TransformMasks_FilterB(&sp44);
 
             // Kamaro dance: freeze ALL input while dancing so player can't move or act.
             // Dance animation is applied in MmMaskWear_Update after Player_UpdateCommon.
@@ -13130,6 +13139,14 @@ void Player_Update(Actor* thisx, PlayState* play) {
                 sp44.cur.button = 0;
                 sp44.press.button = 0;
                 sp44.rel.button = 0;
+                sp44.cur.stick_x = 0;
+                sp44.cur.stick_y = 0;
+            }
+
+            // Bremen march: zero ONLY the analog stick so Link auto-walks forward
+            // at fixed yaw. Buttons stay live so B-release stops the march (1:1 MM
+            // stop condition). Forward velocity is applied in MmMaskWear_Update.
+            if (MmMaskWear_IsBremenMarching()) {
                 sp44.cur.stick_x = 0;
                 sp44.cur.stick_y = 0;
             }
@@ -13226,7 +13243,7 @@ void Player_Update(Actor* thisx, PlayState* play) {
         ExtEquip_Update();
         ExtEquip_UpdateBehavior(this, play);
 
-        // TRANSFORMATION MASKS: Update system
+        // TRANSFORMATION MASKS: Update system (routes to MmForm + Garo attack kit).
         TransformMasks_Update(play, this);
 
         // MM MASK WEARING: Per-mask effects update
@@ -13308,6 +13325,10 @@ void Player_Update(Actor* thisx, PlayState* play) {
     }
 
     GameInteractor_ExecuteOnPlayerUpdate();
+
+    // SW97 Shadow Medallion heart→magic exchange — must run before the spell
+    // cast pipeline aborts on zero magic, so it lives outside that gate.
+    Sw97_TickShadowExchange(play, this);
 }
 
 typedef struct BunnyEarKinematics {
@@ -13332,9 +13353,56 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
     gSPSegment(POLY_OPA_DISP++, 0x0C, cullDList);
     gSPSegment(POLY_XLU_DISP++, 0x0C, cullDList);
 
-    Player_DrawImpl(play, this->skelAnime.skeleton, this->skelAnime.jointTable, this->skelAnime.dListCount, lod,
-                    this->currentTunic, this->currentBoots, this->actor.shape.face, overrideLimbDraw,
-                    Player_PostLimbDrawGameplay, this);
+    // Garo form replaces Player_DrawImpl with a null-body pass — its skel is
+    // a custom non-Link-compatible 19-bone rig, so Link's draw logic can't
+    // walk it. Instead we run SkelAnime_DrawFlexLod with mesh suppressed so
+    // the side-effect updates (bodyPartsPos, leftHandPos, focus.pos at HEAD,
+    // feetPos, shieldMf) still fire. Garo's body renders later via
+    // GaroForm_TryDrawSmoothSkin.
+    //
+    // Gerudo form uses a Link-rigged gerudo skin but packed under a custom
+    // `objects/gerudoPlayer/` namespace (NOT alt-asset, so Link's vanilla
+    // resources aren't permanently hijacked). To make Link's draw use the
+    // gerudo versions of body parts + items when transformed, we wrap the
+    // limb-draw override with GerudoForm_OverrideLimbDraw — it forwards to
+    // the vanilla override and then rewrites the `__OTR__objects/object_link_boy/...`
+    // path output to `__OTR__objects/gerudoPlayer/object_link_boy/...`.
+    // Outside the transformation the wrapper is bypassed and Link draws vanilla.
+    {
+        u8 garoActive = 0;
+        u8 gerudoActive = 0;
+        if (O2rLoader_HasActiveModel()) {
+            const char* mn = O2rLoader_GetForcedName();
+            if (mn != NULL) {
+                if      (strcmp(mn, "garo")   == 0) garoActive   = 1;
+                else if (strcmp(mn, "gerudo") == 0) gerudoActive = 1;
+            }
+        }
+        if (garoActive) {
+            extern void GaroForm_DrawNullBody(PlayState * play, Player * player, s32 lod);
+            this->actor.shape.shadowScale = 1.0f;
+            GaroForm_DrawNullBody(play, this, lod);
+            if ((this->heldItemAction == PLAYER_IA_HOOKSHOT) ||
+                (this->heldItemAction == PLAYER_IA_LONGSHOT)) {
+                this->unk_3C8.x = this->actor.world.pos.x;
+                this->unk_3C8.y = this->actor.world.pos.y + 40.0f;
+                this->unk_3C8.z = this->actor.world.pos.z;
+            }
+        } else if (gerudoActive) {
+            // Chain to the vanilla override but path-swap each DL to gerudo.
+            GerudoForm_SetChainedOverride((void*)overrideLimbDraw);
+            Player_DrawImpl(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
+                            this->skelAnime.dListCount, lod, this->currentTunic,
+                            this->currentBoots, this->actor.shape.face,
+                            GerudoForm_OverrideLimbDraw,
+                            Player_PostLimbDrawGameplay, this);
+        } else {
+            Player_DrawImpl(play, this->skelAnime.skeleton, this->skelAnime.jointTable,
+                            this->skelAnime.dListCount, lod, this->currentTunic,
+                            this->currentBoots, this->actor.shape.face, overrideLimbDraw,
+                            Player_PostLimbDrawGameplay, this);
+        }
+    }
 
     // FIX: Validate mask range to prevent crashes with custom items (masks are 1-8)
     if ((overrideLimbDraw == Player_OverrideLimbDrawGameplayDefault) &&
@@ -13367,7 +13435,17 @@ void Player_DrawGameplay(PlayState* play, Player* this, s32 lod, Gfx* cullDList,
             MATRIX_TOMTX(bunnyEarMtx);
         }
 
-        if (this->currentMask != PLAYER_MASK_BUNNY || !CVarGetInteger(CVAR_ENHANCEMENT("HideBunnyHood"), 0)) {
+        // Skip the Gerudo Mask DL when the Gerudo Form is active — the
+        // player IS the gerudo, drawing the mask on her face would look
+        // wrong (mask floating in front of an already-gerudo face).
+        u8 hideMask = 0;
+        if (this->currentMask == PLAYER_MASK_BUNNY &&
+            CVarGetInteger(CVAR_ENHANCEMENT("HideBunnyHood"), 0)) {
+            hideMask = 1;
+        } else if (this->currentMask == PLAYER_MASK_GERUDO && GerudoForm_IsActive()) {
+            hideMask = 1;
+        }
+        if (!hideMask) {
             gSPDisplayList(POLY_OPA_DISP++, sMaskDlists[this->currentMask - 1]);
         }
 
@@ -13493,6 +13571,11 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         O2rLoader_SwapSkeleton(this);
         o2rActive = 1;
     }
+
+    // Gerudo Form rides on the same O2rLoader path as Garo — when the
+    // gerudo_form.cpp mask-edge hook calls O2rLoader_ForceModel("gerudo"),
+    // O2rLoader_SwapSkeleton above already replaced player->skelAnime.skeleton
+    // with the native GeldB 23-bone skel from oot.o2r. No separate swap.
 
     // Transformation Masks: If transformed, draw MM form instead of OOT Link.
     // MmForm_Draw handles both skeleton draw (when loaded) and flash overlay (always).
@@ -13674,6 +13757,13 @@ void Player_Draw(Actor* thisx, PlayState* play2) {
         PakLoader_RestoreSkeleton(this);
     }
     if (o2rActive) {
+        // Garo needs a separate body draw because Player_DrawImpl above runs
+        // a NULL-body pass for it (its skel isn't Link-compatible). Gerudo
+        // doesn't need this — its body already drew via Player_DrawImpl.
+        {
+            extern s32 GaroForm_TryDrawSmoothSkin(PlayState * play, Player * player);
+            GaroForm_TryDrawSmoothSkin(play, this);
+        }
         O2rLoader_RestoreSkeleton(this);
     }
 

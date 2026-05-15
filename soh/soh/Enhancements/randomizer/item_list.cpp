@@ -525,6 +525,11 @@ void Rando::StaticData::InitItemTable() {
     itemTable[RG_EXT_PENDANT_OF_MEMORIES] =             Item(RG_EXT_PENDANT_OF_MEMORIES,          Text{ "Pendant of Memories", "Pendentif des Souvenirs", "Amulett der Erinnerungen" },                                                ITEMTYPE_ITEM,              0x107,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_BOOTS_2,                     OBJECT_GI_JEWEL,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER).CustomIcon("__OTR__icon_item_static_yar/gItemIconPendantOfMemoriesTex");
     itemTable[RG_EXT_WATER_DRAGON_SCALE] =              Item(RG_EXT_WATER_DRAGON_SCALE,           Text{ "Water Dragon Scale", "Écaille du Dragon d'Eau", "Wasserdrachen-Schuppe" },                                                    ITEMTYPE_ITEM,              0x108,                true,  LOGIC_NONE,                         RHT_NONE,                              ITEM_EXT_BOOTS_3,                     OBJECT_GI_SCALE,        0,                    TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER).CustomIcon(gItemIconWaterDragonScaleTex);
 
+    // Mask of Scents reward — Bottle with Magic Mushroom.
+    // getItemId 0xEE is unique and >0x7D (routes via TABLE_RANDOMIZER → Randomizer_Item_Give).
+    // Draw reuses gGiMushroomDL on top of a vanilla bottle base — see Randomizer_DrawBottleWithMagicMushroom in draw.cpp.
+    itemTable[RG_BOTTLE_WITH_MAGIC_MUSHROOM] =          Item(RG_BOTTLE_WITH_MAGIC_MUSHROOM,       Text{ "Bottle with Magic Mushroom", "Fiole avec Champignon Magique", "Flasche mit Zauberpilz" },                                       ITEMTYPE_ITEM,              0xEE,                 true,  LOGIC_BOTTLES,                      RHT_BOTTLE_WITH_BLUE_FIRE,             ITEM_BOTTLE_WITH_MAGIC_MUSHROOM,      OBJECT_GI_MUSHROOM,     GID_BOTTLE,           TEXT_RANDOMIZER_CUSTOM_ITEM, 0x80, CHEST_ANIM_LONG,  ITEM_CATEGORY_MAJOR,  MOD_RANDOMIZER, {"a ", "une ", "eine "});
+
     // ────────── Custom draw functions for NEI items (matches Randomizer_Draw* in draw.cpp) ──────────
     itemTable[RG_PROGRESSIVE_ROCS].SetCustomDrawFunc(Randomizer_DrawRocsFeatherSkijer);
     itemTable[RG_WHIP].SetCustomDrawFunc(Randomizer_DrawWhip);
@@ -588,6 +593,9 @@ void Rando::StaticData::InitItemTable() {
     itemTable[RG_EXT_PEGASUS_ANKLET].SetCustomDrawFunc(Randomizer_DrawExtPegasusAnklet);
     itemTable[RG_EXT_PENDANT_OF_MEMORIES].SetCustomDrawFunc(Randomizer_DrawExtPendantOfMemories);
     itemTable[RG_EXT_WATER_DRAGON_SCALE].SetCustomDrawFunc(Randomizer_DrawExtWaterDragonScale);
+
+    // Mask of Scents reward (Bottle with Magic Mushroom).
+    itemTable[RG_BOTTLE_WITH_MAGIC_MUSHROOM].SetCustomDrawFunc(Randomizer_DrawBottleWithMagicMushroom);
 
     // clang-format on
 

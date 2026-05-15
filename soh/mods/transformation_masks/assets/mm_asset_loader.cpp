@@ -429,13 +429,13 @@ void* MmAssets_LoadResource(const char* path) {
             return nullptr;
         }
 
-        // Check if a mod archive in the mods/ folder overrides this MM resource.
-        // mm.o2r is loaded after the mods/ folder so it wins in mFileToArchive (last-added-wins).
-        // We explicitly check mod archives here to restore user mod priority over mm.o2r.
+        // Use LoadResourceProcess (synchronous) instead of LoadResource — LoadResource
+        // dispatches to mThreadPool and blocks on the future, which deadlocks on CPUs
+        // with ≤4 logical cores where the pool has only 1 worker.
         auto modArchive = MmAssets_FindModOverride(path);
         if (modArchive) {
             Ship::ResourceIdentifier identifier(path, 0, modArchive);
-            auto resource = resourceManager->LoadResource(identifier);
+            auto resource = resourceManager->LoadResourceProcess(identifier);
             if (resource) {
                 void* ptr = resource->GetRawPointer();
                 MMASSETS_LOG("[MM Assets] Loaded from mod: %s -> %p", path, ptr);
@@ -443,13 +443,9 @@ void* MmAssets_LoadResource(const char* path) {
             }
         }
 
-        // No mod override - load explicitly from mm.o2r via ResourceIdentifier.
-        // We do NOT use the general resourceManager->LoadResource(path) because
-        // that would search ALL archives (including oot.otr) and might return
-        // OOT data for paths that exist in both games.
         if (sMmArchive) {
             Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
-            auto resource = resourceManager->LoadResource(identifier);
+            auto resource = resourceManager->LoadResourceProcess(identifier);
             if (resource) {
                 void* ptr = resource->GetRawPointer();
                 MMASSETS_LOG("[MM Assets] Loaded from mm.o2r: %s -> %p", path, ptr);
@@ -489,10 +485,10 @@ void* MmAssets_LoadResourceWithSize(const char* path, size_t* outSize) {
             return nullptr;
         }
 
-        // Check mod override (if a mod archive is loaded)
+        // LoadResourceProcess (sync) — see MmAssets_LoadResource for deadlock rationale.
         if (sModArchive) {
             Ship::ResourceIdentifier modId(path, 0, sModArchive);
-            auto resource = resourceManager->LoadResource(modId);
+            auto resource = resourceManager->LoadResourceProcess(modId);
             if (resource) {
                 void* ptr = resource->GetRawPointer();
                 size_t size = resource->GetPointerSize();
@@ -503,10 +499,9 @@ void* MmAssets_LoadResourceWithSize(const char* path, size_t* outSize) {
             }
         }
 
-        // No mod override - load explicitly from mm.o2r
         if (sMmArchive) {
             Ship::ResourceIdentifier identifier(path, 0, sMmArchive);
-            auto resource = resourceManager->LoadResource(identifier);
+            auto resource = resourceManager->LoadResourceProcess(identifier);
             if (resource) {
                 void* ptr = resource->GetRawPointer();
                 size_t size = resource->GetPointerSize();

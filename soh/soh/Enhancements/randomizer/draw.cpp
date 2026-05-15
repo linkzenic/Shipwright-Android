@@ -2111,4 +2111,30 @@ void Randomizer_DrawChateauRomani(PlayState* play, GetItemEntry* getItemEntry) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// =============================================================================
+// Bottle with Magic Mushroom — Get-Item Draw (Mask of Scents reward)
+// Reuses OOT's Odd Mushroom DL (loaded via OTR path) on a vanilla bottle base.
+// =============================================================================
+void Randomizer_DrawBottleWithMagicMushroom(PlayState* play, GetItemEntry* getItemEntry) {
+    Gfx* mushroomDL = (Gfx*)ResourceMgr_LoadGfxByName("__OTR__objects/object_gi_mushroom/gGiOddMushroomDL");
+    if (mushroomDL == NULL || ((const char*)mushroomDL)[0] == '_') {
+        return;
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
+
+    // Subtle rotation (matches DrawCustomItemDiamond pattern).
+    s16 rotation = play->gameplayFrames * 0x2;
+    Matrix_RotateY(rotation * 0.01f, MTXMODE_APPLY);
+    Matrix_Scale(0.8f, 0.8f, 0.8f, MTXMODE_APPLY);
+
+    gSPMatrix(POLY_OPA_DISP++, Matrix_NewMtx(play->state.gfxCtx, (char*)__FILE__, __LINE__),
+              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_OPA_DISP++, mushroomDL);
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 } // extern "C"

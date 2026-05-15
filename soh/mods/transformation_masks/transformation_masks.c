@@ -7,6 +7,8 @@
 
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
+#include "mods/o2r_loader/o2r_loader.h"
+#include <string.h>
 
 // =============================================================================
 // Global MmPlayer instance (declared extern in transformation_masks.h)
@@ -54,6 +56,11 @@ extern void MmMaskWear_Update(PlayState* play, Player* player);
 extern s32 MmMaskWear_GetCurrent(void);
 extern void MmMaskWear_Clear(void);
 extern void MmMaskWear_DeactivateChateauRomani(void);
+
+// garo_form.cpp (custom Garo skin-swap + attack kit, not a real MM form).
+// Activated via O2rLoader_ForceModel("garo"); independent of MmForm.
+extern void GaroForm_Update(PlayState* play, Player* player);
+extern void GaroForm_DrawProjectiles(PlayState* play);
 
 // =============================================================================
 // No-op Action Function (replaces OOT actionFunc while transformed)
@@ -173,6 +180,34 @@ void TransformMasks_Init(PlayState* play, Player* player) {
     MmForm_Init(play, player);
 }
 
+// =============================================================================
+// Input filter — strip BTN_B for systems that reserve it.
+//
+// Called from z_player.c Player_Update right after `sp44 = play->state.input[0]`
+// and before Player_UpdateCommon. Replaces the inline blocks for Blast Mask /
+// Great Fairy Mask / Garo skin that used to live in z_player.c.
+// =============================================================================
+void TransformMasks_FilterB(Input* input) {
+    if (input == NULL) return;
+
+    // Blast Mask + Great Fairy Mask: B handled by MmMaskWear_Update on raw input.
+    s32 wornMask = MmMaskWear_GetCurrent();
+    if (wornMask == ITEM_MM_MASK_BLAST || wornMask == ITEM_MM_MASK_GREAT_FAIRY) {
+        input->cur.button &= ~BTN_B;
+        input->press.button &= ~BTN_B;
+        return;
+    }
+
+    // Garo skin: B reserved for the attack kit (tap = 3-slash combo, hold = charge spin).
+    if (O2rLoader_HasActiveModel()) {
+        const char* o2rName = O2rLoader_GetForcedName();
+        if (o2rName != NULL && strcmp(o2rName, "garo") == 0) {
+            input->cur.button &= ~BTN_B;
+            input->press.button &= ~BTN_B;
+        }
+    }
+}
+
 void TransformMasks_Update(PlayState* play, Player* player) {
     // Scan C-button/D-pad for transformation mask presses.
     // OOT's Player_UseItem pipeline doesn't run in two cases, so we need a fallback:
@@ -221,10 +256,18 @@ void TransformMasks_Update(PlayState* play, Player* player) {
     }
 
     MmForm_Update(play, player);
+
+    // Garo attack kit (3-slash combo + charge spin). Always called — internal
+    // GaroForm_IsActive check no-ops when the Garo skin isn't the active model.
+    GaroForm_Update(play, player);
 }
 
 void TransformMasks_Draw(PlayState* play, Player* player) {
     MmForm_Draw(play, player);
+    // Garo's projectile draw is folded into GaroForm_TryDrawSmoothSkin, which
+    // z_player.c calls inside its o2rActive Player_DrawGameplay branch — Garo
+    // is a skin-swap (not an MmForm), so this TransformMasks_Draw path isn't
+    // reached when Garo is the active model.
 }
 
 void TransformMasks_Reset(void) {

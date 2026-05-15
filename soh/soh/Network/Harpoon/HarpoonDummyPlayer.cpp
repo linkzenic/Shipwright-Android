@@ -505,6 +505,29 @@ void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
     }
     player->cylinder.dim.yShift = client.cylYShift;
 
+    // Prop Hunt cylinder sizing: match the visible prop's scale so small
+    // props (rupee, mushroom) have a small hitbox that doesn't bump the
+    // seeker just by walking near, and big props (chest, boulder) have a
+    // big enough hitbox that sword swings at the visible edge connect.
+    // Base 30u radius / 60u height = vanilla Link. Variant.scale=1.0 is
+    // Link-sized; smaller props shrink the cylinder proportionally,
+    // bigger props expand it. yShift=0 keeps the cylinder anchored to
+    // the floor where the prop visual sits.
+    if (Harpoon::Instance != nullptr && Harpoon::Instance->isPropHuntMode &&
+        client.propIndex >= 0) {
+        s32 mapIdx = Harpoon::Instance->confirmedMapIndex;
+        if (mapIdx < 0) mapIdx = 0;
+        f32 propScale = HarpoonPropHunt::GetPropVisualScale(
+            client.propCategory, client.propIndex, client.propState, mapIdx);
+        // Clamp to a sane band: too small and seekers can't ever hit;
+        // too big and a chest hider becomes a wall.
+        if (propScale < 0.3f) propScale = 0.3f;
+        if (propScale > 2.5f) propScale = 2.5f;
+        player->cylinder.dim.radius = (s16)(30.0f * propScale);
+        player->cylinder.dim.height = (s16)(60.0f * propScale);
+        player->cylinder.dim.yShift = 0;
+    }
+
     // Apply animation movement
     Vec3f diff;
     SkelAnime_UpdateTranslation(&player->skelAnime, &diff, player->actor.shape.rot.y);
@@ -535,7 +558,17 @@ void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
         gSaveContext.equips.buttonItems[0] = originalButtonItem0;
     }
 
-    actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
+    // Z-target gating per gamemode capability flag (loaded from gamemode.yaml
+    // default_config / seeded per known mode at room-join). Triforce Thief
+    // sets supports_z_target=true so thieves can lock onto each other; Prop
+    // Hunt sets it false so seekers can't auto-lock a disguised hider. Other
+    // gamemodes (randomizer/coop) opt in via their manifest.
+    bool ztargetable = (Harpoon::Instance != nullptr && Harpoon::Instance->supportsZTarget);
+    if (ztargetable) {
+        actor->flags &= ~ACTOR_FLAG_LOCK_ON_DISABLED;
+    } else {
+        actor->flags |= ACTOR_FLAG_LOCK_ON_DISABLED;
+    }
 
     if (player->cylinder.base.acFlags & AC_HIT && player->invincibilityTimer == 0) {
         // PvP routing: only the OWNER of the attacking actor should report

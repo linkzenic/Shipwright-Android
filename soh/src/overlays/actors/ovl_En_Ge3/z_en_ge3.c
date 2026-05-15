@@ -8,6 +8,7 @@
 #include "objects/object_geldb/object_geldb.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/gerudo_form.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -81,7 +82,15 @@ void EnGe3_Init(Actor* thisx, PlayState* play2) {
     this->actor.world.rot.z = 0;
     this->actor.shape.rot.z = 0;
     EnGe3_ChangeAction(this, 0);
-    this->actionFunc = EnGe3_ForceTalk;
+    // Gerudo Mask cheat: wearing the mask makes the Leader skip the forced
+    // card-giving cutscene — she treats you as already being a Gerudo. No
+    // card is granted (access is mask-bound, not persistent).
+    if (GerudoForm_IsActive()) {
+        this->actionFunc = EnGe3_WaitLookAtPlayer;
+        this->actor.update = EnGe3_UpdateWhenNotTalking;
+    } else {
+        this->actionFunc = EnGe3_ForceTalk;
+    }
     this->unk_30C = 0;
     this->actor.targetMode = 6;
     this->actor.minVelocityY = -4.0f;

@@ -499,6 +499,11 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "You got the %bWater Dragon Scale%w!&A blessed scale of the Water Dragon,&master of the depths.^Equip on the %yboots slot%w (%y\xA2%w toggles).^Adult Link only — no effect&on Young Link.^Activates real %bZora swim mechanics%w&1:1 from MM: surface walk,&%bfast dolphin swim%w, %bswim dash%w (%y\xA0%w),&%bdolphin jump%w arcs out of water.^%cIron Boots%w let you sink while&wearing the Scale.",
       "Du hast die %bWasserdrachen-Schuppe%w!&Eine gesegnete Schuppe des&Wasserdrachen, Herrscher der Tiefen.^Rüste sie am %yStiefel-Platz%w aus.^Nur erwachsener Link — bei jungem&Link kein Effekt.^Aktiviert echte %bZora-Schwimmmechanik%w&1:1 aus MM: Wasserlauf,&%bschneller Delfinschwimmen%w, %bSchwimm-Dash%w&(%y\xA0%w), %bDelfinsprung%w aus dem Wasser.^%cEisenstiefel%w lassen dich sinken&während du die Schuppe trägst.",
       "Vous obtenez l'%bÉcaille du Dragon d'Eau%w!&Une écaille bénie du Dragon d'Eau,&maître des profondeurs.^Équipez-la dans l'%yemplacement bottes%w.^Link adulte uniquement — aucun&effet sur Jeune Link.^Active les vraies %bmécaniques Zora%w&1:1 de MM: marche en surface,&%bnage dauphin rapide%w, %bdash de nage%w&(%y\xA0%w), %bsaut de dauphin%w hors de l'eau.^%cBottes de Plomb%w pour couler&en portant l'écaille." },
+
+    { RG_BOTTLE_WITH_MAGIC_MUSHROOM, static_cast<ItemID>(ITEM_BOTTLE_WITH_MAGIC_MUSHROOM),
+      "You got a %gBottle with Magic Mushroom%w!&A fragrant Termina mushroom plucked&by the keen nose of the Mask of Scents.^Stored in an empty bottle.&Drop it later for unknown effects —&or simply admire the catch.",
+      "Du hast eine %gFlasche mit Zauberpilz%w!&Ein duftender Termina-Pilz, geschnüffelt&von der Geruchsmaske.^In einer leeren Flasche aufbewahrt.&Lass ihn später fallen für unbekannte&Effekte — oder bewundere ihn.",
+      "Vous obtenez une %gFiole avec Champignon Magique%w!&Un champignon parfumé de Termina,&flairé par le Masque des Odeurs.^Stocké dans une fiole vide.&À déposer plus tard pour des effets&inconnus — ou à contempler." },
 };
 static constexpr size_t customItemMessageCount = sizeof(customItemMessages) / sizeof(customItemMessages[0]);
 
@@ -963,6 +968,7 @@ ItemObtainability Randomizer::GetItemObtainabilityFromRandomizerGet(RandomizerGe
         case RG_BOTTLE_WITH_POE:
         case RG_RUTOS_LETTER:
         case RG_BOTTLE_WITH_BIG_POE:
+        case RG_BOTTLE_WITH_MAGIC_MUSHROOM:
             return Inventory_HasEmptyBottleSlot() ? CAN_OBTAIN : CANT_OBTAIN_ALREADY_HAVE;
 
         // Bottle Refills
@@ -5150,6 +5156,17 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
                 }
 
                 gSaveContext.inventory.items[SLOT_BOTTLE_1 + i] = bottleItem;
+                return Return_Item_Entry(giEntry, RG_NONE);
+            }
+        }
+    }
+
+    // Magic Mushroom bottle (NEI custom — not part of the vanilla bottle
+    // range, so handled separately).
+    if (item == RG_BOTTLE_WITH_MAGIC_MUSHROOM) {
+        for (u16 i = 0; i < 4; i++) {
+            if (gSaveContext.inventory.items[SLOT_BOTTLE_1 + i] == ITEM_NONE) {
+                gSaveContext.inventory.items[SLOT_BOTTLE_1 + i] = ITEM_BOTTLE_WITH_MAGIC_MUSHROOM;
                 return Return_Item_Entry(giEntry, RG_NONE);
             }
         }

@@ -1,6 +1,7 @@
 #include "Harpoon.h"
 #include "PropHunt/PropHunt.h"
 #include "TriforceThief/TriforceThief.h"
+#include "DroppedItems.h"
 #include <libultraship/libultraship.h>
 #include <imgui.h>
 #include <cstdlib>
@@ -61,6 +62,16 @@ void Harpoon::RegisterHooks() {
         if (currentRoomGameMode == "triforce_thief") {
             HarpoonTriforceThief::OnSceneLoaded();
         }
+
+        // Dropped-item ledger: every scene load, materialize the ground
+        // actors for any unclaimed drops whose `sceneNum` matches this
+        // scene. Late joiners get a snapshot on connect (see RoomJoined
+        // handler) so their ledger is populated before this fires.
+        // Gated on RPG mode — other gamemodes shouldn't render drops
+        // even if a peer accidentally broadcasts one.
+        if (gPlayState != nullptr && currentRoomGameMode == "rpg") {
+            HarpoonDroppedItems::SpawnInScene(gPlayState);
+        }
     });
 
     // Intercept ACTOR_PLAYER spawns to create Harpoon dummy players
@@ -89,6 +100,35 @@ void Harpoon::RegisterHooks() {
             // UpdateTeamState. PUSH'ing on load would clobber the team's
             // progress with our (likely empty) save.
             SendPacket_RequestTeamState();
+        }
+
+        // --- GM-mode movement restrictions ---
+        // Apply the host-set restrict flags to the local player every
+        // frame. Each restrict clears the corresponding stateFlag bits
+        // so the engine refuses the action.
+        {
+            auto myIt = clients.find(ownClientId);
+            if (myIt != clients.end() && gPlayState != nullptr) {
+                Player* lp = GET_PLAYER(gPlayState);
+                if (lp != nullptr) {
+                    if (myIt->second.restrictNoClimb) {
+                        lp->stateFlags1 &= ~(PLAYER_STATE1_CLIMBING_LADDER |
+                                             PLAYER_STATE1_HANGING_OFF_LEDGE |
+                                             PLAYER_STATE1_CLIMBING_LEDGE);
+                    }
+                    if (myIt->second.restrictNoGrab) {
+                        lp->stateFlags1 &= ~PLAYER_STATE1_CARRYING_ACTOR;
+                    }
+                    if (myIt->second.restrictNoTalk) {
+                        lp->stateFlags1 &= ~PLAYER_STATE1_TALKING;
+                    }
+                    // No-crawl: clear the engine's crawl state via the
+                    // same flag mask pattern. (No dedicated bit — engine
+                    // gates on stateFlags1+itemAction. Treat as a TODO if
+                    // crawl-restriction observable behaviour is needed.)
+                    (void)myIt->second.restrictNoCrawl;
+                }
+            }
         }
 
         // Defensive: ensure server knows we're in-game. OnSceneSpawnActors
@@ -133,7 +173,14 @@ void Harpoon::RegisterHooks() {
         // mid-round — would let them pick safe items the kit doesn't include.
         // Clear START presses and force pauseCtx.state=0 if it somehow opened.
         // ---------------------------------------------------------------
-        if (isPropHuntMode && HarpoonPropHunt::IsHider() && gPlayState != nullptr) {
+        // Allow prop toggle when local is Hider (during a round) OR when in
+        // the LOBBY (no role). User spec: lobby is a no-stakes sandbox where
+        // players can practice disguising. SET_DISGUISE broadcast still fires
+        // so peers see the lobby disguise via HarpoonDummyPlayer.
+        bool propInputAllowed = HarpoonPropHunt::IsHider() ||
+                                (Harpoon::Instance != nullptr &&
+                                 Harpoon::Instance->gameState == HARPOON_STATE_LOBBY);
+        if (isPropHuntMode && propInputAllowed && gPlayState != nullptr) {
             Input* input = &gPlayState->state.input[0];
             static u8 sSavedButtonItems[8] = {};
             static u8 sSavedCButtonSlots[7] = {};
@@ -286,6 +333,14 @@ void Harpoon::RegisterHooks() {
         UpdateDecoys();
         HarpoonPropHunt::TickFrame();
 
+        // Dropped-item ledger: per-frame pickup proximity check + 5-min
+        // despawn tick (gated on local-player-in-scene-with-drops).
+        // RPG mode only — no-op in other gamemodes.
+        if (currentRoomGameMode == "rpg") {
+            HarpoonDroppedItems::TickPickupPoll();
+            HarpoonDroppedItems::TickExpiry();
+        }
+
         // Round-active loading-zone blocker. Mirrors Scooter's
         // TriforceThief_DestroyGrottos hook. Kills any DoorAna (grotto)
         // actor that spawns and cancels any unauthorized scene transition,
@@ -340,7 +395,69 @@ void Harpoon::RegisterHooks() {
             // bookkeeping.
             if (gPlayState->transitionTrigger == TRANS_TRIGGER_START &&
                 !::sHarpoonAuthorizedTransition) {
-                gPlayState->transitionTrigger = TRANS_TRIGGER_OFF;
+                // Full-circle scene-lock (PH only). If the engine's
+                // `nextEntranceIndex` would land us in a scene that's part of
+                // the round's cluster, let the transition happen. Otherwise
+                // redirect `nextEntranceIndex` to bring the player back to
+                // the round map. The fade animation still runs (so it feels
+                // like walking through a door) but the destination is the
+                // round map, not the out-of-bounds scene.
+                bool redirected = false;
+                s32 destEntr  = gPlayState->nextEntranceIndex;
+                s32 destScene = -1;
+                if (destEntr >= 0 && destEntr < (s32)ARRAY_COUNT(gEntranceTable)) {
+                    destScene = (s32)gEntranceTable[destEntr].scene;
+                }
+                s32 mapIdx = (Harpoon::Instance != nullptr)
+                                 ? Harpoon::Instance->confirmedMapIndex : -1;
+                if (isPropHuntMode) {
+                    if (mapIdx >= 0 && destScene >= 0 &&
+                        !HarpoonPropHunt::IsSceneInRoundCluster(mapIdx, destScene)) {
+                        s32 returnEntr = HarpoonPropHunt::GetReturnEntranceForInvalidExit(
+                            mapIdx, destScene);
+                        if (returnEntr >= 0) {
+                            gPlayState->nextEntranceIndex = returnEntr;
+                            gPlayState->transitionType    = TRANS_TYPE_FADE_BLACK;
+                            ::sHarpoonAuthorizedTransition = true;
+                            redirected = true;
+                        }
+                    }
+                } else if (currentRoomGameMode == "triforce_thief") {
+                    // Same full-circle redirect for TT: when the engine
+                    // wants to load us into a scene outside the round's
+                    // cluster, swap the entrance to the round map's main
+                    // entrance instead. Player fades through the door and
+                    // arrives back in the round map.
+                    if (mapIdx >= 0 && destScene >= 0 &&
+                        !HarpoonTriforceThief::IsSceneInRoundClusterTT(mapIdx, destScene)) {
+                        s32 returnEntr = HarpoonTriforceThief::GetReturnEntranceForInvalidExitTT(
+                            mapIdx, destScene);
+                        if (returnEntr >= 0) {
+                            gPlayState->nextEntranceIndex = returnEntr;
+                            gPlayState->transitionType    = TRANS_TYPE_FADE_BLACK;
+                            ::sHarpoonAuthorizedTransition = true;
+                            redirected = true;
+                        }
+                    }
+                }
+
+                if (!redirected) {
+                    // Backstop: cancel the unauthorized transition + restore
+                    // control. The engine sets PLAYER_STATE1_LOADING |
+                    // PLAYER_STATE1_IN_CUTSCENE in z_player.c when starting
+                    // a loading-zone transition; cancelling the trigger
+                    // alone leaves those flags set and the player stuck in
+                    // the walking-into-door animation. Zero velocity too so
+                    // the animation curve has no input to push forward.
+                    gPlayState->transitionTrigger = TRANS_TRIGGER_OFF;
+                    Player* locked = GET_PLAYER(gPlayState);
+                    if (locked != nullptr) {
+                        locked->stateFlags1 &= ~(PLAYER_STATE1_LOADING |
+                                                 PLAYER_STATE1_IN_CUTSCENE);
+                        locked->linearVelocity = 0.0f;
+                        locked->actor.speedXZ  = 0.0f;
+                    }
+                }
             }
             // Note: respawnFlag block removed for now — it was wiping the
             // engine's legitimate post-arrival respawn state and causing
@@ -349,7 +466,21 @@ void Harpoon::RegisterHooks() {
             // map entry. If void-out becomes a problem, we'll add a
             // narrower guard (e.g. only block when player is actually
             // mid-fall) but not here.
-            ::sHarpoonAuthorizedTransition = false;
+
+            // Only clear the authorized-transition flag once the engine
+            // has fully consumed the trigger (returned it to OFF). The
+            // previous unconditional clear at end-of-block raced the
+            // engine: TickFrame would call TeleportToEntrance (sets
+            // trigger=START, flag=true), this block would skip its cancel
+            // (correct), then clear the flag — and on the NEXT frame our
+            // own redirect/cancel logic would fire because trigger was
+            // still START. Result: authorized teleport got cancelled
+            // mid-flight (e.g. seeker post-hide-phase teleport). Keeping
+            // the flag set until trigger==OFF means multi-frame transitions
+            // survive intact.
+            if (gPlayState->transitionTrigger == TRANS_TRIGGER_OFF) {
+                ::sHarpoonAuthorizedTransition = false;
+            }
         }
 
         if (currentRoomGameMode == "triforce_thief") {
@@ -391,20 +522,11 @@ void Harpoon::RegisterHooks() {
                 if (!sComboFired && gameState != HARPOON_STATE_MAP_SELECT) {
                     sComboFired = true;
                     bool isLobby = (gameState == HARPOON_STATE_LOBBY);
-                    // Local admin = host OR explicit admin flag on our
-                    // own client roster entry. `Harpoon` class has no
-                    // top-level isAdmin; per-client flag lives on
-                    // HarpoonClient.
-                    bool isAdminLocal = (ownClientId != 0 &&
-                                         ownClientId == hostClientId);
-                    if (!isAdminLocal) {
-                        auto it = clients.find(ownClientId);
-                        if (it != clients.end() && it->second.isAdmin) {
-                            isAdminLocal = true;
-                        }
-                    }
+                    // Host is the sole authority (admin concept removed).
+                    bool isHostLocal = (ownClientId != 0 &&
+                                        ownClientId == hostClientId);
 
-                    if (isLobby && isAdminLocal) {
+                    if (isLobby && isHostLocal) {
                         // Lobby + admin → open the map-select overlay.
                         s32 modeInt = (s32)mapSelectMode;
                         nlohmann::json env;
@@ -563,6 +685,22 @@ void Harpoon::RegisterHooks() {
     // and convert to a seeker for the rest of the round (Scooter behaviour
     // — keeps the round going instead of leaving the hider as a spectator).
     COND_HOOK(OnPlayerHealthChange, isConnected, [&](int16_t amount) {
+        // --- RPG-mode death-drop ---
+        // Gated on currentRoomGameMode == "rpg" so PH / TT / randomizer
+        // don't accidentally fire drop-on-death. Detect HP=0 transition:
+        // soft-death (fairy in bottle) drops 2 random items + 20% rupees;
+        // game-over (no fairy) drops everything except heart upgrades.
+        // Static prev-HP guard so the engine's i-frames + revive flow
+        // doesn't re-trigger within the same death.
+        if (currentRoomGameMode == "rpg") {
+            static s16 sPrevHP = -1;
+            s16 curHP = gSaveContext.health;
+            if (sPrevHP > 0 && curHP <= 0) {
+                HarpoonDroppedItems::TriggerLocalDeathDrop();
+            }
+            sPrevHP = curHP;
+        }
+
         // --- Triforce Thief carrier drop on damage ---
         // Triforce knocked loose: pick a random landing 500-800 units away,
         // apply locally first (relay excludes sender), then broadcast. The
@@ -965,19 +1103,13 @@ void Harpoon::RegisterHooks() {
               [&](GIVanillaBehavior id, bool* should, va_list args) {
         switch (id) {
         case VB_SHOW_GAMEPLAY_TIMER: {
-            // Per user spec: timer shows ONLY while local is a HIDER in
-            // an active round map. Seekers see no timer; lobby = no timer.
-            // Engine's playTimer keeps ticking under the hood — we just
-            // gate the display via *should so the digit overlay vanishes
-            // for seekers / in lobby, restoring identical behaviour to
-            // the older ImGui "Survival" text.
-            bool roundActive =
-                isPropHuntMode &&
-                HarpoonPropHunt::IsHider() &&
-                gameState != HARPOON_STATE_LOBBY &&
-                (gameState == HARPOON_STATE_HIDING_PHASE ||
-                 gameState == HARPOON_STATE_PLAYING);
-            if (roundActive) *should = true;
+            // Always-visible timer while in any PropHunt room. Pause is
+            // achieved by NOT advancing the underlying counter (only
+            // increments while local is Hider; see PropHunt.cpp TickFrame).
+            // In lobby / between rounds the timer just freezes at its last
+            // value — visually present but stopped. Total survival time
+            // across the session.
+            if (isPropHuntMode) *should = true;
             break;
         }
         default: break;

@@ -2,6 +2,7 @@
 #include "HarpoonSkinSync.h"
 #include "PropHunt/PropHunt.h"
 #include "TriforceThief/TriforceThief.h"
+#include "Templates.h"
 #include "soh/SohGui/SohMenu.h"
 #include "soh/SohGui/MenuTypes.h"
 #include <libultraship/libultraship.h>
@@ -359,14 +360,11 @@ static void HarpoonMainMenu(WidgetInfo& info) {
         // picks them up via Harpoon::HandlePacket_RoomEvent.
         // ================================================================
 
-        // The initial host is implicitly an admin. Anyone the host has
-        // promoted via PROP_HUNT.ADMIN_PROMOTE also counts. Use this for
-        // any "manage gameplay" buttons (Start Game, set role, etc.).
+        // Host is the sole authority. Admin role removed — only the host
+        // can manage gameplay (Start Game, set role, finish round, etc.).
         bool isHost = (harpoon->ownClientId != 0 &&
                        harpoon->ownClientId == harpoon->hostClientId);
-        auto myIt = harpoon->clients.find(harpoon->ownClientId);
-        bool myAdminFlag = (myIt != harpoon->clients.end() && myIt->second.isAdmin);
-        bool isAdmin = isHost || myAdminFlag;
+        bool isAdmin = isHost;
         (void)isAdmin;  // referenced by the per-gamemode sections below
 
         if (harpoon->currentRoomGameMode == "prop_hunt") {
@@ -465,15 +463,23 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                 ls.hidePhaseFramesRemaining = settings.hideSeconds * 20;
             }
             ImGui::SameLine();
-            if (ImGui::Button("End Hide Phase")) {
-                HarpoonPropHunt::GetLocalState().inHidePhase = false;
-                HarpoonPropHunt::GetLocalState().hidePhaseFramesRemaining = 0;
-                harpoon->SendJsonToRemote(HarpoonPropHunt::BuildHidePhaseEndPayload());
+            // Host-only Finish Round button. Forces the current round to end
+            // (broadcasts ROUND_RESULT; HandleRoundResult teleports everyone
+            // back to the lobby silently). Disabled outside an active round.
+            bool roundInFlightPH =
+                (harpoon->gameState == HARPOON_STATE_HIDING_PHASE ||
+                 harpoon->gameState == HARPOON_STATE_PLAYING);
+            ImGui::BeginDisabled(!roundInFlightPH);
+            if (ImGui::Button("Finish Round")) {
+                nlohmann::json env;
+                env["type"]       = "ROOM.BROADCAST_EVENT";
+                env["event_name"] = "PROP_HUNT.ROUND_RESULT";
+                env["data"]       = nlohmann::json::object();
+                env["data"]["winnerSide"] = "host_forced";
+                harpoon->SendJsonToRemote(env);
+                HarpoonPropHunt::HandleEvent(env);
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Reset Seeker History")) {
-                HarpoonPropHunt::Host::ResetSeekerHistory();
-            }
+            ImGui::EndDisabled();
             if (ImGui::Button("Open Map Select Screen")) {
                 // Build the broadcast envelope and locally dispatch it
                 // through HandleEvent — server-relay excludes the sender,
@@ -496,7 +502,16 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                                 "Hider controls in-game: D-Left = next category, "
                                 "D-Down = next prop, D-Right = next state.");
 
-            // --- Player list with role badges + admin actions ----------------
+            // --- Player list with role badges + host-only role buttons -------
+            // Hider/Seeker buttons act in two modes:
+            //   - LOBBY / FINISHED → write c.pendingRole (next-round override),
+            //     no broadcast. Consumed by HostStartRound.
+            //   - HIDING_PHASE / PLAYING → broadcast ROLE_ASSIGN immediately
+            //     (mid-round override, existing behaviour).
+            bool roundInFlight =
+                (harpoon->gameState == HARPOON_STATE_HIDING_PHASE ||
+                 harpoon->gameState == HARPOON_STATE_PLAYING);
+
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Players:");
             for (auto& [cid, c] : harpoon->clients) {
@@ -508,47 +523,55 @@ static void HarpoonMainMenu(WidgetInfo& info) {
 
                 ImGui::TextColored(rolColor, "  [%s]", rolTag);
                 ImGui::SameLine();
-                ImGui::Text("%s%s%s",
-                            c.name.c_str(),
-                            c.self ? " (you)" : "",
-                            c.isAdmin ? " [admin]" : "");
+                ImGui::Text("%s%s", c.name.c_str(), c.self ? " (you)" : "");
+                if (!c.pendingRole.empty()) {
+                    ImGui::SameLine();
+                    ImVec4 pendCol = (c.pendingRole == "seeker")
+                        ? ImVec4(1.0f, 0.6f, 0.6f, 1.0f)
+                        : ImVec4(0.6f, 1.0f, 0.6f, 1.0f);
+                    ImGui::TextColored(pendCol, "→ pending: %s",
+                                       c.pendingRole == "seeker" ? "SEEKER" : "HIDER");
+                }
                 bool isSeekerCandidate = HarpoonPropHunt::Host::HasBeenSeeker(cid);
                 if (isSeekerCandidate) {
                     ImGui::SameLine();
                     ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "(was seeker)");
                 }
 
-                // Admin actions — visible to admins for every player including
-                // self. Self-assign applies the role locally (the server-side
-                // relay excludes the sender from receiving its own broadcast).
-                if (isAdmin) {
+                // Host-only role buttons. Single source of authority.
+                if (isHost) {
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Hider")) {
-                        c.role = "hider";
-                        if (c.self) {
-                            HarpoonPropHunt::ChangeRoleAndReload(HarpoonPropHunt::Role::Hider);
+                        if (roundInFlight) {
+                            c.role = "hider";
+                            c.pendingRole.clear();
+                            if (c.self) {
+                                HarpoonPropHunt::ChangeRoleAndReload(HarpoonPropHunt::Role::Hider);
+                            }
+                            harpoon->SendJsonToRemote(
+                                HarpoonPropHunt::BuildRoleAssignPayload(cid, HarpoonPropHunt::Role::Hider));
+                        } else {
+                            c.pendingRole = "hider";  // staged for next round
                         }
-                        harpoon->SendJsonToRemote(
-                            HarpoonPropHunt::BuildRoleAssignPayload(cid, HarpoonPropHunt::Role::Hider));
                     }
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Seeker")) {
-                        c.role = "seeker";
-                        if (c.self) {
-                            HarpoonPropHunt::ChangeRoleAndReload(HarpoonPropHunt::Role::Seeker);
+                        if (roundInFlight) {
+                            c.role = "seeker";
+                            c.pendingRole.clear();
+                            if (c.self) {
+                                HarpoonPropHunt::ChangeRoleAndReload(HarpoonPropHunt::Role::Seeker);
+                            }
+                            harpoon->SendJsonToRemote(
+                                HarpoonPropHunt::BuildRoleAssignPayload(cid, HarpoonPropHunt::Role::Seeker));
+                        } else {
+                            c.pendingRole = "seeker";
                         }
-                        harpoon->SendJsonToRemote(
-                            HarpoonPropHunt::BuildRoleAssignPayload(cid, HarpoonPropHunt::Role::Seeker));
                     }
-                    if (!c.self) {
+                    if (!c.pendingRole.empty()) {
                         ImGui::SameLine();
-                        if (ImGui::SmallButton(c.isAdmin ? "-Admin" : "+Admin")) {
-                            nlohmann::json env;
-                            env["type"]       = "ROOM.BROADCAST_EVENT";
-                            env["event_name"] = "PROP_HUNT.ADMIN_PROMOTE";
-                            env["data"]       = { {"targetClientId", cid}, {"isAdmin", !c.isAdmin} };
-                            harpoon->SendJsonToRemote(env);
-                            c.isAdmin = !c.isAdmin;
+                        if (ImGui::SmallButton("Clear")) {
+                            c.pendingRole.clear();
                         }
                     }
                 }
@@ -638,31 +661,181 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                     }
                     ImGui::EndDisabled();
                 }
-                ImGui::BeginDisabled(!isAdmin);
-                if (ImGui::Button("Respawn Triforce (random point)")) {
-                    const auto* m = HarpoonTriforceThief::GetMap(
-                        HarpoonTriforceThief::GetLocalState().confirmedMap);
-                    if (m != nullptr && !m->spawnPoints.empty()) {
-                        s32 idx = (s32)(rand() % m->spawnPoints.size());
-                        const auto& sp = m->spawnPoints[idx];
-                        auto& s = HarpoonTriforceThief::GetLocalState();
-                        s.carrierClientId = 0;
-                        s.currentSpawn = idx;
-                        s.triforceX = sp.x;
-                        s.triforceY = sp.y;
-                        s.triforceZ = sp.z;
-                        harpoon->SendJsonToRemote(
-                            HarpoonTriforceThief::BuildTriforceSpawnPayload(
-                                s.confirmedMap, idx, sp.x, sp.y, sp.z));
-                    }
-                }
-                if (ImGui::Button("Declare Local Winner")) {
-                    harpoon->SendJsonToRemote(
-                        HarpoonTriforceThief::BuildRoundResultPayload(
-                            harpoon->ownClientId,
-                            HarpoonTriforceThief::GetLocalState().roundIndex));
+                // Host-only Finish Round button — forces the current TT
+                // round to end (broadcasts ROUND_RESULT; HandleRoundResult
+                // teleports everyone back to the lobby silently). Disabled
+                // when no round is in flight.
+                bool roundInFlightTT =
+                    HarpoonTriforceThief::GetLocalState().inRound &&
+                    !HarpoonTriforceThief::GetLocalState().roundEnded;
+                ImGui::BeginDisabled(!isHost || !roundInFlightTT);
+                if (ImGui::Button("Finish Round")) {
+                    auto payload = HarpoonTriforceThief::BuildRoundResultPayload(
+                        harpoon->ownClientId,
+                        HarpoonTriforceThief::GetLocalState().roundIndex);
+                    harpoon->SendJsonToRemote(payload);
+                    HarpoonTriforceThief::HandleEvent(payload);
                 }
                 ImGui::EndDisabled();
+            }
+        }
+
+        // --------------------------------------------------------------
+        // GM panel — host-only RP controls (templates, flag overrides,
+        // peer teleport, host transfer). Only renders in RPG mode rooms
+        // so PH / TT / randomizer hosts don't see RP-specific controls.
+        // --------------------------------------------------------------
+        if (isHost && harpoon->currentRoomGameMode == "rpg") {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 1.0f, 1.0f), "GM Controls");
+
+            if (ImGui::CollapsingHeader("Templates")) {
+                static char sNewTplName[64] = "";
+                ImGui::SetNextItemWidth(180);
+                ImGui::InputText("##tplname", sNewTplName, IM_ARRAYSIZE(sNewTplName));
+                ImGui::SameLine();
+                if (ImGui::Button("Snapshot current state") && sNewTplName[0] != '\0') {
+                    HarpoonTemplates::SnapshotLocal(sNewTplName);
+                }
+                ImGui::Spacing();
+                const auto& tpls = HarpoonTemplates::All();
+                if (tpls.empty()) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                        "  (no templates saved yet)");
+                }
+                for (const auto& tpl : tpls) {
+                    ImGui::PushID(tpl.name.c_str());
+                    ImGui::Text("  %s", tpl.name.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::Button("Apply ▸ Me")) {
+                        HarpoonTemplates::ApplyToLocal(tpl.name);
+                    }
+                    for (auto& [cid, c] : harpoon->clients) {
+                        if (cid == harpoon->ownClientId || !c.online) continue;
+                        ImGui::SameLine();
+                        std::string lbl = "▸ " + c.name;
+                        if (ImGui::SmallButton(lbl.c_str())) {
+                            HarpoonTemplates::ApplyToPeer(cid, tpl.name);
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Delete")) {
+                        HarpoonTemplates::Delete(tpl.name);
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::PopID();
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Player flags")) {
+                for (auto& [cid, c] : harpoon->clients) {
+                    if (!c.online) continue;
+                    // Skip self — host doesn't restrict their own
+                    // movement via this panel.
+                    if (cid == harpoon->ownClientId) continue;
+                    ImGui::PushID((int)cid);
+                    bool noClimb = c.restrictNoClimb;
+                    bool noGrab  = c.restrictNoGrab;
+                    bool noCrawl = c.restrictNoCrawl;
+                    bool noTalk  = c.restrictNoTalk;
+                    // Fall back to "cid<N>" if the peer never sent a
+                    // display name (matches the TT leaderboard pattern).
+                    std::string label = c.name.empty()
+                        ? ("cid" + std::to_string(cid)) : c.name;
+                    ImGui::Text("  %s", label.c_str());
+                    ImGui::SameLine(); bool changed = false;
+                    if (ImGui::Checkbox("Climb", &noClimb)) { c.restrictNoClimb = noClimb; changed = true; }
+                    ImGui::SameLine();
+                    if (ImGui::Checkbox("Grab",  &noGrab))  { c.restrictNoGrab  = noGrab;  changed = true; }
+                    ImGui::SameLine();
+                    if (ImGui::Checkbox("Crawl", &noCrawl)) { c.restrictNoCrawl = noCrawl; changed = true; }
+                    ImGui::SameLine();
+                    if (ImGui::Checkbox("Talk",  &noTalk))  { c.restrictNoTalk  = noTalk;  changed = true; }
+                    if (changed) {
+                        nlohmann::json env;
+                        env["type"]       = "ROOM.BROADCAST_EVENT";
+                        env["event_name"] = "HARPOON.FLAG_OVERRIDE";
+                        nlohmann::json d;
+                        d["targetClientId"] = cid;
+                        d["noClimb"] = !noClimb;  // inverted: checkbox = allowed?
+                        // Wait — checkbox shows "Climb" as enabled meaning
+                        // restrictNoClimb is FALSE. We track restrictNo* in
+                        // memory but the checkbox checked = allowed.
+                        // Simpler: invert the bool meaning, send what we set.
+                        d["noClimb"] = c.restrictNoClimb;
+                        d["noGrab"]  = c.restrictNoGrab;
+                        d["noCrawl"] = c.restrictNoCrawl;
+                        d["noTalk"]  = c.restrictNoTalk;
+                        env["data"]  = d;
+                        harpoon->SendJsonToRemote(env);
+                    }
+                    ImGui::PopID();
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Teleport")) {
+                for (auto& [cid, c] : harpoon->clients) {
+                    if (cid == harpoon->ownClientId || !c.online) continue;
+                    ImGui::PushID((int)cid);
+                    ImGui::Text("  %s", c.name.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("To me") && gPlayState != nullptr) {
+                        Player* lp = GET_PLAYER(gPlayState);
+                        if (lp != nullptr) {
+                            nlohmann::json env;
+                            env["type"]       = "ROOM.BROADCAST_EVENT";
+                            env["event_name"] = "HARPOON.PEER_TELEPORT";
+                            nlohmann::json d;
+                            d["targetClientId"] = cid;
+                            d["entranceIndex"]  = (int)gSaveContext.entranceIndex;
+                            d["x"] = lp->actor.world.pos.x;
+                            d["y"] = lp->actor.world.pos.y;
+                            d["z"] = lp->actor.world.pos.z;
+                            d["toHostPos"] = true;
+                            env["data"] = d;
+                            harpoon->SendJsonToRemote(env);
+                        }
+                    }
+                    ImGui::SameLine();
+                    static int sSendEntr = 0x0CD;  // Hyrule Field default
+                    ImGui::SetNextItemWidth(80);
+                    ImGui::InputInt("##entr", &sSendEntr, 0, 0);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Send to scene")) {
+                        nlohmann::json env;
+                        env["type"]       = "ROOM.BROADCAST_EVENT";
+                        env["event_name"] = "HARPOON.PEER_TELEPORT";
+                        nlohmann::json d;
+                        d["targetClientId"] = cid;
+                        d["entranceIndex"]  = sSendEntr;
+                        d["toHostPos"]      = false;
+                        env["data"] = d;
+                        harpoon->SendJsonToRemote(env);
+                    }
+                    ImGui::PopID();
+                }
+            }
+
+            if (ImGui::CollapsingHeader("Host transfer")) {
+                for (auto& [cid, c] : harpoon->clients) {
+                    if (cid == harpoon->ownClientId || !c.online) continue;
+                    ImGui::PushID((int)cid);
+                    ImGui::Text("  %s", c.name.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Make host")) {
+                        nlohmann::json env;
+                        env["type"]       = "ROOM.BROADCAST_EVENT";
+                        env["event_name"] = "HARPOON.HOST_TRANSFER";
+                        nlohmann::json d;
+                        d["newHostClientId"] = cid;
+                        env["data"] = d;
+                        harpoon->SendJsonToRemote(env);
+                        // Apply locally too (relay excludes sender).
+                        harpoon->hostClientId = cid;
+                    }
+                    ImGui::PopID();
+                }
             }
         }
 

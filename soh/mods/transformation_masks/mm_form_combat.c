@@ -111,16 +111,18 @@ static void MmForm_SetPunchQuadVertices(Player* player, u8 step) {
 /**
  * Configure and submit punch quad for collision checking.
  *
- * Sets damage type to DMG_HAMMER_SWING (same heavy blunt impact as Megaton Hammer).
- * From 2Ship: Goron punches use meleeWeaponQuads with directional sweep.
- * From OOT: DMG_HAMMER_SWING = (1 << 6) = 0x00000040.
+ * Caller picks dmgFlags per form:
+ *   Goron → DMG_HAMMER_SWING (heavy blunt, mirrors MM's DMG_GORON_PUNCH)
+ *   Zora  → DMG_SLASH_MASTER (sword swing, mirrors MM's DMG_ZORA_PUNCH on the
+ *           combo punches; jump kick uses DMG_JUMP_MASTER via EnableJumpKickQuad)
  *
- * @param player  OOT Player pointer
- * @param play    PlayState
- * @param step    Combo step
- * @param damage  Damage amount
+ * @param player    OOT Player pointer
+ * @param play      PlayState
+ * @param step      Combo step
+ * @param damage    Damage amount
+ * @param dmgFlags  Damage type bitmask (see DMG_* in z64collision_check.h)
  */
-static void MmForm_EnablePunchQuad(Player* player, PlayState* play, u8 step, u8 damage) {
+static void MmForm_EnablePunchQuad(Player* player, PlayState* play, u8 step, u8 damage, u32 dmgFlags) {
     ColliderQuad* quad = &player->meleeWeaponQuads[0];
 
     // Reset previous frame's AT state
@@ -129,10 +131,8 @@ static void MmForm_EnablePunchQuad(Player* player, PlayState* play, u8 step, u8 
     // Set directional vertices for this punch type
     MmForm_SetPunchQuadVertices(player, step);
 
-    // Configure damage: DMG_HAMMER_SWING (same as Megaton Hammer normal swing)
-    // This means enemies vulnerable to hammer are also vulnerable to Goron punch
     quad->base.atFlags = AT_ON | AT_TYPE_PLAYER;
-    quad->info.toucher.dmgFlags = DMG_HAMMER_SWING;
+    quad->info.toucher.dmgFlags = dmgFlags;
     quad->info.toucher.damage = damage;
     quad->info.toucherFlags = TOUCH_ON | TOUCH_NEAREST;
 

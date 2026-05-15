@@ -308,14 +308,13 @@ class TriforceThiefMapSelectWindow final : public Ship::GuiWindow {
             }
             // Confirm / vote intent. Same rules as PropHunt overlay:
             //   - Host (any mode): A press.
-            //   - Peer in EVERYONE_CHOOSES: A + START.
+            //   - Peer in EVERYONE_CHOOSES: A press alone (was A+START;
+            //     parity with PropHunt's simplified vote input).
             //   - Peer in HOST_CHOOSES: ignored.
             bool everyoneMode = (harpoon->mapSelectMode == MAP_SELECT_EVERYONE_CHOOSES);
             bool aPress       = CHECK_BTN_ALL(input->press.button, BTN_A);
-            bool startHeld    = CHECK_BTN_ALL(input->cur.button, BTN_START);
-            bool aPlusStart   = aPress && startHeld;
             bool trigger      = isHost ? aPress
-                                       : (everyoneMode ? aPlusStart : false);
+                                       : (everyoneMode ? aPress : false);
             if (trigger) {
                 s32 idx = harpoon->selectedMapIndex;
                 if (everyoneMode) {

@@ -38,6 +38,22 @@ void EnsureInit() {
     sInitialized = true;
     // Register known o2r-based models. Add additional entries here as needed.
     RegisterImpl("garo", "__OTR__objects/garo/gGaroSkel");
+    // Gerudo Player — Link-rigged gerudo body skin packaged in nei/gerudo.o2r.
+    // The skel IS Link's 21-bone adult skel (`gLinkAdultSkel` Flex skeleton),
+    // just with gerudo mesh + textures attached to each limb's DL. Repackaged
+    // by tools/repack_gerudo_player.py from the artist-authored
+    // "00 - Gerudo Player.o2r" out of its hijacking `alt/objects/object_link_boy/`
+    // path into a non-conflicting namespace `objects/gerudoPlayer/`.
+    //
+    // Because the skel IS Link-compatible, all of Player_DrawImpl works
+    // naturally — no DrawNullBody, no hybrid render, no anim retargeting.
+    // The body renders gerudo, animations play Link's vanilla, equipment
+    // stays Link's vanilla (sword/shield/etc., since those resolve from
+    // oot.o2r via paths the gerudo o2r doesn't shadow).
+    //
+    // The o2r also carries 11 baked PlayerAnimation resources at
+    // `objects/gerudoPlayer/gPlayerAnim_gerudo_*` (visible in the anim viewer).
+    RegisterImpl("gerudo", "__OTR__objects/gerudoPlayer/object_link_boy/gLinkAdultSkel");
 }
 
 s32 FindByName(const char* name) {

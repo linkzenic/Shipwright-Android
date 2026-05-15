@@ -9,6 +9,7 @@
 
 #include "expansions/sw97/sw97_compat.h"
 #include "expansions/sw97/sw97_config.h"
+#include <math.h>
 
 // ============================================================
 // Struct (merged from z_magic_wind.h)
@@ -25,6 +26,12 @@ typedef struct MagicWind {
     /* 0x0170 */ MagicWindFunc actionFunc;
     s16 pushTimer;
     u8 pushActive;
+    // Jetpack mode: tap a C-button → forward launch, hold ≥ 8 frames → upward launch.
+    // Window runs for 20 seconds in parallel with (and outlasting) the push effect.
+    s16 jetpackTimer;
+    s16 jetpackHoldFrames;
+    u8 jetpackActive;
+    u8 jetpackHoldHandled;
 } MagicWind;
 
 // Runtime actor ID (assigned by ActorDB in sw97_init.cpp)
@@ -462,6 +469,66 @@ static u8 sAlphaUpdVals[] = {
 // ============================================================
 
 #define WIND_PUSH_DURATION 450 // 15 sec × 30fps
+
+// Frames of R+C hold required for a full-charge upward boost (~5 Link heights).
+#define JETPACK_MAX_CHARGE 60
+
+// Wind particles streaming forward in a line ahead of Link.
+// Pattern based on GustJar_SpawnBlowVFX in soh/mods/items/logic/item_gustjar.c —
+// uses the smoke-ball spawner (func_8002836C) with white/pale-blue wind tones.
+static void MagicWind_SpawnWindLineVFX(PlayState* play, Player* player, s16 aimYaw) {
+    Vec3f origin = player->actor.world.pos;
+    origin.y += 30.0f;
+
+    for (s32 i = 0; i < 6; i++) {
+        s16 spreadAngle = aimYaw + (s16)Rand_CenteredFloat(0x0800); // narrow line spread
+        f32 startDist = 20.0f + (f32)i * 25.0f;
+        Vec3f pos = {
+            origin.x + Math_SinS(spreadAngle) * startDist,
+            origin.y + Rand_CenteredFloat(8.0f),
+            origin.z + Math_CosS(spreadAngle) * startDist,
+        };
+        f32 speed = 18.0f + Rand_ZeroFloat(4.0f);
+        Vec3f vel = {
+            Math_SinS(spreadAngle) * speed,
+            Rand_CenteredFloat(1.0f),
+            Math_CosS(spreadAngle) * speed,
+        };
+        Vec3f accel = { 0.0f, 0.3f, 0.0f };
+        Color_RGBA8 prim = { 220, 240, 255, 180 };
+        Color_RGBA8 env  = { 160, 200, 230, 110 };
+        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 14);
+    }
+}
+
+// Wind particles fountaining upward around Link.
+// Mirrors the upward flame plume pattern used by Bg_Hidan_Sekizou's fireballs
+// (soh/src/overlays/actors/ovl_Bg_Hidan_Sekizou) — spread the spawn ring around
+// the player's feet and shoot the particles up.
+static void MagicWind_SpawnWindSpreadVFX(PlayState* play, Player* player) {
+    Vec3f base = player->actor.world.pos;
+    base.y += 5.0f;
+
+    for (s32 i = 0; i < 6; i++) {
+        f32 angle = Rand_ZeroFloat(2.0f * M_PI);
+        f32 radius = Rand_ZeroFloat(40.0f);
+        Vec3f pos = {
+            base.x + cosf(angle) * radius,
+            base.y + Rand_ZeroFloat(20.0f),
+            base.z + sinf(angle) * radius,
+        };
+        f32 outwardSpeed = 1.5f + Rand_ZeroFloat(2.0f);
+        Vec3f vel = {
+            cosf(angle) * outwardSpeed,
+            14.0f + Rand_ZeroFloat(4.0f), // strong upward
+            sinf(angle) * outwardSpeed,
+        };
+        Vec3f accel = { 0.0f, 0.4f, 0.0f }; // mild buoyancy
+        Color_RGBA8 prim = { 230, 250, 255, 200 };
+        Color_RGBA8 env  = { 170, 210, 240, 120 };
+        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 14);
+    }
+}
 #define WIND_PUSH_RADIUS 400.0f
 #define WIND_PUSH_FORCE 8.0f
 
@@ -511,6 +578,19 @@ void MagicWind_Init(Actor* thisx, PlayState* play) {
             MagicWind_SetupAction(this, MagicWind_WaitForTimer);
             this->pushActive = 1;
             this->pushTimer = WIND_PUSH_DURATION;
+            this->jetpackActive = 1;
+            this->jetpackTimer = 600;       // 20 seconds at 30 fps
+            this->jetpackHoldFrames = 0;
+            this->jetpackHoldHandled = 0;
+            // Swap the Forest-medallion C-slot icon to the wind-jetpack placeholder
+            // for the duration of the window. Set the global flag and force the
+            // HUD icon cache to reload for any C-slot holding the medallion.
+            gSw97WindJetpackIconActive = 1;
+            for (s32 btnIdx = 1; btnIdx <= 3; btnIdx++) {
+                if (gSaveContext.equips.buttonItems[btnIdx] == ITEM_MEDALLION_FOREST) {
+                    Interface_LoadItemIcon1(play, btnIdx);
+                }
+            }
             break;
         case 1:
             SkelCurve_SetAnim(&this->skelCurve, &sWindTransformUpdIdx, 60.0f, 0.0f, 60.0f, -1.0f);
@@ -528,6 +608,17 @@ void MagicWind_Destroy(Actor* thisx, PlayState* play) {
     func_800876C8(play);
     // wipe out
     LOG_STRING("消滅");
+
+    // Safety: if the spell dies before the jetpack window expires (text box,
+    // scene transition, etc.), restore the C-slot icon now.
+    if (gSw97WindJetpackIconActive) {
+        gSw97WindJetpackIconActive = 0;
+        for (s32 btnIdx = 1; btnIdx <= 3; btnIdx++) {
+            if (gSaveContext.equips.buttonItems[btnIdx] == ITEM_MEDALLION_FOREST) {
+                Interface_LoadItemIcon1(play, btnIdx);
+            }
+        }
+    }
 }
 
 // ============================================================
@@ -578,8 +669,8 @@ void MagicWind_FadeOut(MagicWind* this, PlayState* play) {
         MagicWind_UpdateAlpha((f32)this->timer * (1.0f / 30.0f));
         this->timer--;
     } else {
-        if (this->pushActive) {
-            this->actor.draw = NULL; // hide visual, keep alive for push
+        if (this->pushActive || this->jetpackActive) {
+            this->actor.draw = NULL; // hide visual, keep alive for push / jetpack window
         } else {
             Actor_Kill(&this->actor);
         }
@@ -612,7 +703,81 @@ void MagicWind_Update(Actor* thisx, PlayState* play) {
         func_8002F974(&player->actor, NA_SE_PL_MAGIC_WIND_NORMAL - SFX_FLAG);
         if (--this->pushTimer <= 0) {
             this->pushActive = 0;
-            if (this->actor.draw == NULL) {
+            if (this->actor.draw == NULL && !this->jetpackActive) {
+                Actor_Kill(&this->actor);
+            }
+        }
+    }
+
+    // Jetpack window — runs for 20s.
+    //   R + C held → charge upward boost (up to 5 link heights at max charge)
+    //   C alone tapped → forward launch with hookshot-flight animation
+    // VFX: line of wind particles forward, spread of wind particles upward.
+    // TODO: swap the C-slot icon for the cast medallion to gItemIconPending2Tex
+    //       while jetpackActive == 1 (HUD draw hook).
+    if (this->jetpackActive) {
+        Player* player = PLAYER;
+        u16 cur = play->state.input[0].cur.button;
+        u16 press = play->state.input[0].press.button;
+
+        // Listen only to the C-button that currently holds the Forest medallion,
+        // so other C-slot items (rods, masks, etc.) keep their own behavior.
+        // buttonItems[0] = B, [1..3] = CLeft / CDown / CRight.
+        u16 cMask = 0;
+        if (gSaveContext.equips.buttonItems[1] == ITEM_MEDALLION_FOREST) cMask |= BTN_CLEFT;
+        if (gSaveContext.equips.buttonItems[2] == ITEM_MEDALLION_FOREST) cMask |= BTN_CDOWN;
+        if (gSaveContext.equips.buttonItems[3] == ITEM_MEDALLION_FOREST) cMask |= BTN_CRIGHT;
+
+        u8 rHeld = (cur & BTN_R) != 0;
+        u8 cHeld = (cMask != 0) && (cur & cMask) != 0;
+        u8 cPressed = (cMask != 0) && (press & cMask) != 0;
+
+        if (rHeld && cHeld) {
+            // Charging upward — accumulate up to JETPACK_MAX_CHARGE frames.
+            if (this->jetpackHoldFrames < JETPACK_MAX_CHARGE) {
+                this->jetpackHoldFrames++;
+            }
+            MagicWind_SpawnWindSpreadVFX(play, player);
+            func_8002F974(&player->actor, NA_SE_PL_MAGIC_WIND_NORMAL - SFX_FLAG);
+        } else if (this->jetpackHoldFrames > 0 && !cHeld) {
+            // C released after charging → upward launch.
+            f32 chargeRatio = (f32)this->jetpackHoldFrames / (f32)JETPACK_MAX_CHARGE;
+            // 5 Link heights ≈ 400 units. v² = 2·g·h → at gravity 1.0, v ≈ 28.
+            // Scale 12 (minimum tap-charge) up to 50 (full charge) for headroom.
+            f32 vy = 12.0f + 38.0f * chargeRatio;
+            player->actor.velocity.y = vy;
+            player->actor.bgCheckFlags &= ~BGCHECKFLAG_GROUND;
+            Audio_PlayActorSound2(&player->actor, NA_SE_PL_MAGIC_WIND_NORMAL);
+            MagicWind_SpawnWindSpreadVFX(play, player);
+            this->jetpackHoldFrames = 0;
+        } else if (cPressed && !rHeld) {
+            // C tapped (no R) → forward dash with hookshot-flight animation.
+            // Drive horizontal motion through Player->linearVelocity (the XZ-plane
+            // speed field that Player_UpdateCommon feeds into actor.speed each
+            // frame — same field exposed in debugSaveEditor.cpp:2201). Setting
+            // actor.speedXZ alone gets clobbered by the Player update.
+            s16 yaw = player->actor.shape.rot.y;
+            player->actor.world.rot.y = yaw;
+            player->linearVelocity = 80.0f;
+            // Leave velocity.y alone so gravity governs vertical — no pop upward.
+            Player_AnimPlayOnce(play, player, &gPlayerAnim_link_hook_fly_start);
+            MagicWind_SpawnWindLineVFX(play, player, yaw);
+            Audio_PlayActorSound2(&player->actor, NA_SE_PL_MAGIC_WIND_VANISH);
+        }
+
+        if (--this->jetpackTimer <= 0) {
+            this->jetpackActive = 0;
+            this->jetpackHoldFrames = 0;
+            // Restore original C-slot icon (clear flag + reload).
+            if (gSw97WindJetpackIconActive) {
+                gSw97WindJetpackIconActive = 0;
+                for (s32 btnIdx = 1; btnIdx <= 3; btnIdx++) {
+                    if (gSaveContext.equips.buttonItems[btnIdx] == ITEM_MEDALLION_FOREST) {
+                        Interface_LoadItemIcon1(play, btnIdx);
+                    }
+                }
+            }
+            if (this->actor.draw == NULL && !this->pushActive) {
                 Actor_Kill(&this->actor);
             }
         }

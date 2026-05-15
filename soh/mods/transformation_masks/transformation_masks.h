@@ -230,6 +230,12 @@ void TransformMasks_Init(PlayState* play, Player* player);
 void TransformMasks_Update(PlayState* play, Player* player);
 void TransformMasks_Draw(PlayState* play, Player* player);
 
+// Strip BTN_B from a Player_Update input copy before Player_UpdateCommon runs.
+// Centralizes the cases where B is reserved by a custom system (currently:
+// Blast Mask + Great Fairy Mask reactions, Garo attack kit). Called from
+// z_player.c right after the input copy.
+void TransformMasks_FilterB(Input* input);
+
 // Reset transformation state (call on scene transition, death, etc.)
 void TransformMasks_Reset(void);
 

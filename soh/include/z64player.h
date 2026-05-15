@@ -197,7 +197,11 @@ typedef enum PlayerItemAction {
     /* 0x5A */ PLAYER_IA_LANTERN,
     /* 0x5B */ PLAYER_IA_UNUSED_5B,
     /* 0x5C */ PLAYER_IA_PENDING_3,
-
+    // PLAYER_IA values 0x5D-0x74 are #defined in mods/extended_player.h
+    // (MM_MASK_*) and live above PLAYER_IA_MAX so vanilla arrays sized by it
+    // are not touched. PLAYER_IA_BOTTLE_MAGIC_MUSHROOM is also #defined there
+    // (0x75) — placed past the MM-mask range to avoid colliding with
+    // PLAYER_IA_MM_MASK_POSTMAN.
     /* 0x5D */ PLAYER_IA_MAX
 } PlayerItemAction;
 

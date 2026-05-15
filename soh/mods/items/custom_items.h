@@ -355,6 +355,9 @@ typedef struct {
     u8 postmanMailboxesVisited;    // Bit N = mailbox N visited/unlocked
     u8 postmanHatInputSkip;        // Skip input on first kaleido frame (same-frame A guard)
 
+    // ── Mask of Scents (Lost Woods mushroom spots) ───────────────────────
+    u8 mushroomSpotsCollected;     // Bit N = Lost Woods mushroom spot N collected (5 bits used)
+
     // ── Lantern ──────────────────────────────────────────────────────────
     u8 lanternFireType;    // LanternFireType enum (0-4)
     u8 lanternSwinging;    // 1 = in swing animation

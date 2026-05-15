@@ -25,6 +25,10 @@
 #include "../../actors/somaria_cubes.h"
 #include "../../actors/somaria_cubes.c"
 
+// Harpoon Prop Hunt active check (C bridge from PropHunt.cpp). Forward-declared
+// here to avoid pulling the C++ header into this C file.
+extern s32 HarpoonPropHunt_IsActive(void);
+
 // Include object (for draw function) - original staff model for Link's hand
 #include "../objects/object_cane_of_somaria.c"
 
@@ -113,6 +117,14 @@ static void Somaria_SpawnRadialSparkles(PlayState* play, Vec3f* center, f32 radi
 }
 
 static void Somaria_SpawnBlock(Player* p, PlayState* play) {
+    // Suppress in Prop Hunt: the Somaria block is rendered as an MM Elegy
+    // shell (a Link statue), which spawns child-Link visuals that conflict
+    // with the disguise system — seekers see fake "Link dummies" all over
+    // the map. The cane animation still plays for visual feedback; just no
+    // shell is spawned.
+    if (HarpoonPropHunt_IsActive()) {
+        return;
+    }
     if (somariaBlockCount >= SOMARIA_MAX_CUBES) {
         Somaria_DestroyOldestBlock(play);
     }

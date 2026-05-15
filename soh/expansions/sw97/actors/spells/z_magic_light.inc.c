@@ -167,19 +167,14 @@ static InitChainEntry sLightInitChain[] = {
 // Undead stun helpers
 // ============================================================
 
+// Per user direction: paralysis applies ONLY to ReDeads/Gibdos.
+// Previous broader undead list pulled in actors that shouldn't be affected —
+// notably ACTOR_EN_SKJ (Skull Kid NPC), which was getting killed by the AT
+// collider's "double damage" path, and a couple of non-undead enemies
+// (Bari/Biri/Shell Blade). Restricted to the single canonical ReDead actor.
 static u8 MagicLight_IsUndeadActor(Actor* actor) {
     switch (actor->id) {
-        case ACTOR_EN_RD:         // ReDead / Gibdo
-        case ACTOR_EN_POH:        // Poe
-        case ACTOR_EN_PO_SISTERS: // Poe Sisters
-        case ACTOR_EN_DH:         // Dead Hand
-        case ACTOR_EN_BB:         // Bubble
-        case ACTOR_EN_FLOORMAS:   // Floormaster
-        case ACTOR_EN_WALLMAS:    // Wallmaster
-        case ACTOR_EN_RR:         // Like Like
-        case ACTOR_EN_SKB:        // Stalchild
-        case ACTOR_EN_TEST:       // Stalfos
-        case ACTOR_EN_TORCH2:     // Dark Link
+        case ACTOR_EN_RD: // ReDead / Gibdo (params differentiate)
             return 1;
         default:
             return 0;
@@ -277,9 +272,13 @@ void MagicLight_GrowCylinder(MagicLight* this, PlayState* play) {
     } else {
         MagicLight_SetupAction(this, MagicLight_Wait);
         this->timer = 20;
-        // Mass stun all undead when light reaches full size
+        // Mass stun all undead + heal Link 6 hearts when light reaches full size
         if (!this->massStunApplied) {
             MagicLight_StunAllUndead(play);
+            gSaveContext.health += 6 * 0x10;
+            if (gSaveContext.health > gSaveContext.healthCapacity) {
+                gSaveContext.health = gSaveContext.healthCapacity;
+            }
             this->massStunApplied = 1;
         }
     }
@@ -298,28 +297,15 @@ void MagicLight_Update(Actor* thisx, PlayState* play) {
     if (this->unk_174 >= 0.0f) {
         func_8002F974(&this->actor, NA_SE_PL_ARROW_CHARGE_LIGHT - SFX_FLAG);
 
+        // The spell's AT collider has a 3250-unit cylinder radius, which means
+        // setting AT registers a "hit" against every actor in the entire room.
+        // Doors / loading-zone warps and other actors with player-attack AC
+        // bumpers were responding to that — appearing "attacked" by the spell.
+        // The mass-stun loop in MagicLight_GrowCylinder already paralyzes
+        // ReDeads room-wide directly, so we don't need the AT collider at all.
+        // Keep the cylinder updated for any cosmetic / lighting purposes, but
+        // do NOT register it as an attack collider.
         Collider_UpdateCylinder(&this->actor, &this->collider);
-        CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
-
-        // Undead stun + double damage on AT hit
-        if (this->collider.base.atFlags & AT_HIT) {
-            Actor* hitActor = this->collider.base.at;
-            if (hitActor != NULL && hitActor->update != NULL && MagicLight_IsUndeadActor(hitActor)) {
-                // Stun (catches enemies spawned after mass stun)
-                hitActor->freezeTimer = 600;
-                Actor_SetColorFilter(hitActor, -0x8000, 200, 0, 255);
-                // Double damage: subtract extra HP
-                if (hitActor->colChkInfo.health > 0) {
-                    u8 dmg = this->collider.info.toucher.damage;
-                    if (hitActor->colChkInfo.health > dmg) {
-                        hitActor->colChkInfo.health -= dmg;
-                    } else {
-                        hitActor->colChkInfo.health = 0;
-                    }
-                }
-            }
-            this->collider.base.atFlags &= ~AT_HIT;
-        }
 
         temp = (1.0f - cosf(this->unk_174 * M_PI)) * 0.5f;
     } else {

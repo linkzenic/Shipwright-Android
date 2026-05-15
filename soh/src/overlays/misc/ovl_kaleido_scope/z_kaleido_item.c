@@ -865,6 +865,17 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
     ExtInv_Update();
 
     if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->pageIndex == PAUSE_ITEM)) {
+        // Harpoon GM-mode: C-Up press while hovering an inventory slot
+        // drops the item to the ground. Multiplayer-only (the C bridge
+        // no-ops if not in a Harpoon room). Fires on press-only so it
+        // doesn't conflict with the existing "C-Up held" D-Pad swap mode.
+        if (CHECK_BTN_ALL(input->press.button, BTN_CUP)) {
+            extern void HarpoonDrops_RequestDropFromPause(int tabId, int slot);
+            s16 dropSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+            if (dropSlot >= 0) {
+                HarpoonDrops_RequestDropFromPause(/*tabId=items*/0, dropSlot);
+            }
+        }
         bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));
         bool pauseAnyCursor =
             pauseCtx->cursorSpecialPos == 0 &&

@@ -361,15 +361,14 @@ class PropHuntMapSelectWindow final : public Ship::GuiWindow {
             }
             // Confirm / vote intent. Trigger rules:
             //   - Host (any mode): A press alone.
-            //   - Peer in EVERYONE_CHOOSES: A + START together (debounces
-            //     accidental A taps while moving the cursor).
+            //   - Peer in EVERYONE_CHOOSES: A press alone (was A+START;
+            //     user requested simple A so the vote feels responsive
+            //     and doesn't require holding pause).
             //   - Peer in HOST_CHOOSES: ignored — only host confirms.
             bool everyoneMode = (harpoon->mapSelectMode == MAP_SELECT_EVERYONE_CHOOSES);
             bool aPress       = CHECK_BTN_ALL(input->press.button, BTN_A);
-            bool startHeld    = CHECK_BTN_ALL(input->cur.button, BTN_START);
-            bool aPlusStart   = aPress && startHeld;
             bool trigger      = isHost ? aPress
-                                       : (everyoneMode ? aPlusStart : false);
+                                       : (everyoneMode ? aPress : false);
             if (trigger) {
                 s32 idx = harpoon->selectedMapIndex;
                 if (everyoneMode) {

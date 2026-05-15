@@ -9,6 +9,8 @@
 #include "z64.h"
 #include "global.h"
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
+#include "overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
+#include <math.h>
 
 // ============================================================================
 // Struct (merged from z_arrow_ice.h)
@@ -301,6 +303,24 @@ static void ArrowIce_LerpPos(Vec3f* unkPos, Vec3f* icePos, f32 scale) {
     unkPos->z += ((icePos->z - unkPos->z) * scale);
 }
 
+// Melts every BgIceShelter (red ice) within `radius` (XZ distance) of `center`.
+// Same direct approach used by MagicIce (z_magic_ice.inc.c) and the Ice Rod
+// (item_rod_ice.c) — bypasses the collider/damage-flag path so SW97 ice always
+// melts red ice regardless of the BlueFireArrows cheat state.
+static void ArrowIce_MeltIceShelters(PlayState* play, Vec3f* center, f32 radius) {
+    Actor* actor;
+    for (actor = play->actorCtx.actorLists[ACTORCAT_BG].head; actor != NULL; actor = actor->next) {
+        if (actor->id != ACTOR_BG_ICE_SHELTER) {
+            continue;
+        }
+        f32 dx = actor->world.pos.x - center->x;
+        f32 dz = actor->world.pos.z - center->z;
+        if (sqrtf(SQ(dx) + SQ(dz)) < radius) {
+            BgIceShelter_MeltInstantly(actor, play);
+        }
+    }
+}
+
 void ArrowIce_Hit(ArrowIce* this, PlayState* play) {
     f32 scale;
     f32 offset;
@@ -371,11 +391,17 @@ void ArrowIce_Fly(ArrowIce* this, PlayState* play) {
     }
     ArrowIce_LerpPos(&this->unkPos, &this->actor.world.pos, 0.05f);
 
+    // Melt any red ice the arrow flies through or impacts.
+    ArrowIce_MeltIceShelters(play, &this->actor.world.pos, 50.0f);
+
     if (arrow->hitFlags & 1) {
         Audio_PlayActorSound2(&this->actor, NA_SE_IT_EXPLOSION_ICE);
         ArrowIce_SetupAction(this, ArrowIce_Hit);
         this->timer = 32;
         this->alpha = 255;
+        // On impact, sweep a wider radius so a near-miss still melts the block
+        // (mirrors how MagicIce's growing aura covers a region rather than a point).
+        ArrowIce_MeltIceShelters(play, &this->actor.world.pos, 80.0f);
     } else if (arrow->timer < 34) {
         if (this->alpha < 35) {
             Actor_Kill(&this->actor);

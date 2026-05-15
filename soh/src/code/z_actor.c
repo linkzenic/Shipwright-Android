@@ -20,6 +20,11 @@
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/transformation_masks/mm_mask_wear.h"
 
+// SW97 Shadow Medallion stealth — defined in expansions/sw97/player/sw97_player_behavior.inc.c
+// (compiled into z_player.c's TU via sw97_router.c). Returns nonzero while the
+// Shadow spell is active. Same hook semantics as Stone Mask: enemies can't detect Link.
+extern s32 Sw97_ShadowStealthActive(void);
+
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -2289,14 +2294,20 @@ void Player_PlaySfx(Actor* actor, u16 sfxId) {
         Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultReverb);
     } else {
-        freqMultiplier = CVarGetFloat(CVAR_AUDIO("LinkVoiceFreqMultiplier"), 1.0);
-        if (freqMultiplier <= 0) {
-            freqMultiplier = 1;
+        // Custom voice pack interception: a loaded pack may replace this Link
+        // voice id with a sample from a .pak in mods/. If it handles the id we
+        // skip the vanilla SFX so we don't double-play.
+        extern u8 VoicePack_PlayIfMatch(u16 sfxId, Vec3f* pos);
+        if (!VoicePack_PlayIfMatch(sfxId, &actor->projectedPos)) {
+            freqMultiplier = CVarGetFloat(CVAR_AUDIO("LinkVoiceFreqMultiplier"), 1.0);
+            if (freqMultiplier <= 0) {
+                freqMultiplier = 1;
+            }
+            // Authentic behavior uses D_801333E0 for both freqScale and a4
+            // Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &D_801333E0 , &D_801333E0, &D_801333E8);
+            Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &freqMultiplier, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultReverb);
         }
-        // Authentic behavior uses D_801333E0 for both freqScale and a4
-        // Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &D_801333E0 , &D_801333E0, &D_801333E8);
-        Audio_PlaySoundGeneral(sfxId, &actor->projectedPos, 4, &freqMultiplier, &gSfxDefaultFreqAndVolScale,
-                               &gSfxDefaultReverb);
     }
 
     if (actor->id == ACTOR_PLAYER) {
@@ -2713,9 +2724,10 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
             } else {
                 Math_Vec3f_Copy(&actor->prevPos, &actor->world.pos);
 
-                // Stone Mask: enemies and NPCs can't detect Link. Also covers hostile MISC
-                // actors like Leever (ACTORCAT_MISC) that would otherwise bypass the gate.
-                if (MmMaskWear_IsStoneMaskActive() &&
+                // Stone Mask + SW97 Shadow Medallion: enemies and NPCs can't detect Link.
+                // Also covers hostile MISC actors like Leever (ACTORCAT_MISC) that would
+                // otherwise bypass the gate.
+                if ((MmMaskWear_IsStoneMaskActive() || Sw97_ShadowStealthActive()) &&
                     (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC || (actor->flags & ACTOR_FLAG_HOSTILE))) {
                     actor->xzDistToPlayer = 32000.0f;
                     actor->yDistToPlayer = 32000.0f;

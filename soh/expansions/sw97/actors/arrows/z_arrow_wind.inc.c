@@ -9,6 +9,7 @@
 #include "z64.h"
 #include "global.h"
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
+#include <math.h>
 
 // ============================================================================
 // Struct (merged from z_arrow_wind.h)
@@ -291,6 +292,115 @@ static void ArrowWind_LerpPos(Vec3f* unkPos, Vec3f* windPos, f32 scale) {
     unkPos->z += ((windPos->z - unkPos->z) * scale);
 }
 
+// Returns 1 if (actor) is within cylinder centered on (center) with given XZ radius and Y half-height.
+static u8 ArrowWind_InCylinder(Actor* actor, Vec3f* center, f32 radiusXZ, f32 heightY) {
+    f32 dy = actor->world.pos.y - center->y;
+    if (dy < -heightY || dy > heightY) {
+        return 0;
+    }
+    f32 dx = actor->world.pos.x - center->x;
+    f32 dz = actor->world.pos.z - center->z;
+    return sqrtf(SQ(dx) + SQ(dz)) < radiusXZ;
+}
+
+// Push (actor) radially outward from (center) on the XZ plane with given force, plus an upward pop.
+static void ArrowWind_PushOutward(Actor* actor, Vec3f* center, f32 force, f32 upPop) {
+    f32 dx = actor->world.pos.x - center->x;
+    f32 dz = actor->world.pos.z - center->z;
+    f32 dist = sqrtf(SQ(dx) + SQ(dz));
+    if (dist < 0.01f) {
+        return;
+    }
+    f32 nx = dx / dist;
+    f32 nz = dz / dist;
+    actor->velocity.x = nx * force;
+    actor->velocity.z = nz * force;
+    if (actor->velocity.y < upPop) {
+        actor->velocity.y = upPop;
+    }
+}
+
+// Wind shockwave on impact: radial knockback (heavy + light zone), grass/pot break,
+// torch extinguish, drop flying enemies, vacuum nearby pickups toward Link.
+static void ArrowWind_ApplyEffects(PlayState* play, Vec3f* center) {
+    // Zone sizes (units): heavy = 2 Link-heights radius/height, light = 4 Link-heights.
+    const f32 heavyRadius = 80.0f;
+    const f32 heavyHalfH = 80.0f;
+    const f32 lightRadius = 200.0f;
+    const f32 lightHalfH = 160.0f;
+
+    Player* player = GET_PLAYER(play);
+    Actor* actor;
+    Actor* next;
+
+    // Enemies — radial outward push from impact point.
+    for (actor = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; actor != NULL; actor = next) {
+        next = actor->next;
+        if (actor->update == NULL) continue;
+
+        u8 inHeavy = ArrowWind_InCylinder(actor, center, heavyRadius, heavyHalfH);
+        u8 inLight = ArrowWind_InCylinder(actor, center, lightRadius, lightHalfH);
+
+        if (inHeavy) {
+            ArrowWind_PushOutward(actor, center, 25.0f, 6.0f);
+        } else if (inLight) {
+            // Lighter outward push at the larger range.
+            ArrowWind_PushOutward(actor, center, 15.0f, 4.0f);
+        }
+
+        // Flying enemies in the wider zone get slammed down on top of the outward push.
+        if (inLight) {
+            if (actor->id == ACTOR_EN_FIREFLY || actor->id == ACTOR_EN_SW || actor->id == ACTOR_EN_PEEHAT) {
+                actor->velocity.y = -10.0f;
+                actor->gravity = -2.0f;
+            }
+        }
+    }
+
+    // Props — cut grass / break pots in the heavy zone.
+    for (actor = play->actorCtx.actorLists[ACTORCAT_PROP].head; actor != NULL; actor = next) {
+        next = actor->next;
+        if (actor->update == NULL) continue;
+        if (!ArrowWind_InCylinder(actor, center, heavyRadius, heavyHalfH)) continue;
+
+        if (actor->id == ACTOR_EN_KUSA || actor->id == ACTOR_OBJ_TSUBO) {
+            Actor_Kill(actor);
+        }
+    }
+
+    // Torches — extinguish by clearing their lit-switch flag.
+    for (actor = play->actorCtx.actorLists[ACTORCAT_PROP].head; actor != NULL; actor = next) {
+        next = actor->next;
+        if (actor->update == NULL) continue;
+        if (actor->id != ACTOR_OBJ_SYOKUDAI) continue;
+        if (!ArrowWind_InCylinder(actor, center, heavyRadius, heavyHalfH)) continue;
+
+        s32 switchFlag = (actor->params >> 8) & 0x3F;
+        if (switchFlag != 0x3F) {
+            Flags_UnsetSwitch(play, switchFlag);
+        }
+    }
+
+    // Pickups (EnItem00 in ACTORCAT_MISC) — vacuum TOWARD Link.
+    for (actor = play->actorCtx.actorLists[ACTORCAT_MISC].head; actor != NULL; actor = next) {
+        next = actor->next;
+        if (actor->update == NULL) continue;
+        if (actor->id != ACTOR_EN_ITEM00) continue;
+        if (!ArrowWind_InCylinder(actor, center, lightRadius, lightHalfH)) continue;
+
+        f32 dx = player->actor.world.pos.x - actor->world.pos.x;
+        f32 dy = player->actor.world.pos.y - actor->world.pos.y;
+        f32 dz = player->actor.world.pos.z - actor->world.pos.z;
+        f32 dist = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
+        if (dist > 0.01f) {
+            f32 pullSpeed = 20.0f;
+            actor->velocity.x = (dx / dist) * pullSpeed;
+            actor->velocity.y = (dy / dist) * pullSpeed;
+            actor->velocity.z = (dz / dist) * pullSpeed;
+        }
+    }
+}
+
 static void ArrowWind_Hit(ArrowWind* this, PlayState* play) {
     f32 scale;
     f32 offset;
@@ -368,6 +478,8 @@ static void ArrowWind_Fly(ArrowWind* this, PlayState* play) {
         ArrowWind_SetupAction(this, ArrowWind_Hit);
         this->timer = 32;
         this->alpha = 255;
+        // Wind shockwave: radial outward push to enemies, grass cut, torches out, pickups vacuum.
+        ArrowWind_ApplyEffects(play, &this->actor.world.pos);
     } else if (arrow->timer < 34) {
         if (this->alpha < 35) {
             Actor_Kill(&this->actor);

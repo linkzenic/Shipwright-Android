@@ -367,7 +367,12 @@ void CustomItems_Update(Player* p, PlayState* play) {
         }
     }
 
-    for (u8 i = 1; i <= 8; i++) {
+    // Walk every equip slot, including slot 0 = B button. The previous
+    // range (1..8) skipped B entirely AND overflowed the 8-element
+    // `buttonItems` array at index 8 — so custom items like Roc's
+    // Feather equipped to B never had their handler dispatched. Fix:
+    // i = 0..7 covers B + 3 C-buttons + 4 D-pad slots cleanly.
+    for (u8 i = 0; i < 8; i++) {
         u8 item = gSaveContext.equips.buttonItems[i];
         if (item < ITEM_ROCS_FEATHER_SKIJER || item > ITEM_POKEBALL)
             continue;

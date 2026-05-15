@@ -87,6 +87,9 @@ void Randomizer_DrawMmMask(PlayState* play, GetItemEntry* getItemEntry);
 // Chateau Romani bottle (from mm.o2r)
 void Randomizer_DrawChateauRomani(PlayState* play, GetItemEntry* getItemEntry);
 
+// Bottle with Magic Mushroom (Mask of Scents reward, uses OOT Odd Mushroom DL)
+void Randomizer_DrawBottleWithMagicMushroom(PlayState* play, GetItemEntry* getItemEntry);
+
 #define GET_ITEM_MYSTERY                                                                                 \
     {                                                                                                    \
         ITEM_NONE_FE, 0, 0, 0, 0, MOD_RANDOMIZER, MOD_RANDOMIZER, ITEM_NONE_FE, 0, false, ITEM_FROM_NPC, \

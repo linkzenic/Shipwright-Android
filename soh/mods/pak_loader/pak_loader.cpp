@@ -43,6 +43,12 @@ extern "C" {
 // file. Declared here at global scope so PakLoader_Init can call it with C linkage.
 extern "C" void PakLoader_InitSyncRegistry(void);
 
+// Voice-pack content is a property a .pak can have IN ADDITION to body model
+// and/or equipment data. A pak that contains everything (body + equipment + voice)
+// must surface in every applicable dropdown — so pak_loader does NOT skip voice
+// paks; it scans them as usual and lets voice_pack scan the same files in
+// parallel to extract the audio side.
+
 // ============================================================================
 // Logging
 // ============================================================================
@@ -1353,6 +1359,142 @@ static void LoadEquipmentZobj(u8* zobjData, u32 zobjSize, PakModel& model) {
 }
 
 // ============================================================================
+// Raw .zobj Loader (no .pak wrapper)
+// ============================================================================
+
+// Determine the age slot for a Z64O-Universal-format zobj that lacks the
+// 0x500B age byte. Pure filename heuristic — checks for child/kid markers in
+// the stem (case-insensitive). Defaults to adult.
+static u8 GuessAgeFromFilename(const std::string& path) {
+    std::string lower = std::filesystem::path(path).stem().string();
+    for (char& c : lower) c = (char)tolower((unsigned char)c);
+    if (lower.find("child") != std::string::npos) return 1;
+    if (lower.find("_kid") != std::string::npos)  return 1;
+    if (lower.find("kid_") != std::string::npos)  return 1;
+    return 0;
+}
+
+// Returns true if the zobj contains the EQUIPMANIFEST marker (zzequipment-style
+// equipment-only export). Same marker LoadEquipmentZobj scans for.
+static bool ZobjHasEquipManifest(const u8* data, u32 size) {
+    if (size < 13) return false;
+    for (u32 i = 0; i + 13 <= size; i++) {
+        if (memcmp(data + i, "EQUIPMANIFEST", 13) == 0)
+            return true;
+    }
+    return false;
+}
+
+// Slurp a .zobj file into memory and feed it through the same skeleton/equip
+// pipeline that LoadPakModel uses after extracting from a .pak archive.
+static bool LoadRawZobjModel(PakModel& model) {
+    FILE* f = fopen(model.pakPath.c_str(), "rb");
+    if (!f) return false;
+
+    fseek(f, 0, SEEK_END);
+    long fileSize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fileSize < 0x5010) {
+        fclose(f);
+        PAK_LOG("Raw zobj too small: %s", model.pakPath.c_str());
+        return false;
+    }
+
+    u8* zobjData = (u8*)malloc((size_t)fileSize);
+    if (!zobjData) { fclose(f); return false; }
+    if (fread(zobjData, 1, (size_t)fileSize, f) != (size_t)fileSize) {
+        free(zobjData);
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+    u32 zobjSize = (u32)fileSize;
+
+    std::string stem = std::filesystem::path(model.pakPath).stem().string();
+    snprintf(model.displayName, sizeof(model.displayName), "%s (zobj)", stem.c_str());
+
+    // ----- Equipment-only zobj branch -----
+    if (ZobjHasEquipManifest(zobjData, zobjSize)) {
+        model.isEquipmentOnly = 1;
+        // Equipment zobjs target one age — guess from filename. The vanilla
+        // zzplayas pipeline emits *_KID_* / *_kid_* for child equipment.
+        u8 age = GuessAgeFromFilename(model.pakPath);
+        // Park the bytes in the age-specific slot so they live for the model's
+        // lifetime (LoadEquipmentZobj's translated DLs hold pointers into them).
+        if (age == 1) {
+            model.childZobj = zobjData;
+            model.childZobjSize = zobjSize;
+        } else {
+            model.adultZobj = zobjData;
+            model.adultZobjSize = zobjSize;
+        }
+        LoadEquipmentZobj(zobjData, zobjSize, model);
+        bool ok = !model.adultEquipDLs.empty() || !model.childEquipDLs.empty();
+        if (!ok) {
+            // No equipment DLs decoded — let the caller free the zobj
+            if (age == 1) { model.childZobj = nullptr; model.childZobjSize = 0; }
+            else          { model.adultZobj = nullptr; model.adultZobjSize = 0; }
+            free(zobjData);
+            return false;
+        }
+        PAK_LOG("Raw zobj equipment loaded: '%s' age=%d (adult=%d, child=%d DLs)",
+                model.displayName, (int)age,
+                (int)model.adultEquipDLs.size(), (int)model.childEquipDLs.size());
+        return true;
+    }
+
+    // ----- Body model zobj branch -----
+    // Detect old vs Z64O-Universal format the same way ZobjParseAliasTable does
+    // (line 987 of this file). Old format uses the 0x500B age byte; new format
+    // has no equivalent so we fall back to a filename heuristic.
+    bool hasML64 = (zobjSize >= 0x5004 && memcmp(zobjData + 0x5000, "MODL", 4) == 0);
+    bool hasUAT = false;
+    for (u32 i = 0; i + 21 <= zobjSize && !hasUAT; i++) {
+        if (memcmp(zobjData + i, "UNIVERSAL_ALIAS_TABLE", 21) == 0)
+            hasUAT = true;
+    }
+    bool isOldFormat = hasML64 && !hasUAT;
+
+    u8 age;
+    if (isOldFormat) {
+        age = zobjData[0x500B];
+        if (age != 0 && age != 1) age = GuessAgeFromFilename(model.pakPath);
+    } else {
+        age = GuessAgeFromFilename(model.pakPath);
+    }
+
+    // Hand off to ZobjBuildSkeleton / ZobjParseAliasTable — proven to work on
+    // raw bytes without any pak coupling.
+    SwapContext swapCtx = {};
+    if (age == 1) {
+        model.childZobj = zobjData;
+        model.childZobjSize = zobjSize;
+        model.hasChild = 1;
+        if (ZobjBuildSkeleton(zobjData, zobjSize, model.childLimbs, model.childLimbTable,
+                              &model.childFlexHeader, model.childTranslatedDLs, &swapCtx)) {
+            model.childReady = 1;
+            ZobjParseAliasTable(zobjData, zobjSize, model.childEquipDLs, model.childTranslatedDLs, swapCtx);
+            PAK_LOG("Raw zobj '%s' loaded as CHILD model", model.displayName);
+            return true;
+        }
+    } else {
+        model.adultZobj = zobjData;
+        model.adultZobjSize = zobjSize;
+        model.hasAdult = 1;
+        if (ZobjBuildSkeleton(zobjData, zobjSize, model.adultLimbs, model.adultLimbTable,
+                              &model.adultFlexHeader, model.adultTranslatedDLs, &swapCtx)) {
+            model.adultReady = 1;
+            ZobjParseAliasTable(zobjData, zobjSize, model.adultEquipDLs, model.adultTranslatedDLs, swapCtx);
+            PAK_LOG("Raw zobj '%s' loaded as ADULT model", model.displayName);
+            return true;
+        }
+    }
+
+    PAK_LOG("Raw zobj '%s' failed to build skeleton", model.displayName);
+    return false;
+}
+
+// ============================================================================
 // PAK Model Loading
 // ============================================================================
 
@@ -2219,7 +2361,11 @@ static std::map<u32, Gfx*>* sGetEquipDLs(void) {
 }
 
 extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
-    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0))
+    // Gate: at least one of body-model toggle, forced body, selected equipment,
+    // or forced equipment must be active. Equipment-only selection works
+    // without "Enable Custom Player Model" being on.
+    if (!CVarGetInteger("gMods.PakLoader.Enabled", 0) &&
+        sForcedModelIndex < 0 && sSelectedEquipIndex < 0 && sForcedEquipIndex < 0)
         return NULL;
 
     std::map<u32, Gfx*>* eqPtr = sGetEquipDLs();
@@ -2605,12 +2751,14 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
         return harpoonDl;
     }
 
-    // Check if any equipment source is active
+    // Check if any equipment source is active. Equipment-only selection is
+    // valid without the body-model toggle, so a non-forced selected equipment
+    // pak is enough on its own.
     u8 hasPakEnabled = CVarGetInteger("gMods.PakLoader.Enabled", 0) != 0;
     u8 hasForcedEquip = (sForcedEquipIndex >= 0 && sForcedEquipIndex < (s32)sModels.size());
     u8 hasSelectedEquip = (sSelectedEquipIndex >= 0 && sSelectedEquipIndex < (s32)sModels.size());
     u8 hasBodyEquip = (sGetActiveIndex() >= 0 && sGetActiveIndex() < (s32)sModels.size());
-    if (!hasPakEnabled && !hasForcedEquip)
+    if (!hasPakEnabled && !hasForcedEquip && !hasSelectedEquip)
         return NULL;
     if (!hasForcedEquip && !hasSelectedEquip && !hasBodyEquip)
         return NULL;
@@ -2888,21 +3036,36 @@ extern "C" void PakLoader_Init(void) {
     std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
     PAK_LOG("Mods path: %s", modsPath.c_str());
 
+    // Top-level-only .zobj scan (raw zzplayas/Z64Online zobjs without a .pak
+    // wrapper). Recursive walks risk picking up zobjs from extracted-pak dumps
+    // or third-party tool output, so we deliberately stay shallow.
+    std::vector<std::string> rawZobjFiles;
+
     if (!modsPath.empty() && std::filesystem::exists(modsPath) && std::filesystem::is_directory(modsPath)) {
         for (auto& entry : std::filesystem::recursive_directory_iterator(modsPath)) {
             if (entry.is_directory())
                 continue;
             if (entry.path().extension() == ".pak") {
-                pakFiles.push_back(entry.path().string());
-                PAK_LOG("Found: %s", entry.path().string().c_str());
+                std::string p = entry.path().string();
+                pakFiles.push_back(p);
+                PAK_LOG("Found: %s", p.c_str());
+            }
+        }
+
+        for (auto& entry : std::filesystem::directory_iterator(modsPath)) {
+            if (entry.is_directory())
+                continue;
+            if (entry.path().extension() == ".zobj") {
+                rawZobjFiles.push_back(entry.path().string());
+                PAK_LOG("Found raw zobj: %s", entry.path().string().c_str());
             }
         }
     }
 
-    PAK_LOG("Found %d .pak files", (int)pakFiles.size());
+    PAK_LOG("Found %d .pak files, %d raw .zobj files", (int)pakFiles.size(), (int)rawZobjFiles.size());
 
     // Reserve space so push_back doesn't reallocate and invalidate internal pointers
-    sModels.reserve(pakFiles.size());
+    sModels.reserve(pakFiles.size() + rawZobjFiles.size());
 
     // Load each .pak model
     for (auto& pakPath : pakFiles) {
@@ -2928,6 +3091,30 @@ extern "C" void PakLoader_Init(void) {
             if (model.childZobj)
                 free(model.childZobj);
             PAK_LOG("Failed to load: %s", pakPath.c_str());
+        }
+    }
+
+    // Load each raw .zobj model. Same push_back + limb-pointer fixup pattern
+    // as the .pak loop above, but the loader skips the pak-archive layer.
+    for (auto& zobjPath : rawZobjFiles) {
+        PakModel model = {};
+        model.pakPath = zobjPath;
+
+        if (LoadRawZobjModel(model)) {
+            sModels.push_back(std::move(model));
+            PakModel& m = sModels.back();
+            for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
+                if (m.adultLimbTable[j])
+                    m.adultLimbTable[j] = &m.adultLimbs[j];
+                if (m.childLimbTable[j])
+                    m.childLimbTable[j] = &m.childLimbs[j];
+            }
+            PAK_LOG("Loaded raw zobj: '%s' (adult=%d, child=%d, equipOnly=%d)",
+                    m.displayName, m.adultReady, m.childReady, m.isEquipmentOnly);
+        } else {
+            if (model.adultZobj) free(model.adultZobj);
+            if (model.childZobj) free(model.childZobj);
+            PAK_LOG("Failed to load raw zobj: %s", zobjPath.c_str());
         }
     }
 
@@ -2978,8 +3165,18 @@ extern "C" u8 PakLoader_HasActiveModel(void) {
         if (LINK_AGE_IN_YEARS != YEARS_ADULT && fm.childReady)
             return 1;
     }
-    // Equipment-only paks (forced or selected) are handled by GbiWrap hook,
-    // NOT by OverrideLimbDraw. Don't return true here for equipment-only.
+
+    // Equipment-only paks (forced or selected) work independently of the body
+    // toggle — checked BEFORE the Enabled early-return so an equipment pak can
+    // be applied without "Enable Custom Player Model" being on.
+    if (sSelectedEquipIndex >= 0 || sForcedEquipIndex >= 0) {
+        sGetEquipDLs(); // ensure cache is built/rebuilt
+        if (!sCachedEquipDLs.empty() &&
+            (sCachedEquipDLs.count(0x5448) || sCachedEquipDLs.count(0x5450) ||
+             sCachedEquipDLs.count(0x5468) || sCachedEquipDLs.count(0x5470))) {
+            return 1;
+        }
+    }
 
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
         return 0;
@@ -2993,17 +3190,6 @@ extern "C" u8 PakLoader_HasActiveModel(void) {
             return 1;
         if (LINK_AGE_IN_YEARS != YEARS_ADULT && model.childReady)
             return 1;
-    }
-
-    // Equipment-only paks: check if cache has combined DLs (vanilla fists resolved)
-    if (!sCachedEquipDLs.empty() && (sSelectedEquipIndex >= 0 || sForcedEquipIndex >= 0)) {
-        // Trigger cache rebuild if needed (populates vanilla fists + combined DLs)
-        sGetEquipDLs();
-        // Check if combined DLs were generated (means vanilla fists were resolved)
-        if (sCachedEquipDLs.count(0x5448) || sCachedEquipDLs.count(0x5450) || sCachedEquipDLs.count(0x5468) ||
-            sCachedEquipDLs.count(0x5470)) {
-            return 1;
-        }
     }
 
     return 0;
@@ -3109,8 +3295,10 @@ extern "C" const char* PakLoader_GetModelName(s32 index) {
 extern "C" void PakLoader_SelectAdultModel(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
         index = -1;
-    if (index >= 0 && (sModels[index].isEquipmentOnly || sModels[index].isSyncOnly))
-        index = -1; // Can't use equipment pak or sync-only pak as body
+    if (index >= 0 && sModels[index].isEquipmentOnly)
+        index = -1; // Equipment-only paks can't be a body model.
+    // Sync-only paks (from harpoon/skins/) ARE allowed locally — same pak data,
+    // we just also use it for remote players when one is connected.
     if (index == sSelectedAdultIndex)
         return;
     sSelectedAdultIndex = index;
@@ -3124,7 +3312,7 @@ extern "C" void PakLoader_SelectAdultModel(s32 index) {
 extern "C" void PakLoader_SelectChildModel(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
         index = -1;
-    if (index >= 0 && (sModels[index].isEquipmentOnly || sModels[index].isSyncOnly))
+    if (index >= 0 && sModels[index].isEquipmentOnly)
         index = -1;
     if (index == sSelectedChildIndex)
         return;
@@ -3148,8 +3336,8 @@ extern "C" u8 PakLoader_ModelHasAdult(s32 index) {
         return 0;
     if (sModels[index].isEquipmentOnly)
         return 0; // Equipment paks don't have body models
-    if (sModels[index].isSyncOnly)
-        return 0; // Hidden from menu — only used to render remote players
+    // Sync paks (harpoon/skins/) ARE shown in the local menu — they remain
+    // available for remote rendering via PakLoader_BeginRemoteRender.
     return sModels[index].adultReady;
 }
 
@@ -3157,8 +3345,6 @@ extern "C" u8 PakLoader_ModelHasChild(s32 index) {
     if (index < 0 || index >= (s32)sModels.size())
         return 0;
     if (sModels[index].isEquipmentOnly)
-        return 0;
-    if (sModels[index].isSyncOnly)
         return 0;
     return sModels[index].childReady;
 }
@@ -3175,8 +3361,6 @@ extern "C" s32 PakLoader_GetSelectedIndex(void) {
 
 extern "C" void PakLoader_SelectEquipment(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
-        index = -1;
-    if (index >= 0 && sModels[index].isSyncOnly)
         index = -1;
     if (index == sSelectedEquipIndex)
         return;
@@ -3195,8 +3379,6 @@ extern "C" s32 PakLoader_GetSelectedEquipIndex(void) {
 extern "C" u8 PakLoader_ModelIsEquipmentOnly(s32 index) {
     if (index < 0 || index >= (s32)sModels.size())
         return 0;
-    if (sModels[index].isSyncOnly)
-        return 0; // Hidden — don't surface in equipment dropdown either
     return sModels[index].isEquipmentOnly;
 }
 
@@ -3342,15 +3524,17 @@ extern "C" void PakLoader_ClearForcedEquipment(void) {
 // Harpoon Skin Sync
 // ============================================================================
 // Models loaded from <appdir>/harpoon/skins/ live in the same sModels vector
-// as local mods/ paks but are tagged isSyncOnly=1 so
-// they are:
-//   - Hidden from the local selection menu (ModelHasAdult/Child/IsEquipmentOnly
-//     all return 0 for isSyncOnly entries, so they don't populate the dropdowns)
-//   - Never selected as the local Adult/Child/Equipment model
-//   - Only surfaced via PakLoader_BeginRemoteRender, which sets sForcedModelIndex
-//     to the sync entry for the duration of a remote actor's draw — that way the
-//     existing pak_loader pipeline (eyes, mouth, equipment DL overrides in
-//     GbiWrap, cached equip DLs) all see the remote's skin naturally.
+// as local mods/ paks. They are tagged isSyncOnly=1, which today only means
+// "this entry is eligible for remote-player rendering via the sync registry".
+// Local selection is allowed: a pak you placed in harpoon/skins/ shows up in
+// the Adult/Child/Equipment dropdowns just like one from mods/.
+//
+//   - The same pak data is used both as a local selection target AND as a
+//     remote-player skin via PakLoader_BeginRemoteRender, which sets
+//     sForcedModelIndex to the sync entry for the duration of a remote actor's
+//     draw — that way the existing pak_loader pipeline (eyes, mouth, equipment
+//     DL overrides in GbiWrap, cached equip DLs) all see the remote's skin
+//     naturally.
 
 // Saved state for BeginRemoteRender / EndRemoteRender. We override ALL selection
 // state (forced + adult + child + equipment) so the remote dummy's draw is

@@ -30,7 +30,16 @@ extern PlayState* gPlayState;
 #include "soh/Network/Harpoon/HarpoonSkinSync.h"
 #include "soh/Network/Harpoon/PropHunt/PropHunt.h"
 #include "soh/Network/Harpoon/TriforceThief/TriforceThief.h"
+#include "soh/Network/Harpoon/DroppedItems.h"
+#include "soh/Network/Harpoon/Templates.h"
 #include "soh/Network/Harpoon/HarpoonGamemodeHud.h"
+
+// File-scope extern for the global authorized-transition flag (defined in
+// PropHunt.cpp). MSVC mangles function-scope `extern` declarations as
+// namespace-qualified, so a function-local `extern bool ...` would fail
+// to link. Declaring it at file scope here keeps the symbol resolution
+// at the global namespace.
+extern bool sHarpoonAuthorizedTransition;
 
 // MARK: - Overrides
 
@@ -77,6 +86,7 @@ void Harpoon::Enable() {
     // is joined. Failure here is non-fatal — the pack simply won't be
     // advertised in installed_gamemodes.
     HarpoonPropHunt::Init();
+    HarpoonTemplates::LoadAll();
     HarpoonTriforceThief::Init();
     HarpoonHud::Register();
     HarpoonPropHunt::RegisterMapSelectWindow();
@@ -882,11 +892,6 @@ void Harpoon::HandlePacket_AllClients(nlohmann::json payload) {
             client.isSaveLoaded = clientJson.value("isSaveLoaded", false);
             client.sceneNum = clientJson.value("sceneNum", (s16)SCENE_ID_MAX);
             client.role = clientJson.value("role", std::string());
-            // Server-published admin flag, plus the room's current host is
-            // implicitly an admin so the very first member of a fresh room
-            // can manage even before promoting anyone.
-            client.isAdmin = clientJson.value("isAdmin", false)
-                             || (hostClientId != 0 && clientId == hostClientId);
         }
 
         size_t newOnlineCount = 0;
@@ -1817,8 +1822,11 @@ void Harpoon::HandlePacket_ServerInfo(nlohmann::json payload) {
 // be excessive. The parser scans for the `default_config:` line and then
 // reads indented `key: value` lines until indentation drops, so it correctly
 // ignores other `pvp_enabled` keys nested in unrelated sections.
-static void ApplyLocalGamemodeManifest(const std::string& gid, bool& pvpEnabled,
-                                       bool& syncItems, bool& syncCutscenes) {
+static void ApplyLocalGamemodeManifest(
+        const std::string& gid,
+        bool& pvpEnabled, bool& syncItems, bool& syncCutscenes,
+        bool& supportsVoting, bool& supportsMapSelect,
+        bool& supportsZTarget, bool& supportsRoundFlow) {
     auto path = HarpoonSkinSync::GetGamemodeManifestPath(gid);
     if (path.empty()) {
         SPDLOG_INFO("[Harpoon] no local manifest for '{}' — keeping current defaults "
@@ -1889,10 +1897,22 @@ static void ApplyLocalGamemodeManifest(const std::string& gid, bool& pvpEnabled,
             if (auto b = parseBool(val)) syncItems = *b;
         } else if (key == "sync_cutscenes") {
             if (auto b = parseBool(val)) syncCutscenes = *b;
+        } else if (key == "supports_voting") {
+            if (auto b = parseBool(val)) supportsVoting = *b;
+        } else if (key == "supports_map_select") {
+            if (auto b = parseBool(val)) supportsMapSelect = *b;
+        } else if (key == "supports_z_target") {
+            if (auto b = parseBool(val)) supportsZTarget = *b;
+        } else if (key == "supports_round_flow") {
+            if (auto b = parseBool(val)) supportsRoundFlow = *b;
         }
     }
-    SPDLOG_INFO("[Harpoon] applied local manifest '{}': pvp_enabled={} sync_items={} sync_cutscenes={}",
-                gid, pvpEnabled, syncItems, syncCutscenes);
+    SPDLOG_INFO("[Harpoon] applied local manifest '{}': "
+                "pvp_enabled={} sync_items={} sync_cutscenes={} "
+                "supports_voting={} supports_map_select={} "
+                "supports_z_target={} supports_round_flow={}",
+                gid, pvpEnabled, syncItems, syncCutscenes,
+                supportsVoting, supportsMapSelect, supportsZTarget, supportsRoundFlow);
 }
 
 void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
@@ -1905,6 +1925,14 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
                             payload.value("gameMode", std::string("")));
     gameState = HARPOON_STATE_LOBBY;
 
+    // Seed capability defaults per known gamemode, then let the local yaml
+    // manifest override below. If a manifest is missing (clean install,
+    // gamemode pack not yet shipped), these built-in defaults keep the right
+    // generic features active so the round flow works out of the box.
+    supportsVoting    = false;
+    supportsMapSelect = false;
+    supportsZTarget   = false;
+    supportsRoundFlow = false;
     if (currentRoomGameMode == "randomizer") {
         activeGameMode = HARPOON_MODE_RANDOMIZER;
     } else if (currentRoomGameMode == "hunger_games") {
@@ -1912,6 +1940,12 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
     } else if (currentRoomGameMode == "prop_hunt") {
         activeGameMode = HARPOON_MODE_PROP_HUNT;
         isPropHuntMode = true;
+        // PH: voting + map-select + round-flow on, Z-target OFF
+        // (disguised hiders shouldn't be auto-locked by seekers).
+        supportsVoting    = true;
+        supportsMapSelect = true;
+        supportsZTarget   = false;
+        supportsRoundFlow = true;
         // Lobby auto-transport: as soon as we're in a prop_hunt room, kick
         // every client into Hyrule Field as child Link with the hider preset.
         // Matches Scooter's "joining the room = entering the game" UX.
@@ -1919,10 +1953,34 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
         localRole = "hider";
         HarpoonPropHunt::BigStartGameAs(HarpoonPropHunt::Role::Hider);
     } else if (currentRoomGameMode == "triforce_thief") {
+        // TT: voting + map-select + round-flow on, Z-target ON
+        // (thieves can lock onto each other to land hits / steal).
+        supportsVoting    = true;
+        supportsMapSelect = true;
+        supportsZTarget   = true;
+        supportsRoundFlow = true;
         // Adult Link, full inventory thief preset, drop into Hyrule Field
         // as the round lobby. Round actually starts when the host confirms
         // a map (the menu's "Confirm Map" or in-overlay A button).
         HarpoonTriforceThief::BigStartGame();
+    } else if (currentRoomGameMode == "rpg") {
+        // RPG Mode: GM-driven roleplay. No rounds, no map vote, no auto
+        // round-end. The host shapes the session via inventory templates
+        // (HarpoonTemplates), per-peer movement-flag restrictions, peer
+        // teleports, and host transfer. Players drop items on death (or
+        // voluntarily via C-Up in the pause menu); the distributed drop
+        // ledger persists across scene loads.
+        supportsVoting    = false;
+        supportsMapSelect = false;
+        supportsZTarget   = true;
+        supportsRoundFlow = false;
+        // Vanilla item sync OFF — the GM controls inventory via templates
+        // and vanilla diffs would clobber GM-applied loadouts.
+        syncItems = false;
+        // No automatic teleport — TT's BigStartGame teleports to Hyrule
+        // Field with the thief preset. For RPG we let the player land
+        // wherever their save was loaded; the GM can move them via the
+        // "To me" / "Send to scene" buttons from the GM panel.
     }
 
     // Apply default_config from our locally-installed gamemode pack. The
@@ -1930,7 +1988,10 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
     // this every joined room would inherit pvpEnabled's process default
     // (true) — making PvP fire even in randomizer-no-pvp rooms, and damage
     // never get filtered for receivers in coop rooms.
-    ApplyLocalGamemodeManifest(currentRoomGameMode, pvpEnabled, syncItems, syncCutscenes);
+    ApplyLocalGamemodeManifest(currentRoomGameMode,
+                               pvpEnabled, syncItems, syncCutscenes,
+                               supportsVoting, supportsMapSelect,
+                               supportsZTarget, supportsRoundFlow);
 
     // Announce our .o2r mod list once we're actually in a room — the server
     // relays room-scoped events only to room members, so this must happen
@@ -1938,8 +1999,14 @@ void Harpoon::HandlePacket_RoomJoined(nlohmann::json payload) {
     HarpoonSkinSync::Reset();
     SendPacket_O2rModList();
 
-    SPDLOG_INFO("[Harpoon] Joined room '{}' ({}) mode={} pvp={}",
-                currentRoomName, currentRoomId, currentRoomGameMode, pvpEnabled);
+    // Reset local drop ledger (last room's drops aren't ours) and ask peers
+    // for a snapshot so we see drops that happened before we joined.
+    HarpoonDroppedItems::ClearLedger();
+    SendJsonToRemote(HarpoonDroppedItems::BuildLedgerRequestPayload());
+
+    SPDLOG_INFO("[Harpoon] Joined room '{}' ({}) mode={} pvp={} caps[v={} m={} z={} r={}]",
+                currentRoomName, currentRoomId, currentRoomGameMode, pvpEnabled,
+                supportsVoting, supportsMapSelect, supportsZTarget, supportsRoundFlow);
 }
 
 void Harpoon::HandlePacket_RoomLeft(nlohmann::json payload) {
@@ -1951,6 +2018,10 @@ void Harpoon::HandlePacket_RoomLeft(nlohmann::json payload) {
     gameState = HARPOON_STATE_LOBBY;
     killFeed.clear();
     isEliminated = false;
+    // Session-scoped PH cumulative timer resets on room leave. Next room
+    // join starts the on-screen timer at 00:00 again.
+    isPropHuntMode = false;
+    HarpoonPropHunt::ResetRoundElapsed();
     RefreshClientActors();
     SPDLOG_INFO("[Harpoon] Left room");
 }
@@ -2162,8 +2233,12 @@ void Harpoon::UpdateDecoys() {
     bool wantSwingHit  = swinging || pressedAttack;
 
     Vec3f sp = player->actor.world.pos;
-    constexpr f32 kHitRadiusSq    = 50.0f * 50.0f;   // sword/attack radius
-    constexpr f32 kContactRadiusSq = 35.0f * 35.0f;  // walk-into radius
+    // Base radii (Link-sized prop = 1.0 scale). Per-decoy radii are these
+    // values multiplied by the decoy's prop scale so a tiny rupee decoy
+    // can only be triggered by close contact and a big chest decoy triggers
+    // from farther — matches the visible prop size on screen.
+    constexpr f32 kBaseHitRadius     = 50.0f;
+    constexpr f32 kBaseContactRadius = 35.0f;
 
     for (auto& [cid, cl] : clients) {
         if (cl.self) continue;
@@ -2176,11 +2251,23 @@ void Harpoon::UpdateDecoys() {
             f32 dy = sp.y - cl.somariaDecoyPos[i].y;
             f32 dz = sp.z - cl.somariaDecoyPos[i].z;
             f32 d2 = dx * dx + dy * dy + dz * dz;
+            // Scale by the decoy's prop visual scale, clamped to a sane
+            // band. Same clamps as HarpoonDummyPlayer's cylinder sizing.
+            s32 dMap = confirmedMapIndex; if (dMap < 0) dMap = 0;
+            f32 ds = HarpoonPropHunt::GetPropVisualScale(
+                cl.somariaDecoyPropCat[i], cl.somariaDecoyPropIdx[i],
+                cl.somariaDecoyPropState[i], dMap);
+            if (ds < 0.3f) ds = 0.3f;
+            if (ds > 2.5f) ds = 2.5f;
+            f32 hitR     = kBaseHitRadius     * ds;
+            f32 contactR = kBaseContactRadius * ds;
+            f32 hitR2     = hitR * hitR;
+            f32 contactR2 = contactR * contactR;
             // Trigger when:
             //   (a) within attack radius AND swinging/pressing attack, OR
             //   (b) within contact radius (walked into it, any state).
-            bool hit = (d2 < kContactRadiusSq) ||
-                       (wantSwingHit && d2 < kHitRadiusSq);
+            bool hit = (d2 < contactR2) ||
+                       (wantSwingHit && d2 < hitR2);
             if (!hit) continue;
 
             // Hit! Ice shatter at decoy position, freeze seeker, kill decoy.
@@ -2528,12 +2615,89 @@ void Harpoon::HandlePacket_RoomEvent(nlohmann::json payload) {
         HarpoonTriforceThief::HandleEvent(payload);
         return;
     }
+    // Generic HARPOON.* sub-protocol — dropped-item ledger, GM controls.
+    if (eventName.rfind("HARPOON.", 0) == 0) {
+        const nlohmann::json& data = payload.contains("data") && payload["data"].is_object()
+                                       ? payload["data"] : payload;
+        if      (eventName == "HARPOON.DEATH_DROP")            HarpoonDroppedItems::HandleDeathDrop(data);
+        else if (eventName == "HARPOON.DROP_CLAIM")            HarpoonDroppedItems::HandleDropClaim(data);
+        else if (eventName == "HARPOON.DROP_LEDGER_REQ")       HarpoonDroppedItems::HandleLedgerRequest(payload);
+        else if (eventName == "HARPOON.DROP_LEDGER_SNAPSHOT")  HarpoonDroppedItems::HandleLedgerSnapshot(data);
+        else if (eventName == "HARPOON.TEMPLATE_APPLY")        HarpoonTemplates::HandleTemplateApply(data);
+        else if (eventName == "HARPOON.FLAG_OVERRIDE")         HandleHarpoonFlagOverride(data);
+        else if (eventName == "HARPOON.PEER_TELEPORT")         HandleHarpoonPeerTeleport(data);
+        else if (eventName == "HARPOON.HOST_TRANSFER")         HandleHarpoonHostTransfer(data);
+        else SPDLOG_DEBUG("[Harpoon] HARPOON.* unknown event {}", eventName);
+        return;
+    }
     SPDLOG_DEBUG("[Harpoon] ROOM.EVENT name={} (ignored)", eventName);
 }
 
 void Harpoon::HandlePacket_PhaseChanged(nlohmann::json payload) {
     std::string phase = payload.value("phase", std::string("lobby"));
     SPDLOG_INFO("[Harpoon] phase -> {}", phase);
+}
+
+// ----------------------------------------------------------------------------
+// GM event handlers
+// ----------------------------------------------------------------------------
+
+void Harpoon::HandleHarpoonFlagOverride(const nlohmann::json& data) {
+    // Update the per-peer restrict bools so every client's GM panel
+    // shows the same state. The TARGET client also applies them to the
+    // engine each frame (see HookHandlers OnPlayerUpdate).
+    uint32_t target = data.value("targetClientId", 0u);
+    if (target == 0) return;
+    auto it = clients.find(target);
+    if (it == clients.end()) return;
+    it->second.restrictNoClimb = data.value("noClimb", false);
+    it->second.restrictNoGrab  = data.value("noGrab",  false);
+    it->second.restrictNoCrawl = data.value("noCrawl", false);
+    it->second.restrictNoTalk  = data.value("noTalk",  false);
+}
+
+void Harpoon::HandleHarpoonPeerTeleport(const nlohmann::json& data) {
+    // Only the targeted peer reacts.
+    uint32_t target = data.value("targetClientId", 0u);
+    if (target != ownClientId) return;
+    s32 entrance = data.value("entranceIndex", -1);
+    f32 px = data.value("x", 0.0f);
+    f32 py = data.value("y", 0.0f);
+    f32 pz = data.value("z", 0.0f);
+    bool toHostPos = data.value("toHostPos", false);
+
+    if (gPlayState == nullptr) return;
+    if (entrance >= 0) {
+        gPlayState->linkAgeOnLoad     = gSaveContext.linkAge;
+        gPlayState->nextEntranceIndex = entrance;
+        gPlayState->transitionTrigger = TRANS_TRIGGER_START;
+        gPlayState->transitionType    = TRANS_TYPE_FADE_BLACK;
+        ::sHarpoonAuthorizedTransition = true;
+        if (toHostPos) {
+            // Land on host's exact position after the transition.
+            gSaveContext.respawnFlag = 1;
+            gSaveContext.respawn[RESPAWN_MODE_DOWN].entranceIndex = entrance;
+            gSaveContext.respawn[RESPAWN_MODE_DOWN].pos = { px, py, pz };
+        }
+    } else {
+        // In-place teleport (same scene).
+        Player* lp = GET_PLAYER(gPlayState);
+        if (lp != nullptr) {
+            lp->actor.world.pos = { px, py, pz };
+            lp->actor.home.pos  = { px, py, pz };
+            lp->actor.velocity.x = lp->actor.velocity.y = lp->actor.velocity.z = 0.0f;
+            lp->linearVelocity   = 0.0f;
+        }
+    }
+    SPDLOG_INFO("[Harpoon][GM] peer teleport received: entrance={} toHostPos={}",
+                entrance, toHostPos);
+}
+
+void Harpoon::HandleHarpoonHostTransfer(const nlohmann::json& data) {
+    uint32_t newHost = data.value("newHostClientId", 0u);
+    if (newHost == 0) return;
+    hostClientId = newHost;
+    SPDLOG_INFO("[Harpoon][GM] host transferred to cid={}", newHost);
 }
 
 // ============================================================================

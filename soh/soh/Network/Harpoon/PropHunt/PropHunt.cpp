@@ -723,7 +723,21 @@ void ApplyRoleSection(const std::string& roleKey) {
 }  // anon
 
 void ApplyHiderSave()  { ApplyRoleSection("hider"); }
-void ApplySeekerSave() { ApplyRoleSection("seeker"); }
+void ApplySeekerSave() {
+    ApplyRoleSection("seeker");
+    // Override: seekers start drained. TickSeekerPassiveRegen refills both
+    // ammo and magic over time during PLAYING. Magic capacity forced to 96
+    // (full double-magic) so the meter has room to fill regardless of the
+    // underlying save's progression state. User spec: "inician en 0 como
+    // en TT" — matches TT's ApplyAmmo zero-out + thief regen pattern.
+    gSaveContext.magic              = 0;
+    gSaveContext.magicCapacity      = 96;
+    gSaveContext.isMagicAcquired    = true;
+    gSaveContext.isDoubleMagicAcquired = true;
+    for (size_t i = 0; i < ARRAY_COUNT(gSaveContext.inventory.ammo); i++) {
+        gSaveContext.inventory.ammo[i] = 0;
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Local state
@@ -735,7 +749,15 @@ bool IsSeeker()     { return sLocal.role == Role::Seeker; }
 bool IsEliminated() { return sLocal.role == Role::Eliminated; }
 
 bool IsLocalHiderWithProp() {
-    return IsHider() && sLocal.propIndex >= 0 && sLocal.propIndex < kPropsPerCategory;
+    // True for "should we render local as a prop / broadcast disguise" —
+    // includes the lobby (Hyrule Field, no round in flight) so players can
+    // mess around as a prop while waiting for the next round. Round-only
+    // mechanics (decoy spawn) gate on IsHider() separately.
+    bool propValid = sLocal.propIndex >= 0 && sLocal.propIndex < kPropsPerCategory;
+    if (!propValid) return false;
+    if (IsHider()) return true;
+    return (Harpoon::Instance != nullptr &&
+            Harpoon::Instance->gameState == HARPOON_STATE_LOBBY);
 }
 
 // ---------------------------------------------------------------------------
@@ -840,14 +862,51 @@ void HandleRoleAssign(const nlohmann::json& p) {
     //   - LOBBY / MAP_SELECT: this is the initial assignment for a new
     //     round. Don't touch the scene — MAP_CONFIRMED arrives right after
     //     and handles the actual teleport + kit apply via SetPendingInit.
-    //     A redundant InstantReloadScene here would clobber the map teleport.
-    //   - HIDING_PHASE / PLAYING: an admin is overriding the role mid-round
-    //     (e.g. "Set Seeker" button on a player). Reload in place so the
-    //     new kit takes effect immediately.
-    bool inRound = (Harpoon::Instance != nullptr &&
-                    (Harpoon::Instance->gameState == HARPOON_STATE_HIDING_PHASE ||
-                     Harpoon::Instance->gameState == HARPOON_STATE_PLAYING));
-    if (inRound && (sLocal.role == Role::Hider || sLocal.role == Role::Seeker)) {
+    //   - HIDING_PHASE / PLAYING: round is in flight. Either an admin
+    //     override OR a race where MAP_CONFIRMED arrived before our role
+    //     was known (RANDOM mode fires ROLE_ASSIGN + MAP_CONFIRMED in tight
+    //     succession; the order at the peer isn't guaranteed). In either
+    //     case we must take the player to the CORRECT scene for their new
+    //     role — not InstantReloadScene the current one. Otherwise a peer
+    //     whose MAP_CONFIRMED landed first stays in Hyrule Field forever
+    //     with a hider kit.
+    bool inHidePhase = (Harpoon::Instance != nullptr &&
+                        Harpoon::Instance->gameState == HARPOON_STATE_HIDING_PHASE);
+    bool inPlaying   = (Harpoon::Instance != nullptr &&
+                        Harpoon::Instance->gameState == HARPOON_STATE_PLAYING);
+    s32  mapIdx      = (Harpoon::Instance != nullptr) ? Harpoon::Instance->confirmedMapIndex : -1;
+    bool inRound     = inHidePhase || inPlaying;
+
+    if (inRound && gPlayState != nullptr && mapIdx >= 0 &&
+        (sLocal.role == Role::Hider || sLocal.role == Role::Seeker)) {
+        s32 roundEntr = GetEntranceForMapIndex(mapIdx);
+        if (sLocal.role == Role::Hider) {
+            // Hiders always go to the round map.
+            gSaveContext.linkAge = LINK_AGE_CHILD;
+            TeleportToEntrance(roundEntr);
+            SetPendingInit(1);   // hider kit post-load
+        } else {  // Role::Seeker
+            if (inPlaying) {
+                // Seeker in play phase → round map with seeker kit.
+                gSaveContext.linkAge = LINK_AGE_CHILD;
+                TeleportToEntrance(roundEntr);
+                SetPendingInit(2);   // seeker kit post-load
+            } else {
+                // Seeker in hide phase → lobby. Only teleport if we're
+                // not already in Hyrule Field (the lobby scene) so a
+                // race-fixed assignment doesn't yank a peer who already
+                // arrived correctly.
+                if (gPlayState->sceneNum != SCENE_HYRULE_FIELD) {
+                    gSaveContext.linkAge = LINK_AGE_CHILD;
+                    TeleportToEntrance(ENTR_HYRULE_FIELD_PAST_BRIDGE_SPAWN);
+                    // No kit apply — seeker kit is granted at hide-phase end.
+                }
+            }
+        }
+    } else if (inRound && (sLocal.role == Role::Hider || sLocal.role == Role::Seeker)) {
+        // Fallback for the rare case where confirmedMapIndex hasn't propagated
+        // yet (defensive). InstantReloadScene swaps the kit in place — better
+        // than nothing while we wait for MAP_CONFIRMED.
         ChangeRoleAndReload(sLocal.role);
     }
     // Else: not in round yet — just leave the role set; round-start flow
@@ -917,25 +976,47 @@ void HandleHidePhaseEnd(const nlohmann::json& /*p*/) {
 
 void HandleEliminated(const nlohmann::json& p) {
     s32 victim = p.value("victimClientId", 0);
-    (void)victim;
-    // TODO: cross-reference with our ownClientId; if it's us, set
-    // sLocal.role = Role::Eliminated and the Scooter behaviour is to convert
-    // the hider into a seeker for the rest of the round.
+    if (victim == 0) return;
+
+    // Backup path for the host's no-hiders count. The dying client also
+    // broadcasts ROLE_ASSIGN(self, seeker), but if that packet is dropped
+    // or arrives after ELIMINATED, the host's clients[victim].role stays
+    // "hider" forever and the round never ends (manifests when host is
+    // the seeker, so sLocal.role doesn't mask the off-by-one count). Two
+    // independent signals — either one is sufficient to advance the count.
+    if (Harpoon::Instance != nullptr) {
+        auto it = Harpoon::Instance->clients.find((u32)victim);
+        if (it != Harpoon::Instance->clients.end()) {
+            it->second.role         = "seeker";
+            it->second.propIndex    = -1;
+            it->second.propCategory = 0;
+            it->second.propState    = 0;
+        }
+    }
+
+    // Defensive self-update too: if ELIMINATED arrived before our own
+    // health-change handler converted us, sync sLocal here. Redundant but
+    // harmless on the normal path.
+    uint32_t ownId = Harpoon::Instance ? Harpoon::Instance->ownClientId : 0;
+    if ((uint32_t)victim == ownId) {
+        sLocal.role         = Role::Seeker;
+        sLocal.propIndex    = -1;
+        sLocal.propCategory = 0;
+        sLocal.propState    = 0;
+    }
 }
 
 void HandleRoundResult(const nlohmann::json& p) {
-    std::string winner = p.value("winnerSide", "draw");
-    SPDLOG_INFO("[Harpoon][PropHunt] round result: {}", winner);
+    // Silent round end — no winner notification, no text. Per user spec
+    // ("nothing, silent teleport"): the round just ends and everyone is
+    // returned to the lobby. Host re-starts the next round manually.
+    (void)p;
+    SPDLOG_INFO("[Harpoon][PropHunt] round ended -> silent teleport to lobby");
     sLocal.role = Role::Unassigned;
     sLocal.inHidePhase = false;
     sLocal.propIndex = -1;
     sLocal.propState = 0;
     sLocal.propModeLockoutTimer = 0;
-    Notification::Emit({
-        .prefix = "Prop Hunt",
-        .message = "Round over — " + winner + " win",
-        .remainingTime = 5.0f,
-    });
     // Force everyone (including the seekers who triggered the win) back
     // to Hyrule Field as the lobby. ChangeRoleAndReload would respect
     // the current role; we just want a clean teleport to the lobby's
@@ -972,18 +1053,8 @@ void HandleEvent(const nlohmann::json& envelope) {
     else if (evt == kEvtHidePhaseEnd)    HandleHidePhaseEnd(data);
     else if (evt == kEvtEliminated)      HandleEliminated(data);
     else if (evt == kEvtRoundResult)     HandleRoundResult(data);
-    else if (evt == "PROP_HUNT.ADMIN_PROMOTE") {
-        u32 cid     = data.value("targetClientId", 0u);
-        bool isAdmin = data.value("isAdmin", false);
-        if (Harpoon::Instance != nullptr) {
-            auto it = Harpoon::Instance->clients.find(cid);
-            if (it != Harpoon::Instance->clients.end()) {
-                it->second.isAdmin = isAdmin;
-            }
-        }
-    }
     else if (evt == "PROP_HUNT.OPEN_MAP_SELECT") {
-        // Admin triggered the map-select fullscreen overlay. Each peer
+        // Host triggered the map-select fullscreen overlay. Each peer
         // flips gameState locally so the GuiWindow draws.
         if (Harpoon::Instance != nullptr) {
             Harpoon::Instance->gameState = HARPOON_STATE_MAP_SELECT;
@@ -1513,6 +1584,60 @@ bool AreGhostsReady() {
 
 static u32 sRoundElapsedFrames = 0;
 
+// Passive ammo + magic regeneration while the local player is a Seeker in
+// the active round. Port of TT's TickPassiveRegen (TriforceThief.cpp:1343)
+// with PH-specific cadence: ammo +1 every 30 frames (2/sec per slot),
+// magic +8 every 60 frames (8/sec, fills 96-cap in ~12 sec). Hider role
+// and lobby state never regenerate — gate is explicit. Each client runs
+// this for themselves; no broadcast.
+static void TickSeekerPassiveRegen() {
+    if (Harpoon::Instance == nullptr) return;
+    if (Harpoon::Instance->gameState != HARPOON_STATE_PLAYING) return;
+    if (sLocal.role != Role::Seeker) return;
+    if (gPlayState == nullptr) return;
+    if (gSaveContext.gameMode != GAMEMODE_NORMAL) return;
+
+    // Ammo: +1 per slot every 30 frames. Slots match TT's regen targets so
+    // every seeker-usable ammo type refills uniformly.
+    static s32 ammoTick = 0;
+    if (++ammoTick >= 30) {
+        ammoTick = 0;
+        s32 maxBombs   = CAPACITY(UPG_BOMB_BAG,    CUR_UPG_VALUE(UPG_BOMB_BAG));
+        s32 maxArrows  = CAPACITY(UPG_QUIVER,      CUR_UPG_VALUE(UPG_QUIVER));
+        s32 maxSeeds   = CAPACITY(UPG_BULLET_BAG,  CUR_UPG_VALUE(UPG_BULLET_BAG));
+        s32 maxNuts    = CAPACITY(UPG_NUTS,        CUR_UPG_VALUE(UPG_NUTS));
+        s32 maxSticks  = CAPACITY(UPG_STICKS,      CUR_UPG_VALUE(UPG_STICKS));
+        auto bump = [](s32 slot, s32 maxVal) {
+            if (slot < 0 || slot >= (s32)ARRAY_COUNT(gSaveContext.inventory.ammo)) return;
+            if (gSaveContext.inventory.ammo[slot] < maxVal) {
+                gSaveContext.inventory.ammo[slot]++;
+            }
+        };
+        bump(SLOT_BOMB,      maxBombs);
+        bump(SLOT_BOW,       maxArrows);
+        bump(SLOT_SLINGSHOT, maxSeeds);
+        bump(SLOT_NUT,       maxNuts);
+        bump(SLOT_STICK,     maxSticks);
+        bump(SLOT_BOMBCHU,   50);   // chu count independent of bomb bag
+    }
+
+    // Magic: +8 every 60 frames. Cap at magicCapacity (forced to 96 by
+    // ApplySeekerSave). isMagicAcquired is set to true by ApplySeekerSave
+    // so this branch always reaches in seeker state.
+    static s32 magicTick = 0;
+    if (++magicTick >= 60) {
+        magicTick = 0;
+        if (gSaveContext.isMagicAcquired) {
+            s16 maxMagic = gSaveContext.magicCapacity;
+            if (maxMagic <= 0) maxMagic = 96;
+            if (gSaveContext.magic < maxMagic) {
+                s32 newMagic = gSaveContext.magic + 8;
+                gSaveContext.magic = (s16)((newMagic > maxMagic) ? maxMagic : newMagic);
+            }
+        }
+    }
+}
+
 void TickFrame() {
     bool isHost = (Harpoon::Instance != nullptr &&
                    Harpoon::Instance->ownClientId != 0 &&
@@ -1532,48 +1657,99 @@ void TickFrame() {
          Harpoon::Instance->gameState == HARPOON_STATE_HIDING_PHASE)) {
         Player* localPlayer = GET_PLAYER(gPlayState);
         if (localPlayer != nullptr) {
-            constexpr f32 kBlockRadiusSq = 80.0f * 80.0f;
+            // Scene-exit-polygon-based block (mirrors Scooter's
+            // TriforceThief_PushBackToSafe + IsNearExit). Detect via the
+            // engine's setupExitList: every loading-zone in the scene file
+            // is a tagged floor poly whose `SurfaceType_GetSceneExitIndex`
+            // returns non-zero. This catches ALL load zones (grottos, scene
+            // exits, dungeon doors, water-warps) regardless of which actor
+            // hosts them. The previous DOOR_ANA / DOOR_WARP1 actor scan
+            // missed every scene-exit poly that isn't a door actor.
+            //
+            // Grace period: skip blocking for the first 60 frames after a
+            // scene load so the engine's legitimate arrival respawn doesn't
+            // get cancelled (PLAYER_STATE1_LOADING is set briefly post-
+            // teleport). sFramesSinceLoad resets on every confirmed-map
+            // teleport via the TeleportToEntrance helper.
             static Vec3f sLastSafePos = { 0, 0, 0 };
             static bool  sHasSafePos  = false;
+            static s32   sFramesSinceLoad = 0;
+            static s16   sPrevSceneNum    = -1;
+            if (gPlayState->sceneNum != sPrevSceneNum) {
+                sPrevSceneNum    = gPlayState->sceneNum;
+                sFramesSinceLoad = 0;
+                sHasSafePos      = false;
+            } else if (sFramesSinceLoad < 1000) {
+                sFramesSinceLoad++;
+            }
 
-            // Probe both door-categories that host loading-zone actors.
-            auto isCloseToLoadingZone = [&](Vec3f p) -> bool {
-                auto scanList = [&](Actor* a) -> bool {
-                    while (a != nullptr) {
-                        bool isExit = (a->id == ACTOR_DOOR_ANA) ||
-                                      (a->id == ACTOR_DOOR_WARP1);
-                        if (isExit) {
-                            f32 dx = p.x - a->world.pos.x;
-                            f32 dz = p.z - a->world.pos.z;
-                            if (dx * dx + dz * dz < kBlockRadiusSq) return true;
-                        }
-                        a = a->next;
-                    }
-                    return false;
-                };
-                if (scanList(gPlayState->actorCtx.actorLists[ACTORCAT_ITEMACTION].head))
+            auto isBlockedExit = [&](CollisionPoly* poly, s32 bgId) -> bool {
+                if (poly == nullptr || gPlayState->setupExitList == nullptr) return false;
+                u32 exitIdx = SurfaceType_GetSceneExitIndex(
+                    &gPlayState->colCtx, poly, bgId);
+                return exitIdx != 0;  // any tagged exit = blocked
+            };
+
+            // Probe player's current floor + 8 outward rays at 30u radius
+            // so the wall feels solid before they reach the trigger volume.
+            auto isNearExit = [&]() -> bool {
+                if (isBlockedExit(localPlayer->actor.floorPoly,
+                                  localPlayer->actor.floorBgId)) {
                     return true;
-                if (scanList(gPlayState->actorCtx.actorLists[ACTORCAT_DOOR].head))
-                    return true;
+                }
+                constexpr f32 kProbeR = 30.0f;
+                for (int i = 0; i < 8; i++) {
+                    s16 ang = (s16)(i * (0x10000 / 8));
+                    Vec3f p;
+                    p.x = localPlayer->actor.world.pos.x + Math_SinS(ang) * kProbeR;
+                    p.y = localPlayer->actor.world.pos.y + 50.0f;
+                    p.z = localPlayer->actor.world.pos.z + Math_CosS(ang) * kProbeR;
+                    CollisionPoly* outPoly = nullptr;
+                    s32 outBgId = 0;
+                    BgCheck_EntityRaycastFloor3(
+                        &gPlayState->colCtx, &outPoly, &outBgId, &p);
+                    if (isBlockedExit(outPoly, outBgId)) return true;
+                }
                 return false;
             };
 
-            Vec3f curPos = localPlayer->actor.world.pos;
-            if (isCloseToLoadingZone(curPos) && sHasSafePos) {
-                // Warp back to the last safe pos + zero velocity. This
-                // mirrors PropHunt_PushBackToSafe exactly.
-                localPlayer->actor.world.pos     = sLastSafePos;
-                localPlayer->actor.home.pos      = sLastSafePos;
-                localPlayer->actor.velocity.x    = 0.0f;
-                localPlayer->actor.velocity.y    = 0.0f;
-                localPlayer->actor.velocity.z    = 0.0f;
-                localPlayer->linearVelocity      = 0.0f;
-            } else if (gPlayState->transitionTrigger == TRANS_TRIGGER_OFF) {
-                // Only save a new safe pos when nothing else is in
-                // motion — avoids latching during the engine's own
-                // mid-transition frames.
-                sLastSafePos = curPos;
-                sHasSafePos  = true;
+            auto pushBackToSafe = [&]() {
+                if (sHasSafePos) {
+                    localPlayer->actor.world.pos = sLastSafePos;
+                    localPlayer->actor.home.pos  = sLastSafePos;
+                }
+                localPlayer->linearVelocity    = 0.0f;
+                localPlayer->actor.velocity.x  = 0.0f;
+                localPlayer->actor.velocity.y  = 0.0f;
+                localPlayer->actor.velocity.z  = 0.0f;
+            };
+
+            // Active block only after the grace period — first second of
+            // scene-load is the engine's own arrival animation.
+            if (sFramesSinceLoad > 60) {
+                // Backstop: an unauthorized TRANS_TRIGGER_START reached us.
+                // Cancel the trigger AND mode, clear the locking state
+                // flags, push back. Mirrors Scooter's Layer-1 cancel.
+                if (gPlayState->transitionTrigger == TRANS_TRIGGER_START &&
+                    !::sHarpoonAuthorizedTransition) {
+                    gPlayState->transitionTrigger = TRANS_TRIGGER_OFF;
+                    gPlayState->transitionMode    = TRANS_MODE_OFF;
+                    localPlayer->stateFlags1 &= ~(PLAYER_STATE1_LOADING |
+                                                  PLAYER_STATE1_IN_CUTSCENE);
+                    pushBackToSafe();
+                }
+                // Proactive: poly probe sees a tagged exit nearby.
+                else if (isNearExit()) {
+                    pushBackToSafe();
+                }
+                // Otherwise we're walking on safe ground — latch the pos
+                // so the next push-back has somewhere to send us. Only
+                // when no transition is in flight (mode==OFF) so we don't
+                // capture a mid-transition position as "safe".
+                else if (gPlayState->transitionMode == TRANS_MODE_OFF) {
+                    sLastSafePos = localPlayer->actor.world.pos;
+                    sHasSafePos  = true;
+                }
             }
         }
     }
@@ -1619,6 +1795,22 @@ void TickFrame() {
          Harpoon::Instance->gameState == HARPOON_STATE_PLAYING)) {
         sRoundElapsedFrames++;
     }
+    // Mirror our cumulative counter to the engine's playTimer every frame
+    // so Interface_DrawTotalGameplayTimer renders our value. The engine
+    // ticks game logic at 20 fps (see z_play.c:1180 `playTimer++` and the
+    // comment in gameplaystats.h: "game time counts frames at 20fps/2"
+    // — formatTimestampGameplayStat then divides by 10 again to get
+    // decisecond precision, yielding 1 visible second per real second at
+    // 20 ticks/sec). TickFrame fires at the same 20 fps via
+    // OnGameFrameUpdate, so sRoundElapsedFrames advances 20 units per
+    // real second too — 1:1 mapping, no multiplier. With *2 the timer
+    // displayed 2x faster than the hide-phase countdown (which also
+    // counts at *20-per-second). This overwrites the save's underlying
+    // playTimer — fine because PH uses a sentinel fileNum (0xFD) that
+    // never persists to disk.
+    if (Harpoon::Instance != nullptr && Harpoon::Instance->isPropHuntMode) {
+        gSaveContext.ship.stats.playTimer = (s32)sRoundElapsedFrames;
+    }
 
     // Damage-cooldown countdown (per-frame). Set to 200 by the
     // OnPlayerHealthChange damage-detransform path; while > 0 the R
@@ -1627,29 +1819,62 @@ void TickFrame() {
         sLocal.propModeLockoutTimer--;
     }
 
-    // ROUND-END on no-hiders. Host-only. Walk the client roster every
-    // ~30 frames; if a round is in progress and NO online client has
-    // role == "hider", broadcast PROP_HUNT.ROUND_RESULT with winner
-    // side = "seekers" and let HandleRoundResult teleport everyone back
-    // to the lobby. Counter avoids racing transient state (e.g. a hider
-    // just died and hasn't broadcast their ROLE_ASSIGN yet).
+    // Seeker passive regen — runs only for local seekers in PLAYING.
+    // Internal gates ensure no effect when hider / in lobby / hide phase.
+    TickSeekerPassiveRegen();
+
+    // ROUND-END on no-hiders. Host-only. Only runs during PLAYING — NOT
+    // HIDING_PHASE. During hide phase, peer role assignments may not yet
+    // have propagated to the host's local clients map (or vice versa),
+    // so a transient hiderCount=0 would falsely end the round one frame
+    // after it started. By the time we hit PLAYING, every peer has
+    // received ROLE_ASSIGN and the count is authoritative.
+    //
+    // Additional safety: the round only ends after we've ACTUALLY seen
+    // hiderCount > 0 at least once during this PLAYING phase. Without
+    // this gate, a degenerate state (host is seeker, peer-hider's role
+    // packet hasn't reached the host's clients map yet because of
+    // packet ordering / late join) makes the check fire one frame after
+    // PLAYING begins and ends the round before anyone can play. Reset
+    // on every PLAYING entry so we re-arm cleanly between rounds.
+    static bool sSeenAnyHider = false;
+    static HarpoonGameState sPrevTickState = HARPOON_STATE_LOBBY;
+    if (Harpoon::Instance != nullptr) {
+        HarpoonGameState now = Harpoon::Instance->gameState;
+        if (now == HARPOON_STATE_PLAYING && sPrevTickState != HARPOON_STATE_PLAYING) {
+            sSeenAnyHider = false;
+        }
+        sPrevTickState = now;
+    }
     if (isHost && Harpoon::Instance != nullptr &&
-        (Harpoon::Instance->gameState == HARPOON_STATE_PLAYING ||
-         Harpoon::Instance->gameState == HARPOON_STATE_HIDING_PHASE)) {
+        Harpoon::Instance->gameState == HARPOON_STATE_PLAYING) {
         static s32 sNoHiderTicks = 0;
+        // Count peers in the clients map, then add ourselves from sLocal.
+        // The host's own entry isn't reliably present in `clients` (server
+        // rosters often exclude the recipient), so walking `clients` alone
+        // misses the host-as-hider — that was making the round end the
+        // moment PLAYING began when the host was the sole hider.
         s32 hiderCount = 0;
+        uint32_t ownId = Harpoon::Instance->ownClientId;
         for (auto& [cid, c] : Harpoon::Instance->clients) {
+            if (cid == ownId) continue;     // counted via sLocal below
             if (!c.online) continue;
             if (c.role == "hider") hiderCount++;
         }
-        if (hiderCount == 0) {
+        if (sLocal.role == Role::Hider) hiderCount++;
+
+        if (hiderCount > 0) {
+            sSeenAnyHider = true;
+            sNoHiderTicks = 0;
+        } else if (sSeenAnyHider) {
             sNoHiderTicks++;
             // 60 frames = ~1 sec at 60 fps — gives a recently-converted
             // hider time to broadcast their seeker role assignment before
             // we conclude the round.
             if (sNoHiderTicks >= 60) {
                 sNoHiderTicks = 0;
-                SPDLOG_INFO("[Harpoon][PropHunt] no hiders left -> ending round (seekers win)");
+                sSeenAnyHider = false;
+                SPDLOG_INFO("[Harpoon][PropHunt] all hiders found -> ending round");
                 nlohmann::json env;
                 env["type"]       = "ROOM.BROADCAST_EVENT";
                 env["event_name"] = "PROP_HUNT.ROUND_RESULT";
@@ -1659,9 +1884,9 @@ void TickFrame() {
                 // Local apply (relay excludes sender).
                 HarpoonPropHunt::HandleEvent(env);
             }
-        } else {
-            sNoHiderTicks = 0;
         }
+        // else: hider count == 0 but we've never seen one yet —
+        // probably packet-ordering race on round start. Wait.
     }
 
     // Everyone-votes tally — only the host runs this. When every online
@@ -1782,6 +2007,9 @@ static void PropHunt_SpawnDecoyFx(PlayState* play, Player* player) {
 }
 
 void SpawnDecoy() {
+    // Decoys are a round-only mechanic — gate on Hider role explicitly
+    // since IsLocalHiderWithProp now also returns true in the lobby.
+    if (!IsHider()) return;
     if (!IsLocalHiderWithProp()) return;
     if (gPlayState == nullptr) return;
     Player* player = GET_PLAYER(gPlayState);
@@ -1844,15 +2072,41 @@ void HostStartRound(s32 mapIndex) {
                    Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
     if (!isHost) return;
 
-    // 1. Pick seekers via priority queue.
-    std::vector<u32> candidates;
+    // 1. Pick seekers. Honor any pre-staged `pendingRole` first (set via the
+    //    menu's per-peer Hider/Seeker buttons while in lobby), then fill the
+    //    remaining seeker slots from the priority queue picking from the pool
+    //    of peers WITHOUT a pending role. After consumption every client's
+    //    pendingRole gets cleared so the next round starts fresh.
+    std::unordered_set<u32> seekerSet;
+    std::unordered_set<u32> pendingHider;
+    std::vector<u32>        unpinned;
     for (auto& [cid, c] : Harpoon::Instance->clients) {
-        if (c.online) candidates.push_back(cid);
+        if (!c.online) continue;
+        if (c.pendingRole == "seeker") {
+            seekerSet.insert(cid);
+        } else if (c.pendingRole == "hider") {
+            pendingHider.insert(cid);
+        } else {
+            unpinned.push_back(cid);
+        }
     }
-    if (candidates.empty()) candidates.push_back(Harpoon::Instance->ownClientId);
-
-    auto seekers = Host::PickNextSeekers(candidates, Host::GetSettings().seekerCount);
-    std::unordered_set<u32> seekerSet(seekers.begin(), seekers.end());
+    if (seekerSet.empty() && pendingHider.empty() && unpinned.empty()) {
+        // No-one online — bootstrap with self so the priority queue has a
+        // candidate. Matches old behaviour for single-client testing.
+        unpinned.push_back(Harpoon::Instance->ownClientId);
+    }
+    s32 desiredSeekerCount = Host::GetSettings().seekerCount;
+    s32 needed = desiredSeekerCount - (s32)seekerSet.size();
+    if (needed > 0 && !unpinned.empty()) {
+        auto picked = Host::PickNextSeekers(unpinned, needed);
+        for (u32 cid : picked) seekerSet.insert(cid);
+    }
+    // Clear pendingRole on every client now that we've consumed it.
+    for (auto& [cid, c] : Harpoon::Instance->clients) {
+        c.pendingRole.clear();
+    }
+    // Keep `seekers` vector for the log message below.
+    std::vector<u32> seekers(seekerSet.begin(), seekerSet.end());
 
     // 2. Resolve own role + apply locally (server relay excludes sender).
     bool ownIsSeeker = seekerSet.count(Harpoon::Instance->ownClientId) > 0;
@@ -1860,6 +2114,25 @@ void HostStartRound(s32 mapIndex) {
     auto myIt = Harpoon::Instance->clients.find(Harpoon::Instance->ownClientId);
     if (myIt != Harpoon::Instance->clients.end()) {
         myIt->second.role = ownIsSeeker ? "seeker" : "hider";
+    }
+    // If we just became a seeker, drop our lobby disguise immediately and
+    // tell every peer. Otherwise our 2-second SET_DISGUISE heartbeat keeps
+    // broadcasting the lobby prop we had as a hider — peer rosters see
+    // clients[host].propIndex >= 0 with role="seeker" never received
+    // (host's role isn't broadcast), so they render us as that prop the
+    // entire round.
+    if (ownIsSeeker) {
+        sLocal.propIndex    = -1;
+        sLocal.propCategory = 0;
+        sLocal.propState    = 0;
+        if (myIt != Harpoon::Instance->clients.end()) {
+            myIt->second.propIndex    = -1;
+            myIt->second.propCategory = 0;
+            myIt->second.propState    = 0;
+        }
+        if (Harpoon::Instance->isConnected) {
+            Harpoon::Instance->SendJsonToRemote(BuildSetDisguisePayload());
+        }
     }
 
     // 3. Broadcast role assignment per peer.
@@ -1900,7 +2173,9 @@ void LocallyConfirmMap(s32 mapIndex) {
         Harpoon::Instance->gameState          = HARPOON_STATE_HIDING_PHASE;
     }
     sLocal.confirmedMap = mapIndex;
-    ResetRoundElapsed();
+    // NOTE: sRoundElapsedFrames is NOT reset here. Per user spec the PH
+    // timer is cumulative across all rounds in a session (total survival
+    // time as hider). Only resets on room-join / disconnect.
     sLocal.inHidePhase = true;
     sLocal.hidePhaseFramesRemaining = Host::GetSettings().hideSeconds * 20;
 
@@ -1947,6 +2222,62 @@ s32 GetEntranceForMapIndex(s32 mapIndex) {
         return 0x0CD;  // Hyrule Field fallback
     }
     return kEntrances[mapIndex];
+}
+
+// ---------------------------------------------------------------------------
+// Per-round scene-lock cluster tables. Each entry is the set of scenes
+// considered "inside" the round for the given map index. Loading zones
+// whose destination is outside the cluster get redirected back to the
+// round map (see GetReturnEntranceForInvalidExit).
+//
+// Conservative v1: most maps are single-scene (strict lock). Zora's River
+// allows the natural River → Domain → Fountain cluster since those are
+// tightly linked and feel like one continuous area.
+// ---------------------------------------------------------------------------
+
+namespace {
+struct ClusterDef { const s8* scenes; s32 count; };
+
+static const s8 sCluster_Kakariko[]   = { SCENE_KAKARIKO_VILLAGE };
+static const s8 sCluster_DeathMtn[]   = { SCENE_DEATH_MOUNTAIN_TRAIL };
+static const s8 sCluster_BotW[]       = { SCENE_BOTTOM_OF_THE_WELL };
+static const s8 sCluster_Gerudo[]     = { SCENE_GERUDOS_FORTRESS };
+static const s8 sCluster_ForestTmp[]  = { SCENE_FOREST_TEMPLE };
+static const s8 sCluster_ZorasRiver[] = {
+    SCENE_ZORAS_RIVER, SCENE_ZORAS_DOMAIN, SCENE_ZORAS_FOUNTAIN,
+};
+static const s8 sCluster_Dodongo[]    = { SCENE_DODONGOS_CAVERN };
+static const s8 sCluster_Ganon[]      = { SCENE_INSIDE_GANONS_CASTLE };
+static const s8 sCluster_Kokiri[]     = { SCENE_KOKIRI_FOREST };
+
+static const ClusterDef sClusterByMap[] = {
+    { sCluster_Kakariko,   (s32)ARRAY_COUNT(sCluster_Kakariko)   },
+    { sCluster_DeathMtn,   (s32)ARRAY_COUNT(sCluster_DeathMtn)   },
+    { sCluster_BotW,       (s32)ARRAY_COUNT(sCluster_BotW)       },
+    { sCluster_Gerudo,     (s32)ARRAY_COUNT(sCluster_Gerudo)     },
+    { sCluster_ForestTmp,  (s32)ARRAY_COUNT(sCluster_ForestTmp)  },
+    { sCluster_ZorasRiver, (s32)ARRAY_COUNT(sCluster_ZorasRiver) },
+    { sCluster_Dodongo,    (s32)ARRAY_COUNT(sCluster_Dodongo)    },
+    { sCluster_Ganon,      (s32)ARRAY_COUNT(sCluster_Ganon)      },
+    { sCluster_Kokiri,     (s32)ARRAY_COUNT(sCluster_Kokiri)     },
+};
+}  // anon
+
+bool IsSceneInRoundCluster(s32 mapIndex, s32 sceneNum) {
+    if (mapIndex < 0 || mapIndex >= (s32)ARRAY_COUNT(sClusterByMap)) return false;
+    const ClusterDef& def = sClusterByMap[mapIndex];
+    for (s32 i = 0; i < def.count; i++) {
+        if ((s32)def.scenes[i] == sceneNum) return true;
+    }
+    return false;
+}
+
+s32 GetReturnEntranceForInvalidExit(s32 mapIndex, s32 destSceneNum) {
+    // v1: redirect to the round map's main entrance. Per-(map, dest)
+    // precision (e.g. distinct return spawn depending on which exit was
+    // taken) can be layered on top by extending this lookup.
+    (void)destSceneNum;
+    return GetEntranceForMapIndex(mapIndex);
 }
 
 // ===========================================================================
@@ -2242,6 +2573,14 @@ void ChangeRoleAndReload(Role role) {
                 role == Role::Seeker ? "seeker" : "hider");
 }
 
+f32 GetPropVisualScale(s32 category, s32 propIndex, s32 propState, s32 mapIdx) {
+    const PropEntry* entry = GetPropEntry(category, propIndex, mapIdx);
+    if (entry == nullptr || entry->states.empty()) return 1.0f;
+    if (propState < 0 || propState >= (s32)entry->states.size()) propState = 0;
+    f32 s = entry->states[propState].scale;
+    return (s > 0.0f) ? s : 1.0f;
+}
+
 Actor* GetGhostActor(s32 category, s32 propIndex, s32 propState) {
     if (category < 0 || category >= kCategoryCount) return nullptr;
     if (propIndex < 0 || propIndex >= kPropsPerCategory) return nullptr;
@@ -2392,6 +2731,9 @@ bool DrawHiderAsProp(Actor* playerActor, PlayState* play,
 
 extern "C" {
 
+s32 HarpoonPropHunt_IsActive(void) {
+    return (Harpoon::Instance != nullptr && Harpoon::Instance->isPropHuntMode) ? 1 : 0;
+}
 s32 HarpoonPropHunt_IsHider(void)            { return HarpoonPropHunt::IsHider()      ? 1 : 0; }
 s32 HarpoonPropHunt_IsSeeker(void)           { return HarpoonPropHunt::IsSeeker()     ? 1 : 0; }
 s32 HarpoonPropHunt_IsEliminated(void)       { return HarpoonPropHunt::IsEliminated() ? 1 : 0; }

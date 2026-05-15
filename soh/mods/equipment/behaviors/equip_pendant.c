@@ -263,9 +263,9 @@ static void Pendant_StartGroundPound(Player* player, PlayState* play) {
     player->actor.velocity.x = 0.0f;
     player->actor.velocity.z = 0.0f;
 
-    // Master Sword pedestal plant anim — frozen at frame 0 during stall (sword raised)
-    LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_demo_return_to_past, 0.0f, 0.0f,
-                         Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past), ANIMMODE_ONCE, -3.0f);
+    // Master Sword pedestal plant anim — frozen at last frame during stall (sword raised, backwards start)
+    LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_002840, 0.0f,
+                         Animation_GetLastFrame(&gPlayerAnim_002840), 0.0f, ANIMMODE_ONCE, -3.0f);
 
     // Init collider for pogo bounce
     Pendant_InitAtkCol(play, player);
@@ -293,9 +293,9 @@ static void Pendant_UpdateGPoundStall(Player* player, PlayState* play) {
         // Set up sword damage FIRST (this changes player action and overrides anim)
         func_80837948(play, player, PLAYER_MWA_JUMPSLASH_START);
 
-        // Sword slams down — force pedestal plant anim AFTER func_80837948
-        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_demo_return_to_past, 2.0f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past), ANIMMODE_ONCE, 0.0f);
+        // Sword slams down — play backwards, freeze at frame 0
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_002840, -2.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_002840), 0.0f, ANIMMODE_ONCE, 0.0f);
     }
 }
 
@@ -305,9 +305,9 @@ static void Pendant_UpdateGPoundFalling(Player* player, PlayState* play) {
     player->linearVelocity = 0.0f;
 
     // Force pedestal plant anim every frame (OOT's melee action tries to override)
-    if (player->skelAnime.animation != &gPlayerAnim_link_demo_return_to_past) {
-        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_link_demo_return_to_past, 2.0f, 0.0f,
-                             Animation_GetLastFrame(&gPlayerAnim_link_demo_return_to_past), ANIMMODE_ONCE, 0.0f);
+    if (player->skelAnime.animation != &gPlayerAnim_002840) {
+        LinkAnimation_Change(play, &player->skelAnime, &gPlayerAnim_002840, -2.0f,
+                             Animation_GetLastFrame(&gPlayerAnim_002840), 0.0f, ANIMMODE_ONCE, 0.0f);
     }
 
     // --- Pogo bounce: check AT_HIT from previous frame BEFORE re-registering ---

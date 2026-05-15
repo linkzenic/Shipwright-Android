@@ -11,6 +11,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include <assert.h>
 #include "soh/ResourceManagerHelpers.h"
+#include "mods/transformation_masks/gerudo_form.h"
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -155,8 +156,14 @@ void EnGe2_Init(Actor* thisx, PlayState* play) {
             break;
         case GE2_TYPE_GERUDO_CARD_GIVER:
             EnGe2_ChangeAction(this, GE2_ACTION_WAITLOOKATPLAYER);
-            this->actor.update = EnGe2_UpdateAfterTalk;
-            this->actionFunc = EnGe2_ForceTalk;
+            // Gerudo Mask cheat: wearing the mask makes Card-Giver Gerudos act like
+            // friendly Gerudos — no forced card-giving cutscene.
+            if (GerudoForm_IsActive()) {
+                this->actor.update = EnGe2_UpdateFriendly;
+            } else {
+                this->actor.update = EnGe2_UpdateAfterTalk;
+                this->actionFunc = EnGe2_ForceTalk;
+            }
             this->actor.targetMode = 6;
             break;
         default:

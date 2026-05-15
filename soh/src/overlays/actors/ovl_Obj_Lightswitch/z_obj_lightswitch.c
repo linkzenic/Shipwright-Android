@@ -7,8 +7,10 @@
 #include "z_obj_lightswitch.h"
 #include "vt.h"
 #include "overlays/actors/ovl_Obj_Oshihiki/z_obj_oshihiki.h"
+#include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
 #include "objects/object_lightswitch/object_lightswitch.h"
 #include "soh/OTRGlobals.h"
+#include "expansions/sw97/sw97_config.h"
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -104,6 +106,18 @@ static ColliderJntSphInit sColliderLightArrowInit = {
 
 bool sunSwitchActivatedByLightArrow = false;
 bool sunLightArrowsEnabledOnSunSwitchLoad = false;
+bool sunSwitchSw97ModeOnLoad = false;
+
+// SW97 light arrows (bow ARROW_SW97_LIGHT, slingshot ARROW_SEED_LIGHT) always
+// activate sun switches even when the Sunlight Arrows cheat is off — they're
+// "premium" elemental items. Vanilla light arrows still need the cheat.
+static u8 ObjLightswitch_IsSw97LightArrow(Actor* ac) {
+    if (ac == NULL || ac->id != ACTOR_EN_ARROW) {
+        return 0;
+    }
+    s16 p = (s16)ac->params;
+    return p == ARROW_SW97_LIGHT || p == ARROW_SEED_LIGHT;
+}
 
 static CollisionCheckInfoInit sColChkInfoInit = { 0, 12, 60, MASS_IMMOVABLE };
 
@@ -126,10 +140,13 @@ void ObjLightswitch_InitCollider(ObjLightswitch* this, PlayState* play) {
     // Initialize this with the sun switch, so it can't be affected by toggling while the actor is loaded
     sunLightArrowsEnabledOnSunSwitchLoad = CVarGetInteger(CVAR_ENHANCEMENT("SunlightArrows"), 0) ||
                                            (IS_RANDO && Randomizer_GetSettingValue(RSK_SUNLIGHT_ARROWS));
+    sunSwitchSw97ModeOnLoad = SW97_MEDALLIONS_ENABLED();
 
     Collider_InitJntSph(play, &this->collider);
-    // If "Sunlight Arrows" is enabled, set up the collider to allow Light Arrow hits
-    if (sunLightArrowsEnabledOnSunSwitchLoad) {
+    // Install the light-arrow-accepting collider for either the cheat or SW97 mode;
+    // SW97 mode then filters by arrow params in ObjLightswitch_Off so vanilla light
+    // arrows don't trigger when only SW97 mode is on.
+    if (sunLightArrowsEnabledOnSunSwitchLoad || sunSwitchSw97ModeOnLoad) {
         Collider_SetJntSph(play, &this->collider, &this->actor, &sColliderLightArrowInit, this->colliderItems);
     } else {
         Collider_SetJntSph(play, &this->collider, &this->actor, &sColliderJntSphInit, this->colliderItems);
@@ -285,15 +302,22 @@ void ObjLightswitch_SetupOff(ObjLightswitch* this) {
 }
 // A Sun Switch that is currently turned off
 void ObjLightswitch_Off(ObjLightswitch* this, PlayState* play) {
+    // When only SW97 mode is on (cheat off), reject hits from non-SW97 light arrows
+    // so vanilla light arrows still need the Sunlight Arrows cheat.
+    u8 acceptHit = 1;
+    if (sunSwitchSw97ModeOnLoad && !sunLightArrowsEnabledOnSunSwitchLoad) {
+        acceptHit = ObjLightswitch_IsSw97LightArrow(this->collider.base.ac);
+    }
+
     switch (this->actor.params >> 4 & 3) {
         case OBJLIGHTSWITCH_TYPE_STAY_ON:
         case OBJLIGHTSWITCH_TYPE_2:
-            if (this->collider.base.acFlags & AC_HIT) {
+            if ((this->collider.base.acFlags & AC_HIT) && acceptHit) {
                 ObjLightswitch_SetupTurnOn(this);
                 ObjLightswitch_SetSwitchFlag(this, play);
                 // Remember if we've been activated by a Light Arrow (or Light Rod), so we can
                 // prevent the switch from immediately turning back off
-                if (sunLightArrowsEnabledOnSunSwitchLoad) {
+                if (sunLightArrowsEnabledOnSunSwitchLoad || sunSwitchSw97ModeOnLoad) {
                     // Check if hit by Light Arrow actor OR by light damage (Light Rod)
                     u8 hitByLightSource = 0;
                     if (this->collider.base.ac != NULL && this->collider.base.ac->id == ACTOR_EN_ARROW) {
@@ -310,13 +334,13 @@ void ObjLightswitch_Off(ObjLightswitch* this, PlayState* play) {
             }
             break;
         case OBJLIGHTSWITCH_TYPE_1:
-            if ((this->collider.base.acFlags & AC_HIT) && !(this->prevFrameACflags & AC_HIT)) {
+            if ((this->collider.base.acFlags & AC_HIT) && !(this->prevFrameACflags & AC_HIT) && acceptHit) {
                 ObjLightswitch_SetupTurnOn(this);
                 ObjLightswitch_SetSwitchFlag(this, play);
             }
             break;
         case OBJLIGHTSWITCH_TYPE_BURN:
-            if (this->collider.base.acFlags & AC_HIT) {
+            if ((this->collider.base.acFlags & AC_HIT) && acceptHit) {
                 ObjLightswitch_SetupDisappearDelay(this);
                 ObjLightswitch_SetSwitchFlag(this, play);
             }
@@ -374,7 +398,8 @@ void ObjLightswitch_On(ObjLightswitch* this, PlayState* play) {
                 ObjLightswitch_SetupTurnOff(this);
             }
             // If hit by sunlight after already being turned on, then behave as if originally activated by sunlight
-            if (sunLightArrowsEnabledOnSunSwitchLoad && (this->collider.base.acFlags & AC_HIT)) {
+            if ((sunLightArrowsEnabledOnSunSwitchLoad || sunSwitchSw97ModeOnLoad) &&
+                (this->collider.base.acFlags & AC_HIT)) {
                 // Check if NOT hit by Light Arrow or Light Rod (i.e., hit by real sunlight)
                 u8 hitByLightSource = 0;
                 if (this->collider.base.ac != NULL && this->collider.base.ac->id == ACTOR_EN_ARROW) {
@@ -396,7 +421,8 @@ void ObjLightswitch_On(ObjLightswitch* this, PlayState* play) {
             break;
         case OBJLIGHTSWITCH_TYPE_2:
             // If hit by sunlight after already being turned on, then behave as if originally activated by sunlight
-            if (sunLightArrowsEnabledOnSunSwitchLoad && (this->collider.base.acFlags & AC_HIT)) {
+            if ((sunLightArrowsEnabledOnSunSwitchLoad || sunSwitchSw97ModeOnLoad) &&
+                (this->collider.base.acFlags & AC_HIT)) {
                 // Check if NOT hit by Light Arrow or Light Rod (i.e., hit by real sunlight)
                 u8 hitByLightSource = 0;
                 if (this->collider.base.ac != NULL && this->collider.base.ac->id == ACTOR_EN_ARROW) {

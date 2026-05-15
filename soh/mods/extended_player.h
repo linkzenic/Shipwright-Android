@@ -26,7 +26,7 @@ extern "C" {
 
 // Custom PLAYER_IA range
 #define CUSTOM_PLAYER_IA_START 0x43 // PLAYER_IA_ROCS_FEATHER_SKIJER
-#define CUSTOM_PLAYER_IA_END 0x74   // PLAYER_IA_MM_MASK_FIERCE_DEITY
+#define CUSTOM_PLAYER_IA_END 0x75   // PLAYER_IA_BOTTLE_MAGIC_MUSHROOM
 
 // MM Mask PLAYER_IA values (0x5D-0x74) — all no-op, transformation handled by item ID check
 #define PLAYER_IA_MM_MASK_POSTMAN 0x5D
@@ -53,6 +53,11 @@ extern "C" {
 #define PLAYER_IA_MM_MASK_CAPTAIN 0x72
 #define PLAYER_IA_MM_MASK_GIANT 0x73
 #define PLAYER_IA_MM_MASK_FIERCE_DEITY 0x74
+
+// Bottle-with-Magic-Mushroom (caught from Mask of Scents spots in Lost Woods).
+// Placed past the MM-mask range so it doesn't collide with PLAYER_IA_MM_MASK_POSTMAN
+// (which used to be 0x5D, same as the original enum slot).
+#define PLAYER_IA_BOTTLE_MAGIC_MUSHROOM 0x75
 
 // ============================================================================
 // FUNCTION POINTER TYPES
