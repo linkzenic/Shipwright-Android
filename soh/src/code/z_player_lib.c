@@ -15,6 +15,7 @@
 #include "mods/extended_equipment.h"
 #include "mods/items/logic/item_mitts.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/transformation_masks/gerudo_form.h"
 #include "mods/pak_loader/pak_loader.h"
 
 #include <stdlib.h>
@@ -564,6 +565,15 @@ void Player_SetBootData(PlayState* play, Player* this) {
 
 // Custom method used to determine if we're using a custom model for link
 uint8_t Player_IsCustomLinkModel() {
+    // Gerudo Form: treat the gerudo-rigged skel as a custom Link model. This
+    // skips the vanilla hardcoded WAIST/HEAD/hand overrides in
+    // Player_OverrideLimbDrawGameplayDefault, so the gerudo limb's own DL
+    // (e.g. gLinkAdultSkel_layer_Opaque for the torso, bone010_* for the
+    // head, etc.) stays as the renderer's choice instead of being clobbered
+    // by Link's vanilla belt/eyes/closed-hand DLs.
+    if (GerudoForm_IsActive()) {
+        return 1;
+    }
     return (LINK_IS_ADULT && ResourceGetIsCustomByName(gLinkAdultSkel)) ||
            (LINK_IS_CHILD && ResourceGetIsCustomByName(gLinkChildSkel));
 }

@@ -666,7 +666,7 @@ extern "C" void VoicePack_Init(void) {
     }
 
     s32 candidates = 0;
-    for (auto& entry : std::filesystem::recursive_directory_iterator(modsPath)) {
+    for (auto& entry : std::filesystem::directory_iterator(modsPath)) {
         if (entry.is_directory()) continue;
         if (entry.path().extension() != ".pak") continue;
 

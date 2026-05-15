@@ -1554,10 +1554,18 @@ static bool LoadPakModel(PakModel& model) {
         snprintf(model.displayName, sizeof(model.displayName), "%s", name.c_str());
     }
 
-    // Check if this is a zzequipment pak (equipment-only, no body model)
-    if (packageJson.find("\"zzequipment\"") != std::string::npos) {
+    // Equipment-only detection: classic zzequipment pipeline writes the literal
+    // type "zzequipment" in package.json, but some authors ship paks that just
+    // have an "equipment":[...] array with no "adult_model"/"child_model" keys.
+    // Both forms count as equipment-only.
+    bool hasZzEquipmentType = packageJson.find("\"zzequipment\"") != std::string::npos;
+    bool hasEquipmentArray = packageJson.find("\"equipment\"") != std::string::npos;
+    bool hasBodyKeys = (packageJson.find("\"adult_model\"") != std::string::npos) ||
+                       (packageJson.find("\"child_model\"") != std::string::npos);
+    if (hasZzEquipmentType || (hasEquipmentArray && !hasBodyKeys)) {
         model.isEquipmentOnly = 1;
-        PAK_LOG("Loading equipment pak: '%s'", model.displayName);
+        PAK_LOG("Loading equipment pak: '%s' (zzType=%d, equipArray=%d, bodyKeys=%d)",
+                model.displayName, (int)hasZzEquipmentType, (int)hasEquipmentArray, (int)hasBodyKeys);
 
         // Find the equipment array in JSON: "equipment": ["file1.zobj", "file2.zobj"]
         size_t eqPos = packageJson.find("\"equipment\"");
@@ -1654,6 +1662,18 @@ static bool LoadPakModel(PakModel& model) {
     childZobjName = JsonFindModelFile(packageJson, "child_model");
 
     PAK_LOG("Model '%s': adult='%s', child='%s'", model.displayName, adultZobjName.c_str(), childZobjName.c_str());
+
+    // If both zobj names are empty AND we never hit the equipment branch above,
+    // this pak shape is unrecognised — dump the JSON head so we can see what
+    // keys the author actually used (helps us extend the detector).
+    if (adultZobjName.empty() && childZobjName.empty()) {
+        std::string snippet = packageJson.substr(0, std::min<size_t>(packageJson.size(), 400));
+        // Strip newlines to keep the log line readable.
+        for (char& c : snippet) {
+            if (c == '\n' || c == '\r') c = ' ';
+        }
+        PAK_LOG("Unrecognised pak shape '%s' — package.json head: %s", model.displayName, snippet.c_str());
+    }
 
     // Extract and process .zobj files
     auto extractZobj = [&](const std::string& zobjName, u8** outData, u32* outSize) -> bool {
@@ -3036,13 +3056,12 @@ extern "C" void PakLoader_Init(void) {
     std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
     PAK_LOG("Mods path: %s", modsPath.c_str());
 
-    // Top-level-only .zobj scan (raw zzplayas/Z64Online zobjs without a .pak
-    // wrapper). Recursive walks risk picking up zobjs from extracted-pak dumps
-    // or third-party tool output, so we deliberately stay shallow.
+    // Both .pak and raw .zobj files are scanned at the top level of mods/ only —
+    // subfolders are intentionally ignored so users keep a flat layout.
     std::vector<std::string> rawZobjFiles;
 
     if (!modsPath.empty() && std::filesystem::exists(modsPath) && std::filesystem::is_directory(modsPath)) {
-        for (auto& entry : std::filesystem::recursive_directory_iterator(modsPath)) {
+        for (auto& entry : std::filesystem::directory_iterator(modsPath)) {
             if (entry.is_directory())
                 continue;
             if (entry.path().extension() == ".pak") {
