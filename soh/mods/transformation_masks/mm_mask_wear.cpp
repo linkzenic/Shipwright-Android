@@ -20,6 +20,7 @@
 
 #include "mods/transformation_masks/mm_mask_wear.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
+#include "mods/sound_translator/mm_sfx_ids.h"
 
 // Tunic color table from z_player_lib.c (non-static, extern accessible)
 extern "C" Color_RGB8 sTunicColors[];
@@ -852,7 +853,12 @@ extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
     if (sCurrentMmMask == itemId) {
         // Already wearing this mask - take it off
         sCurrentMmMask = ITEM_NONE;
+        if (sKamaroDancing || sBremenBgmStarted) {
+            Audio_QueueSeqCmd(NA_BGM_STOP);
+            sBremenBgmStarted = 0;
+        }
         sKamaroDancing = 0;
+        sBremenMarching = 0;
         sGreatFairyMenuOpen = 0;
         sCaptainHatSpawnTimer = 0;
     } else {
@@ -1237,11 +1243,7 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                                            PLAYER_STATE1_GETTING_ITEM)) {
                     sBremenMarching = 0;
                     if (sBremenBgmStarted) {
-                        if (MmSfx_IsAvailable()) {
-                            // SFX-loop stop: stop the closest available MM SFX
-                            // (Phase A fallback — see plan §2).
-                            MmSfx_Stop(0xFE01);
-                        }
+                        Audio_QueueSeqCmd(NA_BGM_STOP);
                         sBremenBgmStarted = 0;
                     }
                     break;
@@ -1269,12 +1271,15 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     sBremenWallTurnLockout = 0;
                     player->itemAction = PLAYER_IA_OCARINA_OF_TIME;
                     if (!sBremenBgmStarted) {
-                        if (MmSfx_IsAvailable()) {
-                            // SFX-loop start. The exact MM SFX/seq ID needs
-                            // to be registered in sContinuousSfxIds[] —
-                            // until then this is a placeholder.
-                            MmSfx_PlayAtPos(0xFE01, NULL);
-                        }
+                        // BGM playback for the Bremen march. The current MM
+                        // audio loader (mm_asset_loader.cpp) only handles
+                        // single-sample SFX from Soundfont_0 — it can't play
+                        // MM sequence files like NA_BGM_BREMEN_MARCH (0x53 in
+                        // MM). Until an MM seq loader exists, use OOT's
+                        // Kaepora Gaebora theme as a marchy placeholder
+                        // fanfare. Swap to MM_BGM_BREMEN_MARCH once
+                        // MmDirectAudio supports sequences.
+                        Audio_PlayFanfare(NA_BGM_OWL);
                         sBremenBgmStarted = 1;
                     }
                 }
@@ -1285,9 +1290,10 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     if (!CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B)) {
                         sBremenMarching = 0;
                         if (sBremenBgmStarted) {
-                            if (MmSfx_IsAvailable()) {
-                                MmSfx_Stop(0xFE01);
-                            }
+                            // Stop the placeholder OOT BGM. NA_BGM_STOP works
+                            // for both Audio_PlayFanfare and Audio_QueueSeqCmd
+                            // started tracks.
+                            Audio_QueueSeqCmd(NA_BGM_STOP);
                             sBremenBgmStarted = 0;
                         }
                         break;
@@ -1442,17 +1448,18 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                                                       player->skelAnime.limbCount, player->skelAnime.jointTable);
 
                         // === Pig-grunt SFX at MM frames 4 / 12 / 30 / 61 / 68 ===
-                        // NA_SE_VO_LI_POO_WAIT is MM-only — load from mm.o2r via MmSfx.
-                        // (Custom MM SFX ID placeholder — register once the real ID
-                        // is exposed by mm_asset_loader.)
+                        // sFidgetAnimSfxPigGrunt in MM uses NA_SE_VO_LI_POO_WAIT
+                        // (voicebank index 0x21 → MM SFX ID 0x6821). Loaded from
+                        // mm.o2r's Soundfont_0 via the same MmSfx path that the
+                        // Goron/Zora/Deku/FD forms use for their voice SFX.
                         s32 fi = (s32)sScentsSniffFrame;
                         if (fi != sScentsPrevSfxFrame) {
                             if (fi == 4 || fi == 12 || fi == 30 || fi == 61 || fi == 68) {
                                 if (MmSfx_IsAvailable()) {
-                                    MmSfx_PlayAtPos(0xFE02 /* NA_SE_VO_LI_POO_WAIT */,
-                                                    &player->actor.world.pos);
+                                    MmSfx_PlayAtPos(MM_NA_SE_VO_LI_POO_WAIT,
+                                                    &player->actor.projectedPos);
                                 } else {
-                                    // Fallback: OOT voice sound that vaguely fits.
+                                    // Fallback when mm.o2r isn't loaded: OOT voice.
                                     Sfx_PlaySfxCentered(NA_SE_VO_LI_RELAX);
                                 }
                             }
@@ -1525,23 +1532,35 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                             sKamaroDanceAnim = MmAnim_Load(MM_ANIM_ALINK_DANCE_LOOP);
                         }
                         if (sKamaroDanceAnim != NULL) {
+                            if (!sKamaroDancing) {
+                                // BGM playback for the Kamaro dance. MM uses
+                                // NA_BGM_KAMARO_DANCE (0x55 in MM) but the MM
+                                // audio loader currently can't play sequences.
+                                // OOT's Lon Lon Ranch Ingo theme is the closest
+                                // dance/fanfare BGM available — swap once MM
+                                // seq playback exists.
+                                Audio_PlayFanfare(NA_BGM_INGO);
+                            }
                             sKamaroDancing = 1;
                             sKamaroDanceFrame = 0.0f;
                         }
                     }
                 } else {
                     // A released → stop dancing
-                    if (sKamaroDancing && EnDu_IsDancing()) {
-                        // Stop Darunia's dance too (find him in Goron City)
-                        Actor* npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
-                        while (npc != NULL) {
-                            if (npc->id == ACTOR_EN_DU) {
-                                EnDu_StopDancing(npc, play);
-                                break;
+                    if (sKamaroDancing) {
+                        Audio_QueueSeqCmd(NA_BGM_STOP);
+                        if (EnDu_IsDancing()) {
+                            // Stop Darunia's dance too (find him in Goron City)
+                            Actor* npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
+                            while (npc != NULL) {
+                                if (npc->id == ACTOR_EN_DU) {
+                                    EnDu_StopDancing(npc, play);
+                                    break;
+                                }
+                                npc = npc->next;
                             }
-                            npc = npc->next;
+                            sDaruniaDanceTimer = 0;
                         }
-                        sDaruniaDanceTimer = 0;
                     }
                     sKamaroDancing = 0;
                 }
@@ -1703,8 +1722,8 @@ extern "C" void MmMaskWear_Clear(void) {
     sBremenMarching = 0;
     sBremenMarchFrame = 0.0f;
     sBremenWallTurnLockout = 0;
-    if (sBremenBgmStarted && MmSfx_IsAvailable()) {
-        MmSfx_Stop(0xFE01);
+    if (sBremenBgmStarted) {
+        Audio_QueueSeqCmd(NA_BGM_STOP);
     }
     sBremenBgmStarted = 0;
     // Mask of Scents transient state (anim cache persists, like Kamaro's).

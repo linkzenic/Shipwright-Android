@@ -226,6 +226,7 @@ extern "C" {
 #define MM_NA_SE_VO_LI_MAGIC_ATTACK 0x681C  // Magic attack
 #define MM_NA_SE_VO_BL_DOWN 0x681D          // Knocked out
 #define MM_NA_SE_VO_LI_DEMO_DAMAGE 0x681E   // Demo damage
+#define MM_NA_SE_VO_LI_POO_WAIT 0x6821      // Pig grunt — Mask of Scents sniff fidget
 
 // --- Deku Link voice (0x6880-0x689F) --- (FIX: was 0x68E0, correct is 0x6880)
 #define MM_NA_SE_VO_DEKU_SWORD_N 0x6880       // Normal attack

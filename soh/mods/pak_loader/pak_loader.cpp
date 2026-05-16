@@ -28,6 +28,7 @@ extern PlayState* gPlayState;
 #include <cstring>
 #include <set>
 #include <map>
+#include <algorithm>
 #include <zlib.h>
 
 // .pak files are scanned from mods/ at startup (and from harpoon/skins/
@@ -1071,15 +1072,21 @@ static const EquipSlotMapping sEquipSlotMap[] = {
     { "sword1_sheath", 0x50C0 }, // DL_SWORD_SHEATH_1
     { "sword2_blade", 0x5100 },  // DL_SWORD_BLADE_3 (Biggoron)
     { "sword2_hilt", 0x50E8 },   // DL_SWORD_HILT_3
+    { "sword2_broken", 0x51E0 }, // DL_SWORD_BLADE_3_BROKEN
     // Shields
     { "shield0_held", 0x5108 }, // DL_SHIELD_1 (Deku)
     { "shield1_held", 0x5110 }, // DL_SHIELD_2 (Hylian)
     { "shield2_held", 0x5118 }, // DL_SHIELD_3 (Mirror)
     // Ranged
-    { "bow", 0x5138 },       // DL_BOW
-    { "hookshot", 0x5148 },  // DL_HOOKSHOT
-    { "boomerang", 0x5178 }, // DL_BOOMERANG
-    { "slingshot", 0x5180 }, // DL_SLINGSHOT
+    { "bow", 0x5138 },             // DL_BOW
+    { "bow_string", 0x5140 },      // DL_BOW_STRING
+    { "hookshot", 0x5148 },        // DL_HOOKSHOT
+    { "hookshot_chain", 0x5150 },  // DL_HOOKSHOT_CHAIN
+    { "hookshot_hook", 0x5158 },   // DL_HOOKSHOT_HOOK
+    { "hookshot_aim", 0x5160 },    // DL_HOOKSHOT_AIM
+    { "boomerang", 0x5178 },       // DL_BOOMERANG
+    { "slingshot", 0x5180 },       // DL_SLINGSHOT
+    { "slingshot_string", 0x5188 }, // DL_SLINGSHOT_STRING
     // Items
     { "deku_stick", 0x5130 },  // DL_DEKU_STICK
     { "bottle", 0x5120 },      // DL_BOTTLE
@@ -1087,6 +1094,37 @@ static const EquipSlotMapping sEquipSlotMap[] = {
     { "ocarina_1_a", 0x5128 }, // DL_OCARINA_2 (adult OoT)
     { "ocarina_1", 0x5128 },   // DL_OCARINA_2 (alternate name)
     { "hammer", 0x51F0 },      // DL_HAMMER
+    { "goron_bracelet", 0x5198 }, // DL_GORON_BRACELET
+    // Boots (Iron + Hover)
+    { "boot1_l", 0x5228 },     // DL_BOOT_LIRON
+    { "boot1_r", 0x5230 },     // DL_BOOT_RIRON
+    { "boot2_l", 0x5238 },     // DL_BOOT_LHOVER
+    { "boot2_r", 0x5240 },     // DL_BOOT_RHOVER
+    // Alternate naming conventions for boots
+    { "boot_l_iron", 0x5228 },
+    { "boot_r_iron", 0x5230 },
+    { "boot_l_hover", 0x5238 },
+    { "boot_r_hover", 0x5240 },
+    { "iron_boot_l", 0x5228 },
+    { "iron_boot_r", 0x5230 },
+    { "hover_boot_l", 0x5238 },
+    { "hover_boot_r", 0x5240 },
+    // Gauntlet upgrades (silver/gold)
+    { "upgrade_lforearm", 0x51F8 },
+    { "upgrade_lhand", 0x5200 },
+    { "upgrade_lfist", 0x5208 },
+    { "upgrade_rforearm", 0x5210 },
+    { "upgrade_rhand", 0x5218 },
+    { "upgrade_rfist", 0x5220 },
+    // Child masks (Skull/Spooky/Keaton/Truth/Goron/Zora/Gerudo/Bunny)
+    { "mask_skull", 0x51A0 },
+    { "mask_spooky", 0x51A8 },
+    { "mask_keaton", 0x51B0 },
+    { "mask_truth", 0x51B8 },
+    { "mask_goron", 0x51C0 },
+    { "mask_zora", 0x51C8 },
+    { "mask_gerudo", 0x51D0 },
+    { "mask_bunny", 0x51D8 },
     // Sentinel
     { NULL, 0 }
 };
@@ -2360,6 +2398,28 @@ static void RebuildCachedEquipDLs(void) {
 
     PAK_LOG("Rebuilt equipment cache: %d DLs (body=%d equip=%d forced=%d adult=%d fistMissing=%d)",
             (int)sCachedEquipDLs.size(), bodyIdx, sSelectedEquipIndex, sForcedEquipIndex, isAdult, (int)anyFistMissing);
+
+    // Diagnostic: dump every alias offset currently in the cache so we can see
+    // which slots a pak actually provides at runtime (helps spot "the master
+    // sword unsheathed isn't replacing" → does the cache have 0x5450? 0x50E0?).
+    // Kept compact: 12 hex offsets per line.
+    {
+        std::string buf;
+        int n = 0;
+        char tmp[16];
+        for (auto& [k, v] : sCachedEquipDLs) {
+            snprintf(tmp, sizeof(tmp), "%04X%s", k, v == PAK_DL_STUB ? "(stub)" : "");
+            if (!buf.empty()) buf += ',';
+            buf += tmp;
+            if (++n % 12 == 0) {
+                PAK_LOG("  cache: %s", buf.c_str());
+                buf.clear();
+            }
+        }
+        if (!buf.empty()) {
+            PAK_LOG("  cache: %s", buf.c_str());
+        }
+    }
 }
 
 // Get cached equipment DLs, rebuilding only when selection changes.
@@ -3139,22 +3199,31 @@ extern "C" void PakLoader_Init(void) {
 
     PAK_LOG("Initialization complete: %d models available", (int)sModels.size());
 
-    // Sanitize saved CVars to prevent out-of-range crashes
+    // Light sanitisation: only clamp CVars that are clearly out of range or
+    // mis-classified by category (e.g. an Equipment CVar pointing at a body
+    // pak). The deeper "is this value actually in the dropdown map" check is
+    // now done per-frame in each combobox's PreFunc, which can also rebuild
+    // the map dynamically — that avoids accidentally clamping a valid
+    // selection here in Init if a pak's ready-state is still settling.
     s32 savedAdult = CVarGetInteger("gMods.PakLoader.AdultModel", -1);
     s32 savedChild = CVarGetInteger("gMods.PakLoader.ChildModel", -1);
     s32 savedEquip = CVarGetInteger("gMods.PakLoader.Equipment", -1);
     s32 count = (s32)sModels.size();
 
+    bool dirty = false;
     if (savedAdult >= count || (savedAdult >= 0 && sModels[savedAdult].isEquipmentOnly)) {
         CVarSetInteger("gMods.PakLoader.AdultModel", -1);
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        dirty = true;
     }
     if (savedChild >= count || (savedChild >= 0 && sModels[savedChild].isEquipmentOnly)) {
         CVarSetInteger("gMods.PakLoader.ChildModel", -1);
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        dirty = true;
     }
     if (savedEquip >= count || (savedEquip >= 0 && !sModels[savedEquip].isEquipmentOnly)) {
         CVarSetInteger("gMods.PakLoader.Equipment", -1);
+        dirty = true;
+    }
+    if (dirty) {
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 
@@ -3188,13 +3257,16 @@ extern "C" u8 PakLoader_HasActiveModel(void) {
     // Equipment-only paks (forced or selected) work independently of the body
     // toggle — checked BEFORE the Enabled early-return so an equipment pak can
     // be applied without "Enable Custom Player Model" being on.
+    //
+    // ANY non-empty equipment cache counts as "active" — limiting to sword/
+    // shield combined DLs would falsely report inactive for paks that only
+    // ship a bow / hookshot / boots / hammer, and the L_HAND/R_HAND/SHEATH/
+    // WAIST override gate in z_player_lib.c:1589 would silently skip those
+    // paks even though their data is present in the cache.
     if (sSelectedEquipIndex >= 0 || sForcedEquipIndex >= 0) {
         sGetEquipDLs(); // ensure cache is built/rebuilt
-        if (!sCachedEquipDLs.empty() &&
-            (sCachedEquipDLs.count(0x5448) || sCachedEquipDLs.count(0x5450) ||
-             sCachedEquipDLs.count(0x5468) || sCachedEquipDLs.count(0x5470))) {
+        if (!sCachedEquipDLs.empty())
             return 1;
-        }
     }
 
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
@@ -3418,12 +3490,23 @@ extern "C" void PakLoader_ForceModel(const char* pakPath) {
     if (sForcedModelIndex >= 0 && sForcedModelPath == pakPath)
         return;
 
-    // Check if this pak is already loaded in sModels
+    // Try exact path first, then basename — same rationale as PakLoader_ForceEquipment.
+    std::string requestedBase = std::filesystem::path(pakPath).filename().string();
     for (s32 i = 0; i < (s32)sModels.size(); i++) {
         if (sModels[i].pakPath == pakPath) {
             sForcedModelIndex = i;
             sForcedModelPath = pakPath;
-            PAK_LOG("Forced model (cached): '%s' (index %d)", sModels[i].displayName, i);
+            PAK_LOG("Forced model (cached, exact): '%s' (index %d)", sModels[i].displayName, i);
+            return;
+        }
+    }
+    for (s32 i = 0; i < (s32)sModels.size(); i++) {
+        std::string base = std::filesystem::path(sModels[i].pakPath).filename().string();
+        if (base == requestedBase) {
+            sForcedModelIndex = i;
+            sForcedModelPath = sModels[i].pakPath;
+            PAK_LOG("Forced model (cached, basename '%s'): '%s' (index %d)",
+                    requestedBase.c_str(), sModels[i].displayName, i);
             return;
         }
     }
@@ -3489,12 +3572,29 @@ extern "C" void PakLoader_ForceEquipment(const char* pakPath) {
     if (sForcedEquipIndex >= 0 && sForcedEquipPath == pakPath)
         return;
 
-    // Check if already loaded
+    // Custom items hardcode pak paths (e.g. "nei/Equip_Four_Sword.pak") but the
+    // user may have placed the .pak in mods/ or harpoon/skins/. Match first by
+    // exact path, then fall back to basename matching so the asset is found
+    // wherever it lives.
+    std::string requestedBase = std::filesystem::path(pakPath).filename().string();
+
+    // Pass 1: exact path match
     for (s32 i = 0; i < (s32)sModels.size(); i++) {
         if (sModels[i].pakPath == pakPath) {
             sForcedEquipIndex = i;
             sForcedEquipPath = pakPath;
-            PAK_LOG("Forced equipment (cached): '%s' (index %d)", sModels[i].displayName, i);
+            PAK_LOG("Forced equipment (cached, exact): '%s' (index %d)", sModels[i].displayName, i);
+            return;
+        }
+    }
+    // Pass 2: basename match
+    for (s32 i = 0; i < (s32)sModels.size(); i++) {
+        std::string base = std::filesystem::path(sModels[i].pakPath).filename().string();
+        if (base == requestedBase) {
+            sForcedEquipIndex = i;
+            sForcedEquipPath = sModels[i].pakPath;
+            PAK_LOG("Forced equipment (cached, basename '%s'): '%s' (index %d)",
+                    requestedBase.c_str(), sModels[i].displayName, i);
             return;
         }
     }

@@ -39,6 +39,7 @@ extern "C" void Save_InitFile(int isDebug);
 extern "C" Gfx* ResourceMgr_LoadGfxByName(const char* path);
 
 #include <cmath>
+#include <algorithm>
 
 // =============================================================================
 // File-scope storage

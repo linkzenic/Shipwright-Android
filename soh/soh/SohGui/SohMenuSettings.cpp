@@ -808,6 +808,25 @@ void SohMenu::AddMenuSettings() {
                 if (PakLoader_GetModelCount() == 0 || !CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
                     info.options->disabled = true;
                 }
+                // Rebuild the comboMap from current sModels every frame so the
+                // dropdown stays in sync if paks load after AddMenuSettings ran
+                // (lazy init), or if Force* added entries at runtime. Also
+                // clamp the CVar to -1 if it points outside the rebuilt map —
+                // otherwise Combobox<int>::at() throws std::out_of_range and
+                // crashes the renderer.
+                auto opt = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                opt->comboMap.clear();
+                opt->comboMap[-1] = "Default Link";
+                s32 n = PakLoader_GetModelCount();
+                for (s32 i = 0; i < n; i++) {
+                    if (PakLoader_ModelHasAdult(i)) {
+                        opt->comboMap[i] = PakLoader_GetModelName(i);
+                    }
+                }
+                s32 v = CVarGetInteger("gMods.PakLoader.AdultModel", -1);
+                if (v >= 0 && !opt->comboMap.count(v)) {
+                    CVarSetInteger("gMods.PakLoader.AdultModel", -1);
+                }
             })
             .PostFunc([](WidgetInfo& info) {
                 if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
@@ -825,6 +844,19 @@ void SohMenu::AddMenuSettings() {
             .PreFunc([](WidgetInfo& info) {
                 if (PakLoader_GetModelCount() == 0 || !CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
                     info.options->disabled = true;
+                }
+                auto opt = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                opt->comboMap.clear();
+                opt->comboMap[-1] = "Default Link";
+                s32 n = PakLoader_GetModelCount();
+                for (s32 i = 0; i < n; i++) {
+                    if (PakLoader_ModelHasChild(i)) {
+                        opt->comboMap[i] = PakLoader_GetModelName(i);
+                    }
+                }
+                s32 v = CVarGetInteger("gMods.PakLoader.ChildModel", -1);
+                if (v >= 0 && !opt->comboMap.count(v)) {
+                    CVarSetInteger("gMods.PakLoader.ChildModel", -1);
                 }
             })
             .PostFunc([](WidgetInfo& info) {
@@ -850,6 +882,21 @@ void SohMenu::AddMenuSettings() {
             AddWidget(path, "Equipment Pack", WIDGET_CVAR_COMBOBOX)
                 .CVar("gMods.PakLoader.Equipment")
                 .RaceDisable(false)
+                .PreFunc([](WidgetInfo& info) {
+                    auto opt = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                    opt->comboMap.clear();
+                    opt->comboMap[-1] = "Default Equipment";
+                    s32 n = PakLoader_GetModelCount();
+                    for (s32 i = 0; i < n; i++) {
+                        if (PakLoader_ModelIsEquipmentOnly(i)) {
+                            opt->comboMap[i] = PakLoader_GetModelName(i);
+                        }
+                    }
+                    s32 v = CVarGetInteger("gMods.PakLoader.Equipment", -1);
+                    if (v >= 0 && !opt->comboMap.count(v)) {
+                        CVarSetInteger("gMods.PakLoader.Equipment", -1);
+                    }
+                })
                 .PostFunc([](WidgetInfo& info) {
                     // Equipment works independently of the body-model toggle —
                     // pak_loader resolves vanilla fists/hands at draw time so an
@@ -904,6 +951,18 @@ void SohMenu::AddMenuSettings() {
                 .PreFunc([](WidgetInfo& info) {
                     if (!CVarGetInteger("gMods.VoicePack.Enabled", 0)) {
                         info.options->disabled = true;
+                    }
+                    auto opt = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                    opt->comboMap.clear();
+                    opt->comboMap[-1] = "None";
+                    s32 n = VoicePack_GetCount();
+                    for (s32 i = 0; i < n; i++) {
+                        const char* nm = VoicePack_GetName(i);
+                        opt->comboMap[i] = nm ? nm : "(unnamed)";
+                    }
+                    s32 v = CVarGetInteger("gMods.VoicePack.Selection", -1);
+                    if (v >= 0 && !opt->comboMap.count(v)) {
+                        CVarSetInteger("gMods.VoicePack.Selection", -1);
                     }
                 })
                 .PostFunc([](WidgetInfo& info) {

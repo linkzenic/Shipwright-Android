@@ -13,11 +13,7 @@
  * slot state without a lock.
  */
 
-#include "voice_pack.h"
-
 #include <libultraship/libultra.h>
-#include "z64.h"
-#include "soh/OTRGlobals.h"
 
 #include <atomic>
 #include <cstdio>
@@ -39,6 +35,10 @@
 #include <vorbis/vorbisfile.h>
 
 #include <spdlog/spdlog.h>
+
+#include "voice_pack.h"
+#include "z64.h"
+#include "soh/OTRGlobals.h"
 
 // ============================================================================
 // Logging

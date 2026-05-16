@@ -400,6 +400,17 @@ static void ArrowSoul_Fly(ArrowSoul* this, PlayState* play) {
         this->timer = 32;
         this->alpha = 255;
         ArrowSoul_TryTransform(arrow, play);
+        // Soul arrows refund Link 6 magic when they hit an actual enemy
+        // (harvesting the target's "spirit"). Skip pots, breakable walls,
+        // doors, etc. — only ENEMY / BOSS targets count.
+        Actor* hit = arrow->collider.base.at;
+        if (hit != NULL && hit->update != NULL &&
+            (hit->category == ACTORCAT_ENEMY || hit->category == ACTORCAT_BOSS)) {
+            gSaveContext.magic += 6;
+            if (gSaveContext.magic > gSaveContext.magicCapacity) {
+                gSaveContext.magic = gSaveContext.magicCapacity;
+            }
+        }
     } else if (arrow->timer < 34) {
         if (this->alpha < 35) {
             Actor_Kill(&this->actor);
