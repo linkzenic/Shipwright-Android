@@ -51,6 +51,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           TAG="${{ github.ref_name }}"
           OBJ_TYPE=$(git tag -l --format='%(objecttype)' "${TAG}")
           if [ "${OBJ_TYPE}" != "tag" ]; then
