@@ -11,7 +11,7 @@ help:
 	@ echo "  make setup - Install container environment"
 	@ echo "  make build - Build project through the container"
 	@ echo "  make build_release - Build project release through the container"
-	@ echo "  make clean_build - Wipe build cache and soh.o2r, then build release (CI-equivalent)"
+	@ echo "  make clean_build - Wipe cmake cache and soh.o2r, then build release (CI-equivalent)"
 	@ echo "  make create_container - Local build the container"
 	@ echo ""
 
