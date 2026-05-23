@@ -42,10 +42,19 @@ jobs:
           cmake --build build-linux --target GenerateSohOtr --parallel
           cp soh/soh.o2r Android/app/src/main/assets/soh.o2r
 
+      - name: Decode keystore
+        run: |
+          echo '${{ secrets.SIGNING_KEYSTORE_B64 }}' | base64 -d > Android/app/release.jks
+
       - name: Build release APK
         env:
           GIT_TAG: ${{ github.ref_name }}
-        run: cd Android && ./gradlew assembleRelease
+        run: |
+          cd Android && ./gradlew assembleRelease \
+            -PstoreFile=release.jks \
+            -PstorePassword=${{ secrets.SIGNING_KEY_PASSWORD }} \
+            -PkeyAlias=${{ secrets.SIGNING_KEY_ALIAS }} \
+            -PkeyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}
 
       - name: Rename APK
         run: |

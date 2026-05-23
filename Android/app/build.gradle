@@ -23,6 +23,16 @@ android {
         versionCode 10
         versionName "9.2.3"
     }
+    signingConfigs {
+        release {
+            if (project.hasProperty('storeFile')) {
+                storeFile file(storeFile)
+                storePassword project.storePassword
+                keyAlias project.keyAlias
+                keyPassword project.keyPassword
+            }
+        }
+    }
     buildTypes {
         debug {
             externalNativeBuild {
@@ -37,7 +47,7 @@ android {
             minifyEnabled false
             debuggable false
             jniDebuggable false
-            signingConfig signingConfigs.debug
+            signingConfig signingConfigs.release
             externalNativeBuild {
                 cmake {
                     arguments "-DSDL_SHARED=ON", "-DANDROID_STL=c++_static", "-DHAVE_LD_VERSION_SCRIPT=OFF",'-DUSE_OPENGLES=ON', "-DBUILD_REMOTE_CONTROL=1"
