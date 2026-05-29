@@ -28,7 +28,8 @@ typedef enum MmPlayerTransformation {
     MM_PLAYER_FORM_HUMAN = 4,
     MM_PLAYER_FORM_PIKACHU = 5,
     MM_PLAYER_FORM_GARO = 6,
-    MM_PLAYER_FORM_MAX = 7
+    MM_PLAYER_FORM_GERUDO = 7,
+    MM_PLAYER_FORM_MAX = 8
 } MmPlayerTransformation;
 
 // OOT mask type enum (for transformation mask identification)
@@ -39,7 +40,8 @@ typedef enum TransformMaskId {
     TRANSFORM_MASK_DEKU,
     TRANSFORM_MASK_FIERCE_DEITY,
     TRANSFORM_MASK_KEATON,
-    TRANSFORM_MASK_GARO
+    TRANSFORM_MASK_GARO,
+    TRANSFORM_MASK_GERUDO
 } TransformMaskId;
 
 // =============================================================================
@@ -189,6 +191,12 @@ u8 TransformMasks_HasSkeleton(void);
 // Redirect OOT voice SFX to MM equivalent voice for current form.
 // Called from Player_PlayVoiceSfx when transformed, instead of suppressing.
 void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos);
+
+// Redirect OOT step/walk SFX to MM form-specific sample (Deku/Zora/Goron).
+// Returns 1 if the MM SFX was played and the OOT step should be skipped;
+// returns 0 for FD/Garo/Gerudo/Human so OOT handles it normally. Called from
+// Player_PlaySteppingSfx and Player_PlayFloorSfxByAge in z_player.c.
+u8 TransformMasks_TryPlayMmStepSfx(u16 ootStepSfxId, Vec3f* pos);
 
 // FD skin mode: returns true when FD is active (OOT handles gameplay, only DLs swapped)
 u8 TransformMasks_IsFDSkinMode(void);

@@ -20,40 +20,107 @@ namespace HarpoonTemplates {
 //
 // NOT included: heart pieces / heart containers (permanent progression),
 // scene flags (story progress).
+// Mirror of SavedSceneFlags in z64save.h. Lives in our namespace so the
+// header doesn't have to drag z64.h around.
+struct TplSceneFlags {
+    uint32_t chest;
+    uint32_t swch;
+    uint32_t clear;
+    uint32_t collect;
+    uint32_t unk;
+    uint32_t rooms;
+    uint32_t floors;
+};
+
 struct Template {
     std::string name;
 
-    // Inventory — full extended-inventory coverage:
-    //   [ 0..23] vanilla OoT items (hookshot, bow, ocarina, etc.)
-    //   [24..47] Shipwright custom items (Roc's Feather, Spinner, Deku
-    //            Leaf, Cane of Somaria, Shovel, etc.)
-    //   [48..71] MM masks (Deku, Goron, Zora, Fierce Deity, etc.)
-    // Loop bounds in Templates.cpp use ARRAY_COUNT so future inventory
-    // expansion just bumps this array size.
+    // ---- Inventory ---------------------------------------------------------
+    //   [ 0..23] vanilla OoT items
+    //   [24..47] Shipwright custom items (Roc's Feather, Spinner, …)
+    //   [48..71] MM masks
     uint8_t items[72];
     s8      ammo[16];
 
-    // Equipment.
+    // ---- Equipment / upgrades ---------------------------------------------
     uint32_t equipment;
     uint32_t upgrades;
 
-    // Resources.
+    // ---- Resources --------------------------------------------------------
     int16_t  rupees;
     int16_t  magic;
     int16_t  magicCapacity;
     int16_t  healthCapacity;
 
-    // Quest items (songs, stones, medallions).
+    // ---- Quest items ------------------------------------------------------
     uint32_t questItems;
-
-    // Dungeon items per-dungeon.
     uint8_t  dungeonItems[20];
+    int8_t   dungeonKeys[19];   // small keys per dungeon (no keys for Barinade)
+    int16_t  gsTokens;          // gold skulltula tokens counter
 
-    // GM movement restrictions (applied alongside the inventory).
+    // ---- GM movement restrictions ----------------------------------------
     bool     restrictNoClimb;
     bool     restrictNoGrab;
     bool     restrictNoCrawl;
     bool     restrictNoTalk;
+
+    // ---- Save-state progression flags (full overwrite) -------------------
+    uint16_t eventChkInf[14];
+    uint16_t itemGetInf[4];
+    uint16_t infTable[30];
+    uint16_t eventInf[4];
+
+    // Randomizer INF bitmask (variable length — see (RAND_INF_MAX+15)/16).
+    std::vector<uint16_t> randomizerInf;
+
+    // ---- File metadata ----------------------------------------------------
+    int32_t  fileNum;
+    uint8_t  playerName[8];
+    uint8_t  filenameLanguage;
+
+    // ---- Defense / Magic acquisition --------------------------------------
+    uint8_t  isDoubleDefenseAcquired;
+    int16_t  defenseHearts;
+    int8_t   magicLevel;
+    uint8_t  isMagicAcquired;
+    uint8_t  isDoubleMagicAcquired;
+
+    // ---- Time / counters --------------------------------------------------
+    uint16_t dayTime;
+    int32_t  totalDays;
+    uint16_t deaths;
+    uint8_t  bgsFlag;
+    uint16_t swordHealth;
+    int32_t  bgsDayCount;
+
+    // ---- Entrance / scene state ------------------------------------------
+    int32_t  entranceIndex;
+    int32_t  cutsceneIndex;
+
+    // ---- Timers -----------------------------------------------------------
+    uint16_t naviTimer;
+    int16_t  timerState;
+    int16_t  timerSeconds;
+    int16_t  subTimerState;
+    int16_t  subTimerSeconds;
+
+    // ---- Settings ---------------------------------------------------------
+    uint8_t  audioSetting;
+    int16_t  n64ddFlag;
+    uint8_t  zTargetSetting;
+
+    // ---- Randomizer-specific scalars -------------------------------------
+    uint8_t  triforcePiecesCollected;
+    uint8_t  bombchuUpgradeLevel;
+
+    // ---- High scores ------------------------------------------------------
+    int32_t  highScores[7];
+
+    // ---- Gold skulltulas --------------------------------------------------
+    int32_t  gsFlags[6];
+
+    // ---- Per-scene saved flags (124 scenes) ------------------------------
+    TplSceneFlags sceneFlags[124];
 };
 
 // ---- Public API ----
@@ -86,6 +153,19 @@ bool ApplyToLocal(const std::string& name);
 nlohmann::json BuildTemplateApplyPayload(uint32_t targetClientId,
                                           const Template& t);
 void HandleTemplateApply(const nlohmann::json& payload);
+
+// ---- Serialization (used by RemoteSaveEditor for peek payloads) ----
+nlohmann::json SerializeTemplate(const Template& t);
+Template       DeserializeTemplate(const nlohmann::json& j);
+
+// Snapshot the LOCAL player's gSaveContext into the passed Template,
+// without touching disk or the in-memory template list. Used by
+// RemoteSaveEditor::HandlePeekRequest to answer the GM.
+void CaptureLocalState(Template& t);
+
+// Add or overwrite a template by name and persist all templates to
+// disk. Returns false if name is empty.
+bool SaveAsTemplate(const std::string& name, Template src);
 
 }  // namespace HarpoonTemplates
 

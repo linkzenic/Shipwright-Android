@@ -1,5 +1,6 @@
 #include "Harpoon.h"
 #include "HarpoonSkinSync.h"
+#include "Combat/CombatSync.h"
 #include "PropHunt/PropHunt.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
@@ -38,6 +39,22 @@ void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw);
 void GustJar_SpawnBlowVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw, u8 element);
 #define HARPOON_GUST_MODE_ABSORB 2
 #define HARPOON_GUST_MODE_BLOW   3
+}
+
+// =============================================================================
+// Per-clientId diagnostic memos
+// =============================================================================
+// Both maps memoize the last logged state per cid so the SPDLOG_INFO calls
+// inside Update/Draw don't spam every frame the dummy stays in the same
+// state. They erase on state CHANGE but never on disconnect or room-left,
+// so without an explicit clear they'd grow by one entry per cid the server
+// ever sees. HarpoonDummyPlayer_ClearPerClientDiagnostics drops both.
+static std::map<uint32_t, std::string> sLastExileReason;
+static std::map<uint32_t, std::string> sLastDecision;
+
+void HarpoonDummyPlayer_ClearPerClientDiagnostics() {
+    sLastExileReason.clear();
+    sLastDecision.clear();
 }
 
 // =============================================================================
@@ -242,26 +259,26 @@ static void HarpoonDummyPlayer_DrawMmForm(Actor* actor, PlayState* play, Harpoon
 // up its damage automatically. Slots that previously had damage=0 are now
 // non-zero so a hit with that bit set actually deals damage in PvP.
 static DamageTable HarpoonDummyPlayerDamageTable = {
-    /* Deku nut      */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_STUN),
-    /* Deku stick    */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_NORMAL),
+    /* Deku nut      */ DMG_ENTRY(0, HARPOON_HIT_RESPONSE_STUN),     // stun only
+    /* Deku stick    */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_NORMAL),
     /* Slingshot     */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_NORMAL),
-    /* Explosive     */ DMG_ENTRY(4, HARPOON_HIT_RESPONSE_NORMAL),
-    /* Boomerang     */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_STUN),
-    /* Normal arrow  */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_NORMAL),
+    /* Explosive     */ DMG_ENTRY(2, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE), // vanilla bomb
+    /* Boomerang     */ DMG_ENTRY(0, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE), // 0 dmg + big kb
+    /* Normal arrow  */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_NORMAL),
     /* Hammer swing  */ DMG_ENTRY(4, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE),
     /* Hookshot      */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_STUN),
     /* Kokiri sword  */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_NORMAL),
     /* Master sword  */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_NORMAL),
     /* Giant's Knife */ DMG_ENTRY(4, HARPOON_HIT_RESPONSE_NORMAL),
-    /* Fire arrow    */ DMG_ENTRY(3, HARPOON_HIT_RESPONSE_FIRE),
-    /* Ice arrow     */ DMG_ENTRY(4, PLAYER_HIT_RESPONSE_ICE_TRAP),
-    /* Light arrow   */ DMG_ENTRY(3, PLAYER_HIT_RESPONSE_ELECTRIC_SHOCK),
-    /* Unk arrow 1   */ DMG_ENTRY(3, HARPOON_HIT_RESPONSE_NORMAL), // sw97 dark arrow
-    /* Unk arrow 2   */ DMG_ENTRY(3, HARPOON_HIT_RESPONSE_NORMAL), // sw97 soul arrow
-    /* Unk arrow 3   */ DMG_ENTRY(3, HARPOON_HIT_RESPONSE_NORMAL), // sw97 wind arrow
-    /* Fire magic    */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_FIRE),
-    /* Ice magic     */ DMG_ENTRY(3, PLAYER_HIT_RESPONSE_ICE_TRAP),
-    /* Light magic   */ DMG_ENTRY(2, PLAYER_HIT_RESPONSE_ELECTRIC_SHOCK),
+    /* Fire arrow    */ DMG_ENTRY(2, HARPOON_HIT_RESPONSE_FIRE),     // + burn DOT via status
+    /* Ice arrow     */ DMG_ENTRY(0, PLAYER_HIT_RESPONSE_ICE_TRAP),  // freeze only, no damage
+    /* Light arrow   */ DMG_ENTRY(4, HARPOON_HIT_RESPONSE_LIGHT),    // dedicated LIGHT type
+    /* Unk arrow 1   */ DMG_ENTRY(3, HARPOON_HIT_RESPONSE_DARK),     // sw97 dark arrow + blindness
+    /* Unk arrow 2   */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_SOUL_DRAIN), // sw97 soul arrow
+    /* Unk arrow 3   */ DMG_ENTRY(0, HARPOON_HIT_RESPONSE_WIND_PUSH),  // sw97 wind arrow
+    /* Fire magic    */ DMG_ENTRY(3, HARPOON_HIT_RESPONSE_FIRE),     // SW97 magic fire
+    /* Ice magic     */ DMG_ENTRY(0, PLAYER_HIT_RESPONSE_ICE_TRAP),  // freeze 5s
+    /* Light magic   */ DMG_ENTRY(0, HARPOON_HIT_RESPONSE_LIGHT),    // heals friendlies via status
     /* Shield        */ DMG_ENTRY(0, PLAYER_HIT_RESPONSE_NONE),
     /* Mirror Ray    */ DMG_ENTRY(0, PLAYER_HIT_RESPONSE_NONE),
     /* Kokiri spin   */ DMG_ENTRY(1, HARPOON_HIT_RESPONSE_NORMAL),
@@ -355,7 +372,20 @@ void HarpoonDummyPlayer_Init(Actor* actor, PlayState* play) {
     play->func_11D54(player, play);
 
     player->cylinder.base.acFlags = AC_ON | AC_TYPE_PLAYER;
+    // ocFlags2 is the OC type tag the dummy presents to OTHER actors.
+    // OC2_TYPE_1 (not OC2_TYPE_PLAYER) so pushable boxes / grass / etc.
+    // that look for `ocFlags1 & OC1_TYPE_PLAYER` don't classify the
+    // dummy as a real player. Otherwise every peer's dummy pushes the
+    // same block on the local machine, producing the "all Links push it
+    // together" bug the user reported.
     player->cylinder.base.ocFlags2 = OC2_TYPE_1;
+    // ocFlags1 is the set of OC2 types the dummy can collide with. Strip
+    // it down to OC1_ON only (no type bits) so the dummy doesn't actively
+    // push ANY OC2 actor. The dummy is still bumpable by the local Player
+    // (whose ocFlags1 = OC1_TYPE_ALL includes OC1_TYPE_1, matching the
+    // dummy's OC2_TYPE_1), so peers can still walk into each other; they
+    // just can't shove blocks / grass / wooden crates / Goron statues.
+    player->cylinder.base.ocFlags1 = OC1_ON;
     player->cylinder.info.bumperFlags = BUMP_ON | BUMP_HOOKABLE | BUMP_NO_HITMARK;
     player->actor.flags |= ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
     player->cylinder.dim.radius = 30;
@@ -397,10 +427,10 @@ void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
 
     HarpoonClient& client = Harpoon::Instance->clients[clientId];
 
-    // Memo of last exile reason per cid — keeps the log readable instead of
+    // Memo of last exile reason per cid (sLastExileReason is file-scope so
+    // it can be cleared on disconnect) — keeps the log readable instead of
     // spamming every frame the dummy is hidden. When the dummy goes back to
     // visible we erase the entry so the NEXT exile re-logs.
-    static std::map<uint32_t, std::string> sLastExileReason;
     if (client.sceneNum != gPlayState->sceneNum || !client.online || !client.isSaveLoaded) {
         const char* reason =
             !client.isSaveLoaded ? "saveNotLoaded" :
@@ -582,9 +612,20 @@ void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play) {
         uint32_t atOwner = atActor ? Harpoon::Instance->GetVfxActorOwner(atActor) : 0;
         bool suppressForward = (atOwner != 0 && atOwner != Harpoon::Instance->ownClientId);
 
-        if (!suppressForward && Harpoon::Instance->pvpEnabled && player->actor.colChkInfo.damage > 0) {
-            Harpoon::Instance->SendPacket_Damage(client.clientId, player->actor.colChkInfo.damageEffect,
-                                                 player->actor.colChkInfo.damage);
+        // Broadcast on damage > 0 OR effect != 0. Weapons like Boomerang,
+        // Deku Nut, Ice Arrow, Light Magic, Wind Arrow deal 0 damage but
+        // carry an effect (stun, freeze, electric shock, heal, push); the
+        // old `damage > 0` gate silently dropped these so peers never
+        // received the status. Now we broadcast for either condition and
+        // the receiver's HandlePacket_Damage / ApplyStatusFromAttacker
+        // resolve the effect locally.
+        u8 effect = player->actor.colChkInfo.damageEffect;
+        u8 damage = player->actor.colChkInfo.damage;
+        bool hasEffect = (effect != 0);
+        bool hasDamage = (damage > 0);
+        if (!suppressForward && Harpoon::Instance->pvpEnabled && (hasDamage || hasEffect)) {
+            Harpoon::Instance->SendPacket_Damage(client.clientId, effect, damage);
+            HarpoonCombat::ApplyStatusFromAttacker(client.clientId, atActor);
         }
         if (player->actor.colChkInfo.damageEffect == HARPOON_HIT_RESPONSE_STUN) {
             Actor_SetColorFilter(&player->actor, 0, 0xFF, 0, 24);
@@ -879,8 +920,8 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
             }
         }
         // Diagnostic — emit only when the (clientId, source, age) tuple
-        // changes so the log isn't spammed every frame.
-        static std::map<uint32_t, std::string> sLastDecision;
+        // changes so the log isn't spammed every frame. sLastDecision is
+        // file-scope so it can be cleared on disconnect.
         std::string decision = std::string(skelSource) + (isAdult ? " adult" : " child");
         auto it = sLastDecision.find(clientId);
         if (it == sLastDecision.end() || it->second != decision) {

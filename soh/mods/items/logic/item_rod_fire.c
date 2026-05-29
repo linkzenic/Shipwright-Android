@@ -55,15 +55,32 @@ u8 FireRod_HasAnyActiveSet(void) {
             return 1;
     return 0;
 }
-static RodProjSet* FireRod_FindFreeSet(void) {
+// Tear down the colliders attached to a projectile set. Idempotent. Used
+// when recycling a set's slot and when a set deactivates naturally —
+// without this, the engine's collision system kept stale collider
+// records, eventually filling the global collider pool and silently
+// rejecting new hit registrations across ALL custom items + the bow.
+// That manifested as "shooting items stop working after ~2 hours".
+static void FireRod_DestroySetColliders(RodProjSet* set, PlayState* play) {
+    if (!set->collidersInited) return;
+    for (s32 i = 0; i < 3; i++) {
+        Collider_DestroyCylinder(play, &set->colliders[i]);
+    }
+    set->collidersInited = 0;
+}
+
+static RodProjSet* FireRod_FindFreeSet(PlayState* play) {
     for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
         if (!sFireProjSets[s].active)
             return &sFireProjSets[s];
-    // All full — recycle oldest (lowest timer)
+    // All full — recycle oldest (lowest timer). Tear down its colliders
+    // BEFORE reuse so the recycled slot doesn't carry stale collider
+    // registrations into the new projectile burst.
     RodProjSet* oldest = &sFireProjSets[0];
     for (s32 s = 1; s < ROD_MAX_PROJ_SETS; s++)
         if (sFireProjSets[s].timer < oldest->timer)
             oldest = &sFireProjSets[s];
+    FireRod_DestroySetColliders(oldest, play);
     return oldest;
 }
 
@@ -125,7 +142,7 @@ static void FireRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
 // Spawns single projectile into a free set slot (stab, first-person)
 static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
                                          f32 maxRange) {
-    RodProjSet* set = FireRod_FindFreeSet();
+    RodProjSet* set = FireRod_FindFreeSet(play);
     FireRod_InitSetColliders(set, p, play);
 
     set->targetScale = 2.0f;
@@ -150,7 +167,7 @@ static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* star
 
 // Spawns 3 fireballs spread into a free set slot (slash attack)
 static void FireRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 baseYaw, s16 pitch) {
-    RodProjSet* set = FireRod_FindFreeSet();
+    RodProjSet* set = FireRod_FindFreeSet(play);
     FireRod_InitSetColliders(set, p, play);
 
     set->targetScale = 2.0f;
@@ -233,6 +250,11 @@ static void FireRod_UpdateOneSet(RodProjSet* set, Player* p, PlayState* play) {
 
     if (set->timer == 0 && set->scale < 0.1f) {
         set->active = 0;
+        // Leak fix: tear down the colliders we registered with the engine
+        // when this set was spawned. Without this, the engine's global
+        // collider pool fills with stale records and rejects new hit
+        // registrations across ALL custom items + the bow.
+        FireRod_DestroySetColliders(set, play);
         return;
     }
 
@@ -320,6 +342,18 @@ static void FireRod_InitFlameColliders(Player* p, PlayState* play) {
     sFlameCollidersInited = 1;
 }
 
+// Tear down the flame-line colliders. Same rationale as the per-set
+// destroy helper above: without explicit teardown, repeated flamethrower
+// activations leak collider records into the engine's global pool,
+// eventually breaking hit detection for ALL aim/shoot items.
+static void FireRod_DestroyFlameColliders(PlayState* play) {
+    if (!sFlameCollidersInited) return;
+    for (s32 i = 0; i < FIRE_ROD_FLAME_COUNT; i++) {
+        Collider_DestroyCylinder(play, &fireRodFlameColliders[i]);
+    }
+    sFlameCollidersInited = 0;
+}
+
 static void FireRod_StartFlamethrower(Player* p, PlayState* play) {
     FireRod_InitFlameColliders(p, play);
 
@@ -366,6 +400,7 @@ static void FireRod_UpdateFlamethrower(Player* p, PlayState* play) {
         }
     } else {
         fireRodFlameActive = 0;
+        FireRod_DestroyFlameColliders(play);
         Audio_StopSfxById(FIRE_ROD_SFX_FLAMETHROWER);
         Audio_StopSfxById(FIRE_ROD_SFX_FIRE_LOOP);
     }
@@ -463,9 +498,9 @@ static void FireRod_SwingParticles(Player* p, PlayState* play) {
         FX_AddSwordTrailVertex(fireRodBlureIdx, basePos, tipPos);
     }
 
-    if ((play->gameplayFrames % 8) == 0) {
-        Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_IGNITE);
-    }
+    // Looped fuse SFX: must be called every frame with - SFX_FLAG so the audio
+    // system keeps it alive; stops naturally when we stop calling it.
+    Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_IGNITE - SFX_FLAG);
 }
 
 static u8 FireRod_IsSpinAttack(u8 mwa) {
@@ -514,9 +549,7 @@ static void FireRod_UpdateSpinFire(Player* p, PlayState* play) {
     CollisionCheck_SetAT(play, &play->colChkCtx, &fireRodSpinCollider.base);
     FX_DrawSpinFireCylinder(play, p, fireRodSpinRadius, fireRodSpinIsBig, &sFireRodColor);
 
-    if ((play->gameplayFrames % 6) == 0) {
-        Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_IGNITE);
-    }
+    Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_IGNITE - SFX_FLAG);
 }
 
 static void FireRod_StopSpinFire(void) {
@@ -642,9 +675,7 @@ static void FireRod_UpdateCharge(Player* p, PlayState* play) {
         FX_SpawnRodSwingParticles(play, tipPos, &sFireRodColor);
     }
 
-    if ((play->gameplayFrames % 12) == 0) {
-        Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_IGNITE);
-    }
+    Audio_PlayActorSound2(&p->actor, FIRE_ROD_SFX_FIRE_IGNITE - SFX_FLAG);
 }
 
 static void FireRod_ReleaseCharge(Player* p, PlayState* play) {
@@ -754,8 +785,12 @@ static void FireRod_OnEquip(PlayState* play, Player* p) {
     gCustomItemState.fireRodProjCount = 0;
     fireRodFirstPerson = 0;
     fireRodFlameActive = 0;
-    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        // Tear down any stale colliders before zeroing the set so the
+        // engine's collider pool doesn't accumulate dead records.
+        FireRod_DestroySetColliders(&sFireProjSets[s], play);
         sFireProjSets[s].active = 0;
+    }
 
     fireRodCharging = 0;
     fireRodChargeLevel = 0.0f;

@@ -21,6 +21,9 @@
 #include "mods/transformation_masks/mm_mask_wear.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
 #include "mods/sound_translator/mm_sfx_ids.h"
+#include "mods/sound_translator/mm_bgm_loader.h"
+#include "mods/sound_translator/mm_bgm_names.h"
+#include "objects/gameplay_keep/gameplay_keep.h" // gPlayerAnim_link_normal_wait for march restore
 
 // Tunic color table from z_player_lib.c (non-static, extern accessible)
 extern "C" Color_RGB8 sTunicColors[];
@@ -45,6 +48,13 @@ extern "C" {
 #include "mods/items/helpers/bremen_follower_actor.h"
 #include "mods/items/helpers/mushroom_spot_actor.h"
 }
+
+// MM Bremen march needs Player_GetMovementSpeedAndYaw (declared non-static in
+// z_player.c but no public header). Speed mode constants come from z_player.c.
+#define SPEED_MODE_LINEAR 0.0f
+#define SPEED_MODE_CURVED 0.018f
+extern "C" s32 Player_GetMovementSpeedAndYaw(Player* this_, f32* outSpeedTarget, s16* outYawTarget,
+                                              f32 speedMode, PlayState* play);
 
 // For Great Fairy Mask map overlay (same textures as minish_kaleido)
 #include "textures/map_name_static/map_name_static.h"
@@ -150,10 +160,12 @@ static Gfx sBlastMaskXluSeg9[] = {
 #define MM_MASK_IDX_STONE 3
 #define MM_MASK_IDX_GREAT_FAIRY 4
 #define MM_MASK_IDX_DEKU 5
+#define MM_MASK_IDX_BREMEN 7
 #define MM_MASK_IDX_DON_GERO 9
 #define MM_MASK_IDX_GORON 11
 #define MM_MASK_IDX_ROMANI 12
 #define MM_MASK_IDX_ZORA 17
+#define MM_MASK_IDX_KAMARO 18
 #define MM_MASK_IDX_GIBDO 19
 #define MM_MASK_IDX_FIERCE_DEITY 23
 
@@ -186,12 +198,36 @@ static LinkAnimationHeader* sKamaroDanceAnim = NULL;
 static f32 sKamaroDanceFrame = 0.0f;
 static s32 sDaruniaDanceTimer = 0; // Frames Darunia has been dancing with player
 
-// Bremen Mask state — transient (cleared in MmMaskWear_Clear)
+// Bremen Mask state — transient (cleared in MmMaskWear_Clear).
+// Layout follows MM Player_Action_11 (z_player.c:14681-14725):
+//   sBremenAnimWalk/WalkB — the two march anim variants (slow/fast).
+//   sBremenActiveAnim     — which variant is currently bound to skelAnime.
+//   sBremenEntrySpeed     — mirrors MM's unk_B48 (saved speed between frames).
 static s32 sBremenMarching = 0;
-static LinkAnimationHeader* sBremenMarchAnim = NULL;
-static f32 sBremenMarchFrame = 0.0f;
+static LinkAnimationHeader* sBremenAnimWalkB = NULL;  // gPlayerAnim_clink_normal_okarina_walkB
+static LinkAnimationHeader* sBremenActiveAnim = NULL; // unused now (PlayLoop runs every frame); kept to avoid clear-path churn
+static f32 sBremenMarchFrame = 0.0f;  // manual curFrame tracker for the loop
+static s32 sBremenMarchFrames = 0;    // counts active-march frames (for the 120-frame cucco spawn)
 static s32 sBremenBgmStarted = 0;
-static s32 sBremenWallTurnLockout = 0;
+
+// Mirrors MM func_80839E74 (z_player.c:8305-8308): transition to idle.
+// Restores Link's idle anim so the looping march pose doesn't stick, stops
+// the BGM, and clears state. Called from every Bremen-stop path.
+static void MmMaskWear_StopBremenMarch(Player* player, PlayState* play) {
+    if (!sBremenMarching) {
+        return;
+    }
+    sBremenMarching = 0;
+    if (sBremenBgmStarted) {
+        MmBgm_StopFanfare();
+        sBremenBgmStarted = 0;
+    }
+    LinkAnimation_PlayLoop(play, &player->skelAnime, (LinkAnimationHeader*)gPlayerAnim_link_normal_wait);
+    sBremenActiveAnim = NULL;
+    sBremenMarchFrame = 0.0f;
+    // sBremenMarchFrames + sBremenAdultCuccoSpawned persist — spawned cucco
+    // stays in the world, and re-press doesn't double-spawn.
+}
 
 // Mask of Scents state — transient
 static LinkAnimationHeader* sScentsSniffAnim = NULL;
@@ -199,9 +235,12 @@ static f32 sScentsSniffFrame = 0.0f;
 static s32 sScentsSniffActive = 0; // 1 = sniff anim playing (Link idle on ground)
 static s32 sScentsPrevSfxFrame = -1; // last frame where we fired the pig-grunt SFX (avoids spam)
 // Bremen Mask state — persistent (NOT cleared in MmMaskWear_Clear; cleared on death)
-#define BREMEN_CHICK_GROWTH_FRAMES 1200 // 60 s @ 20 fps
+// Fixed forward speed during march (user spec: "3.5 speed always").
+#define BREMEN_MARCH_SPEED 3.5f
+// Cooldown between cucco spawns — 20 s @ 20 fps = 400 frames.
+#define BREMEN_CUCCO_COOLDOWN_FRAMES 400
 static s32 sBremenWornTotalFrames = 0;
-static s32 sBremenAdultCuccoSpawned = 0;
+static s32 sBremenCuccoCooldown = 0; // frames remaining until next spawn allowed
 
 // Great Fairy Mask state
 static s32 sGreatFairyMenuOpen = 0;
@@ -691,10 +730,10 @@ static s8 FairyKaleido_FindNearest(s8 currentIdx, s16 stickX, s16 stickY) {
         f32 candidateAngle = atan2f(dx, dy);
         f32 angleDiff = candidateAngle - stickAngle;
 
-        while (angleDiff > M_PI)
-            angleDiff -= 2.0f * M_PI;
-        while (angleDiff < -M_PI)
-            angleDiff += 2.0f * M_PI;
+        while (angleDiff > (f32)M_PI)
+            angleDiff -= (f32)(2.0 * M_PI);
+        while (angleDiff < -(f32)M_PI)
+            angleDiff += (f32)(2.0 * M_PI);
         if (angleDiff < 0)
             angleDiff = -angleDiff;
 
@@ -853,18 +892,29 @@ extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
     if (sCurrentMmMask == itemId) {
         // Already wearing this mask - take it off
         sCurrentMmMask = ITEM_NONE;
-        if (sKamaroDancing || sBremenBgmStarted) {
-            Audio_QueueSeqCmd(NA_BGM_STOP);
-            sBremenBgmStarted = 0;
+        if (sKamaroDancing) {
+            MmBgm_StopFanfare();
         }
+        // Stop march via the helper so the looping march animation is also
+        // restored to idle — prevents the animation softlock the user reported.
+        MmMaskWear_StopBremenMarch(player, play);
         sKamaroDancing = 0;
-        sBremenMarching = 0;
         sGreatFairyMenuOpen = 0;
         sCaptainHatSpawnTimer = 0;
     } else {
         // Put on this mask, clear any OOT mask
         sCurrentMmMask = itemId;
         player->currentMask = PLAYER_MASK_NONE;
+        // Cross-gamemode PvP: broadcast the don-animation start so peers
+        // can play the white-flash transformation effect on their dummy
+        // before the worn-mask sync arrives. Only transformation masks
+        // (Deku / Goron / Zora / Fierce Deity) trigger this — vanity
+        // masks (Bunny Hood, Postman Hat, etc.) just swap visually.
+        if (itemId == ITEM_MM_MASK_DEKU || itemId == ITEM_MM_MASK_GORON ||
+            itemId == ITEM_MM_MASK_ZORA || itemId == ITEM_MM_MASK_FIERCE_DEITY) {
+            extern void HarpoonCombat_BroadcastMaskEquipStart_C(int maskId);
+            HarpoonCombat_BroadcastMaskEquipStart_C(itemId);
+        }
     }
 
     Player_PlaySfx(&player->actor, NA_SE_PL_CHANGE_ARMS);
@@ -1219,131 +1269,115 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 break;
             case 6: // Keaton Mask
                 break;
-            case 7: // Bremen Mask — 1:1 MM march + chick/cucco follower
+            case 7: // Bremen Mask
             {
-                // === Persistent wear-time counter (cucco upgrade gate) ===
-                // Cap at threshold + 10 so we never overflow but still drive
-                // the upgrade exactly once.
-                if (sBremenWornTotalFrames < BREMEN_CHICK_GROWTH_FRAMES + 10) {
+                // Persistent wear counter (kept for death-reset bookkeeping).
+                if (sBremenWornTotalFrames < 10000) {
                     sBremenWornTotalFrames++;
                 }
-
-                // === Threshold transition: chick → adult cucco ===
-                if (sBremenWornTotalFrames >= BREMEN_CHICK_GROWTH_FRAMES && !sBremenAdultCuccoSpawned) {
-                    BremenFollower_UpgradeToAdult(play, player);
-                    sBremenAdultCuccoSpawned = 1;
+                // Tick the spawn cooldown every frame the mask is worn (not
+                // just while marching), so the player can't dodge the cooldown
+                // by toggling the mask off and on between marches.
+                if (sBremenCuccoCooldown > 0) {
+                    sBremenCuccoCooldown--;
                 }
 
-                // === Follower tick (spawn/respawn + trail) ===
-                BremenFollower_Tick(play, player);
-
-                // === Bail during cutscenes / dead / loading ===
+                // Bail during cutscene/dead/loading — restore idle anim.
                 if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE |
                                            PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_ITEM_CS |
                                            PLAYER_STATE1_GETTING_ITEM)) {
-                    sBremenMarching = 0;
-                    if (sBremenBgmStarted) {
-                        Audio_QueueSeqCmd(NA_BGM_STOP);
-                        sBremenBgmStarted = 0;
-                    }
+                    MmMaskWear_StopBremenMarch(player, play);
                     break;
                 }
 
-                // === Start march on B press (ground + not already marching) ===
+                // === START march ===
                 if (!sBremenMarching &&
                     (player->actor.bgCheckFlags & 1 /* BGCHECKFLAG_GROUND */) &&
-                    CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+                    CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B) &&
+                    MmBgm_GetSeqId(MM_BGM_BREMEN_MARCH) != 0xFFFF) {
 
-                    // Try to load the MM march anim. NOTE: the OOT anim
-                    // `gPlayerAnim_clink_normal_okarina_walk` doesn't exist as
-                    // a static symbol in SoH (it was MM-only) and the MM_ANIM
-                    // enum entry currently has no path mapping in mm_anims_data.c,
-                    // so this load may return NULL — the march still starts.
-                    if (sBremenMarchAnim == NULL && MmAssets_IsAvailable()) {
-                        sBremenMarchAnim = MmAnim_Load(MM_ANIM_CLINK_NORMAL_OKARINA_WALK);
+                    if (sBremenAnimWalkB == NULL && MmAssets_IsAvailable()) {
+                        sBremenAnimWalkB = MmAnim_Load(MM_ANIM_CLINK_NORMAL_OKARINA_WALKB);
                     }
 
-                    // Activate march regardless of anim availability. Animation
-                    // is cosmetic; the actual march mechanic (auto-walk +
-                    // wall-bonk-spin) is independent.
                     sBremenMarching = 1;
+                    sBremenMarchFrames = 0;
                     sBremenMarchFrame = 0.0f;
-                    sBremenWallTurnLockout = 0;
-                    player->itemAction = PLAYER_IA_OCARINA_OF_TIME;
+                    sBremenActiveAnim = NULL;
+
                     if (!sBremenBgmStarted) {
-                        // BGM playback for the Bremen march. The current MM
-                        // audio loader (mm_asset_loader.cpp) only handles
-                        // single-sample SFX from Soundfont_0 — it can't play
-                        // MM sequence files like NA_BGM_BREMEN_MARCH (0x53 in
-                        // MM). Until an MM seq loader exists, use OOT's
-                        // Kaepora Gaebora theme as a marchy placeholder
-                        // fanfare. Swap to MM_BGM_BREMEN_MARCH once
-                        // MmDirectAudio supports sequences.
-                        Audio_PlayFanfare(NA_BGM_OWL);
+                        MmBgm_PlayFanfare(MM_BGM_BREMEN_MARCH);
                         sBremenBgmStarted = 1;
                     }
                 }
 
-                // === While marching: animate + fixed forward speed + wall bonk ===
+                // === PER-FRAME march ===
                 if (sBremenMarching) {
-                    // Release B = stop (1:1 MM stop condition)
-                    if (!CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B)) {
-                        sBremenMarching = 0;
-                        if (sBremenBgmStarted) {
-                            // Stop the placeholder OOT BGM. NA_BGM_STOP works
-                            // for both Audio_PlayFanfare and Audio_QueueSeqCmd
-                            // started tracks.
-                            Audio_QueueSeqCmd(NA_BGM_STOP);
-                            sBremenBgmStarted = 0;
-                        }
-                        break;
+                    sBremenMarchFrames++;
+
+                    // Spawn ONE real cucco at Link's position once we've been
+                    // marching for 120 frames, gated by a 20-second cooldown
+                    // so the player can't spam cuccos. ACTOR_EN_NIW with the
+                    // vanilla update — no follower configuration.
+                    if (sBremenMarchFrames == 120 && sBremenCuccoCooldown == 0) {
+                        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_NIW,
+                                    player->actor.world.pos.x,
+                                    player->actor.world.pos.y,
+                                    player->actor.world.pos.z,
+                                    0, player->actor.shape.rot.y, 0, 0);
+                        sBremenCuccoCooldown = BREMEN_CUCCO_COOLDOWN_FRAMES;
                     }
 
-                    // Drive MM march anim (Kamaro pattern: PlayLoop + SetLoadFrame + manual frame).
-                    if (sBremenMarchAnim != NULL) {
-                        LinkAnimation_PlayLoop(play, &player->skelAnime, sBremenMarchAnim);
+                    // === Animation override — exact Kamaro-dance pattern ===
+                    // Call PlayLoop EVERY frame so endFrame/mode/loop pointers
+                    // never get overwritten by OOT's idle/walk actionFunc.
+                    // PlayLoop resets curFrame to 0; we then force our tracked
+                    // frame back in. SetLoadFrame overrides the joint load
+                    // OOT already queued during Player_UpdateCommon.
+                    LinkAnimationHeader* activeAnim = sBremenAnimWalkB;
+                    if (activeAnim != NULL) {
+                        LinkAnimation_PlayLoop(play, &player->skelAnime, activeAnim);
                         player->skelAnime.curFrame = sBremenMarchFrame;
-                        AnimationContext_SetLoadFrame(play, sBremenMarchAnim, (s32)sBremenMarchFrame,
-                                                      player->skelAnime.limbCount, player->skelAnime.jointTable);
+
+                        AnimationContext_SetLoadFrame(play, activeAnim, (s32)sBremenMarchFrame,
+                                                     player->skelAnime.limbCount,
+                                                     player->skelAnime.jointTable);
+
                         sBremenMarchFrame += 1.0f;
-                        if (sBremenMarchFrame >= player->skelAnime.animLength) {
+                        if (player->skelAnime.animLength > 0.0f &&
+                            sBremenMarchFrame >= player->skelAnime.animLength) {
                             sBremenMarchFrame = 0.0f;
                         }
                     }
 
-                    // NOTE: MM's PLAYER_STATE3_20000000 is (1 << 29), which would
-                    // overflow OOT's u8 stateFlags3. The sBremenMarching static +
-                    // MmMaskWear_IsBremenMarching() query provide the routing
-                    // signal for the z_player.c stick-zero hook instead.
-
-                    // Oscillating march speed — matches MM Player_Action_11:
-                    //   speedXZ *= cos(frame * 1000) * 0.4f
-                    // This creates the rhythmic step-step-step movement.
-                    f32 yaw = player->actor.shape.rot.y;
-                    const f32 BREMEN_BASE_SPEED = 6.0f;
-                    f32 frame = sBremenMarchFrame; // animation phase (0..animLength)
-                    f32 cycle = Math_CosS((s16)((s32)(frame * 1000.0f) & 0xFFFF)) * 0.4f;
-                    f32 step = BREMEN_BASE_SPEED * (0.6f + cycle); // never below 0.2 * BASE
-                    if (step < 1.0f) step = 1.0f;                  // floor so Link still moves
-                    player->linearVelocity = step;
-                    player->actor.velocity.x = Math_SinS(yaw) * step;
-                    player->actor.velocity.z = Math_CosS(yaw) * step;
-                    player->yaw = yaw;
-
-                    // Even without the anim, advance the phase for the speed cycle.
-                    if (sBremenMarchAnim == NULL) {
-                        sBremenMarchFrame += 1.0f;
-                        if (sBremenMarchFrame >= 30.0f) sBremenMarchFrame = 0.0f;
+                    // Damage stop.
+                    if (player->stateFlags1 & PLAYER_STATE1_DAMAGED) {
+                        MmMaskWear_StopBremenMarch(player, play);
+                        break;
                     }
 
-                    // Wall bonk → spin 180° and keep marching (MM 1:1).
-                    if (sBremenWallTurnLockout > 0) {
-                        sBremenWallTurnLockout--;
-                    } else if (player->actor.bgCheckFlags & 8 /* BGCHECKFLAG_WALL */) {
-                        player->actor.shape.rot.y += 0x8000;
-                        player->yaw = player->actor.shape.rot.y;
-                        sBremenWallTurnLockout = 8; // ~0.4 s debounce
+                    // B release stop.
+                    if (!CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B)) {
+                        MmMaskWear_StopBremenMarch(player, play);
+                        break;
                     }
+
+                    // === Movement: fixed 3.5 speed, stick controls yaw ===
+                    // User spec: "3.5 speed always". No cosine modulation, no
+                    // smoothing — Link marches forward at exactly 3.5 in the
+                    // stick-pointed direction (or his current facing if stick
+                    // is centered).
+                    s16 yawTarget;
+                    {
+                        f32 unused;
+                        Player_GetMovementSpeedAndYaw(player, &unused, &yawTarget, SPEED_MODE_CURVED, play);
+                    }
+                    Math_ScaledStepToS(&player->yaw, yawTarget, 0x7D0);
+
+                    player->linearVelocity = BREMEN_MARCH_SPEED;
+                    player->actor.velocity.x = Math_SinS(player->yaw) * BREMEN_MARCH_SPEED;
+                    player->actor.velocity.z = Math_CosS(player->yaw) * BREMEN_MARCH_SPEED;
+                    player->actor.shape.rot.y = player->yaw;
                 }
                 break;
             }
@@ -1455,12 +1489,11 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                         s32 fi = (s32)sScentsSniffFrame;
                         if (fi != sScentsPrevSfxFrame) {
                             if (fi == 4 || fi == 12 || fi == 30 || fi == 61 || fi == 68) {
+                                // Real MM pig-grunt voice from mm.o2r's Soundfont_0.
+                                // Silent if mm.o2r is not loaded — NO OOT fallback by design.
                                 if (MmSfx_IsAvailable()) {
                                     MmSfx_PlayAtPos(MM_NA_SE_VO_LI_POO_WAIT,
                                                     &player->actor.projectedPos);
-                                } else {
-                                    // Fallback when mm.o2r isn't loaded: OOT voice.
-                                    Sfx_PlaySfxCentered(NA_SE_VO_LI_RELAX);
                                 }
                             }
                             sScentsPrevSfxFrame = fi;
@@ -1524,8 +1557,12 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     break;
                 }
 
-                // Hold A = dance, release A = stop (raw input, not filtered sp44)
-                if (CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_A)) {
+                // Hold B = dance, release B = stop. In MM, Kamaro's Mask binds
+                // DO_ACTION_DANCE to the B button (verified in 2Ship z_player.c:11636-11637),
+                // same slot that normally draws the sword for Human Link — so using B
+                // automatically blocks sword draw while the mask is held.
+                // Raw input, not filtered sp44.
+                if (CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B)) {
                     if (!sKamaroDancing) {
                         // Start dancing — load animation if needed
                         if (sKamaroDanceAnim == NULL && MmAssets_IsAvailable()) {
@@ -1533,13 +1570,10 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                         }
                         if (sKamaroDanceAnim != NULL) {
                             if (!sKamaroDancing) {
-                                // BGM playback for the Kamaro dance. MM uses
-                                // NA_BGM_KAMARO_DANCE (0x55 in MM) but the MM
-                                // audio loader currently can't play sequences.
-                                // OOT's Lon Lon Ranch Ingo theme is the closest
-                                // dance/fanfare BGM available — swap once MM
-                                // seq playback exists.
-                                Audio_PlayFanfare(NA_BGM_INGO);
+                                // Real MM BGM via mm_bgm_loader (Sequence_113, NA_BGM_KAMARO_DANCE).
+                                // No-op if mm.o2r is not loaded — dance mechanic still works
+                                // silently. There is NO OOT BGM fallback by design.
+                                MmBgm_PlayFanfare(MM_BGM_KAMARO_DANCE);
                             }
                             sKamaroDancing = 1;
                             sKamaroDanceFrame = 0.0f;
@@ -1548,7 +1582,7 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 } else {
                     // A released → stop dancing
                     if (sKamaroDancing) {
-                        Audio_QueueSeqCmd(NA_BGM_STOP);
+                        MmBgm_StopFanfare();
                         if (EnDu_IsDancing()) {
                             // Stop Darunia's dance too (find him in Goron City)
                             Actor* npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
@@ -1718,12 +1752,18 @@ extern "C" void MmMaskWear_Clear(void) {
     sFairyStickHeld = 0;
     sFairyHairInited = 0;
     sHairLastPhysicsFrame = 0xFFFFFFFFu;
-    // Bremen transient state (persistent counter + cucco flag handled separately on death)
+    // Bremen transient state. MmMaskWear_Clear runs at scene resets, where OOT's
+    // player init builds a fresh skelAnime from scratch — so the anim override
+    // doesn't need a teardown, just the bookkeeping.
     sBremenMarching = 0;
+    sBremenActiveAnim = NULL;
     sBremenMarchFrame = 0.0f;
-    sBremenWallTurnLockout = 0;
+    sBremenMarchFrames = 0;
+    // sBremenCuccoCooldown is NOT cleared here — the cooldown survives scene
+    // transitions so the 20-second timer is real cooldown time, not "until you
+    // walk through a door".
     if (sBremenBgmStarted) {
-        Audio_QueueSeqCmd(NA_BGM_STOP);
+        MmBgm_StopFanfare();
     }
     sBremenBgmStarted = 0;
     // Mask of Scents transient state (anim cache persists, like Kamaro's).
@@ -1739,14 +1779,29 @@ extern "C" void MmMaskWear_Clear(void) {
 }
 
 extern "C" void MmMaskWear_OnDeath(void) {
-    // Death = full reset of Bremen progression (chick + cucco follower).
+    // Death = full reset, including the spawn cooldown so a fresh respawn
+    // doesn't carry timer state from the previous life. BremenFollower_OnDeath
+    // clears legacy follower bookkeeping (harmless — we no longer use that path).
     sBremenWornTotalFrames = 0;
-    sBremenAdultCuccoSpawned = 0;
+    sBremenCuccoCooldown = 0;
+    sBremenMarchFrames = 0;
     BremenFollower_OnDeath();
 }
 
 extern "C" s32 MmMaskWear_IsBremenMarching(void) {
     return sBremenMarching != 0;
+}
+
+// True while EITHER Bremen or Kamaro mask is equipped — used to short-circuit
+// OOT's Player_ProcessItemButtons so B-press triggers march/dance instead of
+// sword draw. In MM this is implicit because PLAYER_STATE3_20000000 is set
+// the moment Player_Action_11/12 runs; we need a wider gate here because the
+// OOT input pipeline reads B for sword draw BEFORE our case 7/18 ever sees
+// the press, so the mask action would never start.
+extern "C" s32 MmMaskWear_BlocksSword(void) {
+    if (sCurrentMmMask == ITEM_NONE) return 0;
+    s32 idx = MaskItemToIndex(sCurrentMmMask);
+    return (idx == MM_MASK_IDX_BREMEN) || (idx == MM_MASK_IDX_KAMARO);
 }
 
 extern "C" s32 MmMaskWear_IsStoneMaskActive(void) {

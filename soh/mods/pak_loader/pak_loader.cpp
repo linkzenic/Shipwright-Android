@@ -1137,6 +1137,115 @@ static u32 EquipSlotNameToAlias(const char* slotName) {
     return 0;
 }
 
+// ============================================================================
+// Per-Slot Equipment Mix
+// ============================================================================
+//
+// Lets the user pick a different source pak for each equipment piece (e.g.
+// Master Sword from pak A, Hylian Shield from pak B). Each slot groups the
+// Z64O alias offsets that must travel together so sheathed/unsheathed/combined
+// renderings stay visually consistent (a sword's sheath, hilt and blade always
+// come from the same pak).
+//
+// Combined DLs (LFIST_SWORD*, SHIELD*_BACK, SWORD*_SHIELD*, sword-sheathed-on-
+// back, etc.) are NOT slot-pickable — they are auto-rebuilt every cache
+// rebuild from whatever primitive pieces ended up in sCachedEquipDLs.
+
+struct EquipSlotGroup {
+    const char* cvarKey;       // CVar suffix: "gMods.PakLoader.SlotMix." + cvarKey
+    const char* displayLabel;  // human-readable label shown in the menu
+    u32 aliases[8];            // 0-terminated; ALL pulled together from the chosen pak
+};
+
+static const EquipSlotGroup sSlotGroups[] = {
+    { "Sword0",       "Kokiri Sword",       { 0x50C0, 0x50D8, 0x50F0, 0 } },
+    { "Sword1",       "Master Sword",       { 0x50C8, 0x50E0, 0x50F8, 0 } },
+    { "Sword2",       "Giant's Knife",      { 0x50D0, 0x50E8, 0x5100, 0x51E0, 0 } },
+    { "Shield0",      "Deku Shield",        { 0x5108, 0x53E8, 0 } },
+    { "Shield1",      "Hylian Shield",      { 0x5110, 0x53F0, 0 } },
+    { "Shield2",      "Mirror Shield",      { 0x5118, 0x53F8, 0 } },
+    { "Bow",          "Bow",                { 0x5138, 0x5140, 0 } },
+    { "Hookshot",     "Hookshot",           { 0x5148, 0x5150, 0x5158, 0x5160, 0 } },
+    { "Slingshot",    "Slingshot",          { 0x5180, 0x5188, 0 } },
+    { "Boomerang",    "Boomerang",          { 0x5178, 0 } },
+    { "Hammer",       "Megaton Hammer",     { 0x51F0, 0 } },
+    { "DekuStick",    "Deku Stick",         { 0x5130, 0 } },
+    { "Bottle",       "Bottle",             { 0x5120, 0 } },
+    { "OcarinaFairy", "Fairy Ocarina",      { 0x5190, 0 } },
+    { "OcarinaTime",  "Ocarina of Time",    { 0x5128, 0 } },
+    { "IronBoots",    "Iron Boots",         { 0x5228, 0x5230, 0 } },
+    { "HoverBoots",   "Hover Boots",        { 0x5238, 0x5240, 0 } },
+    { "Gauntlets",    "Gauntlets",          { 0x51F8, 0x5200, 0x5208, 0x5210, 0x5218, 0x5220, 0 } },
+    { "Bracelet",     "Goron Bracelet",     { 0x5198, 0 } },
+    { "MaskSkull",    "Skull Mask",         { 0x51A0, 0 } },
+    { "MaskSpooky",   "Spooky Mask",        { 0x51A8, 0 } },
+    { "MaskKeaton",   "Keaton Mask",        { 0x51B0, 0 } },
+    { "MaskTruth",    "Mask of Truth",      { 0x51B8, 0 } },
+    { "MaskGoron",    "Goron Mask",         { 0x51C0, 0 } },
+    { "MaskZora",     "Zora Mask",          { 0x51C8, 0 } },
+    { "MaskGerudo",   "Gerudo Mask",        { 0x51D0, 0 } },
+    { "MaskBunny",    "Bunny Hood",         { 0x51D8, 0 } },
+    { NULL, NULL, { 0 } }
+};
+
+static constexpr s32 kSlotCount = (sizeof(sSlotGroups) / sizeof(sSlotGroups[0])) - 1;
+
+// Active per-slot selection: pak index in sModels, or -1 to inherit from the
+// global Equipment Pack dropdown / body pak / vanilla cascade.
+static s32 sSlotMix[kSlotCount] = {};
+static u8  sSlotMixInitialized = 0;
+
+// Hash of sSlotMix[] folded into the cache key so changes trigger a rebuild.
+static u64 sCacheSlotMixHash = 0;
+
+// RebuildCachedEquipDLs needs to suppress Layer 2.5 during Harpoon remote
+// draws, but the sRemoteRenderActive flag lives further down. A tiny helper
+// keeps the static-linkage variable in place; the function is implemented
+// near its companions in the Harpoon section.
+static bool PakLoader_IsRemoteRenderActive(void);
+
+static u64 SlotMixHash(void) {
+    // Cheap FNV-1a over the 32-bit pak indices.
+    u64 h = 0xcbf29ce484222325ULL;
+    for (s32 i = 0; i < kSlotCount; i++) {
+        u32 v = (u32)sSlotMix[i];
+        for (s32 b = 0; b < 4; b++) {
+            h ^= (u8)(v >> (b * 8));
+            h *= 0x100000001b3ULL;
+        }
+    }
+    return h;
+}
+
+// Returns true if at least one slot has an explicit pak binding (i.e. some
+// `sSlotMix[i] >= 0`). Used by HasActiveModel / GetEquipDL gates so the render
+// pipeline kicks in even when the user only set per-slot overrides and chose
+// no body or Equipment Pack.
+static bool AnySlotMixActive(void) {
+    for (s32 i = 0; i < kSlotCount; i++) {
+        if (sSlotMix[i] >= 0) return true;
+    }
+    return false;
+}
+
+// Lazy-load slot mix values from CVars on first access. The CVar layer is
+// available very early, but we don't want to read each lookup — populate once.
+static void EnsureSlotMixLoaded(void) {
+    if (sSlotMixInitialized)
+        return;
+    sSlotMixInitialized = 1;
+    char buf[80];
+    for (s32 i = 0; i < kSlotCount; i++) {
+        snprintf(buf, sizeof(buf), "gMods.PakLoader.SlotMix.%s", sSlotGroups[i].cvarKey);
+        sSlotMix[i] = CVarGetInteger(buf, -1);
+    }
+    // NOTE: deliberately do NOT touch sCacheSlotMixHash here. That value is the
+    // cache key — only RebuildCachedEquipDLs may update it. Setting it from
+    // sSlotMix's current state would make sGetEquipDLs's "did the mix change?"
+    // comparison return false on the very first frame after a CVar change,
+    // suppressing the rebuild and stranding the user with stale equipment.
+}
+
 /**
  * Load a single equipment zobj from a zzequipment pak.
  * Reads the EQUIPMANIFEST JSON, translates DLs, stores in equipDLs maps.
@@ -2120,6 +2229,14 @@ static Gfx* MakeShieldBackDL(Gfx* shieldDL, Mtx* mtx) {
 }
 
 static void RebuildCachedEquipDLs(void) {
+    // Diagnostic — what's the state going INTO the rebuild? Helps users send
+    // a focused log when equipment selections aren't taking effect.
+    PAK_LOG("RebuildCachedEquipDLs ENTRY: enabled=%d forcedBody=%d selectedAdult=%d "
+            "selectedChild=%d selectedEquip=%d forcedEquip=%d",
+            CVarGetInteger("gMods.PakLoader.Enabled", 0),
+            sForcedModelIndex, sSelectedAdultIndex, sSelectedChildIndex,
+            sSelectedEquipIndex, sForcedEquipIndex);
+
     // Rotate the combined-DL pool at most ONCE per frame. On the first rebuild of
     // a frame: free the pool from two frames ago (GPU is done with it) and move the
     // previous frame's pool to "prev". On subsequent rebuilds within the same frame
@@ -2161,22 +2278,94 @@ static void RebuildCachedEquipDLs(void) {
         }
     };
 
+    // Body-part aliases (waist, limbs, head, hat, collar, shoulders, forearms,
+    // torso, hands/fists). When an Equipment Pack or forced-equipment selection
+    // happens to ALSO ship these (e.g. a Combined pak with full alias table),
+    // we MUST NOT pull them in — those belong to the body pak (Layer 1) or
+    // vanilla Link. Pulling the equipment pak's hand into Layer 2 was making
+    // Link's hand look like the equipment pak's mod even when the body model
+    // is supposed to stay vanilla / use a different body pak.
+    auto isBodyPartAlias = [](u32 alias) -> bool {
+        switch (alias) {
+            case 0x5020: // WAIST
+            case 0x5028: case 0x5030: case 0x5038: // R-leg
+            case 0x5040: case 0x5048: case 0x5050: // L-leg
+            case 0x5058: // HEAD
+            case 0x5060: // HAT (part of the body model — Link's cap)
+            case 0x5068: // COLLAR
+            case 0x5070: case 0x5078: // L shoulder + forearm
+            case 0x5080: case 0x5088: // R shoulder + forearm
+            case 0x5090: // TORSO
+            case 0x5098: // LHAND
+            case 0x50A0: // LFIST
+            case 0x50A8: // LHAND_BOTTLE (left hand variant holding the bottle item)
+            case 0x50B0: // RHAND
+            case 0x50B8: // RFIST
+                return true;
+            default:
+                return false;
+        }
+    };
+    auto insertValidEquipmentOnly = [&insertValid, &isBodyPartAlias]
+                                    (std::map<u32, Gfx*>& dst, const std::map<u32, Gfx*>& src) {
+        for (auto& [k, v] : src) {
+            if (isBodyPartAlias(k))
+                continue; // body parts come from Layer 1 / vanilla, not from equipment paks
+            if (v == NULL || v == PAK_DL_STUB || IsValidGfxPtr(v)) {
+                dst[k] = v;
+            }
+        }
+    };
+
     if (bodyIdx >= 0 && bodyIdx < (s32)sModels.size()) {
         auto& bodyEq = isAdult ? sModels[bodyIdx].adultEquipDLs : sModels[bodyIdx].childEquipDLs;
+        // Body pak gets FULL alias table — it's Link's whole body + equipment.
         insertValid(sCachedEquipDLs, bodyEq);
     }
 
-    // Layer 2: selected equipment pak overrides body
+    // Layer 2: selected equipment pak overrides body — but only the equipment
+    // pieces, never Link's hands/limbs/torso.
     if (sSelectedEquipIndex >= 0 && sSelectedEquipIndex < (s32)sModels.size()) {
         auto& equipEq =
             isAdult ? sModels[sSelectedEquipIndex].adultEquipDLs : sModels[sSelectedEquipIndex].childEquipDLs;
-        insertValid(sCachedEquipDLs, equipEq);
+        PAK_LOG("  Layer 2 (Equipment Pack '%s'): %d DLs available (isAdult=%d) — body parts filtered out",
+                sModels[sSelectedEquipIndex].displayName, (int)equipEq.size(), (int)isAdult);
+        insertValidEquipmentOnly(sCachedEquipDLs, equipEq);
+    } else {
+        PAK_LOG("  Layer 2 skipped (sSelectedEquipIndex=%d)", sSelectedEquipIndex);
     }
 
-    // Layer 3: forced equipment highest priority
+    // Layer 2.5: per-slot equipment mix. Each slot pulls ALL its grouped
+    // aliases from the chosen pak so sheathed/unsheathed/combined stay visually
+    // consistent. Skipped during Harpoon remote-player draws so remote skins
+    // keep their authoritative appearance.
+    EnsureSlotMixLoaded();
+    if (!PakLoader_IsRemoteRenderActive()) {
+        for (s32 s = 0; s < kSlotCount; s++) {
+            s32 mixIdx = sSlotMix[s];
+            if (mixIdx < 0 || mixIdx >= (s32)sModels.size())
+                continue;
+            const auto& srcMap = isAdult ? sModels[mixIdx].adultEquipDLs
+                                         : sModels[mixIdx].childEquipDLs;
+            for (s32 i = 0; sSlotGroups[s].aliases[i] != 0; i++) {
+                u32 alias = sSlotGroups[s].aliases[i];
+                auto it = srcMap.find(alias);
+                if (it == srcMap.end())
+                    continue;
+                Gfx* v = it->second;
+                if (v == NULL || v == PAK_DL_STUB || IsValidGfxPtr(v)) {
+                    sCachedEquipDLs[alias] = v;
+                }
+            }
+        }
+    }
+
+    // Layer 3: forced equipment highest priority — same body-parts filter as
+    // Layer 2 so a forced item (Four Sword, etc.) only replaces equipment, not
+    // Link's hand/limb geometry.
     if (sForcedEquipIndex >= 0 && sForcedEquipIndex < (s32)sModels.size()) {
         auto& forcedEq = isAdult ? sModels[sForcedEquipIndex].adultEquipDLs : sModels[sForcedEquipIndex].childEquipDLs;
-        insertValid(sCachedEquipDLs, forcedEq);
+        insertValidEquipmentOnly(sCachedEquipDLs, forcedEq);
     }
 
     // If no body pak but we have equipment pieces that need fists, resolve vanilla hands.
@@ -2240,7 +2429,13 @@ static void RebuildCachedEquipDLs(void) {
     // the individual piece DLs (already fully translated to native pointers by TranslateDL).
     // Combo list is in topological order: primitive DLs before composites, so a single pass
     // correctly builds dependent combos (0x5400 sheathed sword+shield depends on 0x53D0+0x53E8).
-    if ((sSelectedEquipIndex >= 0 || sForcedEquipIndex >= 0) && !sCachedEquipDLs.empty()) {
+    //
+    // ALWAYS regenerate (don't gate on sSelectedEquipIndex / sForcedEquipIndex) — body-only
+    // selections also need combined DLs rebuilt so the unsheathed sword in Link's hand
+    // (0x5448 / 0x5450 / 0x5458) shows the custom pak's blade instead of falling back to
+    // vanilla. Body-pak combined DLs straight from the alias table aren't safe to use
+    // directly because their segment references aren't resolved in this runtime context.
+    if (!sCachedEquipDLs.empty()) {
         // Erase all combined alias slots so they get rebuilt from individual pieces.
         static const u32 sCombinedAliases[] = {
             0x5448, 0x5450, 0x5458, 0x5460, 0x5500,         // LFIST_SWORD1-3, HAMMER, BOOMERANG
@@ -2392,6 +2587,7 @@ static void RebuildCachedEquipDLs(void) {
     sCacheEquipIdx = sSelectedEquipIndex;
     sCacheForcedIdx = sForcedEquipIndex;
     sCacheAge = isAdult;
+    sCacheSlotMixHash = SlotMixHash(); // commit current slot mix into the cache key
     if (anyFistMissing) {
         sCacheFistIncomplete = true;
     }
@@ -2430,10 +2626,12 @@ static std::map<u32, Gfx*>* sGetEquipDLs(void) {
         bodyIdx = sGetActiveIndex();
     }
     u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
+    EnsureSlotMixLoaded();
+    u64 mixHash = SlotMixHash();
 
-    // Rebuild cache if selection changed
+    // Rebuild cache if selection changed (any cache-key component differs)
     if (bodyIdx != sCacheBodyIdx || sSelectedEquipIndex != sCacheEquipIdx || sForcedEquipIndex != sCacheForcedIdx ||
-        isAdult != sCacheAge) {
+        isAdult != sCacheAge || mixHash != sCacheSlotMixHash) {
         RebuildCachedEquipDLs();
     }
 
@@ -2442,10 +2640,13 @@ static std::map<u32, Gfx*>* sGetEquipDLs(void) {
 
 extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
     // Gate: at least one of body-model toggle, forced body, selected equipment,
-    // or forced equipment must be active. Equipment-only selection works
-    // without "Enable Custom Player Model" being on.
+    // forced equipment, or a per-slot mix override must be active. Equipment-
+    // only selection AND slot mixes work without "Enable Custom Player Model"
+    // being on.
+    EnsureSlotMixLoaded();
     if (!CVarGetInteger("gMods.PakLoader.Enabled", 0) &&
-        sForcedModelIndex < 0 && sSelectedEquipIndex < 0 && sForcedEquipIndex < 0)
+        sForcedModelIndex < 0 && sSelectedEquipIndex < 0 && sForcedEquipIndex < 0 &&
+        !AnySlotMixActive())
         return NULL;
 
     std::map<u32, Gfx*>* eqPtr = sGetEquipDLs();
@@ -2834,13 +3035,19 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
     // Check if any equipment source is active. Equipment-only selection is
     // valid without the body-model toggle, so a non-forced selected equipment
     // pak is enough on its own.
+    EnsureSlotMixLoaded();
     u8 hasPakEnabled = CVarGetInteger("gMods.PakLoader.Enabled", 0) != 0;
     u8 hasForcedEquip = (sForcedEquipIndex >= 0 && sForcedEquipIndex < (s32)sModels.size());
     u8 hasSelectedEquip = (sSelectedEquipIndex >= 0 && sSelectedEquipIndex < (s32)sModels.size());
     u8 hasBodyEquip = (sGetActiveIndex() >= 0 && sGetActiveIndex() < (s32)sModels.size());
-    if (!hasPakEnabled && !hasForcedEquip && !hasSelectedEquip)
+    u8 hasSlotMix = AnySlotMixActive() ? 1 : 0;
+    // First gate: at least one source of equipment must exist (Enabled toggle,
+    // forced equipment, selected equipment, or any per-slot mix override).
+    if (!hasPakEnabled && !hasForcedEquip && !hasSelectedEquip && !hasSlotMix)
         return NULL;
-    if (!hasForcedEquip && !hasSelectedEquip && !hasBodyEquip)
+    // Second gate: equipment-DL substitution requires at least one of the
+    // four sources that actually populates the cache.
+    if (!hasForcedEquip && !hasSelectedEquip && !hasBodyEquip && !hasSlotMix)
         return NULL;
 
     std::map<u32, Gfx*>* eqPtr = sGetEquipDLs();
@@ -3227,6 +3434,23 @@ extern "C" void PakLoader_Init(void) {
         Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 
+    // Apply persisted CVar selections immediately so the player doesn't have to
+    // open the menu after launch to get their saved paks active. Body model
+    // selections still gate on the "Enable Custom Player Model" CVar; Equipment
+    // Pack and per-slot mixes are independent (an Equipment-only pak is valid
+    // without a body selection).
+    s32 finalAdult = CVarGetInteger("gMods.PakLoader.AdultModel", -1);
+    s32 finalChild = CVarGetInteger("gMods.PakLoader.ChildModel", -1);
+    s32 finalEquip = CVarGetInteger("gMods.PakLoader.Equipment", -1);
+    if (CVarGetInteger("gMods.PakLoader.Enabled", 0)) {
+        PakLoader_SelectAdultModel(finalAdult);
+        PakLoader_SelectChildModel(finalChild);
+    }
+    PakLoader_SelectEquipment(finalEquip);
+    PAK_LOG("Init Select: enabled=%d adult=%d child=%d equip=%d",
+            CVarGetInteger("gMods.PakLoader.Enabled", 0),
+            finalAdult, finalChild, finalEquip);
+
     // Populate the sync registry (harpoon/skins/) — forward declared at
     // global scope near the top of this file.
     PakLoader_InitSyncRegistry();
@@ -3254,16 +3478,18 @@ extern "C" u8 PakLoader_HasActiveModel(void) {
             return 1;
     }
 
-    // Equipment-only paks (forced or selected) work independently of the body
-    // toggle — checked BEFORE the Enabled early-return so an equipment pak can
-    // be applied without "Enable Custom Player Model" being on.
+    // Equipment-only paks (forced or selected) AND per-slot mixes work
+    // independently of the body toggle — checked BEFORE the Enabled early-
+    // return so an equipment pak or a slot override can be applied without
+    // "Enable Custom Player Model" being on.
     //
     // ANY non-empty equipment cache counts as "active" — limiting to sword/
     // shield combined DLs would falsely report inactive for paks that only
     // ship a bow / hookshot / boots / hammer, and the L_HAND/R_HAND/SHEATH/
     // WAIST override gate in z_player_lib.c:1589 would silently skip those
     // paks even though their data is present in the cache.
-    if (sSelectedEquipIndex >= 0 || sForcedEquipIndex >= 0) {
+    EnsureSlotMixLoaded();
+    if (sSelectedEquipIndex >= 0 || sForcedEquipIndex >= 0 || AnySlotMixActive()) {
         sGetEquipDLs(); // ensure cache is built/rebuilt
         if (!sCachedEquipDLs.empty())
             return 1;
@@ -3473,6 +3699,81 @@ extern "C" u8 PakLoader_ModelIsEquipmentOnly(s32 index) {
     return sModels[index].isEquipmentOnly;
 }
 
+extern "C" u8 PakLoader_ModelHasAnyEquipment(s32 index) {
+    if (index < 0 || index >= (s32)sModels.size())
+        return 0;
+    const PakModel& m = sModels[index];
+    return (u8)(!m.adultEquipDLs.empty() || !m.childEquipDLs.empty());
+}
+
+// ============================================================================
+// Per-slot Equipment Mix API
+// ============================================================================
+//
+// All six entry points are safe to call before PakLoader_Init has run — they
+// lazy-load the slot mix from CVars on first access.
+
+extern "C" s32 PakLoader_GetSlotCount(void) {
+    return kSlotCount;
+}
+
+extern "C" const char* PakLoader_GetSlotKey(s32 slotIdx) {
+    if (slotIdx < 0 || slotIdx >= kSlotCount)
+        return NULL;
+    return sSlotGroups[slotIdx].cvarKey;
+}
+
+extern "C" const char* PakLoader_GetSlotLabel(s32 slotIdx) {
+    if (slotIdx < 0 || slotIdx >= kSlotCount)
+        return NULL;
+    return sSlotGroups[slotIdx].displayLabel;
+}
+
+// True when the pak has at least one of the slot's grouped aliases in either
+// its adult- or child-equip map. Lets the menu show only paks that have
+// something to offer for a given slot.
+extern "C" u8 PakLoader_PakProvidesSlot(s32 pakIdx, s32 slotIdx) {
+    if (pakIdx < 0 || pakIdx >= (s32)sModels.size())
+        return 0;
+    if (slotIdx < 0 || slotIdx >= kSlotCount)
+        return 0;
+    const PakModel& m = sModels[pakIdx];
+    for (s32 i = 0; sSlotGroups[slotIdx].aliases[i] != 0; i++) {
+        u32 alias = sSlotGroups[slotIdx].aliases[i];
+        if (m.adultEquipDLs.count(alias) || m.childEquipDLs.count(alias))
+            return 1;
+    }
+    return 0;
+}
+
+extern "C" void PakLoader_SetSlotMix(s32 slotIdx, s32 pakIdx) {
+    EnsureSlotMixLoaded();
+    if (slotIdx < 0 || slotIdx >= kSlotCount)
+        return;
+    if (pakIdx < -1 || pakIdx >= (s32)sModels.size())
+        pakIdx = -1;
+    if (sSlotMix[slotIdx] == pakIdx)
+        return;
+    sSlotMix[slotIdx] = pakIdx;
+    // Do NOT update sCacheSlotMixHash here — that's the cache key, only
+    // RebuildCachedEquipDLs touches it. Leaving it stale guarantees the next
+    // sGetEquipDLs sees mixHash != sCacheSlotMixHash and triggers a rebuild
+    // immediately, so per-slot picks apply in real time.
+    if (pakIdx >= 0) {
+        PAK_LOG("SlotMix[%s] = '%s' (index %d)",
+                sSlotGroups[slotIdx].cvarKey, sModels[pakIdx].displayName, pakIdx);
+    } else {
+        PAK_LOG("SlotMix[%s] = default (inherit)", sSlotGroups[slotIdx].cvarKey);
+    }
+}
+
+extern "C" s32 PakLoader_GetSlotMix(s32 slotIdx) {
+    EnsureSlotMixLoaded();
+    if (slotIdx < 0 || slotIdx >= kSlotCount)
+        return -1;
+    return sSlotMix[slotIdx];
+}
+
 // ============================================================================
 // Forced Model API (for custom items like Kafei Mask)
 // ============================================================================
@@ -3662,6 +3963,11 @@ extern "C" void PakLoader_ClearForcedEquipment(void) {
 // consent model: remotes only wear skins you've explicitly placed in
 // harpoon/skins/).
 static bool sRemoteRenderActive = false;
+
+// Helper used by RebuildCachedEquipDLs's Layer 2.5 gate, forward-declared
+// near the top of this file.
+static bool PakLoader_IsRemoteRenderActive(void) { return sRemoteRenderActive; }
+
 static s32  sSavedForcedModelIndex = -1;
 static std::string sSavedForcedModelPath;
 static s32  sSavedSelectedAdultIndex = -1;

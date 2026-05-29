@@ -521,6 +521,16 @@ uint32_t Harpoon::GetVfxActorOwner(const Actor* actor) {
     return it == sVfxActorOwners.end() ? 0 : it->second;
 }
 
+// Purge the VFX-actor → owner-clientId lookup table. Called on scene
+// transitions (the engine recycles its actor pool on scene load, so any
+// Actor* held here is dangling) and on disconnect (no peers left to route
+// damage to). Without this, the map grew unbounded across a long session
+// and stale Actor* pointers could collide with newly-spawned actors,
+// causing damage routing to attribute hits to the wrong shooter.
+void Harpoon::ClearVfxActorOwners() {
+    sVfxActorOwners.clear();
+}
+
 void Harpoon::SendPacket_SpawnVfxActor(int16_t actorId, float posX, float posY, float posZ,
                                         int16_t rotX, int16_t rotY, int16_t rotZ,
                                         int16_t params, const char* vfxKind,

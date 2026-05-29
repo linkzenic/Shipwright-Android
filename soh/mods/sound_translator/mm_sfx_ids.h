@@ -50,6 +50,9 @@ extern "C" {
 #define MM_NA_SE_PL_SIT_ON_HORSE 0x0815  // Mount horse
 #define MM_NA_SE_PL_GET_OFF_HORSE 0x0816 // Dismount
 #define MM_NA_SE_PL_SWIM 0x0839          // Swimming/water movement
+#define MM_NA_SE_PL_CHANGE_ARMS 0x0835   // /* 0x835 */ Change arms (Deku shield-pose entry per MM)
+#define MM_NA_SE_PL_CATCH_BOOMERANG 0x0836 // /* 0x836 */ Catch boomerang
+#define MM_NA_SE_PL_FACE_UP 0x0863       // /* 0x863 */ Face up (surfacing from underwater)
 #define MM_NA_SE_PL_SLIP_LEVEL 0x08D0    // Sliding on floor
 #define MM_NA_SE_PL_FREEZE_S 0x0874      // Freeze/static effect (transform cutscene frame 11)
 #define MM_NA_SE_PL_PUT_OUT_ITEM 0x0877  // Put out item/mask (transform cutscene frame 2)
@@ -144,6 +147,7 @@ extern "C" {
 // =============================================================================
 
 // Goron items
+#define MM_NA_SE_IT_BOOMERANG_THROW 0x1805          // /* 0x1805 */ Boomerang throw (shared with OOT, ID-identical)
 #define MM_NA_SE_IT_GORON_BALLFANG 0x184F           // /* 0x184F */ Ball fang/bite
 #define MM_NA_SE_IT_GORON_PUNCH_SWING 0x1857        // /* 0x1857 */ Punch swing whoosh
 #define MM_NA_SE_IT_GORON_ROLLING_REFLECTION 0x185E // /* 0x185E */ Wall bounce (FIX: was 0x1847)
@@ -163,6 +167,7 @@ extern "C" {
 
 // Zora items
 #define MM_NA_SE_IT_ZORA_KICK_SWING 0x1859    // /* 0x1859 */ Kick swing whoosh
+#define MM_NA_SE_IT_SHIELD_SWING 0x181F       // /* 0x181F */ Shield swing (MM name for this ID; OOT calls it SHIELD_POSTURE)
 #define MM_NA_SE_IT_SHIELD_SWING_ZORA 0x1868  // /* 0x1868 */ Zora shield swing
 #define MM_NA_SE_IT_SHIELD_REMOVE_ZORA 0x1869 // /* 0x1869 */ Zora shield remove
 
@@ -226,7 +231,12 @@ extern "C" {
 #define MM_NA_SE_VO_LI_MAGIC_ATTACK 0x681C  // Magic attack
 #define MM_NA_SE_VO_BL_DOWN 0x681D          // Knocked out
 #define MM_NA_SE_VO_LI_DEMO_DAMAGE 0x681E   // Demo damage
-#define MM_NA_SE_VO_LI_POO_WAIT 0x6821      // Pig grunt — Mask of Scents sniff fidget
+// Pig grunt — Mask of Scents sniff fidget.
+// Verified in mm_decomp/include/tables/sfx/voicebank_table.h:244 at 0x68E0
+// (Mask Scents voice block, soundEffects[256]). The old 0x6821 value pointed
+// to Human Link's SWORD_L slot which mapped to a sword-swing voice ("fighter
+// sound"); 0x68E0 is the real pig-snort sample.
+#define MM_NA_SE_VO_LI_POO_WAIT 0x68E0
 
 // --- Deku Link voice (0x6880-0x689F) --- (FIX: was 0x68E0, correct is 0x6880)
 #define MM_NA_SE_VO_DEKU_SWORD_N 0x6880       // Normal attack

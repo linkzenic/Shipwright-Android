@@ -38,8 +38,35 @@ extern "C" void Save_InitFile(int isDebug);
 // pak_loader.cpp and mods/items/logic/item_postman_hat.c).
 extern "C" Gfx* ResourceMgr_LoadGfxByName(const char* path);
 
+// Engine-internal SpeedModifier toggle (z_player.c:426). When set, the
+// 5 SpeedModifier cheat paths in z_player.c multiply maxSpeed by the
+// `CVAR_CHEAT("SpeedModifier.Value")` slider. The Triforce carrier buff
+// hijacks this trio (CVar Value + CVar SpeedToggle + this global) for
+// the duration of the carry, saving/restoring the user's prior values.
+extern "C" u8 gWalkSpeedToggle;
+
+// Window aspect ratio (window.width / window.height). Used by the compass
+// projection in DrawHud to apply Shipwright's rasterizer-level NDC X
+// correction so the icon aligns with the visual 3D Triforce in widescreen
+// / narrowscreen window modes.
+extern "C" float OTRGetAspectRatio(void);
+
+
 #include <cmath>
 #include <algorithm>
+#include <chrono>
+
+// Real wall-clock milliseconds (monotonic). Used to drain the shared
+// round timer independent of game-logic frame rate AND of the pause
+// menu. std::chrono::steady_clock keeps advancing even while OoT's
+// gameplay logic is frozen by the kaleido pause — unlike ImGui::GetTime()
+// (game-frame-derived) or the engine's gameplayFrames counter, both of
+// which stop ticking on pause and desynced the timer across players.
+static inline s64 TT_NowMs() {
+    using namespace std::chrono;
+    return (s64)duration_cast<milliseconds>(
+        steady_clock::now().time_since_epoch()).count();
+}
 
 // =============================================================================
 // File-scope storage
@@ -103,12 +130,14 @@ struct MapInit {
 };
 
 constexpr MapInit kMapInit[HarpoonTriforceThief::kMapCount] = {
-    { "hyrule_field",         "Hyrule Field",         205, "Wide open field — lots of room to run." },
+    { "death_mountain_trail", "Death Mountain Trail", 317, "Rocky mountainside trail with cliffs and caves." },
     { "zora_river",           "Zora's River",         234, "Winding river with cliffs and waterfalls." },
     { "gerudo_fortress",      "Gerudo Fortress",      297, "Desert compound with rooftops and corridors." },
     { "kokiri_forest",        "Kokiri Forest",        238, "Peaceful village with bridges and trees." },
     { "kakariko_village",     "Kakariko Village",     219, "Mountain village with rooftops and alleys." },
-    { "sacred_forest_meadow", "Sacred Forest Meadow", 252, "Forest maze with open clearings." },
+    { "goron_city",           "Goron City",           333, "Multi-level rocky village with platforms." },
+    { "desert_colossus",      "Desert Colossus",      291, "Open desert ruins around the Spirit Temple." },
+    { "zora_domain",          "Zora's Domain",        264, "Underwater cavern around the great waterfall." },
 };
 
 bool LoadMap(const std::filesystem::path& mapsDir, const MapInit& init,
@@ -211,26 +240,30 @@ s32 GetEntranceForMap(s32 mapIdx) {
 
 // ---------------------------------------------------------------------------
 // Per-round scene-lock cluster (parity with PropHunt). One entry per TT map.
-// All 6 TT maps are strict single-scene — no sub-area extensions.
+// All 8 TT maps are strict single-scene — no sub-area extensions.
 // ---------------------------------------------------------------------------
 
 namespace {
 struct ClusterDef { const s8* scenes; s32 count; };
 
-static const s8 sCluster_HyruleField[] = { SCENE_HYRULE_FIELD };
-static const s8 sCluster_ZorasRiver[]  = { SCENE_ZORAS_RIVER };
-static const s8 sCluster_Gerudo[]      = { SCENE_GERUDOS_FORTRESS };
-static const s8 sCluster_Kokiri[]      = { SCENE_KOKIRI_FOREST };
-static const s8 sCluster_Kakariko[]    = { SCENE_KAKARIKO_VILLAGE };
-static const s8 sCluster_SFM[]         = { SCENE_SACRED_FOREST_MEADOW };
+static const s8 sCluster_DMT[]            = { SCENE_DEATH_MOUNTAIN_TRAIL };
+static const s8 sCluster_ZorasRiver[]     = { SCENE_ZORAS_RIVER };
+static const s8 sCluster_Gerudo[]         = { SCENE_GERUDOS_FORTRESS };
+static const s8 sCluster_Kokiri[]         = { SCENE_KOKIRI_FOREST };
+static const s8 sCluster_Kakariko[]       = { SCENE_KAKARIKO_VILLAGE };
+static const s8 sCluster_GoronCity[]      = { SCENE_GORON_CITY };
+static const s8 sCluster_DesertColossus[] = { SCENE_DESERT_COLOSSUS };
+static const s8 sCluster_ZorasDomain[]    = { SCENE_ZORAS_DOMAIN };
 
 static const ClusterDef sClusterByMap[HarpoonTriforceThief::kMapCount] = {
-    { sCluster_HyruleField, (s32)ARRAY_COUNT(sCluster_HyruleField) },
-    { sCluster_ZorasRiver,  (s32)ARRAY_COUNT(sCluster_ZorasRiver)  },
-    { sCluster_Gerudo,      (s32)ARRAY_COUNT(sCluster_Gerudo)      },
-    { sCluster_Kokiri,      (s32)ARRAY_COUNT(sCluster_Kokiri)      },
-    { sCluster_Kakariko,    (s32)ARRAY_COUNT(sCluster_Kakariko)    },
-    { sCluster_SFM,         (s32)ARRAY_COUNT(sCluster_SFM)         },
+    { sCluster_DMT,            (s32)ARRAY_COUNT(sCluster_DMT)            },
+    { sCluster_ZorasRiver,     (s32)ARRAY_COUNT(sCluster_ZorasRiver)     },
+    { sCluster_Gerudo,         (s32)ARRAY_COUNT(sCluster_Gerudo)         },
+    { sCluster_Kokiri,         (s32)ARRAY_COUNT(sCluster_Kokiri)         },
+    { sCluster_Kakariko,       (s32)ARRAY_COUNT(sCluster_Kakariko)       },
+    { sCluster_GoronCity,      (s32)ARRAY_COUNT(sCluster_GoronCity)      },
+    { sCluster_DesertColossus, (s32)ARRAY_COUNT(sCluster_DesertColossus) },
+    { sCluster_ZorasDomain,    (s32)ARRAY_COUNT(sCluster_ZorasDomain)    },
 };
 }  // anon
 
@@ -275,6 +308,75 @@ void ApplyCommonProgressionFlags(const nlohmann::json& common) {
             gSaveContext.sceneFlags[i].swch = 0xFFFFFFFF;
         }
     }
+}
+
+// TT-only: pre-clear every "you must do X first" gate that blocks free
+// traversal of the map roster's scenes. We only set flags that gate
+// PHYSICAL access (locked doors, magic barriers, NPC-blocked paths,
+// raised water levels), NOT chest/collect flags — those would mark all
+// items as "already taken" and could break the engine's loot logic.
+//
+// Scope rationale per user spec ("solo barreras / passages"):
+//   - Door of Time openable freely for the Master Sword chamber.
+//   - Rainbow Bridge built so Ganon's Castle Exterior is reachable.
+//   - All 6 Ganon's Trial barriers cleared (the magic ribbons at the
+//     central tower) so the carrier can run any trial room in GC.
+//   - All 6 dungeon "blue warps used" so post-clear scene state is
+//     active (water level raised at Lake Hylia after Water Temple,
+//     etc.).
+//   - Death Mountain Eruption flag cleared so Goron City interior
+//     and DMT pass-throughs are open.
+//   - Zora's Domain unfrozen + opened so the Domain scene is fully
+//     traversable.
+//   - "Entered <area>" flags set so first-entry cutscenes don't fire.
+//   - Carpenters / Gerudo Card / King Zora — already handled by
+//     ApplyCommonProgressionFlags via the save.json `progression_flags`
+//     keys; not re-set here to avoid double work.
+void ApplyTTBarrierFlags() {
+    // Master Sword chamber / Rainbow Bridge
+    SET_EVENTCHKINF(EVENTCHKINF_OPENED_THE_DOOR_OF_TIME);
+    SET_EVENTCHKINF(EVENTCHKINF_PULLED_MASTER_SWORD_FROM_PEDESTAL);
+    SET_EVENTCHKINF(EVENTCHKINF_OBTAINED_OCARINA_OF_TIME);
+    SET_EVENTCHKINF(EVENTCHKINF_RAINBOW_BRIDGE_BUILT);
+    SET_EVENTCHKINF(EVENTCHKINF_DISPELLED_GANONS_TOWER_BARRIER);
+
+    // 6 Ganon's Castle trials — magic barriers down at the central tower.
+    SET_EVENTCHKINF(EVENTCHKINF_COMPLETED_SPIRIT_TRIAL);
+    SET_EVENTCHKINF(EVENTCHKINF_COMPLETED_FOREST_TRIAL);
+    SET_EVENTCHKINF(EVENTCHKINF_COMPLETED_WATER_TRIAL);
+    SET_EVENTCHKINF(EVENTCHKINF_COMPLETED_SHADOW_TRIAL);
+    SET_EVENTCHKINF(EVENTCHKINF_COMPLETED_FIRE_TRIAL);
+    SET_EVENTCHKINF(EVENTCHKINF_COMPLETED_LIGHT_TRIAL);
+
+    // 6 dungeon blue-warp consumed flags. Drive post-clear scene state:
+    // water level changes, NPC repositioning, etc.
+    SET_EVENTCHKINF(EVENTCHKINF_USED_DEKU_TREE_BLUE_WARP);
+    SET_EVENTCHKINF(EVENTCHKINF_USED_DODONGOS_CAVERN_BLUE_WARP);
+    SET_EVENTCHKINF(EVENTCHKINF_USED_JABU_JABUS_BELLY_BLUE_WARP);
+    SET_EVENTCHKINF(EVENTCHKINF_USED_FOREST_TEMPLE_BLUE_WARP);
+    SET_EVENTCHKINF(EVENTCHKINF_USED_FIRE_TEMPLE_BLUE_WARP);
+    SET_EVENTCHKINF(EVENTCHKINF_USED_WATER_TEMPLE_BLUE_WARP);
+
+    // Map-scene specific:
+    //  - Death Mountain eruption clears DMT/Goron City pass-throughs.
+    //  - Lake Hylia raised water is unconditional after Water Temple.
+    //  - Zora's Domain opening + Ruto's Letter consumed.
+    SET_EVENTCHKINF(EVENTCHKINF_DEATH_MOUNTAIN_ERUPTED);
+    SET_EVENTCHKINF(EVENTCHKINF_RAISED_LAKE_HYLIA_WATER);
+    SET_EVENTCHKINF(EVENTCHKINF_OPENED_ZORAS_DOMAIN);
+    SET_EVENTCHKINF(EVENTCHKINF_DRAWBRIDGE_OPENED_AFTER_ZELDA_FLED);
+    SET_EVENTCHKINF(EVENTCHKINF_DRAINED_WELL_IN_KAKARIKO);
+
+    // First-entry cutscene suppressors (so each round-start scene load
+    // doesn't open with a long "you've arrived at X" cinematic).
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_HYRULE_FIELD);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_DEATH_MOUNTAIN_TRAIL);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_KAKARIKO_VILLAGE);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_ZORAS_DOMAIN);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_HYRULE_CASTLE);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_GORON_CITY);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_TEMPLE_OF_TIME);
+    SET_EVENTCHKINF(EVENTCHKINF_ENTERED_GANONS_CASTLE_EXTERIOR);
 }
 
 void ApplyBaseHealthMagic(const nlohmann::json& role) {
@@ -580,6 +682,7 @@ void ApplyThiefSave() {
     ApplyButtonItems(role.value("button_items",   nlohmann::json::array()));
     ApplyCButtonSlots(role.value("c_button_slots", nlohmann::json::array()));
     ApplyCommonProgressionFlags(common);
+    ApplyTTBarrierFlags();
     ApplyCvars(common.value("cvars", nlohmann::json::object()));
 
     SPDLOG_INFO("[Harpoon][TriforceThief] applied 'thief' save preset");
@@ -670,6 +773,13 @@ void HandleMapConfirmed(const nlohmann::json& p) {
     sLocal.carrierClientId        = 0;
     sLocal.carrierRupeesRemaining = 0;
     sLocal.drainTickCounter       = 0;
+    sLocal.carrierTimerFrames     = 0;          // descending timer reset
+    // Mirror to the HUD field too — otherwise the digit overlay reads the
+    // stale frames left over from the previous round's carrier (peers
+    // saw 5:00 at the start of round 2 because the mirror at the bottom
+    // of TickFrame only fires while the LOCAL player is the carrier).
+    gSaveContext.ship.stats.playTimer = 0;
+    sLocal.lastWarnSecond         = -1;
     sLocal.preRoundCountdownFrames = 60;       // 3-second GET READY
     sLocal.triforceLanded         = true;
     sLocal.appliedBunnyHood       = false;
@@ -677,12 +787,16 @@ void HandleMapConfirmed(const nlohmann::json& p) {
     sLocal.dropFlyTimer           = 0;
     sLocal.dropVelX = sLocal.dropVelY = sLocal.dropVelZ = 0.0f;
     sLocal.pickupCooldownByCid.clear();
+    // The new round is loading a fresh scene; reset the sticky "scene
+    // loaded" flag so a CUTSCENE_BEGIN that arrives BEFORE this peer's
+    // OnSceneLoaded fires waits for it (cutsceneReady flips in OnSceneLoaded).
+    sLocal.sceneLoadedThisRound   = false;
     sLocal.idleOnGroundFrames     = 0;
     sLeaderboard.clear();
     // Reset peer mirrors so leaderboard data + HUD don't show stale values.
     if (Harpoon::Instance != nullptr) {
         for (auto& [cid, c] : Harpoon::Instance->clients) {
-            c.ttRupeesRemaining = 0;
+            c.ttTimerSecondsRemaining = 0;
         }
     }
 
@@ -764,17 +878,40 @@ void HandleTriforceDrop(const nlohmann::json& p) {
     sLocal.dropVelX = p.value("velX", 0.0f);
     sLocal.dropVelY = p.value("velY", 12.0f);
     sLocal.dropVelZ = p.value("velZ", 0.0f);
-    sLocal.dropFlyTimer = 120;   // ~2 sec safety fuse — physics settle earlier
+    sLocal.dropFlyTimer = 180;   // ~9 sec safety fuse — long enough for the
+                                  // 0.97-friction "ice-slide" to settle naturally
 
-    // 90-frame pickup cooldown on the dropper only — they have to chase it.
-    // Other clients can grab it immediately once it lands.
+    // 30-frame pickup cooldown on the dropper only — they have to chase it.
+    // Other clients can grab it immediately once it lands. TickFrame
+    // counts at ~20 logic ticks/sec (R_UPDATE_RATE = 3, matches the rest
+    // of TT timer math like `dropFlyTimer = 180 = ~9s`), so 30 frames =
+    // ~1.5 seconds real-time. Was 90 (~4.5s) which felt sluggish.
     if (dropper != 0) {
-        sLocal.pickupCooldownByCid[dropper] = 90;
+        sLocal.pickupCooldownByCid[dropper] = 30;
+    }
+
+    // Shared timer: every drop adds 10 seconds to the SHARED countdown
+    // (user spec). The timer is a single value all clients agree on —
+    // whoever holds the Triforce when it hits 0 wins. Drops are a
+    // dramatic reset that gives players more breathing room. All
+    // clients apply this locally on the drop event for deterministic
+    // sync; carrier's per-second CARRIER_TIMER_SYNC broadcast corrects
+    // any drift.
+    sLocal.carrierTimerFrames += 10 * 20;
+    // Re-arm the slow-mo accumulator: with +10s added, we're above the
+    // 5-second slow-mo threshold so we restart at full speed.
+    if (sLocal.carrierTimerFrames > 5 * 20) {
+        sLocal.slowModeAccum = 0.0f;
+    }
+    // Re-arm warning thresholds so they fire again as the timer
+    // descends through them post-drop.
+    if (sLocal.carrierTimerFrames > 10 * 20) {
+        sLocal.lastWarnSecond = -1;
     }
 
     Notification::Emit({
         .prefix = "Triforce Thief",
-        .message = "Triforce knocked loose!",
+        .message = "Triforce knocked loose! +10s",
         .remainingTime = 3.0f,
     });
 }
@@ -802,6 +939,9 @@ void HandleRoundResult(const nlohmann::json& p) {
     sLocal.carrierClientId        = 0;
     sLocal.carrierRupeesRemaining = 0;
     sLocal.drainTickCounter       = 0;
+    sLocal.carrierTimerFrames     = 0;
+    gSaveContext.ship.stats.playTimer = 0;
+    sLocal.lastWarnSecond         = -1;
     sLocal.dropFlyTimer           = 0;
     sLocal.pickupCooldownByCid.clear();
     sLocal.role                   = Role::Unassigned;
@@ -839,7 +979,10 @@ void HandleRoundResult(const nlohmann::json& p) {
         gSaveContext.cutsceneTrigger = 0;
     }
 
-    StartLocalRoundOnMap(0);
+    // Lobby is always Hyrule Field — slot 0 of the playable map roster may
+    // be a different scene (DMT after the expansion). Use the dedicated
+    // lobby helper instead of StartLocalRoundOnMap(0).
+    TeleportToLobby();
 }
 
 }  // anon
@@ -878,36 +1021,249 @@ void HandleEvent(const nlohmann::json& envelope) {
         if (ws < 5)   ws = 5;
         if (ws > 600) ws = 600;
         sLocal.roundWinSeconds = ws;
+        // Seed the descending timer IMMEDIATELY (don't wait for the first
+        // pickup). Previously OnLocalPickup seeded it, which raced the
+        // ROUND_CONFIG arrival — peers picked up the Triforce before
+        // ROUND_CONFIG had updated roundWinSeconds, leaving the timer
+        // at the default 60s regardless of the host's slider. Seeding
+        // here means: as soon as we know the round-win seconds, the
+        // shared timer is ready.
+        sLocal.carrierTimerFrames = ws * 20;
+        gSaveContext.ship.stats.playTimer = sLocal.carrierTimerFrames;
+        sLocal.lastWarnSecond     = -1;
+        sLocal.slowModeAccum      = 0.0f;
+        sLocal.carrierTimerLastMs = 0;   // re-seed wall-clock anchor next carrier tick
+        sLocal.lastSyncSecond     = -1;
+        sLocal.lastHostSyncMs     = 0;   // host emits first STATE_SYNC immediately next tick
     }
     else if (evt == kEvtCarrierTimerSync) {
-        // Carrier broadcasting their remaining time — peers mirror it for
-        // the HUD label "Alice: 42s" on the directional arrow.
+        // Shared timer sync. The current carrier broadcasts the
+        // authoritative value once per second. Non-carrier peers adopt
+        // it as their local view of the shared countdown — this is how
+        // every client agrees on "the timer" without each computing
+        // their own. The local carrier ignores incoming sync (we're
+        // the authority for our own tick).
         u32 src       = envelope.value("source", 0u);
+        // Wire format preserves the historical `rupeesRemaining` key for
+        // protocol compat — semantically it's "shared timer seconds".
         s32 remaining = data.value("rupeesRemaining", 0);
         if (Harpoon::Instance != nullptr && src != 0) {
             auto it = Harpoon::Instance->clients.find(src);
             if (it != Harpoon::Instance->clients.end()) {
-                it->second.ttRupeesRemaining = remaining;
+                it->second.ttTimerSecondsRemaining = remaining;
             }
+            if (!IsLocalCarrier()) {
+                // Drift correction from the carrier's authoritative value,
+                // but ONLY in the downward direction. Every client also
+                // drains carrierTimerFrames locally in TickFrame via real
+                // wall-clock (std::chrono), so this sync usually arrives
+                // close to or slightly above our local value (the carrier
+                // broadcasts a whole-second FLOOR — `carrierTimerFrames /
+                // 20`). Applying it unconditionally would snap a local
+                // value of 41.3 sec back up to 42.0 when the carrier
+                // broadcasts 42 — that's the upward visible movement the
+                // user originally reported. We only accept the sync when
+                // it represents a DECREASE: this corrects clients that
+                // drifted ahead of the carrier (e.g. clock skew, larger
+                // local elapsedMs), but never moves the display upward.
+                // The +10 bump on drop is handled by the DROP event, not
+                // this sync path, so it's not affected.
+                s32 syncedFrames = remaining * 20;
+                if (syncedFrames < sLocal.carrierTimerFrames) {
+                    sLocal.carrierTimerFrames = syncedFrames;
+                    sLocal.slowModeAccum      = 0.0f;
+                }
+                // playTimer mirroring is handled by the (a-0) pin every
+                // frame; no need to write it here.
+            }
+        }
+    }
+    else if (evt == kEvtStateSync) {
+        // Host's 1-Hz authoritative state. Resolves two kinds of conflict:
+        //
+        //   1. carrierClientId: pickup events can arrive in different
+        //      orders on different clients (server relay is best-effort).
+        //      The host's view is authoritative — snap to it
+        //      unconditionally.
+        //
+        //   2. timerFrames: every client drains locally via wall-clock
+        //      and can drift by a few hundred ms in either direction.
+        //      The host's value is the tie-breaker — snap to it
+        //      UNCONDITIONALLY so peers converge with the host every
+        //      second, in EITHER direction. The frames-precise wire
+        //      format eliminates the ~0.8 s residual offset that an
+        //      integer-second floor would leave (host at 36.8 broadcasts
+        //      36 → peer snaps to 36.0 → permanent 0.8 s gap; with
+        //      frames the snap is exact). The +10 on drop still comes
+        //      through the dedicated TRIFORCE_DROP event.
+        //
+        //      Re-anchor `carrierTimerLastMs` to "now" so the next local
+        //      drain tick computes elapsedMs from THIS moment — without
+        //      that, a stale anchor would double-drain on the next tick.
+        u32 hostCarrier = data.value("carrierClientId", 0u);
+        s32 hostFrames  = data.value("timerFrames", 0);
+        sLocal.carrierClientId    = hostCarrier;
+        sLocal.carrierTimerFrames = hostFrames;
+        sLocal.slowModeAccum      = 0.0f;
+        sLocal.carrierTimerLastMs = TT_NowMs();
+    }
+    else if (evt == kEvtTimerWarning) {
+        // Carrier crossed a warning threshold (10/5/4/3/2/1 sec left).
+        // Surface the same Notification::Emit on the peer's screen so
+        // they see the alert simultaneously with the carrier — relying
+        // on CARRIER_TIMER_SYNC alone would be 1-Hz, missing
+        // sub-second thresholds.
+        s32 secs = data.value("secondsLeft", 0);
+        if (secs > 0) {
+            Notification::Emit({
+                .prefix = "Triforce Thief",
+                .message = "Hurry! " + std::to_string(secs) + " seconds left!",
+                .remainingTime = 2.5f,
+            });
         }
     }
     else if (evt == kEvtCutsceneBegin) {
         // Host broadcast that the round is starting — kick off the
-        // Triforce-appear cutscene. We arm the timer here and flip
-        // cutsceneReady only after OnSceneLoaded fires, so the orbit
-        // doesn't try to run while the scene is still streaming in.
+        // Triforce-appear cutscene. The host now defers this broadcast
+        // until after its scene loads (so we get true anchor-based
+        // coords), which means peers may receive CUTSCENE_BEGIN AFTER
+        // their own scene already finished loading. In that case
+        // OnSceneLoaded has already fired and won't fire again, so we
+        // must flip cutsceneReady here to start the subcam orbit.
         sLocal.triforceX = data.value("x", sLocal.triforceX);
         sLocal.triforceY = data.value("y", sLocal.triforceY);
         sLocal.triforceZ = data.value("z", sLocal.triforceZ);
         sLocal.cutsceneTimer  = 100;   // ~5 sec at 20 game-fps
-        sLocal.cutsceneReady  = false;
+        sLocal.cutsceneReady  = sLocal.sceneLoadedThisRound;
         sLocal.cutsceneSubCam = SUBCAM_FREE;
     }
 }
 
+namespace {
+
+// Scan the loaded scene for actors we treat as Triforce anchor points
+// (grottos, soft soil patches, bush clusters, signposts). Returns true and
+// fills `outPos` if at least one candidate exists; false otherwise so the
+// caller can fall back to baked JSON spawn points. Y is lifted by 10 units
+// so the Triforce sits slightly above the anchor's origin (mirrors the
+// "+10 above DOOR_ANA stamps" convention from the original JSON coords).
+
+// Returns true if (x,y,z) sits on top of a scene-exit polygon — i.e. a
+// loading-zone trigger. We use this both to reject anchor candidates
+// pre-spawn (so the Triforce never lands behind an invisible wall at a
+// scene-exit poly in Gerudo Fortress etc.) and to auto-respawn the
+// Triforce immediately if it ends up on such a poly after a drop.
+// Raycasts downward from `y + 50` so we catch the floor right under it.
+bool IsPositionOnExitPoly(f32 x, f32 y, f32 z) {
+    if (gPlayState == nullptr) return false;
+    Vec3f probe = { x, y + 50.0f, z };
+    CollisionPoly* floorPoly = nullptr;
+    s32 bgId = BGCHECK_SCENE;
+    f32 floorY = BgCheck_EntityRaycastFloor3(&gPlayState->colCtx, &floorPoly, &bgId, &probe);
+    if (floorPoly == nullptr || floorY <= BGCHECK_Y_MIN) {
+        // No floor under this point — treat as bad spawn (would void).
+        return true;
+    }
+    u32 exitIdx = SurfaceType_GetSceneExitIndex(&gPlayState->colCtx, floorPoly, bgId);
+    return exitIdx != 0;
+}
+
+bool PickTriforceAnchor(Vec3f* outPos) {
+    if (gPlayState == nullptr) return false;
+    // Categories that hold our anchor actor IDs (verified by reading each
+    // ovl_*.c's _InitVars.category field):
+    //   ACTORCAT_ITEMACTION  → ACTOR_DOOR_ANA (grottos)
+    //   ACTORCAT_BG          → ACTOR_OBJ_BEAN (soft soil)
+    //   ACTORCAT_PROP        → ACTOR_OBJ_MURE2 (bush clusters), ACTOR_EN_A_OBJ (signposts)
+    static const s32 kCats[]      = { ACTORCAT_ITEMACTION, ACTORCAT_BG, ACTORCAT_PROP };
+    static const s16 kAnchorIds[] = { ACTOR_DOOR_ANA, ACTOR_OBJ_BEAN,
+                                      ACTOR_OBJ_MURE2, ACTOR_EN_A_OBJ };
+
+    std::vector<Actor*> candidates;
+    candidates.reserve(32);
+    for (s32 cat : kCats) {
+        Actor* a = gPlayState->actorCtx.actorLists[cat].head;
+        while (a != nullptr) {
+            for (s16 id : kAnchorIds) {
+                if (a->id == id) {
+                    candidates.push_back(a);
+                    break;
+                }
+            }
+            a = a->next;
+        }
+    }
+    if (candidates.empty()) return false;
+
+    // Filter out candidates sitting on scene-exit polys (loading zones).
+    // Reported by playtesting: in Gerudo Fortress some signpost / bush
+    // anchors are placed AT the gate exit — the Triforce would spawn on
+    // the exit poly and bounce behind an invisible scene-transition
+    // wall, unreachable for the rest of the round.
+    std::vector<Actor*> valid;
+    valid.reserve(candidates.size());
+    for (Actor* a : candidates) {
+        if (!IsPositionOnExitPoly(a->world.pos.x, a->world.pos.y + 10.0f, a->world.pos.z)) {
+            valid.push_back(a);
+        }
+    }
+    // If filtering wiped every candidate (extreme edge case), fall back
+    // to the unfiltered list rather than fail outright.
+    std::vector<Actor*>& pool = valid.empty() ? candidates : valid;
+    Actor* picked = pool[(size_t)rand() % pool.size()];
+    outPos->x = picked->world.pos.x;
+    outPos->y = picked->world.pos.y + 10.0f;
+    outPos->z = picked->world.pos.z;
+    return true;
+}
+
+}  // anon
+
 // Called by HarpoonHookHandlers' OnSceneSpawnActors hook when we're in TT.
-// Marks the round-start cutscene as "scene is ready, subcam may run now".
+// On the host: if a round just started and we deferred the Triforce spawn
+// until the scene was loaded, perform the actor-anchor pick now and broadcast
+// TRIFORCE_SPAWN + CUTSCENE_BEGIN. On every client (host included): mark the
+// scene as loaded so a late-arriving CUTSCENE_BEGIN can flip cutsceneReady.
 void OnSceneLoaded() {
+    sLocal.sceneLoadedThisRound = true;
+
+    // Host-side deferred Triforce spawn pick.
+    bool isHost = (Harpoon::Instance != nullptr) &&
+                  (Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
+    if (isHost && sLocal.pendingAnchorPick) {
+        Vec3f anchor;
+        bool haveAnchor = PickTriforceAnchor(&anchor);
+        if (haveAnchor) {
+            sLocal.currentSpawn = -1;  // sentinel = "anchored, not JSON-indexed"
+            sLocal.triforceX = anchor.x;
+            sLocal.triforceY = anchor.y;
+            sLocal.triforceZ = anchor.z;
+        } else {
+            // Fallback: first JSON spawn point so the round still starts.
+            const MapDef* m = GetMap(sLocal.pendingAnchorMap);
+            if (m != nullptr && !m->spawnPoints.empty()) {
+                const SpawnPoint& sp = m->spawnPoints[0];
+                sLocal.currentSpawn = 0;
+                sLocal.triforceX = sp.x;
+                sLocal.triforceY = sp.y;
+                sLocal.triforceZ = sp.z;
+            }
+        }
+        // Broadcast the spawn position and the cutscene start so peers can
+        // mirror. We pre-set our own cutscene state too — peers do the same
+        // in HandleCutsceneBegin.
+        Harpoon::Instance->SendJsonToRemote(BuildTriforceSpawnPayload(
+            sLocal.pendingAnchorMap, sLocal.currentSpawn,
+            sLocal.triforceX, sLocal.triforceY, sLocal.triforceZ));
+        sLocal.cutsceneTimer  = 100;
+        sLocal.cutsceneReady  = false;  // flipped just below
+        sLocal.cutsceneSubCam = SUBCAM_FREE;
+        Harpoon::Instance->SendJsonToRemote(BuildCutsceneBeginPayload(
+            sLocal.triforceX, sLocal.triforceY, sLocal.triforceZ));
+        sLocal.pendingAnchorPick = false;
+        sLocal.pendingAnchorMap  = -1;
+    }
+
     if (sLocal.cutsceneTimer > 0) {
         sLocal.cutsceneReady = true;
     }
@@ -975,9 +1331,9 @@ nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex) {
     d["roundIndex"]     = roundIndex;
 
     // Embed a per-client leaderboard snapshot. Carry seconds is derived
-    // from the rupee-drain timer: `roundWinSeconds - rupeesRemaining`.
-    // Local row uses `carrierRupeesRemaining` (authoritative for us);
-    // peer rows use `ttRupeesRemaining` (mirrored from their
+    // from the descending timer: `roundWinSeconds - secondsRemaining`.
+    // Local row uses `carrierTimerFrames / 20` (authoritative for us);
+    // peer rows use `ttTimerSecondsRemaining` (mirrored from their
     // CARRIER_TIMER_SYNC heartbeats).
     nlohmann::json lb = nlohmann::json::array();
     if (Harpoon::Instance != nullptr) {
@@ -985,9 +1341,9 @@ nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex) {
             if (!c.online) continue;
             s32 rem;
             if (cid == Harpoon::Instance->ownClientId) {
-                rem = sLocal.carrierRupeesRemaining;
+                rem = sLocal.carrierTimerFrames / 20;
             } else {
-                rem = c.ttRupeesRemaining;
+                rem = c.ttTimerSecondsRemaining;
             }
             // Non-carriers / never-carried players show as 0 carry secs
             // (their counter is the initial 0 — treat as "never decremented
@@ -1062,6 +1418,19 @@ nlohmann::json BuildCarrierTimerSyncPayload(s32 rupeesRemaining) {
     return _Envelope(kEvtCarrierTimerSync, std::move(d));
 }
 
+nlohmann::json BuildStateSyncPayload(u32 carrierClientId, s32 timerFrames) {
+    nlohmann::json d;
+    d["carrierClientId"] = carrierClientId;
+    d["timerFrames"]     = timerFrames;
+    return _Envelope(kEvtStateSync, std::move(d));
+}
+
+nlohmann::json BuildTimerWarningPayload(s32 secondsLeft) {
+    nlohmann::json d;
+    d["secondsLeft"] = secondsLeft;
+    return _Envelope(kEvtTimerWarning, std::move(d));
+}
+
 nlohmann::json BuildCutsceneBeginPayload(f32 triforceX, f32 triforceY, f32 triforceZ) {
     nlohmann::json d;
     d["x"] = triforceX;
@@ -1122,7 +1491,13 @@ void DrawHud() {
         // outside the viewport rect), snap to the nearest screen edge
         // with a small rotation arrow pointing toward the off-screen
         // Triforce. Replaces the previous per-player compass arrows.
-        if (gPlayState != nullptr && Harpoon::Instance != nullptr) {
+        //
+        // Hide the compass entirely when the local player is the carrier:
+        // they HAVE the Triforce, so pointing them to themselves is noise.
+        // (The above-head 3D Triforce spin already conveys that they
+        // hold it.)
+        if (gPlayState != nullptr && Harpoon::Instance != nullptr &&
+            !IsLocalCarrier()) {
             Vec3f world = { sLocal.triforceX, sLocal.triforceY + 30.0f,
                             sLocal.triforceZ };
             // If the Triforce is currently being carried, draw above the
@@ -1141,14 +1516,25 @@ void DrawHud() {
             auto vp = ImGui::GetMainViewport();
             ImDrawList* fg = ImGui::GetForegroundDrawList(vp);
 
-            // NDC → viewport pixels. w<=0 means the target is behind the
-            // camera; clamp it to a tiny positive number so we can still
-            // derive a stable direction for the edge-snap path.
+            // World → screen projection. `func_8002BE04` returns NDC in
+            // the engine's FIXED 4:3 projection (viewport is hardcoded
+            // 320×240 in z_view.c:46). Shipwright's rasterizer then
+            // applies an aspect-correction multiplier to NDC X via
+            // `AdjXForAspectRatio` in libultraship's interpreter:
+            //   adjustedX = ndcX * (4/3) / windowAspect
+            // (see libultraship/src/fast/interpreter.cpp:1204-1210).
+            // This is what stretches/squeezes 4:3 NDC into the actual
+            // widescreen / narrowscreen window. Skipping it leaves the
+            // icon offset for any non-center position — small at NDC≈0,
+            // visible at NDC≈±0.3.
+            // Y is NOT corrected at the rasterizer — maps 1:1.
             bool behind = (w <= 0.0f);
             f32 ndcX = proj.x * w;
             f32 ndcY = proj.y * w * -1.0f;
-            f32 vpx  = vp->Pos.x + vp->Size.x * (ndcX + 1.0f) * 0.5f;
-            f32 vpy  = vp->Pos.y + vp->Size.y * (ndcY + 1.0f) * 0.5f;
+            f32 windowAspect = OTRGetAspectRatio();
+            f32 ndcXAdjusted = ndcX * (4.0f / 3.0f) / windowAspect;
+            f32 vpx = vp->Pos.x + vp->Size.x * (ndcXAdjusted + 1.0f) * 0.5f;
+            f32 vpy = vp->Pos.y + vp->Size.y * (ndcY + 1.0f) * 0.5f;
             f32 cx   = vp->Pos.x + vp->Size.x * 0.5f;
             f32 cy   = vp->Pos.y + vp->Size.y * 0.5f;
 
@@ -1433,10 +1819,31 @@ void TeleportToEntrance(s32 entranceIndex) {
     ::sHarpoonAuthorizedTransition = true;
 }
 
+// Restore the player's saved C-button mappings (C-Left, C-Down, C-Right,
+// plus D-pad slots 4-7). ApplyThiefSave / kit application clobbers these
+// with preset defaults; we want the user's custom binds (Hookshot, etc.)
+// to survive lobby ↔ round transitions per user spec.
+void RestoreSavedCButtons() {
+    if (!sLocal.hasSavedCButtons) return;
+    for (s32 i = 1; i <= 7; i++) {
+        gSaveContext.equips.buttonItems[i] = sLocal.savedCButtonItems[i];
+    }
+}
+
 void StartLocalRoundOnMap(s32 mapIndex) {
     ApplyThiefSave();
+    RestoreSavedCButtons();
     s32 entrance = GetEntranceForMap(mapIndex);
     TeleportToEntrance(entrance);
+}
+
+void TeleportToLobby() {
+    // Lobby is always Hyrule Field — separate concept from the playable map
+    // roster. Slot 0 of `kMapInit` may be a different map (e.g. DMT after the
+    // map-roster expansion), so we can't reuse StartLocalRoundOnMap(0) here.
+    ApplyThiefSave();
+    RestoreSavedCButtons();
+    TeleportToEntrance(kHyruleFieldLobbyEntrance);
 }
 
 // Carrier pickup: seed (first time this round) or resume (per-carrier
@@ -1444,11 +1851,44 @@ void StartLocalRoundOnMap(s32 mapIndex) {
 // so the rupee HUD displays it. Invoked by HarpoonHookHandlers right
 // after the local pickup AABB check fires.
 void OnLocalPickup() {
-    if (sLocal.carrierRupeesRemaining <= 0) {
-        sLocal.carrierRupeesRemaining = sLocal.roundWinSeconds;
+    // No timer seeding here anymore — it was racing the ROUND_CONFIG
+    // broadcast on peers (pickup could happen before they learned the
+    // host's roundWinSeconds, leaving the timer at the default 60).
+    // The timer is now seeded at ROUND_CONFIG arrival (peers) and in
+    // HostConfirmMap (host) — see those handlers. By the time the
+    // player picks up the Triforce, carrierTimerFrames is already the
+    // correct value, and the TickFrame drain takes over.
+    //
+    // Defensive fallback: if for some reason the timer is still 0 by
+    // the time we pick up (e.g. ROUND_CONFIG dropped), seed it so the
+    // round can still play out.
+    if (sLocal.carrierTimerFrames <= 0) {
+        sLocal.carrierTimerFrames = sLocal.roundWinSeconds * 20;
+        sLocal.lastWarnSecond     = -1;
+        sLocal.slowModeAccum      = 0.0f;
     }
-    gSaveContext.rupees = sLocal.carrierRupeesRemaining;
-    sLocal.drainTickCounter = 60;
+    // Re-seed the wall-clock drain anchor on EVERY pickup (not just the
+    // defensive re-seed above). Without this, a new carrier's first drain
+    // tick would compute `elapsedMs = now - <stale timestamp from a prior
+    // carry>` and instantly burn up to the 5-second cap. Setting to 0
+    // makes the first carrier tick seed-only (no drain). lastSyncSecond
+    // reset forces an immediate sync broadcast of the current second.
+    sLocal.carrierTimerLastMs = 0;
+    sLocal.lastSyncSecond     = -1;
+
+    // 3-second pickup invincibility so the carrier can't be instantly
+    // spammed with arrows/projectiles the moment they grab the Triforce.
+    // Engine reads `invincibilityTimer` per Player_Update tick (60fps
+    // engine convention, e.g. vanilla damage knockback = 0x28 = 40 fr ≈
+    // 0.66s), so 180 = ~3 sec of i-frames. Vanilla OoT damage paths
+    // honor this field, so all incoming hits during the window are
+    // ignored automatically — no extra plumbing needed.
+    if (gPlayState != nullptr) {
+        Player* lp = GET_PLAYER(gPlayState);
+        if (lp != nullptr) {
+            lp->invincibilityTimer = 180;
+        }
+    }
 }
 
 // Host-only round starter — applies map locally and broadcasts the
@@ -1467,14 +1907,28 @@ void HostConfirmMap(s32 mapIdx) {
     sLocal.carrierClientId        = 0;
     sLocal.carrierRupeesRemaining = 0;
     sLocal.drainTickCounter       = 0;
+    sLocal.carrierTimerFrames     = 0;       // descending timer reset for new round
+    sLocal.lastWarnSecond         = -1;
     sLocal.roundIndex            += 1;
     Harpoon::Instance->gameState  = HARPOON_STATE_PLAYING;
 
     // 3-second "GET READY" pre-round countdown. While > 0, TickFrame freezes
-    // the local player and short-circuits the rupee drain. 3 s × 20 fps = 60.
+    // the local player and short-circuits the timer drain. 3 s × 20 fps = 60.
     sLocal.preRoundCountdownFrames = 60;
     sLocal.triforceLanded          = true;   // not airborne yet
     sLocal.appliedBunnyHood        = false;
+
+    // Host doesn't receive their own ROUND_CONFIG broadcast (server relay
+    // excludes the sender). Seed the descending timer here using our
+    // slider value so the first carrier's countdown starts at the
+    // host-selected round-win seconds, not the default 60.
+    sLocal.carrierTimerFrames = sLocal.roundWinSeconds * 20;
+    gSaveContext.ship.stats.playTimer = sLocal.carrierTimerFrames;
+    sLocal.lastWarnSecond     = -1;
+    sLocal.slowModeAccum      = 0.0f;
+    sLocal.carrierTimerLastMs = 0;   // re-seed wall-clock anchor next carrier tick
+    sLocal.lastSyncSecond     = -1;
+    sLocal.lastHostSyncMs     = 0;   // host emits first STATE_SYNC immediately next tick
 
     // Clear last round's leaderboard so the modal stops rendering.
     sLeaderboard.clear();
@@ -1484,31 +1938,23 @@ void HostConfirmMap(s32 mapIdx) {
     Harpoon::Instance->SendJsonToRemote(BuildMapConfirmedPayload(mapIdx, entrance));
     Harpoon::Instance->SendJsonToRemote(BuildRoundConfigPayload(sLocal.roundWinSeconds));
 
-    // 3) Pick a random spawn point on this map and broadcast the spawn.
-    const MapDef* m = GetMap(mapIdx);
-    if (m != nullptr && !m->spawnPoints.empty()) {
-        s32 spIdx = (s32)(rand() % m->spawnPoints.size());
-        const SpawnPoint& sp = m->spawnPoints[spIdx];
-        sLocal.currentSpawn = spIdx;
-        sLocal.triforceX = sp.x;
-        sLocal.triforceY = sp.y;
-        sLocal.triforceZ = sp.z;
-        Harpoon::Instance->SendJsonToRemote(
-            BuildTriforceSpawnPayload(mapIdx, spIdx, sp.x, sp.y, sp.z));
-        // 4) Round-start cutscene — broadcast so every peer kicks off the
-        //    Triforce-appear subcamera orbit at the same world position.
-        //    Local apply too, since the server-relay excludes the sender.
-        sLocal.cutsceneTimer  = 100;
-        sLocal.cutsceneReady  = false;
-        sLocal.cutsceneSubCam = SUBCAM_FREE;
-        Harpoon::Instance->SendJsonToRemote(
-            BuildCutsceneBeginPayload(sp.x, sp.y, sp.z));
-    }
+    // 3) Defer the Triforce spawn pick until the new scene's actors are
+    //    loaded. PickTriforceAnchor scans the live actor list for grottos,
+    //    soft soil, bush clusters, and signposts — we can't run that until
+    //    Player_Init has populated `actorCtx.actorLists` for the new scene.
+    //    OnSceneLoaded (fired by the OnSceneSpawnActors hook for the just-
+    //    loaded scene) does the actual pick and broadcasts both
+    //    TRIFORCE_SPAWN and CUTSCENE_BEGIN. Clear sceneLoadedThisRound so
+    //    HandleCutsceneBegin behavior is deterministic until the new scene
+    //    really loads on this host.
+    sLocal.pendingAnchorPick    = true;
+    sLocal.pendingAnchorMap     = mapIdx;
+    sLocal.sceneLoadedThisRound = false;
 
     // 5) Reset peer-side vote flags + carrier mirrors so next round starts clean.
     for (auto& [cid, c] : Harpoon::Instance->clients) {
         c.hasVoted = false;
-        c.ttRupeesRemaining = 0;
+        c.ttTimerSecondsRemaining = 0;
     }
     sLocal.mapVoteDeadline    = 0;
     sLocal.idleOnGroundFrames = 0;
@@ -1537,9 +1983,14 @@ bool StepDropPhysics() {
     constexpr f32 WALL_RADIUS    = 20.0f;
     constexpr f32 WALL_HEIGHT    = 30.0f;
     constexpr f32 CEILING_HEIGHT = 30.0f;
-    constexpr f32 WALL_DAMP      = 0.65f;
-    constexpr f32 FLOOR_DAMP     = 0.5f;
-    constexpr f32 SETTLE_SPEED   = 2.5f;
+    // "Ice slide" tuning per user spec: more distance, not more height.
+    //   WALL_DAMP    : 0.65 → 0.8  (wall ricochets keep more energy)
+    //   FLOOR_DAMP   : 0.5  → 0.3  (low vertical bounce — doesn't pop up)
+    //   SETTLE_SPEED : 2.5  → 1.5  (settles only when truly slow)
+    // Floor XZ friction drops from 0.85 → 0.97 (see the multiply lines).
+    constexpr f32 WALL_DAMP      = 0.8f;
+    constexpr f32 FLOOR_DAMP     = 0.3f;
+    constexpr f32 SETTLE_SPEED   = 1.5f;
 
     // Save previous (wall query needs both prev + next positions).
     sLocal.dropPrevX = sLocal.triforceX;
@@ -1615,9 +2066,11 @@ bool StepDropPhysics() {
         if (sLocal.dropVelY < 0.0f) {
             sLocal.dropVelY = -sLocal.dropVelY * FLOOR_DAMP;
         }
-        // Floor friction so it doesn't slide forever.
-        sLocal.dropVelX *= 0.85f;
-        sLocal.dropVelZ *= 0.85f;
+        // Floor friction: 0.97 ("ice-slide") keeps 97% of horizontal speed
+        // per tick so the Triforce travels several body-lengths past the
+        // knockout point before settling.
+        sLocal.dropVelX *= 0.97f;
+        sLocal.dropVelZ *= 0.97f;
     }
 
     sLocal.triforceX = nextPos.x;
@@ -1806,6 +2259,52 @@ void TickCutscene() {
 void TickFrame() {
     if (Harpoon::Instance == nullptr || !Harpoon::Instance->isConnected) return;
 
+    // (a-2) C-button persistence: while in the lobby, snapshot the
+    //       player's current C-button + D-pad item assignments. When a
+    //       round starts and ApplyThiefSave overwrites buttonItems with
+    //       the preset defaults, StartLocalRoundOnMap calls
+    //       RestoreSavedCButtons to put the user's customisations back.
+    //       Ammo and inventory contents (not the binds) get overwritten
+    //       by the kit, per user spec.
+    if (Harpoon::Instance->gameState == HARPOON_STATE_LOBBY) {
+        for (s32 i = 1; i <= 7; i++) {
+            sLocal.savedCButtonItems[i] = gSaveContext.equips.buttonItems[i];
+        }
+        sLocal.hasSavedCButtons = true;
+    }
+
+    // (a-0) Pin the HUD timer field to the shared countdown.
+    //
+    //       The HUD reads `playTimer/2 + pauseTimer/3` (see
+    //       GAMEPLAYSTAT_TOTAL_TIME in soh/Enhancements/gameplaystats.h).
+    //       Both counters leak through if left alone:
+    //
+    //       • playTimer is incremented in z_play.c:1180 every gameplay
+    //         frame (!isPaused gate). Without our pin the digits would
+    //         creep upward in the no-carrier window. Pinning to
+    //         carrierTimerFrames (which only decreases while someone
+    //         carries, +10 on drop, otherwise frozen) gives us the
+    //         monotonic countdown the user wants. Runs before the
+    //         pre-round early-return so the GET READY countdown is
+    //         pinned to the full value too.
+    //
+    //       • pauseTimer is incremented in z_kaleido_scope_call.c:63
+    //         every frame the pause menu is open. Each kaleido second
+    //         added 0.3 sec to the display via `pauseTimer/3` — the
+    //         user reported this as "the timer goes UP during pause".
+    //         Wiping pauseTimer to 0 every frame eliminates that leak;
+    //         the formula reduces to just `playTimer/2`.
+    //
+    //       Both writes are UNCONDITIONAL during the round (no kaleido
+    //       gate): per user spec, when the carrier holds the Triforce
+    //       the timer must keep counting DOWN even with the pause menu
+    //       open. Wall-clock drain (via TT_NowMs) ensures this happens
+    //       regardless of game-frame freezes.
+    if (sLocal.inRound && !sLocal.roundEnded) {
+        gSaveContext.ship.stats.pauseTimer = 0;
+        gSaveContext.ship.stats.playTimer  = sLocal.carrierTimerFrames;
+    }
+
     // (a-1) "GET READY" pre-round countdown. While > 0, freeze the local
     //       player and skip every other gameplay tick path. Runs BEFORE
     //       the cutscene tick so the cutscene's own freeze logic doesn't
@@ -1841,80 +2340,210 @@ void TickFrame() {
         else ++it;
     }
 
+    // (c.5) Secondary void-out — instant inbounds teleport. If the local
+    //       player falls more than 30 units below the scene's lowest
+    //       collision point (colCtx.minBounds.y), snap them back to the
+    //       map's entrance instead of waiting for the engine's slow
+    //       void-out cutscene — or worse, falling forever in a map with
+    //       no kill-plane. Penalty: 1 heart of damage (clamped so it can
+    //       never trigger a game-over). If they were the carrier, the
+    //       Triforce respawns inbounds at a fresh anchor for everyone.
+    //
+    //       The `transitionTrigger == OFF` guard doubles as a debounce:
+    //       once TeleportToEntrance sets the trigger to START we won't
+    //       re-fire until the scene finishes reloading.
+    if (gPlayState != nullptr && sLocal.inRound && !sLocal.roundEnded &&
+        gPlayState->transitionTrigger == TRANS_TRIGGER_OFF) {
+        Player* lp = GET_PLAYER(gPlayState);
+        if (lp != nullptr) {
+            f32 lowestY = gPlayState->colCtx.minBounds.y;
+            if (lp->actor.world.pos.y < lowestY - 30.0f) {
+                bool wasCarrier = IsLocalCarrier();
+
+                // 1-heart damage, clamped to always leave >= 1 heart so
+                // the void penalty can't dump the player to a game-over.
+                constexpr s16 kVoidDamage = 16;  // 1 heart (16 units)
+                s16 cur     = gSaveContext.health;
+                s16 maxSafe = (s16)(cur > 16 ? cur - 16 : 0);
+                s16 dmg     = (kVoidDamage < maxSafe) ? kVoidDamage : maxSafe;
+                if (dmg > 0) {
+                    Health_ChangeBy(gPlayState, (s16)-dmg);
+                }
+
+                // Carrier fell out — respawn the Triforce inbounds. Reset
+                // carrier locally + broadcast TRIFORCE_SPAWN (which sets
+                // carrierClientId = 0 on every peer). Only the falling
+                // carrier runs this, so there's no double-spawn race.
+                if (wasCarrier && Harpoon::Instance != nullptr) {
+                    const MapDef* m = GetMap(sLocal.confirmedMap);
+                    f32 nx = sLocal.triforceX, ny = sLocal.triforceY,
+                        nz = sLocal.triforceZ;
+                    s32 nIdx = -1;
+                    Vec3f anchor;
+                    if (PickTriforceAnchor(&anchor)) {
+                        nx = anchor.x; ny = anchor.y; nz = anchor.z;
+                        nIdx = -1;
+                    } else if (m != nullptr && !m->spawnPoints.empty()) {
+                        nIdx = (s32)(rand() % m->spawnPoints.size());
+                        const SpawnPoint& sp = m->spawnPoints[nIdx];
+                        nx = sp.x; ny = sp.y; nz = sp.z;
+                    }
+                    sLocal.carrierClientId = 0;
+                    sLocal.currentSpawn    = nIdx;
+                    sLocal.triforceX = nx; sLocal.triforceY = ny;
+                    sLocal.triforceZ = nz;
+                    sLocal.dropFlyTimer = 0;
+                    Harpoon::Instance->SendJsonToRemote(
+                        BuildTriforceSpawnPayload(sLocal.confirmedMap, nIdx,
+                                                  nx, ny, nz));
+                }
+
+                // Instant inbounds teleport: re-enter the map at its
+                // entrance ("the loading zone you enter"). The engine
+                // places Link on the authored spawn floor, guaranteed
+                // inbounds — no manual floor raycast needed.
+                TeleportToEntrance(GetEntranceForMap(sLocal.confirmedMap));
+
+                Notification::Emit({
+                    .prefix = "Triforce Thief",
+                    .message = "Out of bounds! Teleported back.",
+                    .remainingTime = 2.0f,
+                });
+                return;  // mid-teleport — skip the rest of this tick
+            }
+        }
+    }
+
     // (d) passive regen for non-carriers (only during a live round).
     //     Auto-drop on damage lives in the OnPlayerHealthChange engine hook.
     if (sLocal.inRound && !sLocal.roundEnded) {
         TickPassiveRegen();
     }
 
-    // (a.5) Bunny Hood speed buff. The engine's speed math at z_player.c:7829
-    //       is gated on TWO conditions:
-    //         (1) player->currentMask == PLAYER_MASK_BUNNY
-    //         (2) CVar MMBunnyHood == BUNNY_HOOD_FAST_AND_JUMP
-    //       Additionally, Player_Update at z_player.c:2637-2651 CLEARS
-    //       currentMask each frame if the Bunny Hood isn't equipped on a
-    //       C-button (or D-pad with DpadEquips). Setting currentMask alone
-    //       gets wiped on the next frame — the buff lasts ~1 frame.
+    // (a.5) Carrier speed buff (1.5x, Bunny-Hood equivalent).
+    //       z_player.c already has a SpeedModifier cheat that multiplies
+    //       maxSpeed at 5 sites by `CVAR_CHEAT("SpeedModifier.Value")`
+    //       (line 7875 et al). It activates either by hold-modifier-button
+    //       or by toggle (`gWalkSpeedToggle`). The carrier buff hijacks
+    //       the toggle path: save the user's prior trio (Value CVar,
+    //       SpeedToggle CVar, global toggle), force Value=1.5 + Toggle=1
+    //       + global=1. On drop we restore all three. The engine math is
+    //       unchanged — this is the same mechanism the cheat menu uses.
     //
-    //       Full fix: while carrying, we (a) force the CVar to FAST_AND_JUMP,
-    //       (b) write ITEM_MASK_BUNNY to a C-button slot, (c) write
-    //       PLAYER_MASK_BUNNY to currentMask. On drop we restore all three.
-    if (gPlayState != nullptr) {
-        Player* lp = GET_PLAYER(gPlayState);
-        if (lp != nullptr) {
-            bool shouldBuff =
-                (sLocal.inRound && !sLocal.roundEnded && IsLocalCarrier());
-            if (shouldBuff && !sLocal.appliedBunnyHood) {
-                sLocal.savedMaskBeforeBuff = lp->currentMask;
-                sLocal.savedBunnyHoodCVar  = CVarGetInteger(
-                    CVAR_ENHANCEMENT("MMBunnyHood"), BUNNY_HOOD_VANILLA);
-                CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"),
-                                BUNNY_HOOD_FAST_AND_JUMP);
-                // Hijack a C-button slot (CDown = slot 2) so the mask-sync
-                // at z_player.c:2637 sees the bunny mask on a button.
-                sLocal.buffMaskSlot      = 2;
-                sLocal.savedMaskSlotItem = gSaveContext.equips.buttonItems[2];
-                gSaveContext.equips.buttonItems[2] = ITEM_MASK_BUNNY;
-                sLocal.appliedBunnyHood = true;
-            }
-            if (sLocal.appliedBunnyHood) {
-                if (shouldBuff) {
-                    // Reassert each frame in case some other system clears
-                    // the slot (e.g. inventory refresh on scene change).
-                    if (sLocal.buffMaskSlot >= 0 &&
-                        gSaveContext.equips.buttonItems[sLocal.buffMaskSlot] != ITEM_MASK_BUNNY) {
-                        gSaveContext.equips.buttonItems[sLocal.buffMaskSlot] = ITEM_MASK_BUNNY;
-                    }
-                    lp->currentMask = PLAYER_MASK_BUNNY;
-                } else {
-                    // Restore everything we replaced.
-                    lp->currentMask = sLocal.savedMaskBeforeBuff;
-                    CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"),
-                                    sLocal.savedBunnyHoodCVar);
-                    if (sLocal.buffMaskSlot >= 0) {
-                        gSaveContext.equips.buttonItems[sLocal.buffMaskSlot] =
-                            sLocal.savedMaskSlotItem;
-                        sLocal.buffMaskSlot = -1;
-                    }
-                    sLocal.appliedBunnyHood = false;
-                }
-            }
+    //       Also force CVAR_ENHANCEMENT("MMBunnyHood") to FAST_AND_JUMP
+    //       as defense-in-depth: if a downstream system reads it (e.g.
+    //       the bunny-ear flap visual) the value is consistent with the
+    //       boosted speed.
+    {
+        bool shouldBuff =
+            (sLocal.inRound && !sLocal.roundEnded && IsLocalCarrier());
+        if (shouldBuff && !sLocal.appliedBunnyHood) {
+            sLocal.savedSpeedModValue   = CVarGetFloat(
+                CVAR_CHEAT("SpeedModifier.Value"), 1.0f);
+            sLocal.savedSpeedToggleCVar = CVarGetInteger(
+                CVAR_CHEAT("SpeedModifier.SpeedToggle"), 0);
+            sLocal.savedWalkSpeedToggle = gWalkSpeedToggle;
+            sLocal.savedBunnyHoodCVar   = CVarGetInteger(
+                CVAR_ENHANCEMENT("MMBunnyHood"), BUNNY_HOOD_VANILLA);
+
+            CVarSetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.5f);
+            CVarSetInteger(CVAR_CHEAT("SpeedModifier.SpeedToggle"), 1);
+            gWalkSpeedToggle = 1;
+            CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"),
+                            BUNNY_HOOD_FAST_AND_JUMP);
+            sLocal.appliedBunnyHood = true;
+        } else if (!shouldBuff && sLocal.appliedBunnyHood) {
+            CVarSetFloat(CVAR_CHEAT("SpeedModifier.Value"),
+                          sLocal.savedSpeedModValue);
+            CVarSetInteger(CVAR_CHEAT("SpeedModifier.SpeedToggle"),
+                            sLocal.savedSpeedToggleCVar);
+            gWalkSpeedToggle = sLocal.savedWalkSpeedToggle;
+            CVarSetInteger(CVAR_ENHANCEMENT("MMBunnyHood"),
+                            sLocal.savedBunnyHoodCVar);
+            sLocal.appliedBunnyHood = false;
         }
     }
 
-    // (a) Carrier rupee drain.
-    if (sLocal.inRound && !sLocal.roundEnded && IsLocalCarrier()) {
-        if (--sLocal.drainTickCounter <= 0) {
-            sLocal.drainTickCounter = 60;
-            if (sLocal.carrierRupeesRemaining > 0) {
-                sLocal.carrierRupeesRemaining--;
-            }
-            gSaveContext.rupees = sLocal.carrierRupeesRemaining;
-            // Broadcast every second so peers' arrow labels stay live.
-            Harpoon::Instance->SendJsonToRemote(
-                BuildCarrierTimerSyncPayload(sLocal.carrierRupeesRemaining));
+    // (a) Shared descending timer. EVERY client drains carrierTimerFrames
+    //     locally via wall-clock time whenever SOMEONE holds the Triforce
+    //     (carrierClientId != 0). This is per user spec: "el check es si
+    //     alguien tiene el triforce" — the timer reduces for everyone
+    //     when anyone carries, not only on the local carrier's machine.
+    //
+    //     Why drain on every client instead of carrier-broadcast-only:
+    //       * Display stays smooth (sub-second) on every screen, not
+    //         steppy 1-Hz from sync packets.
+    //       * Pause/framerate immunity: each client's std::chrono runs
+    //         independently in real time.
+    //       * Cross-player consistency: identical real-time deltas
+    //         applied everywhere, with the sync handler correcting any
+    //         drift DOWNWARD only (see HandleEvent → CARRIER_TIMER_SYNC).
+    //         Upward snap-back from rounding floors is suppressed there,
+    //         so the displayed timer never moves up (except +10 on drop,
+    //         which is a separate event applied identically everywhere).
+    //
+    //     The carrier remains the authority for broadcasts, warnings,
+    //     and the win declaration — only its broadcast block fires.
+    if (sLocal.inRound && !sLocal.roundEnded &&
+        sLocal.carrierClientId != 0 && sLocal.carrierTimerFrames > 0) {
+        s64 nowMs = TT_NowMs();
+        if (sLocal.carrierTimerLastMs == 0) {
+            sLocal.carrierTimerLastMs = nowMs;  // first tick this carry — seed only
+        }
+        s64 elapsedMs = nowMs - sLocal.carrierTimerLastMs;
+        sLocal.carrierTimerLastMs = nowMs;
+        if (elapsedMs < 0) elapsedMs = 0;
+        // Cap a single step so a pathological stall (alt-tab for minutes)
+        // doesn't instantly zero the clock. A real freeze of a few seconds
+        // still drains correctly — nobody can freeze the round by pausing.
+        if (elapsedMs > 5000) elapsedMs = 5000;
 
-            if (sLocal.carrierRupeesRemaining <= 0) {
+        // Real ms → frame-units (20 per second). Slow-mo for the final
+        // 5 seconds: drain at 1/2.5 the rate ("dramatic finale").
+        f32 drainFrames = (f32)elapsedMs * (20.0f / 1000.0f);
+        constexpr s32 kSlowModeThresholdFrames = 5 * 20;  // last 5 sec
+        if (sLocal.carrierTimerFrames <= kSlowModeThresholdFrames) {
+            drainFrames *= 0.4f;  // 1 / 2.5
+        }
+        // Fractional carry (slowModeAccum) keeps sub-frame precision.
+        sLocal.slowModeAccum += drainFrames;
+        s32 wholeFrames = (s32)sLocal.slowModeAccum;
+        if (wholeFrames > 0) {
+            sLocal.slowModeAccum -= (f32)wholeFrames;
+            sLocal.carrierTimerFrames -= wholeFrames;
+            if (sLocal.carrierTimerFrames < 0) sLocal.carrierTimerFrames = 0;
+        }
+        gSaveContext.ship.stats.playTimer = sLocal.carrierTimerFrames;
+
+        // Carrier-only authority duties: broadcast on second change,
+        // fire warnings, declare the win. Non-carriers just drained
+        // locally above for their display.
+        if (IsLocalCarrier()) {
+            s32 secsLeft = sLocal.carrierTimerFrames / 20;
+            if (secsLeft != sLocal.lastSyncSecond) {
+                sLocal.lastSyncSecond = secsLeft;
+                Harpoon::Instance->SendJsonToRemote(
+                    BuildCarrierTimerSyncPayload(secsLeft));
+            }
+
+            // Per-second warnings at 10/5/4/3/2/1 sec, once each.
+            s32 curSec = (sLocal.carrierTimerFrames + 19) / 20;  // ceil
+            static const s32 kThresholds[] = { 10, 5, 4, 3, 2, 1 };
+            for (s32 t : kThresholds) {
+                if (curSec == t && sLocal.lastWarnSecond != t) {
+                    sLocal.lastWarnSecond = t;
+                    Notification::Emit({
+                        .prefix = "Triforce Thief",
+                        .message = "Hurry! " + std::to_string(t) + " seconds left!",
+                        .remainingTime = 2.5f,
+                    });
+                    Harpoon::Instance->SendJsonToRemote(
+                        BuildTimerWarningPayload(t));
+                    break;
+                }
+            }
+
+            if (sLocal.carrierTimerFrames <= 0) {
                 sLocal.roundEnded = true;
                 u32 winner = Harpoon::Instance->ownClientId;
                 Harpoon::Instance->SendJsonToRemote(
@@ -1924,6 +2553,40 @@ void TickFrame() {
                 local["winnerClientId"] = winner;
                 local["roundIndex"]     = sLocal.roundIndex;
                 HandleRoundResult(local);
+            }
+        }
+    } else if (sLocal.carrierClientId == 0) {
+        // No carrier — timer paused. Re-anchor so the next carry's first
+        // tick seeds fresh instead of draining the idle gap.
+        sLocal.carrierTimerLastMs = 0;
+    }
+
+    // (a.7) Host authoritative state sync (1 Hz). The room host broadcasts
+    //       its view of {carrierClientId, timerSeconds} every second so
+    //       peers can resolve any conflict that crept in via race
+    //       conditions: e.g. two players whose pickup events arrived in
+    //       different orders on different clients (resulting in disagreement
+    //       on who's carrying), or accumulated timer drift between local
+    //       drains. Peers' HandleEvent snaps carrierClientId to the host's
+    //       value unconditionally and applies the timer monotonically (down
+    //       only — never moves the display upward, per the established
+    //       "never goes up" invariant).
+    {
+        bool isHostLocal = (Harpoon::Instance->ownClientId != 0 &&
+                            Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
+        if (isHostLocal && sLocal.inRound && !sLocal.roundEnded) {
+            s64 nowMs = TT_NowMs();
+            if (sLocal.lastHostSyncMs == 0 ||
+                (nowMs - sLocal.lastHostSyncMs) >= 1000) {
+                sLocal.lastHostSyncMs = nowMs;
+                // Broadcast exact frames (not floored seconds) so peers
+                // snap to the host's sub-second-precise value. With a
+                // whole-second floor a peer drifted to 35.8 while the
+                // host sat at 36.8 would snap to 36.0 and keep a
+                // permanent ~0.8 s offset.
+                Harpoon::Instance->SendJsonToRemote(
+                    BuildStateSyncPayload(sLocal.carrierClientId,
+                                          sLocal.carrierTimerFrames));
             }
         }
     }
@@ -1999,6 +2662,15 @@ void TickFrame() {
             f32 spawnY = m->spawnPoints[sLocal.currentSpawn].y;
             if (sLocal.triforceY < spawnY - 200.0f) inVoid = true;
         }
+        // Loading-zone detection: a Triforce drop that lands ON a
+        // scene-exit polygon (e.g. the Gerudo Fortress front-gate
+        // exit poly, or any grotto entrance triggered by floor) ends
+        // up behind an invisible scene-transition wall — unreachable
+        // for the rest of the round. Force an immediate respawn when
+        // we detect that the resting position is on such a poly.
+        bool onExitPoly = IsPositionOnExitPoly(sLocal.triforceX,
+                                                sLocal.triforceY,
+                                                sLocal.triforceZ);
         // Is the Triforce currently within ~40u of ANY spawn point on
         // this map? If so, skip the idle counter entirely.
         bool atSpawnPoint = false;
@@ -2014,26 +2686,52 @@ void TickFrame() {
                 }
             }
         }
-        if (!atSpawnPoint) {
-            sLocal.idleOnGroundFrames++;
-        } else {
-            sLocal.idleOnGroundFrames = 0;
-        }
-        if (inVoid || sLocal.idleOnGroundFrames >= 600) {
+        // Both states count up — the threshold differs:
+        //   - dropped somewhere random:   30 sec  (1800 frames at 60fps)
+        //   - sitting on a spawn point:   60 sec  (3600 frames at 60fps)
+        // Shipwright runs game-state updates at 60fps (R_UPDATE_RATE=1 in
+        // Play state per z_play.c:809), so use 60-tick-per-second math.
+        constexpr s32 kRespawnFramesElsewhere = 30 * 60;   // 30 sec
+        constexpr s32 kRespawnFramesAtSpawn   = 60 * 60;   // 60 sec
+        sLocal.idleOnGroundFrames++;
+        s32 threshold = atSpawnPoint
+                            ? kRespawnFramesAtSpawn
+                            : kRespawnFramesElsewhere;
+
+        if (inVoid || onExitPoly || sLocal.idleOnGroundFrames >= threshold) {
             sLocal.idleOnGroundFrames = 0;
             // Only the host respawns it so we don't double-spawn. Peers
             // receive TRIFORCE_SPAWN as usual.
             bool isHostNow = (Harpoon::Instance->ownClientId != 0 &&
                               Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
-            if (isHostNow && m != nullptr && !m->spawnPoints.empty()) {
-                s32 idx = (s32)(rand() % m->spawnPoints.size());
-                const SpawnPoint& sp = m->spawnPoints[idx];
-                sLocal.currentSpawn = idx;
-                sLocal.triforceX = sp.x;
-                sLocal.triforceY = sp.y;
-                sLocal.triforceZ = sp.z;
+            if (isHostNow) {
+                // Prefer the same actor-anchor pick that HostConfirmMap
+                // defers to OnSceneLoaded. If no anchors exist in the
+                // current scene fall back to a random JSON spawn point.
+                f32 newX = sLocal.triforceX;
+                f32 newY = sLocal.triforceY;
+                f32 newZ = sLocal.triforceZ;
+                s32 newIdx = -1;
+                Vec3f anchor;
+                if (PickTriforceAnchor(&anchor)) {
+                    newX = anchor.x;
+                    newY = anchor.y;
+                    newZ = anchor.z;
+                    newIdx = -1;  // sentinel = anchored, not JSON-indexed
+                } else if (m != nullptr && !m->spawnPoints.empty()) {
+                    newIdx = (s32)(rand() % m->spawnPoints.size());
+                    const SpawnPoint& sp = m->spawnPoints[newIdx];
+                    newX = sp.x;
+                    newY = sp.y;
+                    newZ = sp.z;
+                }
+                sLocal.currentSpawn = newIdx;
+                sLocal.triforceX = newX;
+                sLocal.triforceY = newY;
+                sLocal.triforceZ = newZ;
                 Harpoon::Instance->SendJsonToRemote(
-                    BuildTriforceSpawnPayload(sLocal.confirmedMap, idx, sp.x, sp.y, sp.z));
+                    BuildTriforceSpawnPayload(sLocal.confirmedMap, newIdx,
+                                              newX, newY, newZ));
             }
         }
     } else {
@@ -2051,6 +2749,10 @@ void BigStartGame() {
     gSaveContext.fileNum = 0xFD;
 
     ApplyThiefSave();
+    // Restore the user's C-button mappings if we have a saved snapshot
+    // from a previous session in this run. First-time-join through here
+    // keeps the thief preset's defaults (no snapshot yet).
+    RestoreSavedCButtons();
 
     // Standard gSaveContext fields the engine expects post-load.
     gSaveContext.gameMode = GAMEMODE_NORMAL;

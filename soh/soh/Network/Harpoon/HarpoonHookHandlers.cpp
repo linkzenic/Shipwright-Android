@@ -1,9 +1,70 @@
 #include "Harpoon.h"
+#include "Combat/CombatSync.h"
+#include "Combat/ProjectileMirror.h"
 #include "PropHunt/PropHunt.h"
 #include "TriforceThief/TriforceThief.h"
 #include "DroppedItems.h"
+
+extern "C" {
+// Bridge for the local player's currently-worn MM transformation mask.
+// Defined in soh/mods/transformation_masks/mm_mask_wear.cpp. We avoid
+// pulling in the full mm_mask_wear.h to dodge the C-header rule.
+s32 MmMaskWear_GetCurrent(void);
+
+// Forward-declared struct for gCustomItemState. We only need direct
+// access to a handful of fields used in PvP proximity checks. The
+// full struct is defined in soh/mods/items/custom_items.h. We declare
+// a parallel partial layout below as a C extern struct so MSVC C++
+// accepts the symbol; the runtime memory layout is identical because
+// the field order matches custom_items.h exactly through the last
+// field we touch. (If anyone reorders earlier fields in CustomItemState,
+// this layout will go stale — keep them in sync.)
+}
+
+// Pull in custom_items.h for the gCustomItemState symbol. The header is
+// C++-safe (it self-wraps in extern "C" + #ifdef __cplusplus). Lives in
+// soh/mods/ which the project includes as a search root.
+#include "mods/items/custom_items.h"
+
+extern "C" {
+// SW97 actor IDs, runtime-assigned by sw97_init.cpp's ActorDB::AddEntry.
+// Forward-declared so we can detect SW97 spell/arrow spawns in OnActorInit
+// without dragging the sw97 expansion headers in.
+extern s16 gSw97ActorId_MagicFire;
+extern s16 gSw97ActorId_MagicIce;
+extern s16 gSw97ActorId_MagicLight;
+extern s16 gSw97ActorId_MagicDark;
+extern s16 gSw97ActorId_MagicSoul;
+extern s16 gSw97ActorId_MagicWind;
+extern s16 gSw97ActorId_ArrowFire;
+extern s16 gSw97ActorId_ArrowIce;
+extern s16 gSw97ActorId_ArrowLight;
+extern s16 gSw97ActorId_ArrowDark;
+extern s16 gSw97ActorId_ArrowSoul;
+extern s16 gSw97ActorId_ArrowWind;
+}
+
+namespace {
+HarpoonCombat::HarpoonWeaponId Sw97ActorIdToWeapon(s16 actorId) {
+    using namespace HarpoonCombat;
+    if (actorId == gSw97ActorId_MagicFire)  return W_SW97_MAGIC_FIRE;
+    if (actorId == gSw97ActorId_MagicIce)   return W_SW97_MAGIC_ICE;
+    if (actorId == gSw97ActorId_MagicLight) return W_SW97_MAGIC_LIGHT;
+    if (actorId == gSw97ActorId_MagicDark)  return W_SW97_MAGIC_DARK;
+    if (actorId == gSw97ActorId_MagicSoul)  return W_SW97_MAGIC_SOUL;
+    if (actorId == gSw97ActorId_MagicWind)  return W_SW97_MAGIC_WIND;
+    if (actorId == gSw97ActorId_ArrowFire)  return W_SW97_ARROW_FIRE;
+    if (actorId == gSw97ActorId_ArrowIce)   return W_SW97_ARROW_ICE;
+    if (actorId == gSw97ActorId_ArrowLight) return W_SW97_ARROW_LIGHT;
+    if (actorId == gSw97ActorId_ArrowDark)  return W_SW97_ARROW_DARK;
+    if (actorId == gSw97ActorId_ArrowSoul)  return W_SW97_ARROW_SOUL;
+    if (actorId == gSw97ActorId_ArrowWind)  return W_SW97_ARROW_WIND;
+    return HARPOON_WEAPON_UNKNOWN;
+}
+}  // anon
 #include <libultraship/libultraship.h>
 #include <imgui.h>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
@@ -30,6 +91,70 @@ float OTRGetDimensionFromRightEdge(float v);
 // namespace).
 extern bool sHarpoonAuthorizedTransition;
 
+// 1-frame position rollback state for the loading-zone blocker.
+// Snapshot Link's pos each "good" frame; on a "bad" frame (engine just set
+// PLAYER_STATE1_LOADING from an exit poly), restore to this snapshot. Tiny
+// rollback (~1 game tick) — distinct from the old "snap to round-start"
+// approach that caused softlocks when the start pos was inside geometry.
+static Vec3f sHarpoonLastSafePlayerPos = { 0.0f, 0.0f, 0.0f };
+static bool  sHarpoonHasLastSafePos    = false;
+
+// One-shot guard for the auto-jump recoil when engine forces a load. Set
+// the first frame of a forced-load encounter, cleared when forced state
+// ends. Prevents the jump animation from restarting every frame.
+static bool sHarpoonAutoJumpArmed = false;
+
+// File-scope arrays of actor IDs to kill in the round-active loading-zone
+// blocker. Kept here (NOT inside the COND_HOOK lambda body) because the
+// `COND_HOOK` macro is preprocessor-expanded and commas inside `{ ... }`
+// brace-initializers are NOT shielded — putting these inside the lambda
+// breaks the macro arg count. See memory `feedback_cond_hook_brace_init`.
+// Door actors live in 3 different `ActorContext` categories, NOT all in
+// `ACTORCAT_DOOR` as you'd expect:
+//   ACTORCAT_ITEMACTION → Door_Ana (grottos), Door_Gerudo, Door_Warp1
+//   ACTORCAT_DOOR       → En_Door (regular doors), Door_Shutter, En_Holl
+//   ACTORCAT_BG         → Door_Killer (Ganon's Castle trial doors),
+//                          Door_Toki (Door of Time)
+//
+// The previous kill loop iterated only ACTORCAT_DOOR with the full list,
+// silently missing Door_Killer / Door_Toki / Door_Gerudo / Door_Warp1.
+// Ganon's Castle trial doors (Door_Killer) are DynaPolyActors — their
+// collision was blocking the player with an invisible wall even after
+// EN_HOLL was kept alive. Fix: 3 separate kill lists, one per category.
+static const s16 kHarpoonTtItemActionKill[] = {
+    ACTOR_DOOR_ANA,
+    ACTOR_DOOR_GERUDO,
+    ACTOR_DOOR_WARP1,
+    // Ganon's Castle magic barriers (the rainbow glow at each trial
+    // entrance). They self-kill on Init when the corresponding
+    // trial-completed flag is set, BUT Actor_Kill leaves their OC1
+    // collider (`OC1_ON | OC1_TYPE_ALL`) active — it acts as an
+    // invisible wall against the player. Forcing Actor_Delete via this
+    // list triggers Collider_DestroyCylinder properly.
+    ACTOR_DEMO_KEKKAI,
+};
+// TT door kill list — includes EN_HOLL so the invisible room-load planes
+// don't drag the player into the next room when crossing a doorway.
+static const s16 kHarpoonTtDoorKill[] = {
+    ACTOR_EN_DOOR,
+    ACTOR_DOOR_SHUTTER,
+    ACTOR_EN_HOLL,
+};
+// ACTORCAT_BG kills — Door_Killer (trial doors in Ganon's Castle) and
+// Door_Toki (Door of Time). Both are DynaPolyActors with collision; the
+// kill triggers their Destroy callback which calls DynaPoly_DeleteBgActor
+// and removes the wall.
+static const s16 kHarpoonTtBgKill[] = {
+    ACTOR_DOOR_KILLER,
+    ACTOR_DOOR_TOKI,
+};
+// PropHunt only kills the scene-jumping ITEMACTION doors so peers can
+// roam intra-cluster rooms via En_Door / En_Holl normally.
+static const s16 kHarpoonPhItemActionKill[] = {
+    ACTOR_DOOR_ANA,
+    ACTOR_DOOR_WARP1,
+};
+
 void Harpoon::RegisterHooks() {
 
     // Spawn dummy players when entering a new scene. Push a fresh
@@ -43,6 +168,14 @@ void Harpoon::RegisterHooks() {
             SendPacket_PlayerVisualState();
             RefreshClientActors();
         }
+        // CRITICAL leak fix: drop the VFX actor → owner map every scene
+        // change. The engine recycles its actor pool on scene load so
+        // every Actor* in the map is now dangling, AND the map was never
+        // pruned otherwise — it grew unbounded across a session. Long
+        // sessions saw stale Actor* collisions (engine reuses the slot)
+        // route damage to the wrong shooter and eventually exhaust the
+        // damage-routing logic.
+        ClearVfxActorOwners();
         // Prop Hunt: refresh the ghost-actor registry on every scene change.
         // SpawnGhostActors is currently a stub; the destroy half is still
         // correct to call so stale pointers from the previous scene are
@@ -101,6 +234,577 @@ void Harpoon::RegisterHooks() {
             // progress with our (likely empty) save.
             SendPacket_RequestTeamState();
         }
+
+        // ====================================================================
+        // Cross-gamemode PvP combat: per-frame form-attack + utility-item
+        // proximity checks. The existing collision-based damage broadcast
+        // handles weapons with native AT colliders (vanilla swords, bombs,
+        // SW97 spells with their own collider cylinder). This block covers
+        // attacks WITHOUT a native collider — Goron roll contact, Zora
+        // electric, Deku spin AOE, Pegasus charge, and utility-item
+        // hostile interactions (hookshot pull with iron-boots inversion,
+        // switch hook swap, gust jar blow, fairy heal touch, lantern reveal).
+        // ====================================================================
+        if (pvpEnabled && gPlayState != nullptr) {
+            Player* lp = GET_PLAYER(gPlayState);
+            if (lp != nullptr) {
+                auto myIt = clients.find(ownClientId);
+                HarpoonClient* myClient = (myIt != clients.end()) ? &myIt->second : nullptr;
+
+                // Helper: iterate connected peers, calling cb(cid, peerClient).
+                auto forEachPeer = [&](auto cb) {
+                    for (auto& [cid, c] : clients) {
+                        if (cid == ownClientId) continue;
+                        if (!c.online) continue;
+                        // Same scene only
+                        if (c.sceneNum != (s16)gPlayState->sceneNum) continue;
+                        cb(cid, c);
+                    }
+                };
+                auto distSqToPeer = [&](const HarpoonClient& c) -> f32 {
+                    f32 dx = lp->actor.world.pos.x - c.posRot.pos.x;
+                    f32 dy = lp->actor.world.pos.y - c.posRot.pos.y;
+                    f32 dz = lp->actor.world.pos.z - c.posRot.pos.z;
+                    return dx * dx + dy * dy + dz * dz;
+                };
+
+                // --- Form attacks ---------------------------------------
+                // Read transformation from the LOCAL mask system, not the
+                // network-mirror field (which is only populated for REMOTE
+                // peers). Same for meleeWeaponState (read off lp directly).
+                {
+                    s32 mask = MmMaskWear_GetCurrent();
+                    bool isGoron = (mask == ITEM_MM_MASK_GORON);
+                    bool isZora  = (mask == ITEM_MM_MASK_ZORA);
+                    bool isDeku  = (mask == ITEM_MM_MASK_DEKU);
+                    // Goron roll contact: detect via mask + high linear vel.
+                    if (isGoron && lp->linearVelocity > 8.0f) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) <= 80.0f * 80.0f) {
+                                Harpoon::Instance->SendPacket_Damage(
+                                    cid, HARPOON_HIT_RESPONSE_NORMAL, 2);
+                            }
+                        });
+                    }
+                    // Zora electric — Zora form + attacking.
+                    if (isZora && lp->meleeWeaponState > 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) <= 50.0f * 50.0f) {
+                                Harpoon::Instance->SendPacket_Damage(
+                                    cid, PLAYER_HIT_RESPONSE_ELECTRIC_SHOCK, 2);
+                            }
+                        });
+                    }
+                    // Deku spin/bubble — Deku form + attacking.
+                    if (isDeku && lp->meleeWeaponState > 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) <= 40.0f * 40.0f) {
+                                Harpoon::Instance->SendPacket_Damage(
+                                    cid, HARPOON_HIT_RESPONSE_NORMAL, 1);
+                            }
+                        });
+                    }
+                }
+
+                // --- Zora Barrier (Water Dragon Scale activable) -------
+                // While the local player has the barrier active, any peer
+                // within 60u takes 2♥/sec shock damage + 30fr stun. We
+                // throttle to once-per-20-frames-per-peer (the existing
+                // freezeTimer fires for the stun).
+                if (myClient != nullptr && myClient->combatZoraBarrierActive) {
+                    static int sZoraBarrierTickCounter = 0;
+                    sZoraBarrierTickCounter++;
+                    if ((sZoraBarrierTickCounter % 20) == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) <= 60.0f * 60.0f) {
+                                HarpoonCombat::BroadcastUtilityHit(
+                                    ownClientId, cid,
+                                    HarpoonCombat::UTIL_ZORA_BARRIER_SHOCK,
+                                    0, 0, 0,
+                                    lp->actor.world.pos.x,
+                                    lp->actor.world.pos.y,
+                                    lp->actor.world.pos.z);
+                            }
+                        });
+                        // Drain magic: 1 unit per second (20 frames)
+                        if (gSaveContext.magic > 0) gSaveContext.magic--;
+                        if (gSaveContext.magic <= 0) {
+                            myClient->combatZoraBarrierActive = 0;
+                        }
+                    }
+                }
+
+                // --- Hylia's Grace fairy heal-touch --------------------
+                // While fairy form active, contacted peers heal 1♥.
+                // Throttled to once per 30 frames so we don't spam-heal.
+                if (gCustomItemState.hyliasGraceActive) {
+                    static int sFairyHealTick = 0;
+                    sFairyHealTick++;
+                    if ((sFairyHealTick % 30) == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) <= 30.0f * 30.0f) {
+                                HarpoonCombat::BroadcastUtilityHit(
+                                    ownClientId, cid,
+                                    HarpoonCombat::UTIL_FAIRY_HEAL_TOUCH,
+                                    0, 0, 0, 0, 0, 0);
+                            }
+                        });
+                    }
+                }
+
+                // --- Lantern PvP touch (3 fire colors) -----------------
+                // Local has Lantern swinging (lantern AT collider sweep
+                // is already armed by item_lantern.c). For PvP we add
+                // proximity-based effects: regular=1♥, blue=freeze 60fr,
+                // poe=stun 90fr. Throttled to once per 15 frames.
+                if (gCustomItemState.lanternFireType != 0) {
+                    static int sLanternTickGate = 0;
+                    sLanternTickGate++;
+                    if ((sLanternTickGate % 15) == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) > 35.0f * 35.0f) return;
+                            switch (gCustomItemState.lanternFireType) {
+                                case 1:  // regular fire
+                                    Harpoon::Instance->SendPacket_Damage(
+                                        cid, HARPOON_HIT_RESPONSE_FIRE, 1);
+                                    HarpoonCombat::BroadcastApplyStatus(
+                                        cid, HarpoonCombat::STATUS_BURN_DOT,
+                                        1, 60, ownClientId);
+                                    break;
+                                case 2:  // blue fire
+                                    HarpoonCombat::BroadcastApplyStatus(
+                                        cid, HarpoonCombat::STATUS_FREEZE,
+                                        0, 60, ownClientId);
+                                    break;
+                                case 3:  // poe fire
+                                    HarpoonCombat::BroadcastApplyStatus(
+                                        cid, HarpoonCombat::STATUS_STUN,
+                                        0, 90, ownClientId);
+                                    break;
+                            }
+                            HarpoonCombat::BroadcastUtilityHit(
+                                ownClientId, cid,
+                                HarpoonCombat::UTIL_LANTERN_REVEAL,
+                                0, 0, 0,
+                                lp->actor.world.pos.x,
+                                lp->actor.world.pos.y,
+                                lp->actor.world.pos.z);
+                        });
+                    }
+                }
+
+                // --- Gust Jar BLOW pushes peers in front cone ----------
+                // Detection: ciGustJarMode == HARPOON_GUST_MODE_BLOW.
+                // Cone: 45° in front of player, range 80u. Throttled.
+                if (gCustomItemState.gustJarMode == 2 /*BLOW*/) {
+                    static int sGustTickGate = 0;
+                    sGustTickGate++;
+                    if ((sGustTickGate % 10) == 0) {
+                        s16 yaw = lp->actor.shape.rot.y;
+                        f32 fwdX = Math_SinS(yaw);
+                        f32 fwdZ = Math_CosS(yaw);
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            f32 dx = c.posRot.pos.x - lp->actor.world.pos.x;
+                            f32 dz = c.posRot.pos.z - lp->actor.world.pos.z;
+                            f32 d2 = dx * dx + dz * dz;
+                            if (d2 > 80.0f * 80.0f) return;
+                            f32 d = sqrtf(d2);
+                            if (d < 1.0f) return;
+                            // In-cone check via dot product (cos(45°) ≈ 0.707)
+                            f32 dot = (dx * fwdX + dz * fwdZ) / d;
+                            if (dot < 0.707f) return;
+                            HarpoonCombat::BroadcastUtilityHit(
+                                ownClientId, cid,
+                                HarpoonCombat::UTIL_GUST_BLOW,
+                                0, 0, 0,
+                                fwdX * 25.0f, 8.0f, fwdZ * 25.0f);
+                        });
+                    }
+                }
+
+                // --- Switch Hook position swap on hit ------------------
+                // ciSwitchHookState bit 2 indicates "extended hook is
+                // currently attached to something". If attachedActor is
+                // a peer dummy → swap positions (we move to where they
+                // were, they teleport to where we were).
+                if (gCustomItemState.switchHookState != 0) {
+                    static u8 sSwitchHookPrevState = 0;
+                    if (gCustomItemState.switchHookState != sSwitchHookPrevState &&
+                        gCustomItemState.switchHookState >= 2) {
+                        // Find closest peer to the projectile position.
+                        Vec3f& projPos = gCustomItemState.switchHookProjPos;
+                        f32 best = 80.0f * 80.0f;
+                        uint32_t bestCid = 0;
+                        for (auto& [cid, c] : clients) {
+                            if (cid == ownClientId || !c.online) continue;
+                            if (c.sceneNum != (s16)gPlayState->sceneNum) continue;
+                            f32 dx = projPos.x - c.posRot.pos.x;
+                            f32 dy = projPos.y - c.posRot.pos.y;
+                            f32 dz = projPos.z - c.posRot.pos.z;
+                            f32 d2 = dx*dx + dy*dy + dz*dz;
+                            if (d2 <= best) { best = d2; bestCid = cid; }
+                        }
+                        if (bestCid != 0) {
+                            // Swap: send the peer to our pos, move us to
+                            // theirs. Both broadcast via UTIL_SWITCH_HOOK_SWAP.
+                            HarpoonCombat::BroadcastUtilityHit(
+                                ownClientId, bestCid,
+                                HarpoonCombat::UTIL_SWITCH_HOOK_SWAP,
+                                0, 0, 0,
+                                lp->actor.world.pos.x,
+                                lp->actor.world.pos.y,
+                                lp->actor.world.pos.z);
+                            // Teleport local to peer's last known pos.
+                            auto pit = clients.find(bestCid);
+                            if (pit != clients.end()) {
+                                lp->actor.world.pos = pit->second.posRot.pos;
+                            }
+                        }
+                    }
+                    sSwitchHookPrevState = gCustomItemState.switchHookState;
+                }
+
+                // --- Hookshot iron-boots inversion --------------------
+                // If local Link wears Iron Boots AND hookshot grabs a peer,
+                // the hook pulls LOCAL to peer instead of peer to local.
+                // We detect via Player.actor.parent (when hookshot attaches
+                // to the dummy). This is heuristic: when stateFlags1 has
+                // PLAYER_STATE1_HOOKSHOT_FLYING set AND local has iron boots
+                // (currentBoots == PLAYER_BOOTS_IRON) AND hookActor->parent
+                // is a peer dummy, we'd flip — but the actual physics is
+                // already handled by vanilla engine since we're the one
+                // hookshot-flying. So this is effectively automatic.
+                // Just broadcast a notification event so peers know to
+                // play a confused-tug animation on their dummy.
+                if (myClient != nullptr &&
+                    (lp->stateFlags1 & PLAYER_STATE1_HOOKSHOT_FALLING)) {
+                    static bool sHookBroadcasted = false;
+                    if (!sHookBroadcasted) {
+                        sHookBroadcasted = true;
+                        bool ironBoots = (lp->currentBoots == PLAYER_BOOTS_IRON);
+                        // Find the closest peer in the hookshot's reach.
+                        // No iron boots: pull THEM toward us (UTIL_HOOKSHOT_PULL_TARGET).
+                        // Iron boots:    pull US toward them (UTIL_HOOKSHOT_PULL_SELF —
+                        //                vanilla physics quirk where Link is too heavy
+                        //                to drag the target so the rope snaps Link).
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) > 600.0f * 600.0f) return;
+                            HarpoonCombat::BroadcastUtilityHit(
+                                ownClientId, cid,
+                                ironBoots ? HarpoonCombat::UTIL_HOOKSHOT_PULL_SELF
+                                          : HarpoonCombat::UTIL_HOOKSHOT_PULL_TARGET,
+                                0, 0, 0,
+                                lp->actor.world.pos.x,
+                                lp->actor.world.pos.y,
+                                lp->actor.world.pos.z);
+                        });
+                    }
+                    if (!(lp->stateFlags1 & PLAYER_STATE1_HOOKSHOT_FALLING)) sHookBroadcasted = false;
+                }
+
+                // --- Bomb Arrow direct + AOE --------------------------
+                // Detection: ciBombArrowActive && local fires arrow. The
+                // arrow itself is a vanilla EN_ARROW so its hit broadcasts
+                // via vanilla path; we add the AOE on detonation tick.
+                {
+                    // Detect FLYING -> not-FLYING transition (impact).
+                    // BOMBARROW_STATE_FLYING == 2. When state leaves 2,
+                    // the arrow has hit something and exploded.
+                    static u8 sBAStatePrev = 0;
+                    u8 baState = gCustomItemState.bombArrowState;
+                    if (sBAStatePrev == 2 && baState != 2) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) > 90.0f * 90.0f) return;
+                            Harpoon::Instance->SendPacket_Damage(
+                                cid, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 2);
+                        });
+                    }
+                    sBAStatePrev = baState;
+                }
+
+                // --- Water Dragon Zora Barrier toggle (C-Up tap) -------
+                // Adult Link with Water Dragon Scale equipped: tapping C-Up
+                // toggles the Zora Barrier (60u radius shock aura). Tracks
+                // rising-edge to avoid spam. Costs 1 magic/sec while active.
+                if (myClient != nullptr && gPlayState != nullptr) {
+                    static bool sCUpWasDown = false;
+                    bool cUp = CHECK_BTN_ALL(gPlayState->state.input[0].cur.button, BTN_CUP);
+                    bool risingEdge = cUp && !sCUpWasDown;
+                    sCUpWasDown = cUp;
+                    // Only toggle if Adult + Water Dragon Scale equipped
+                    // (extEquipBoots == 3 means Water Dragon Scale).
+                    if (risingEdge && gSaveContext.linkAge == 0 &&
+                        gSaveContext.ship.extEquipBoots == 3) {
+                        myClient->combatZoraBarrierActive = !myClient->combatZoraBarrierActive;
+                    }
+                }
+
+                // --- Stone Mask invisibility cancel on attack ---------
+                // Local player attacking while wearing Stone Mask cancels
+                // invisibility for 3 s. Detection: meleeWeaponState > 0 or
+                // damageEffect set on a peer.
+                if (myClient != nullptr &&
+                    MmMaskWear_GetCurrent() == ITEM_MM_MASK_STONE &&
+                    myClient->combatInvisSuppressFrames == 0 &&
+                    lp->meleeWeaponState > 0) {
+                    myClient->combatInvisSuppressFrames = 180;  // 3 s @ 60fps
+                    HarpoonCombat::BroadcastApplyStatus(
+                        ownClientId, HarpoonCombat::STATUS_INVISIBILITY,
+                        0, 180, ownClientId);
+                }
+                if (myClient != nullptr && myClient->combatInvisSuppressFrames > 0) {
+                    myClient->combatInvisSuppressFrames--;
+                }
+
+                // --- Ice Rod projectiles freeze peers ------------------
+                // The Ice Rod fires up to 3 spinning projectiles tracked
+                // in HarpoonClient.ciIceRodProj*. While active, any peer
+                // within 25u of any projectile gets STATUS_FREEZE 3s.
+                // Light damage tagged via SendPacket_Damage so the heart-
+                // bar shows the hit; primary effect is the freeze.
+                if (gCustomItemState.iceRodProjActive) {
+                    static int sIceRodGate = 0;
+                    sIceRodGate++;
+                    if ((sIceRodGate % 8) == 0) {
+                        Vec3f projs[3];
+                        projs[0] = gCustomItemState.iceRodProjPos;
+                        projs[1] = gCustomItemState.iceRodProjPos2;
+                        projs[2] = gCustomItemState.iceRodProjPos3;
+                        u8 count = gCustomItemState.iceRodProjCount;
+                        if (count > 3) count = 3;
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            for (u8 i = 0; i < count; i++) {
+                                f32 dx = projs[i].x - c.posRot.pos.x;
+                                f32 dy = projs[i].y - c.posRot.pos.y;
+                                f32 dz = projs[i].z - c.posRot.pos.z;
+                                if (dx*dx + dy*dy + dz*dz <= 25.0f * 25.0f) {
+                                    HarpoonCombat::BroadcastApplyStatus(
+                                        cid, HarpoonCombat::STATUS_FREEZE,
+                                        0, 180, ownClientId);
+                                    return;
+                                }
+                            }
+                        });
+                    }
+                }
+
+                // --- Fire Rod projectiles burn peers -------------------
+                if (gCustomItemState.fireRodProjActive) {
+                    static int sFireRodGate = 0;
+                    sFireRodGate++;
+                    if ((sFireRodGate % 8) == 0) {
+                        Vec3f projs[3];
+                        projs[0] = gCustomItemState.fireRodProjPos;
+                        projs[1] = gCustomItemState.fireRodProjPos2;
+                        projs[2] = gCustomItemState.fireRodProjPos3;
+                        u8 count = gCustomItemState.fireRodProjCount;
+                        if (count > 3) count = 3;
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            for (u8 i = 0; i < count; i++) {
+                                f32 dx = projs[i].x - c.posRot.pos.x;
+                                f32 dy = projs[i].y - c.posRot.pos.y;
+                                f32 dz = projs[i].z - c.posRot.pos.z;
+                                if (dx*dx + dy*dy + dz*dz <= 25.0f * 25.0f) {
+                                    Harpoon::Instance->SendPacket_Damage(
+                                        cid, HARPOON_HIT_RESPONSE_FIRE, 2);
+                                    HarpoonCombat::BroadcastApplyStatus(
+                                        cid, HarpoonCombat::STATUS_BURN_DOT,
+                                        1, 120, ownClientId);
+                                    return;
+                                }
+                            }
+                        });
+                    }
+                }
+
+                // --- Light Rod projectiles deal LIGHT damage -----------
+                // Light Rod uses the dedicated HARPOON_HIT_RESPONSE_LIGHT:
+                // golden flash, medium kb, longer invuln (35fr).
+                if (gCustomItemState.lightRodProjActive) {
+                    static int sLightRodGate = 0;
+                    sLightRodGate++;
+                    if ((sLightRodGate % 8) == 0) {
+                        Vec3f projs[3];
+                        projs[0] = gCustomItemState.lightRodProjPos;
+                        projs[1] = gCustomItemState.lightRodProjPos2;
+                        projs[2] = gCustomItemState.lightRodProjPos3;
+                        u8 count = gCustomItemState.lightRodProjCount;
+                        if (count > 3) count = 3;
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            for (u8 i = 0; i < count; i++) {
+                                f32 dx = projs[i].x - c.posRot.pos.x;
+                                f32 dy = projs[i].y - c.posRot.pos.y;
+                                f32 dz = projs[i].z - c.posRot.pos.z;
+                                if (dx*dx + dy*dy + dz*dz <= 25.0f * 25.0f) {
+                                    Harpoon::Instance->SendPacket_Damage(
+                                        cid, HARPOON_HIT_RESPONSE_LIGHT, 2);
+                                    return;
+                                }
+                            }
+                        });
+                    }
+                }
+
+                // --- Ball & Chain swing contact ------------------------
+                // ciBallChainThrown == 1 while the sphere is mid-air at
+                // the end of the chain. Range 80u, dmg 6♥ + KNOCKBACK_LARGE.
+                if (gCustomItemState.ballAndChainThrown == 1) {
+                    static int sBCGate = 0;
+                    sBCGate++;
+                    if ((sBCGate % 6) == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            f32 dx = gCustomItemState.sharedProjectilePos.x - c.posRot.pos.x;
+                            f32 dz = gCustomItemState.sharedProjectilePos.z - c.posRot.pos.z;
+                            if (dx*dx + dz*dz > 25.0f * 25.0f) return;
+                            Harpoon::Instance->SendPacket_Damage(
+                                cid, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 4);
+                        });
+                    }
+                }
+
+                // --- Beetle hit on return path ------------------------
+                // ciBeetleState == 2 (return). Hits dummy peers in flight.
+                if (gCustomItemState.beetleState != 0) {
+                    static int sBeetleGate = 0;
+                    sBeetleGate++;
+                    if ((sBeetleGate % 4) == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            f32 dx = gCustomItemState.beetlePos.x - c.posRot.pos.x;
+                            f32 dy = gCustomItemState.beetlePos.y - c.posRot.pos.y;
+                            f32 dz = gCustomItemState.beetlePos.z - c.posRot.pos.z;
+                            if (dx*dx + dy*dy + dz*dz > 25.0f * 25.0f) return;
+                            Harpoon::Instance->SendPacket_Damage(
+                                cid, HARPOON_HIT_RESPONSE_STUN, 1);
+                        });
+                    }
+                }
+
+                // --- Whip lash hit -------------------------------------
+                // ciWhipState == 1 (extending). The whip tip moves; on
+                // crossing a peer, deal 2♥ + small knockback.
+                if (gCustomItemState.whipState == 1) {
+                    forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                        f32 dx = gCustomItemState.whipTipPos.x - c.posRot.pos.x;
+                        f32 dz = gCustomItemState.whipTipPos.z - c.posRot.pos.z;
+                        if (dx*dx + dz*dz > 30.0f * 30.0f) return;
+                        Harpoon::Instance->SendPacket_Damage(
+                            cid, HARPOON_HIT_RESPONSE_NORMAL, 1);
+                    });
+                }
+
+                // --- Demise Destruction AOE on activation -------------
+                // ciDemiseDestructionActive rising edge fires a 200u AOE
+                // 2♥ blast + center 6♥ direct hit. The status broadcast
+                // sends DRAIN to communicate the dark-magic theme.
+                {
+                    static u8 sDemisePrev = 0;
+                    if (gCustomItemState.demiseDestructionActive == 1 && sDemisePrev == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            f32 d2 = distSqToPeer(c);
+                            if (d2 > 200.0f * 200.0f) return;
+                            u8 dmg = (d2 <= 40.0f * 40.0f) ? 4 : 2;
+                            Harpoon::Instance->SendPacket_Damage(
+                                cid, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, dmg);
+                        });
+                    }
+                    sDemisePrev = gCustomItemState.demiseDestructionActive;
+                }
+
+                // --- Zonai Permafrost AOE freeze ----------------------
+                // ciZonaiPermafrostActive rising edge → 150u AOE freeze 5s.
+                {
+                    static u8 sPermafrostPrev = 0;
+                    if (gCustomItemState.zonaiPermafrostActive == 1 && sPermafrostPrev == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) > 150.0f * 150.0f) return;
+                            HarpoonCombat::BroadcastApplyStatus(
+                                cid, HarpoonCombat::STATUS_FREEZE,
+                                0, 300, ownClientId);
+                        });
+                    }
+                    sPermafrostPrev = gCustomItemState.zonaiPermafrostActive;
+                }
+
+                // --- Spinner ride pushes peers ------------------------
+                // If local is on the Spinner (we approximate via the
+                // dominion rod state field used by spinner) and moving,
+                // peers in contact take 0 dmg but get a knockback.
+                // Detection heuristic: linearVelocity > 12 + currentBoots
+                // gives us "high speed" — sub-cases of Pegasus already
+                // covered above. Spinner-specific is handled by the
+                // SHARED_PROJ broadcast (homing top) elsewhere.
+
+                // --- Cane of Byrna 1♥ aura (while held) ----------------
+                // Hard to detect without a dedicated client field. Best-
+                // effort: detect via extEquipSword == 1 (Cane of Byrna)
+                // + meleeWeaponState > 0. Constant 1♥ aura while attacking.
+                if (gSaveContext.ship.extEquipSword == 1 &&
+                    lp->meleeWeaponState > 0) {
+                    forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                        if (distSqToPeer(c) > 40.0f * 40.0f) return;
+                        Harpoon::Instance->SendPacket_Damage(
+                            cid, HARPOON_HIT_RESPONSE_NORMAL, 1);
+                    });
+                }
+
+                // --- Four Sword clone proximity (extEquipSword == 2) ---
+                if (gSaveContext.ship.extEquipSword == 2 &&
+                    lp->meleeWeaponState > 0) {
+                    forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                        if (distSqToPeer(c) > 60.0f * 60.0f) return;
+                        Harpoon::Instance->SendPacket_Damage(
+                            cid, HARPOON_HIT_RESPONSE_NORMAL, 2);
+                    });
+                }
+
+                // --- Pendant Mortal Draw (extEquipBoots == 2) ----------
+                if (gSaveContext.ship.extEquipBoots == 2 &&
+                    lp->meleeWeaponState > 0) {
+                    static s8 sMortalDrawPrev = 0;
+                    if (sMortalDrawPrev == 0 && lp->meleeWeaponState > 5) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) > 35.0f * 35.0f) return;
+                            Harpoon::Instance->SendPacket_Damage(
+                                cid, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 127);
+                        });
+                    }
+                    sMortalDrawPrev = lp->meleeWeaponState;
+                }
+
+                // --- Blast Mask AOE -----------------------------------
+                if (MmMaskWear_GetCurrent() == ITEM_MM_MASK_BLAST &&
+                    lp->meleeWeaponState > 0) {
+                    static int sBlastMaskGate = 0;
+                    sBlastMaskGate++;
+                    if ((sBlastMaskGate % 30) == 0) {
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) > 100.0f * 100.0f) return;
+                            Harpoon::Instance->SendPacket_Damage(
+                                cid, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 4);
+                        });
+                    }
+                }
+
+                // --- Pegasus Anklet charge contact ---------------------
+                // If LOCAL player is dashing at high speed (Pegasus dash)
+                // AND has speed > threshold AND collides with a peer,
+                // broadcast 4♥ + KNOCKBACK_LARGE.
+                if (myClient != nullptr) {
+                    f32 speed = lp->linearVelocity < 0 ? -lp->linearVelocity : lp->linearVelocity;
+                    if (speed >= 16.0f) {  // Pegasus dash speed = 18.0f
+                        forEachPeer([&](uint32_t cid, HarpoonClient& c) {
+                            if (distSqToPeer(c) <= 40.0f * 40.0f) {
+                                Harpoon::Instance->SendPacket_Damage(
+                                    cid, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 4);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        // ====================================================================
+        // End cross-gamemode PvP combat per-frame hook
+        // ====================================================================
 
         // --- GM-mode movement restrictions ---
         // Apply the host-set restrict flags to the local player every
@@ -327,11 +1031,42 @@ void Harpoon::RegisterHooks() {
         }
     });
 
+    // Cross-gamemode PvP combat: when a LOCAL SW97 spell/arrow actor
+    // spawns (i.e. we cast a spell or fire an elemental arrow), broadcast
+    // a PROJECTILE_SPAWN event so peers can render the mirrored actor.
+    // Remote-mirrored spawns (HARPOON_REMOTE_PROJECTILE_BIT in params) are
+    // skipped to avoid feedback loops.
+    COND_HOOK(OnActorInit, isConnected, [&](void* actorVoid) {
+        if (actorVoid == nullptr) return;
+        Actor* actor = (Actor*)actorVoid;
+        if (HarpoonCombat::IsRemoteProjectile(actor)) return;
+        HarpoonCombat::HarpoonWeaponId weapon = Sw97ActorIdToWeapon(actor->id);
+        if (weapon == HarpoonCombat::HARPOON_WEAPON_UNKNOWN) return;
+        // Only broadcast if we're connected + in a PvP-enabled gamemode.
+        if (!pvpEnabled) return;
+        HarpoonProjectileMirror::BroadcastSpawn(
+            weapon,
+            actor->world.pos.x, actor->world.pos.y, actor->world.pos.z,
+            actor->velocity.x,  actor->velocity.y,  actor->velocity.z,
+            (f32)actor->shape.rot.y * (3.14159f / 32768.0f),
+            0);
+    });
+
     // Process incoming packets on game thread
     COND_HOOK(OnGameFrameUpdate, isConnected, [&]() {
         ProcessIncomingPacketQueue();
         UpdateDecoys();
         HarpoonPropHunt::TickFrame();
+
+        // Cross-gamemode PvP combat: decrement burn DOT / freeze /
+        // blindness / parry-window timers; ramp shield-raise counter.
+        // Active in any gamemode that has pvp_enabled = true (the
+        // module no-ops internally when pvpEnabled is false).
+        HarpoonCombat::TickLocal();
+        // Render the blindness overlay (Dark spell / Dark arrow) on top
+        // of the world. Uses ImGui's foreground draw list so it stacks
+        // with menus etc. correctly.
+        HarpoonCombat::BlindnessEffect_Draw();
 
         // Dropped-item ledger: per-frame pickup proximity check + 5-min
         // despawn tick (gated on local-player-in-scene-with-drops).
@@ -347,34 +1082,207 @@ void Harpoon::RegisterHooks() {
         // so hiders / seekers / thieves can't escape the chosen map by
         // walking into a warp. Authorized scene changes are gated by
         // the gamemode's own teleport helpers (which clear the flag).
+        // PropHunt uses the server-driven room state machine (countdown /
+        // hiding-phase / playing), so gate it on `gameState`. Triforce
+        // Thief: kill loading-zone actors UNCONDITIONALLY whenever the room
+        // gamemode is TT — lobby, round, between rounds, any state. Per
+        // user spec: "si es mode TT se mueren las loading zones, no importa
+        // si es Lobby o lo que sea". Earlier gates (`gameState == PLAYING`
+        // then `IsInRound()`) both failed: the server resets gameState to
+        // LOBBY on peers via HandlePacket_GameState, and IsInRound() is
+        // false in the lobby — so loading zones were never disabled there.
+        // The actor-kill is harmless in the lobby (Hyrule Field warps just
+        // die; the authorized round-start teleport bypasses the blocker via
+        // sHarpoonAuthorizedTransition). The scene-exit-poly REDIRECT below
+        // is still gated on IsInRound so the lobby only cancels exits
+        // (keeps the player in HF) rather than warping them to a stale map.
         bool inRoundActive  = gPlayState != nullptr &&
-                              (gameState == HARPOON_STATE_PLAYING ||
-                               gameState == HARPOON_STATE_HIDING_PHASE) &&
-                              (isPropHuntMode ||
-                               currentRoomGameMode == "triforce_thief");
+                              ((isPropHuntMode &&
+                                (gameState == HARPOON_STATE_PLAYING ||
+                                 gameState == HARPOON_STATE_HIDING_PHASE)) ||
+                               (currentRoomGameMode == "triforce_thief"));
         if (inRoundActive) {
-            // Kill grottos. DoorAna lives in ACTORCAT_ITEMACTION; walk the
-            // chain and Actor_Kill every match. Doing this every frame
-            // means grottos that re-spawn after a room reload are caught
-            // immediately too — this is the "invisible wall" for grottos.
-            Actor* a = gPlayState->actorCtx.actorLists[ACTORCAT_ITEMACTION].head;
-            while (a != nullptr) {
-                Actor* next = a->next;
-                if (a->id == ACTOR_DOOR_ANA) {
-                    Actor_Kill(a);
+            // ----- Mechanism (1): comprehensive door / loading-zone actor kill -----
+            //
+            // Strategy per user spec: instead of pushing the player away
+            // from loading-zone actors, KILL both the actor that performs
+            // the scene transition AND the actor that locks Link's
+            // actions (forces him into the "walking into door" animation
+            // mid-transition). For OoT, these are the same actor — every
+            // door / grotto / warp actor handles BOTH its own cutscene
+            // animation AND the eventual `transitionTrigger` set. Killing
+            // the actor disables both behaviors at once.
+            //
+            // PropHunt + TT (both modes):
+            //   ACTOR_DOOR_ANA   — grotto holes (down-pit transitions)
+            //   ACTOR_DOOR_WARP1 — blue/yellow warp pads (boss / dungeon exit)
+            //
+            // TT ONLY (per user: "bloquea TT todas las puertas"):
+            //   ACTOR_EN_DOOR       — regular hinged doors
+            //   ACTOR_DOOR_SHUTTER  — dungeon shutter doors
+            //   ACTOR_DOOR_KILLER   — wall-mounted locked doors
+            //   ACTOR_DOOR_TOKI     — Door of Time (Hyrule Castle interior)
+            //   ACTOR_DOOR_GERUDO   — Gerudo guard doors
+            //
+            // PH stays minimal because hider gameplay uses regular doors
+            // legitimately (hide behind a door, look like a prop). TT's
+            // gameplay is open-arena chase — no door interaction needed.
+            //
+            // Polygon-based scene exits (next block) handle the remainder
+            // for both modes — overworld floor polys that aren't actors.
+            bool isTT = (currentRoomGameMode == "triforce_thief");
+
+            auto killByList = [&](s32 cat, const s16* ids, s32 count) {
+                // CRITICAL: must use Actor_Delete (not Actor_Kill) for door
+                // actors. Actor_Kill (z_actor.c:1211) only nulls update +
+                // draw — it does NOT call the actor's `destroy` callback.
+                // For DynaPolyActor doors (Door_Killer, Door_Shutter,
+                // Door_Toki, En_Door, etc.) the destroy callback is what
+                // calls DynaPoly_DeleteBgActor to remove the wall-shaped
+                // dyna collision. With Actor_Kill alone the actor goes
+                // invisible + inert but its collision stays as an
+                // invisible wall — exactly the Ganon's-Castle symptom.
+                //
+                // Actor_Delete fully unlinks + destroys + frees, calling
+                // destroy() so DynaPoly entries are unregistered the same
+                // frame. We save `next` BEFORE Delete because the actor's
+                // memory is freed inside the call (reading a->next after
+                // would be UB).
+                Actor* a = gPlayState->actorCtx.actorLists[cat].head;
+                while (a != nullptr) {
+                    Actor* next = a->next;
+                    for (s32 i = 0; i < count; i++) {
+                        if (a->id == ids[i]) {
+                            Actor_Delete(&gPlayState->actorCtx, a, gPlayState);
+                            break;
+                        }
+                    }
+                    a = next;
                 }
-                a = next;
+            };
+
+            // Door actors live in THREE different actor categories. The
+            // previous single-category sweep missed Door_Killer (in BG)
+            // and Door_Toki (in BG) — both DynaPolyActors whose collision
+            // persisted as "invisible walls" inside dungeons. Sweep each
+            // category with its own per-mode kill list.
+            if (isTT) {
+                killByList(ACTORCAT_ITEMACTION, kHarpoonTtItemActionKill,
+                           (s32)(sizeof(kHarpoonTtItemActionKill) /
+                                 sizeof(kHarpoonTtItemActionKill[0])));
+                killByList(ACTORCAT_DOOR, kHarpoonTtDoorKill,
+                           (s32)(sizeof(kHarpoonTtDoorKill) /
+                                 sizeof(kHarpoonTtDoorKill[0])));
+                killByList(ACTORCAT_BG, kHarpoonTtBgKill,
+                           (s32)(sizeof(kHarpoonTtBgKill) /
+                                 sizeof(kHarpoonTtBgKill[0])));
+            } else {
+                // PropHunt: keep normal doors and EnHoll alive (hiders
+                // need to traverse rooms within their assigned scene
+                // cluster). Only kill scene-jumping warp doors.
+                killByList(ACTORCAT_ITEMACTION, kHarpoonPhItemActionKill,
+                           (s32)(sizeof(kHarpoonPhItemActionKill) /
+                                 sizeof(kHarpoonPhItemActionKill[0])));
             }
-            // Also kill blue/yellow warp pads (`ACTOR_DOOR_WARP1`) — boss
-            // rooms / spirit temple etc. spawn these to send the player
-            // out of the dungeon. We don't want them firing mid-round.
-            Actor* b = gPlayState->actorCtx.actorLists[ACTORCAT_DOOR].head;
-            while (b != nullptr) {
-                Actor* nxt = b->next;
-                if (b->id == ACTOR_DOOR_WARP1) {
-                    Actor_Kill(b);
+
+            // ----- Mechanism (2) REMOVED -----
+            // The previous poly-based snap-back ("wall of wind") teleported
+            // the player back to the last safe position whenever an 8-dir
+            // raycast hit a scene-exit polygon. Per user spec it caused
+            // softlocks (snap target was sometimes inside geometry, or the
+            // snap fought the engine's position-update each tick) and is
+            // worse than just letting players occasionally fall into the
+            // void. So: no proactive poly detection here. The kill block
+            // above + the redirect block below are the only mechanisms.
+            // If a player falls off the map, void respawn handles it
+            // (engine respawn or our own out-of-bounds Triforce respawn).
+
+            // ----- Mechanism (3): layered scene-exit-poly blocker -----
+            // Scene-exit polys (collision-data, NOT actors) trigger an
+            // engine path in z_player.c:5560-5660 that:
+            //   - sets play->transitionTrigger = TRANS_TRIGGER_START
+            //   - calls func_80838E70(...) → sets actionFunc to the
+            //     scene-exit walk action (input-blocking; targets a
+            //     position 400 units forward and drives Link toward it)
+            //   - calls func_80835E44(play, CAM_SET_SCENE_TRANSITION) →
+            //     camera zooms for the "walk-through-door" framing
+            //   - sets PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_CUTSCENE
+            //
+            // OnGameFrameUpdate runs at the END of GameState_Update
+            // (game.c:356) — AFTER Player_Update has already ticked the
+            // scene-exit-walk action func once. So we can undo everything
+            // for next frame, but we still need to make sure next frame
+            // the engine doesn't RE-enter the same setup. The gate at
+            // z_player.c:5560 fires whenever Link is on an exit poly with
+            // LOADING cleared and trigger == OFF. If we only rollback to
+            // "last frame's pos" Link is STILL on the poly (that's where
+            // he was last frame too) → infinite re-entry → loss of
+            // control + camera stuck zoomed.
+            //
+            // Counter — small backward push so Link physically leaves
+            // the poly + camera revert each forced frame:
+            //   1. Snap pos to last safe + push ~40 units along -rot.y
+            //      (the direction opposite to where he was walking). Tiny
+            //      enough not to softlock, large enough to leave the poly.
+            //   2. Revert camera setting to CAM_SET_NORMAL0.
+            //   3. Reset actionFunc to Player_Action_Idle.
+            //   4. Clear PLAYER_STATE1_LOADING | IN_CUTSCENE.
+            //   5. Zero all velocity / speed fields.
+            // Non-forced frames: snapshot Link's pos for next-frame rollback.
+            {
+                Player* lp = GET_PLAYER(gPlayState);
+                bool engineForcedLoad =
+                    (lp != nullptr) &&
+                    !::sHarpoonAuthorizedTransition &&
+                    (lp->stateFlags1 & PLAYER_STATE1_LOADING);
+
+                if (engineForcedLoad) {
+                    Vec3f basePos = sHarpoonHasLastSafePos
+                                        ? sHarpoonLastSafePlayerPos
+                                        : lp->actor.world.pos;
+                    constexpr f32 kBackPushUnits = 40.0f;
+                    f32 yawRad = (f32)lp->actor.world.rot.y *
+                                 (3.14159265f / 32768.0f);
+                    Vec3f pushed;
+                    pushed.x = basePos.x - sinf(yawRad) * kBackPushUnits;
+                    pushed.y = basePos.y;
+                    pushed.z = basePos.z - cosf(yawRad) * kBackPushUnits;
+
+                    lp->actor.world.pos = pushed;
+                    lp->actor.prevPos   = pushed;
+
+                    Camera* cam = Play_GetCamera(gPlayState, 0);
+                    if (cam != nullptr) {
+                        Camera_ChangeSetting(cam, CAM_SET_NORMAL0);
+                    }
+
+                    lp->stateFlags1 &= ~(PLAYER_STATE1_LOADING |
+                                         PLAYER_STATE1_IN_CUTSCENE);
+
+                    if (!sHarpoonAutoJumpArmed) {
+                        // Small auto-hop on first frame of forced load.
+                        // func_80838940 sets actionFunc to the jump
+                        // action, applies vertical velocity (4.0f =
+                        // small hop), plays jump SFX, sets JUMPING flag.
+                        // Negative linearVelocity makes Link drift
+                        // backward during the arc — visible "bounced
+                        // off" recoil instead of stuck-in-idle. The
+                        // jump action naturally lands Link and
+                        // transitions back to idle/walking, breaking
+                        // any animation lock the engine left behind.
+                        func_80838940(lp, NULL, 4.0f, gPlayState,
+                                      NA_SE_VO_LI_AUTO_JUMP);
+                        lp->linearVelocity   = -2.0f;
+                        lp->actor.speedXZ    = -2.0f;
+                        sHarpoonAutoJumpArmed = true;
+                    }
+                    // Don't update the snapshot this frame.
+                } else if (lp != nullptr) {
+                    sHarpoonLastSafePlayerPos = lp->actor.world.pos;
+                    sHarpoonHasLastSafePos    = true;
+                    // Re-arm the auto-jump for the next encounter.
+                    sHarpoonAutoJumpArmed = false;
                 }
-                b = nxt;
             }
 
             // Cancel scene transitions unless our own teleport helper
@@ -422,12 +1330,16 @@ void Harpoon::RegisterHooks() {
                             redirected = true;
                         }
                     }
-                } else if (currentRoomGameMode == "triforce_thief") {
+                } else if (currentRoomGameMode == "triforce_thief" &&
+                           HarpoonTriforceThief::IsInRound()) {
                     // Same full-circle redirect for TT: when the engine
                     // wants to load us into a scene outside the round's
                     // cluster, swap the entrance to the round map's main
                     // entrance instead. Player fades through the door and
-                    // arrives back in the round map.
+                    // arrives back in the round map. Gated on IsInRound so
+                    // that in the LOBBY (Hyrule Field) we fall through to
+                    // the cancel branch — keeping the player in HF instead
+                    // of warping them to a stale confirmedMapIndex.
                     if (mapIdx >= 0 && destScene >= 0 &&
                         !HarpoonTriforceThief::IsSceneInRoundClusterTT(mapIdx, destScene)) {
                         s32 returnEntr = HarpoonTriforceThief::GetReturnEntranceForInvalidExitTT(
@@ -506,12 +1418,12 @@ void Harpoon::RegisterHooks() {
         }
 
         // Z+L+R combo — context-dependent action:
-        //  * LOBBY + admin → open map select (start a new round)
-        //  * Mid-round (any player) → reload the current scene from its
-        //    entrance. Useful as a soft-anti-softlock: stuck in a wall,
-        //    fell into a hole, cutscene jammed, etc. — anyone can press
-        //    the combo to teleport back to the round's spawn point
-        //    without dragging everyone else with them.
+        //  * LOBBY + host → open map select (start a new round). Both modes.
+        //  * Mid-round (PropHunt ONLY) → reload the current scene from its
+        //    entrance: a soft-anti-softlock for stuck-in-wall / fell-in-hole
+        //    / jammed-cutscene. The Triforce Thief mid-round reload was
+        //    removed per user request — TT now kills loading zones reliably
+        //    in every state, so the manual escape hatch is unnecessary.
         bool inPropHuntRoom    = isPropHuntMode;
         bool inTriforceRoom    = (currentRoomGameMode == "triforce_thief");
         if ((inPropHuntRoom || inTriforceRoom) && gPlayState != nullptr) {
@@ -545,7 +1457,7 @@ void Harpoon::RegisterHooks() {
                         } else {
                             HarpoonPropHunt::HandleEvent(env);
                         }
-                    } else if (!isLobby) {
+                    } else if (!isLobby && inPropHuntRoom) {
                         // Mid-round → reload the currently SELECTED round
                         // map's entrance (local-only, no broadcast). The
                         // previous version used gSaveContext.entranceIndex
@@ -554,17 +1466,20 @@ void Harpoon::RegisterHooks() {
                         // updated by TeleportToEntrance — so every reload
                         // yanked the player back to the lobby, ending the
                         // round server-side. Use the per-gamemode
-                        // GetEntranceFor*(confirmedMapIndex) helper instead.
+                        // GetEntranceForMapIndex(confirmedMapIndex) helper.
+                        //
+                        // PropHunt ONLY — the TT anti-softlock reload
+                        // safeguard was removed per user request: loading
+                        // zones are now reliably killed in TT (any state),
+                        // so the manual L+R+Z scene-reload escape hatch is
+                        // no longer needed and just risked accidental use.
                         if (gPlayState != nullptr) {
                             s32 reloadEntrance = gSaveContext.entranceIndex;
                             s32 mapIdx = (ownClientId != 0)
                                 ? confirmedMapIndex : -1;
-                            if (inPropHuntRoom && mapIdx >= 0) {
+                            if (mapIdx >= 0) {
                                 reloadEntrance =
                                     HarpoonPropHunt::GetEntranceForMapIndex(mapIdx);
-                            } else if (inTriforceRoom && mapIdx >= 0) {
-                                reloadEntrance =
-                                    HarpoonTriforceThief::GetEntranceForMap(mapIdx);
                             }
                             gPlayState->linkAgeOnLoad     = gSaveContext.linkAge;
                             gPlayState->nextEntranceIndex = reloadEntrance;
@@ -722,7 +1637,13 @@ void Harpoon::RegisterHooks() {
                 f32 horizSpeed = 16.0f + (f32)(rand() % 6);  // 16–21 u/frame
                 f32 vx = cosf(angle) * horizSpeed;
                 f32 vz = sinf(angle) * horizSpeed;
-                f32 vy = 14.0f;  // upward kick
+                // 25 u/frame upward (was 14). With GRAVITY = -1.5 per tick,
+                // peak height ≈ v²/(2g) = 625/3 ≈ 208 units ≈ ~3 Link adult
+                // heights — matches the "Link's house ladder" reference
+                // discussed with Scooter. Also gates regrab naturally:
+                // mid-flight pickups are blocked by `dropFlyTimer > 0` so
+                // nobody can re-grab until the Triforce comes back down.
+                f32 vy = 25.0f;
                 u32 me = ownClientId;
                 // Local apply via synthetic event (the public API doesn't
                 // expose HandleTriforceDrop, so we rebuild & dispatch the
@@ -1110,6 +2031,18 @@ void Harpoon::RegisterHooks() {
             // value — visually present but stopped. Total survival time
             // across the session.
             if (isPropHuntMode) *should = true;
+            // Triforce Thief reuses the same digit-texture overlay for
+            // the SHARED descending countdown. Every player needs to see
+            // the timer (not just the carrier) — it tells everyone how
+            // long until the round ends. The carrier broadcasts the
+            // authoritative value once per second via CARRIER_TIMER_SYNC,
+            // which the non-carrier HandleCarrierTimerSync handler mirrors
+            // into `playTimer`, so the HUD digits read correctly on every
+            // peer's screen.
+            if (currentRoomGameMode == "triforce_thief" &&
+                gameState == HARPOON_STATE_PLAYING) {
+                *should = true;
+            }
             break;
         }
         default: break;

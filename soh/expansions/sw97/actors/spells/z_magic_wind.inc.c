@@ -11,6 +11,12 @@
 #include "expansions/sw97/sw97_config.h"
 #include <math.h>
 
+// Asset path for Adult Link's "rakkatyu" (falling) animation — used as Link's
+// pose while caught in the tornado core (matches the MM cliff-fall visual the
+// user referenced). Same ALIGN_ASSET pattern as the gameplay_keep anims.
+#define dgPlayerAnim_alink_rakkatyu "__OTR__misc/link_animetion/gPlayerAnim_alink_rakkatyu_Data"
+static const ALIGN_ASSET(2) char gPlayerAnim_alink_rakkatyu[] = dgPlayerAnim_alink_rakkatyu;
+
 // ============================================================
 // Struct (merged from z_magic_wind.h)
 // ============================================================
@@ -26,12 +32,15 @@ typedef struct MagicWind {
     /* 0x0170 */ MagicWindFunc actionFunc;
     s16 pushTimer;
     u8 pushActive;
-    // Jetpack mode: tap a C-button → forward launch, hold ≥ 8 frames → upward launch.
-    // Window runs for 20 seconds in parallel with (and outlasting) the push effect.
-    s16 jetpackTimer;
-    s16 jetpackHoldFrames;
-    u8 jetpackActive;
-    u8 jetpackHoldHandled;
+    // Tornado spell: a stationary vortex 80u in front of Link that pulls in
+    // enemies / small props (filtered) and lifts them. Link is granted a
+    // grace period before he becomes a valid target himself.
+    u8 tornadoActive;
+    s16 tornadoTimer;          // counts up 0..TORNADO_TOTAL_FRAMES
+    s16 tornadoGraceFrames;    // counts down; while > 0 Link is immune
+    s16 tornadoDamageTick;     // counts down to next damage tick
+    f32 tornadoCurrentRadius;  // grows 40 → 200 during phase 1
+    Vec3f tornadoCenter;       // fixed at cast time
 } MagicWind;
 
 // Runtime actor ID (assigned by ActorDB in sw97_init.cpp)
@@ -468,65 +477,236 @@ static u8 sAlphaUpdVals[] = {
 // Wind barrier push
 // ============================================================
 
-#define WIND_PUSH_DURATION 450 // 15 sec × 30fps
+#define WIND_PUSH_DURATION 450 // 15 sec × 30fps (legacy push-enemy barrier — disabled when tornado runs)
 
-// Frames of R+C hold required for a full-charge upward boost (~5 Link heights).
-#define JETPACK_MAX_CHARGE 60
+// ─── Tornado constants ───────────────────────────────────────
+#define TORNADO_TOTAL_FRAMES      300    // 10 sec @ 30fps tick
+#define TORNADO_GROW_FRAMES        90    // phase 1: grow (3 sec)
+#define TORNADO_GRACE_FRAMES       45    // 1.5 sec — VFX visible but no suction yet (warning window)
+// Venti-ulti style: massive outer attraction radius, dense particle column,
+// continuous damage core in the middle. Link is pulled in too unless he runs
+// far enough; if he reaches the core he gets locked in a falling animation.
+#define TORNADO_INITIAL_RADIUS   100.0f
+#define TORNADO_MAX_RADIUS       600.0f  // big attraction sphere
+#define TORNADO_CORE_RADIUS      100.0f  // inner kill / fall-anim zone
+#define TORNADO_LIFT_MAX         300.0f  // taller column
+#define TORNADO_DAMAGE_INTERVAL     8    // fast tick — feels like a black hole
+#define TORNADO_DAMAGE_PER_TICK     6    // small per-tick × fast rate = high DPS
 
-// Wind particles streaming forward in a line ahead of Link.
-// Pattern based on GustJar_SpawnBlowVFX in soh/mods/items/logic/item_gustjar.c —
-// uses the smoke-ball spawner (func_8002836C) with white/pale-blue wind tones.
-static void MagicWind_SpawnWindLineVFX(PlayState* play, Player* player, s16 aimYaw) {
-    Vec3f origin = player->actor.world.pos;
-    origin.y += 30.0f;
-
-    for (s32 i = 0; i < 6; i++) {
-        s16 spreadAngle = aimYaw + (s16)Rand_CenteredFloat(0x0800); // narrow line spread
-        f32 startDist = 20.0f + (f32)i * 25.0f;
-        Vec3f pos = {
-            origin.x + Math_SinS(spreadAngle) * startDist,
-            origin.y + Rand_CenteredFloat(8.0f),
-            origin.z + Math_CosS(spreadAngle) * startDist,
-        };
-        f32 speed = 18.0f + Rand_ZeroFloat(4.0f);
-        Vec3f vel = {
-            Math_SinS(spreadAngle) * speed,
-            Rand_CenteredFloat(1.0f),
-            Math_CosS(spreadAngle) * speed,
-        };
-        Vec3f accel = { 0.0f, 0.3f, 0.0f };
-        Color_RGBA8 prim = { 220, 240, 255, 180 };
-        Color_RGBA8 env  = { 160, 200, 230, 110 };
-        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 14);
+// Heavy / armored / anchored enemies the tornado can't move. Bosses are
+// excluded automatically via ACTORCAT_BOSS in the suction loop.
+static u8 MagicWind_IsBlacklistedEnemy(s16 id) {
+    switch (id) {
+        case ACTOR_EN_AM:       // Armos
+        case ACTOR_EN_VM:       // Beamos
+        case ACTOR_EN_IK:       // Iron Knuckle
+        case ACTOR_EN_DH:       // Dead Hand
+        case ACTOR_EN_DHA:      // Dead Hand stalk
+        case ACTOR_EN_RR:       // Like Like
+        case ACTOR_EN_KAREBABA: // Withered (rooted) Deku Baba
+        case ACTOR_EN_ANUBICE:  // Anubis
+        case ACTOR_EN_SW:       // Skullwalltula / gold token host
+        case ACTOR_EN_DODONGO:  // Dodongo
+        case ACTOR_EN_GE1:      // Gerudo (white-clad)
+        case ACTOR_EN_GE2:      // Gerudo guard (purple-clad)
+        case ACTOR_EN_GE3:      // Gerudo
+        case ACTOR_EN_GELDB:    // Gerudo Black (spearwoman)
+        case ACTOR_EN_TEST:     // Stalfos
+        case ACTOR_EN_BIGOKUTA: // Big Octo
+            return 1;
+        default:
+            return 0;
     }
 }
 
-// Wind particles fountaining upward around Link.
-// Mirrors the upward flame plume pattern used by Bg_Hidan_Sekizou's fireballs
-// (soh/src/overlays/actors/ovl_Bg_Hidan_Sekizou) — spread the spawn ring around
-// the player's feet and shoot the particles up.
-static void MagicWind_SpawnWindSpreadVFX(PlayState* play, Player* player) {
-    Vec3f base = player->actor.world.pos;
-    base.y += 5.0f;
+static u8 MagicWind_IsSuckableProp(s16 id) {
+    return id == ACTOR_EN_KUSA || id == ACTOR_OBJ_TSUBO;
+}
 
+// Black-hole pull on an enemy / prop. d > CORE: strong radial inward + lift;
+// d <= CORE: tangential spin, capped lift, AI suppressed so they spin freely.
+static void MagicWind_TornadoApplyActor(Actor* a, Vec3f* c, f32 R) {
+    f32 dx = a->world.pos.x - c->x;
+    f32 dz = a->world.pos.z - c->z;
+    f32 d  = sqrtf(SQ(dx) + SQ(dz));
+    if (d > R) return;
+
+    if (d > TORNADO_CORE_RADIUS) {
+        // Hard inward pull — strength scales with distance so far enemies still
+        // get yanked in noticeably. Capped to avoid teleport-style snaps.
+        f32 strength = 14.0f;
+        f32 invD = strength / (d > 0.001f ? d : 0.001f);
+        a->world.pos.x -= dx * invD;
+        a->world.pos.z -= dz * invD;
+        // Lift continuously while approaching — feeds them into the funnel.
+        if (a->world.pos.y - c->y < TORNADO_LIFT_MAX) {
+            a->velocity.y = 5.0f;
+        }
+        a->bgCheckFlags &= ~BGCHECKFLAG_GROUND;
+    } else {
+        // CORE: tangential spin + steady upward lift.
+        f32 tx = -dz, tz = dx;
+        f32 tNorm = sqrtf(SQ(tx) + SQ(tz));
+        if (tNorm > 0.01f) {
+            f32 spin = 18.0f;
+            a->velocity.x = (tx / tNorm) * spin;
+            a->velocity.z = (tz / tNorm) * spin;
+        }
+        if (a->world.pos.y - c->y < TORNADO_LIFT_MAX) {
+            a->velocity.y = 5.0f;
+        }
+        a->bgCheckFlags &= ~BGCHECKFLAG_GROUND;
+        a->freezeTimer = 4; // re-asserted each frame so AI doesn't override us
+    }
+}
+
+// Link version: pulled in by the suction, but never damaged. If he reaches the
+// inner core, lock him in the looping "falling" animation (matches the user's
+// "MM cliff-falling" request — OoT's equivalent is gPlayerAnim_link_normal_fall_wait)
+// and set PLAYER_STATE2_GRABBED_BY_ENEMY to suppress normal control until the
+// tornado expires or Link is dragged out.
+static void MagicWind_TornadoApplyPlayer(PlayState* play, Player* p, Vec3f* c, f32 R) {
+    f32 dx = p->actor.world.pos.x - c->x;
+    f32 dz = p->actor.world.pos.z - c->z;
+    f32 d  = sqrtf(SQ(dx) + SQ(dz));
+    if (d > R) return;
+
+    if (d > TORNADO_CORE_RADIUS) {
+        // Pull — weaker on Link than on enemies so a determined player can still
+        // escape by running outward.
+        f32 strength = 8.0f;
+        f32 invD = strength / (d > 0.001f ? d : 0.001f);
+        p->actor.world.pos.x -= dx * invD;
+        p->actor.world.pos.z -= dz * invD;
+    } else {
+        // In the core — tangential spin, lift, freeze control, falling anim.
+        f32 tx = -dz, tz = dx;
+        f32 tNorm = sqrtf(SQ(tx) + SQ(tz));
+        if (tNorm > 0.01f) {
+            f32 spin = 14.0f;
+            p->actor.velocity.x = (tx / tNorm) * spin;
+            p->actor.velocity.z = (tz / tNorm) * spin;
+        }
+        if (p->actor.world.pos.y - c->y < TORNADO_LIFT_MAX) {
+            p->actor.velocity.y = 6.0f;
+        }
+        p->actor.bgCheckFlags &= ~BGCHECKFLAG_GROUND;
+        p->stateFlags2 |= PLAYER_STATE2_GRABBED_BY_ENEMY;
+        // Re-trigger the falling-loop animation only if Link isn't already in it,
+        // so we don't restart it every frame.
+        if (p->skelAnime.animation != (LinkAnimationHeader*)&gPlayerAnim_alink_rakkatyu) {
+            Player_AnimPlayLoop(play, p, (LinkAnimationHeader*)&gPlayerAnim_alink_rakkatyu);
+        }
+    }
+}
+
+// Iterate enemies (filtered), small props (whitelist), and Link.
+static void MagicWind_TornadoSuck(PlayState* play, Vec3f* c, f32 R) {
+    Actor* a;
+    for (a = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != NULL; a = a->next) {
+        if (a->update == NULL) continue;
+        if (MagicWind_IsBlacklistedEnemy(a->id)) continue;
+        MagicWind_TornadoApplyActor(a, c, R);
+    }
+    for (a = play->actorCtx.actorLists[ACTORCAT_PROP].head; a != NULL; a = a->next) {
+        if (a->update == NULL) continue;
+        if (!MagicWind_IsSuckableProp(a->id)) continue;
+        MagicWind_TornadoApplyActor(a, c, R);
+    }
+    Player* p = GET_PLAYER(play);
+    if (p != NULL && p->actor.update != NULL) {
+        MagicWind_TornadoApplyPlayer(play, p, c, R);
+    }
+}
+
+// Fast damage tick for enemies inside the core. Link is never damaged — being
+// stuck in the falling anim + losing control is the player's "punishment".
+static void MagicWind_TornadoDamageTick(PlayState* play, Vec3f* c) {
+    Actor* a;
+    for (a = play->actorCtx.actorLists[ACTORCAT_ENEMY].head; a != NULL; a = a->next) {
+        if (a->update == NULL) continue;
+        if (MagicWind_IsBlacklistedEnemy(a->id)) continue;
+        f32 dx = a->world.pos.x - c->x;
+        f32 dz = a->world.pos.z - c->z;
+        if (sqrtf(SQ(dx) + SQ(dz)) > TORNADO_CORE_RADIUS) continue;
+
+        s16 hp = a->colChkInfo.health;
+        s16 drain = (hp > TORNADO_DAMAGE_PER_TICK) ? TORNADO_DAMAGE_PER_TICK : hp;
+        a->colChkInfo.health -= drain;
+        if (a->colChkInfo.health <= 0) {
+            a->colChkInfo.health = 0;
+            a->colChkInfo.damage = 8;
+        }
+    }
+}
+
+// Visible tornado: dense particle column for the Venti-ulti look. Three layers
+// each frame:
+//   - Outer ring at the funnel wall (broad swirl).
+//   - Inner core chimney (vertical column of rising particles).
+//   - Vertical wind streaks (long-lived particles with strong upward velocity)
+//     — these act as the "EffectBlure-style" upward wind support.
+// func_8002836C is the same particle spawner used by GustJar VFX.
+static void MagicWind_SpawnTornadoVFX(PlayState* play, Vec3f* c, f32 R) {
+    Color_RGBA8 prim = { 220, 250, 255, 220 };
+    Color_RGBA8 env  = { 150, 200, 230, 140 };
+    Vec3f accel = { 0.0f, 0.3f, 0.0f };
+
+    // Outer ring — broad swirling wall at the suction edge.
+    for (s32 i = 0; i < 12; i++) {
+        f32 angle = Rand_ZeroFloat(2.0f * M_PI);
+        f32 ringR = R * (0.75f + Rand_ZeroFloat(0.25f));
+        Vec3f pos = {
+            c->x + cosf(angle) * ringR,
+            c->y + Rand_ZeroFloat(TORNADO_LIFT_MAX),
+            c->z + sinf(angle) * ringR,
+        };
+        Vec3f vel = {
+            -sinf(angle) * 12.0f,
+            5.0f + Rand_ZeroFloat(4.0f),
+             cosf(angle) * 12.0f,
+        };
+        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 16);
+    }
+
+    // Inner core — vertical chimney with strong upward push.
+    for (s32 i = 0; i < 8; i++) {
+        f32 angle = Rand_ZeroFloat(2.0f * M_PI);
+        f32 coreR = Rand_ZeroFloat(TORNADO_CORE_RADIUS);
+        Vec3f pos = {
+            c->x + cosf(angle) * coreR,
+            c->y + Rand_ZeroFloat(40.0f),
+            c->z + sinf(angle) * coreR,
+        };
+        Vec3f vel = {
+            -sinf(angle) * 6.0f,
+            14.0f + Rand_ZeroFloat(6.0f),
+             cosf(angle) * 6.0f,
+        };
+        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 18);
+    }
+
+    // Vertical wind streaks — long-lived, fast upward, slight outward drift
+    // from the column. These read as the "rushing wind" trails going up and
+    // serve as the EffectBlure-style support layer the user asked for.
+    Color_RGBA8 streakPrim = { 255, 255, 255, 240 };
+    Color_RGBA8 streakEnv  = { 180, 220, 240, 160 };
+    Vec3f streakAccel = { 0.0f, 0.0f, 0.0f };
     for (s32 i = 0; i < 6; i++) {
         f32 angle = Rand_ZeroFloat(2.0f * M_PI);
-        f32 radius = Rand_ZeroFloat(40.0f);
+        f32 streakR = TORNADO_CORE_RADIUS + Rand_ZeroFloat(R * 0.5f);
         Vec3f pos = {
-            base.x + cosf(angle) * radius,
-            base.y + Rand_ZeroFloat(20.0f),
-            base.z + sinf(angle) * radius,
+            c->x + cosf(angle) * streakR,
+            c->y + Rand_ZeroFloat(20.0f),
+            c->z + sinf(angle) * streakR,
         };
-        f32 outwardSpeed = 1.5f + Rand_ZeroFloat(2.0f);
         Vec3f vel = {
-            cosf(angle) * outwardSpeed,
-            14.0f + Rand_ZeroFloat(4.0f), // strong upward
-            sinf(angle) * outwardSpeed,
+            cosf(angle) * 1.5f,        // slight outward drift
+            22.0f + Rand_ZeroFloat(8.0f), // strong upward
+            sinf(angle) * 1.5f,
         };
-        Vec3f accel = { 0.0f, 0.4f, 0.0f }; // mild buoyancy
-        Color_RGBA8 prim = { 230, 250, 255, 200 };
-        Color_RGBA8 env  = { 170, 210, 240, 120 };
-        func_8002836C(play, &pos, &vel, &accel, &prim, &env, 200, 30, 14);
+        // Longer lifetime (60 vs 30) + bigger scale (22) → streak look.
+        func_8002836C(play, &pos, &vel, &streakAccel, &streakPrim, &streakEnv, 220, 60, 22);
     }
 }
 #define WIND_PUSH_RADIUS 400.0f
@@ -576,21 +756,17 @@ void MagicWind_Init(Actor* thisx, PlayState* play) {
             SkelCurve_SetAnim(&this->skelCurve, &sWindTransformUpdIdx, 0.0f, 60.0f, 0.0f, 1.0f);
             this->timer = 29;
             MagicWind_SetupAction(this, MagicWind_WaitForTimer);
-            this->pushActive = 1;
-            this->pushTimer = WIND_PUSH_DURATION;
-            this->jetpackActive = 1;
-            this->jetpackTimer = 600;       // 20 seconds at 30 fps
-            this->jetpackHoldFrames = 0;
-            this->jetpackHoldHandled = 0;
-            // Swap the Forest-medallion C-slot icon to the wind-jetpack placeholder
-            // for the duration of the window. Set the global flag and force the
-            // HUD icon cache to reload for any C-slot holding the medallion.
-            gSw97WindJetpackIconActive = 1;
-            for (s32 btnIdx = 1; btnIdx <= 3; btnIdx++) {
-                if (gSaveContext.equips.buttonItems[btnIdx] == ITEM_MEDALLION_FOREST) {
-                    Interface_LoadItemIcon1(play, btnIdx);
-                }
-            }
+            // Push-enemy barrier conflicts with the tornado's inward pull —
+            // they'd fight each other every frame. Tornado replaces it.
+            this->pushActive = 0;
+            this->pushTimer = 0;
+            // Tornado does NOT start here — it spawns at the end of the
+            // spell animation (FadeOut → kill transition). Keep fields zeroed.
+            this->tornadoActive = 0;
+            this->tornadoTimer = 0;
+            this->tornadoGraceFrames = 0;
+            this->tornadoDamageTick = 0;
+            this->tornadoCurrentRadius = 0.0f;
             break;
         case 1:
             SkelCurve_SetAnim(&this->skelCurve, &sWindTransformUpdIdx, 60.0f, 0.0f, 60.0f, -1.0f);
@@ -608,17 +784,6 @@ void MagicWind_Destroy(Actor* thisx, PlayState* play) {
     func_800876C8(play);
     // wipe out
     LOG_STRING("消滅");
-
-    // Safety: if the spell dies before the jetpack window expires (text box,
-    // scene transition, etc.), restore the C-slot icon now.
-    if (gSw97WindJetpackIconActive) {
-        gSw97WindJetpackIconActive = 0;
-        for (s32 btnIdx = 1; btnIdx <= 3; btnIdx++) {
-            if (gSaveContext.equips.buttonItems[btnIdx] == ITEM_MEDALLION_FOREST) {
-                Interface_LoadItemIcon1(play, btnIdx);
-            }
-        }
-    }
 }
 
 // ============================================================
@@ -669,8 +834,21 @@ void MagicWind_FadeOut(MagicWind* this, PlayState* play) {
         MagicWind_UpdateAlpha((f32)this->timer * (1.0f / 30.0f));
         this->timer--;
     } else {
-        if (this->pushActive || this->jetpackActive) {
-            this->actor.draw = NULL; // hide visual, keep alive for push / jetpack window
+        // Spell animation done — spawn the tornado now (one-shot, only if it
+        // hasn't already been spawned this lifecycle).
+        if (!this->tornadoActive && this->tornadoTimer == 0) {
+            Player* player = PLAYER;
+            s16 yaw = player->actor.shape.rot.y;
+            this->tornadoActive = 1;
+            this->tornadoGraceFrames = TORNADO_GRACE_FRAMES;
+            this->tornadoDamageTick = TORNADO_DAMAGE_INTERVAL;
+            this->tornadoCurrentRadius = TORNADO_INITIAL_RADIUS;
+            this->tornadoCenter.x = player->actor.world.pos.x + Math_SinS(yaw) * 80.0f;
+            this->tornadoCenter.y = player->actor.floorHeight;
+            this->tornadoCenter.z = player->actor.world.pos.z + Math_CosS(yaw) * 80.0f;
+        }
+        if (this->pushActive || this->tornadoActive) {
+            this->actor.draw = NULL; // hide visual, keep alive for push / tornado window
         } else {
             Actor_Kill(&this->actor);
         }
@@ -696,88 +874,59 @@ void MagicWind_Update(Actor* thisx, PlayState* play) {
 
     this->actionFunc(this, play);
 
-    // Wind barrier push — runs independently of visual state
-    if (this->pushActive) {
-        Player* player = PLAYER;
-        MagicWind_PushEnemies(play, &player->actor.world.pos);
-        func_8002F974(&player->actor, NA_SE_PL_MAGIC_WIND_NORMAL - SFX_FLAG);
-        if (--this->pushTimer <= 0) {
-            this->pushActive = 0;
-            if (this->actor.draw == NULL && !this->jetpackActive) {
+    // Tornado tick — stationary vortex 80u in front of Link. Phase 1 grows the
+    // suction radius 40 → 200 over the first 90 frames, phase 2 holds at max,
+    // entire window is 300 frames (~10 sec at SW97's 30fps timer convention).
+    if (this->tornadoActive) {
+        this->tornadoTimer++;
+        if (this->tornadoGraceFrames > 0) {
+            this->tornadoGraceFrames--;
+        }
+
+        if (this->tornadoTimer < TORNADO_GROW_FRAMES) {
+            f32 t = (f32)this->tornadoTimer / (f32)TORNADO_GROW_FRAMES;
+            this->tornadoCurrentRadius =
+                TORNADO_INITIAL_RADIUS + (TORNADO_MAX_RADIUS - TORNADO_INITIAL_RADIUS) * t;
+        } else {
+            this->tornadoCurrentRadius = TORNADO_MAX_RADIUS;
+        }
+
+        // 1.5-second grace window after the tornado spawns — VFX is visible but
+        // nothing is sucked in yet, giving the player time to react and clear
+        // the danger zone. Suction + damage activate only after grace expires.
+        if (this->tornadoGraceFrames == 0) {
+            MagicWind_TornadoSuck(play, &this->tornadoCenter, this->tornadoCurrentRadius);
+
+            if (--this->tornadoDamageTick <= 0) {
+                this->tornadoDamageTick = TORNADO_DAMAGE_INTERVAL;
+                MagicWind_TornadoDamageTick(play, &this->tornadoCenter);
+            }
+        }
+
+        // Dense VFX every frame for the Venti-burst look.
+        MagicWind_SpawnTornadoVFX(play, &this->tornadoCenter, this->tornadoCurrentRadius);
+
+        // Layered wind audio centered on the tornado actor — the magic-wind
+        // hum (low constant) plus the GustJar-style suction howl (heavier).
+        func_8002F974(&this->actor, NA_SE_PL_MAGIC_WIND_NORMAL - SFX_FLAG);
+        func_8002F974(&this->actor, NA_SE_EV_WIND_TRAP - SFX_FLAG);
+
+        if (this->tornadoTimer >= TORNADO_TOTAL_FRAMES) {
+            this->tornadoActive = 0;
+            if (this->actor.draw == NULL) {
                 Actor_Kill(&this->actor);
             }
         }
     }
 
-    // Jetpack window — runs for 20s.
-    //   R + C held → charge upward boost (up to 5 link heights at max charge)
-    //   C alone tapped → forward launch with hookshot-flight animation
-    // VFX: line of wind particles forward, spread of wind particles upward.
-    // TODO: swap the C-slot icon for the cast medallion to gItemIconPending2Tex
-    //       while jetpackActive == 1 (HUD draw hook).
-    if (this->jetpackActive) {
+    // Legacy push-enemy barrier — only runs if explicitly re-enabled (currently
+    // disabled while the tornado is active to avoid push/pull conflicts).
+    if (this->pushActive) {
         Player* player = PLAYER;
-        u16 cur = play->state.input[0].cur.button;
-        u16 press = play->state.input[0].press.button;
-
-        // Listen only to the C-button that currently holds the Forest medallion,
-        // so other C-slot items (rods, masks, etc.) keep their own behavior.
-        // buttonItems[0] = B, [1..3] = CLeft / CDown / CRight.
-        u16 cMask = 0;
-        if (gSaveContext.equips.buttonItems[1] == ITEM_MEDALLION_FOREST) cMask |= BTN_CLEFT;
-        if (gSaveContext.equips.buttonItems[2] == ITEM_MEDALLION_FOREST) cMask |= BTN_CDOWN;
-        if (gSaveContext.equips.buttonItems[3] == ITEM_MEDALLION_FOREST) cMask |= BTN_CRIGHT;
-
-        u8 rHeld = (cur & BTN_R) != 0;
-        u8 cHeld = (cMask != 0) && (cur & cMask) != 0;
-        u8 cPressed = (cMask != 0) && (press & cMask) != 0;
-
-        if (rHeld && cHeld) {
-            // Charging upward — accumulate up to JETPACK_MAX_CHARGE frames.
-            if (this->jetpackHoldFrames < JETPACK_MAX_CHARGE) {
-                this->jetpackHoldFrames++;
-            }
-            MagicWind_SpawnWindSpreadVFX(play, player);
-            func_8002F974(&player->actor, NA_SE_PL_MAGIC_WIND_NORMAL - SFX_FLAG);
-        } else if (this->jetpackHoldFrames > 0 && !cHeld) {
-            // C released after charging → upward launch.
-            f32 chargeRatio = (f32)this->jetpackHoldFrames / (f32)JETPACK_MAX_CHARGE;
-            // 5 Link heights ≈ 400 units. v² = 2·g·h → at gravity 1.0, v ≈ 28.
-            // Scale 12 (minimum tap-charge) up to 50 (full charge) for headroom.
-            f32 vy = 12.0f + 38.0f * chargeRatio;
-            player->actor.velocity.y = vy;
-            player->actor.bgCheckFlags &= ~BGCHECKFLAG_GROUND;
-            Audio_PlayActorSound2(&player->actor, NA_SE_PL_MAGIC_WIND_NORMAL);
-            MagicWind_SpawnWindSpreadVFX(play, player);
-            this->jetpackHoldFrames = 0;
-        } else if (cPressed && !rHeld) {
-            // C tapped (no R) → forward dash with hookshot-flight animation.
-            // Drive horizontal motion through Player->linearVelocity (the XZ-plane
-            // speed field that Player_UpdateCommon feeds into actor.speed each
-            // frame — same field exposed in debugSaveEditor.cpp:2201). Setting
-            // actor.speedXZ alone gets clobbered by the Player update.
-            s16 yaw = player->actor.shape.rot.y;
-            player->actor.world.rot.y = yaw;
-            player->linearVelocity = 80.0f;
-            // Leave velocity.y alone so gravity governs vertical — no pop upward.
-            Player_AnimPlayOnce(play, player, &gPlayerAnim_link_hook_fly_start);
-            MagicWind_SpawnWindLineVFX(play, player, yaw);
-            Audio_PlayActorSound2(&player->actor, NA_SE_PL_MAGIC_WIND_VANISH);
-        }
-
-        if (--this->jetpackTimer <= 0) {
-            this->jetpackActive = 0;
-            this->jetpackHoldFrames = 0;
-            // Restore original C-slot icon (clear flag + reload).
-            if (gSw97WindJetpackIconActive) {
-                gSw97WindJetpackIconActive = 0;
-                for (s32 btnIdx = 1; btnIdx <= 3; btnIdx++) {
-                    if (gSaveContext.equips.buttonItems[btnIdx] == ITEM_MEDALLION_FOREST) {
-                        Interface_LoadItemIcon1(play, btnIdx);
-                    }
-                }
-            }
-            if (this->actor.draw == NULL && !this->pushActive) {
+        MagicWind_PushEnemies(play, &player->actor.world.pos);
+        if (--this->pushTimer <= 0) {
+            this->pushActive = 0;
+            if (this->actor.draw == NULL && !this->tornadoActive) {
                 Actor_Kill(&this->actor);
             }
         }

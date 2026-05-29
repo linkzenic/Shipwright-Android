@@ -45,6 +45,9 @@ extern "C" {
 extern "C" s32 pikachu_ssbb_Register_Extern(void);
 extern "C" u8 TransformMasks_HandleFormItemUse(PlayState* play, Player* player, s32 item);
 extern "C" u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item);
+// Stamp player->shieldQuad so OOT's damage handler blocks attacks. Defined in
+// mm_player_form.cpp; shared across form units.
+extern "C" void MmForm_ActivateFormShieldQuad(Player* player, PlayState* play);
 
 // ── Pikachu Voice Samples ───────────────────────────────────────────────────
 #include "expansions/ssbb/characters/pikachu_ssbb_voice.h"
@@ -673,6 +676,15 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
             if (sPika.shieldActive) {
                 player->stateFlags1 |= PLAYER_STATE1_SHIELDING;
                 player->currentShield = PLAYER_SHIELD_MIRROR;
+
+                // Stamp player->shieldQuad each frame so OOT's damage handler
+                // (z_player.c:5233 checks shieldQuad.AC_BOUNCED) blocks attacks
+                // pre-hit. The existing post-hit cancel (above, around line 581)
+                // stays as a 360° fallback since the quad is frontal only — Pikachu's
+                // bubble is omnidirectional. Quad must be reset each frame too
+                // (the AC_BOUNCED bit would otherwise stick).
+                Collider_ResetQuadAC(play, &player->shieldQuad.base);
+                MmForm_ActivateFormShieldQuad(player, play);
             }
             // Roll dodge: R + stick
             if (rPress && stickMag > 0.5f) {

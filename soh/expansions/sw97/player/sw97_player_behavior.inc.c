@@ -10,11 +10,6 @@
  * - Medallion-to-arrow item conversion
  */
 
-// Set non-zero while the Wind Medallion jetpack window is active. Read by
-// soh/mods/extended_inventory.c (ExtInv_GetItemIcon) to swap the Forest
-// medallion's C-slot icon for the wind-jetpack placeholder.
-s32 gSw97WindJetpackIconActive = 0;
-
 // Runtime actor IDs (set by sw97_init.cpp via ActorDB)
 extern s16 gSw97ActorId_MagicFire;
 extern s16 gSw97ActorId_MagicIce;

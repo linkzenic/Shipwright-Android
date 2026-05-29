@@ -72,6 +72,13 @@ void DivineShield_OnShieldBlock(Player* player, PlayState* play) {
         // Parry sound
         Audio_PlaySoundGeneral(NA_SE_IT_SHIELD_REFLECT_SW, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+
+        // Cross-gamemode PvP: broadcast the parry so peers within radius
+        // also see the AOE freeze (against other players, not just
+        // local enemies). shieldType=4 (SHIELD_DIVINE), effect=1
+        // (PARRY_FREEZE_AOE) — see Combat/CombatSync.h enums.
+        extern void HarpoonCombat_BroadcastShieldParry_C(int shieldType, int effect);
+        HarpoonCombat_BroadcastShieldParry_C(4, 1);
     }
 }
 

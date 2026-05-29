@@ -110,15 +110,28 @@ u8 LightRod_HasAnyActiveSet(void) {
             return 1;
     return 0;
 }
-static RodProjSet* LightRod_FindFreeSet(void) {
+// Tear down stale colliders before reuse / on deactivation. See
+// item_rod_fire.c for full rationale: stale collider records leaked
+// into the engine's global collider pool, breaking hit detection after
+// ~2 hours of sustained shooting.
+static void LightRod_DestroySetColliders(RodProjSet* set, PlayState* play) {
+    if (!set->collidersInited) return;
+    for (s32 i = 0; i < 3; i++) {
+        Collider_DestroyCylinder(play, &set->colliders[i]);
+    }
+    set->collidersInited = 0;
+}
+
+static RodProjSet* LightRod_FindFreeSet(PlayState* play) {
     for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
         if (!sLightProjSets[s].active)
             return &sLightProjSets[s];
-    // All full — recycle oldest (lowest timer)
+    // All full — recycle oldest. Tear down its colliders before reuse.
     RodProjSet* oldest = &sLightProjSets[0];
     for (s32 s = 1; s < ROD_MAX_PROJ_SETS; s++)
         if (sLightProjSets[s].timer < oldest->timer)
             oldest = &sLightProjSets[s];
+    LightRod_DestroySetColliders(oldest, play);
     return oldest;
 }
 
@@ -144,7 +157,7 @@ static void LightRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
 // Spawns single projectile into a free set slot (stab, first-person)
 static void LightRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
                                           f32 maxRange) {
-    RodProjSet* set = LightRod_FindFreeSet();
+    RodProjSet* set = LightRod_FindFreeSet(play);
     LightRod_InitSetColliders(set, p, play);
 
     set->targetScale = 2.0f;
@@ -169,7 +182,7 @@ static void LightRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* sta
 
 // Spawns 3 light balls spread into a free set slot (slash attack)
 static void LightRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 baseYaw, s16 pitch) {
-    RodProjSet* set = LightRod_FindFreeSet();
+    RodProjSet* set = LightRod_FindFreeSet(play);
     LightRod_InitSetColliders(set, p, play);
 
     set->targetScale = 2.0f;
@@ -298,6 +311,7 @@ static void LightRod_UpdateOneSet(RodProjSet* set, Player* p, PlayState* play) {
 
     if (set->timer == 0 && set->scale < 0.1f) {
         set->active = 0;
+        LightRod_DestroySetColliders(set, play);
         return;
     }
 
@@ -895,8 +909,10 @@ static void LightRod_OnEquip(PlayState* play, Player* p) {
     gCustomItemState.lightRodProjCount = 0;
     lightRodFirstPerson = 0;
     lightRodBeamActive = 0;
-    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        LightRod_DestroySetColliders(&sLightProjSets[s], play);
         sLightProjSets[s].active = 0;
+    }
 
     lightRodCharging = 0;
     lightRodChargeLevel = 0.0f;
@@ -919,8 +935,10 @@ static void LightRod_OnUnequip(PlayState* play, Player* p) {
     lightRodProjActive = 0;
     gCustomItemState.lightRodProjCount = 0;
     lightRodBeamActive = 0;
-    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        LightRod_DestroySetColliders(&sLightProjSets[s], play);
         sLightProjSets[s].active = 0;
+    }
     Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_LOOP);
     Audio_StopSfxById(LIGHT_ROD_SFX_CHARGE);
     Audio_StopSfxById(LIGHT_ROD_SFX_LIGHT_CAST);

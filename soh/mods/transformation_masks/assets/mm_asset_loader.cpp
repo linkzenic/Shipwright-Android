@@ -16,6 +16,7 @@
  */
 
 #include "mm_asset_loader.h"
+#include "mods/sound_translator/mm_audio_sfx.h" // MM SFX engine (Tier C vanilla port)
 #include <filesystem>
 #include <cstring>
 #include <cmath>
@@ -661,6 +662,47 @@ char** MmAssets_ListFiles(const char* searchMask, int* resultSize) {
     return nullptr;
 }
 
+/**
+ * List files in mm.o2r ONLY (scoped to sMmArchive, ignoring all other mounted archives).
+ * Same return convention as MmAssets_ListFiles: caller must free each entry + the array.
+ */
+char** MmAssets_ListMmArchiveFiles(const char* searchMask, int* resultSize) {
+    if (resultSize) *resultSize = 0;
+    if (!sMmO2rLoaded || !sMmArchive || searchMask == nullptr || resultSize == nullptr) {
+        return nullptr;
+    }
+
+    try {
+        auto fileMap = sMmArchive->ListFiles(searchMask);
+        if (!fileMap || fileMap->empty()) {
+            return nullptr;
+        }
+
+        size_t count = fileMap->size();
+        char** result = (char**)malloc(count * sizeof(char*));
+        if (!result) {
+            return nullptr;
+        }
+
+        size_t i = 0;
+        for (const auto& entry : *fileMap) {
+            const std::string& path = entry.second;
+            result[i] = (char*)malloc(path.size() + 1);
+            if (result[i]) {
+                memcpy(result[i], path.c_str(), path.size());
+                result[i][path.size()] = '\0';
+            }
+            i++;
+        }
+
+        *resultSize = (int)count;
+        return result;
+    } catch (const std::exception& e) {
+        MMASSETS_LOG("[MM Assets] Exception in ListMmArchiveFiles '%s': %s", searchMask, e.what());
+    } catch (...) { MMASSETS_LOG("[MM Assets] Unknown exception in ListMmArchiveFiles '%s'", searchMask); }
+    return nullptr;
+}
+
 // =============================================================================
 // Asset Replacement System
 // =============================================================================
@@ -1025,6 +1067,7 @@ static MmSfxCacheEntry sSfxCache[MM_SFX_MAX_FONTS];
 static s32 sSfxCacheCount = 0;
 static s32 sSfxInitialized = 0;
 static f32 sTempFreqScale = 1.0f;
+static f32 sTempVol = 1.0f; // scratch buffer for MmSfx_PlayEx vol param (lives at file scope so the address stays valid until the audio engine reads it)
 
 static void MmSfxCache_Init(void) {
     if (sSfxInitialized)
@@ -1210,6 +1253,14 @@ static void MmSfx_PatchFontSamplesFromMmArchive(SoundFont* font, const char* fon
         if (samplePath[0] && font->drums && i < font->numDrums && font->drums[i]) {
             SoundFontSample* mmSample = (SoundFontSample*)MmAssets_LoadFromMmArchive(samplePath, NULL);
             if (mmSample) {
+                // Force medium=RAM so AudioLoad_AddUsedSample skips this sample
+                // (line ~2030 of audio_load.c gates on `medium != MEDIUM_RAM`).
+                // Without this the seq player's preload path tries to DMA from
+                // the relocInfo medium fields (uninitialized in AudioLoad_SyncLoadFont
+                // for MM fonts) → overwrites sampleAddr with garbage → audio
+                // synth crashes at mixer.c:103 (memcpy from bad pointer).
+                mmSample->medium = MEDIUM_RAM;
+                mmSample->isRelocated = 1;
                 font->drums[i]->sound.sample = mmSample;
                 patchedCount++;
             }
@@ -1237,6 +1288,8 @@ static void MmSfx_PatchFontSamplesFromMmArchive(SoundFont* font, const char* fon
             if (samplePath[0] && inst) {
                 SoundFontSample* s = (SoundFontSample*)MmAssets_LoadFromMmArchive(samplePath, NULL);
                 if (s) {
+                    s->medium = MEDIUM_RAM;
+                    s->isRelocated = 1;
                     inst->lowNotesSound.sample = s;
                     patchedCount++;
                 }
@@ -1251,6 +1304,8 @@ static void MmSfx_PatchFontSamplesFromMmArchive(SoundFont* font, const char* fon
             if (samplePath[0] && inst) {
                 SoundFontSample* s = (SoundFontSample*)MmAssets_LoadFromMmArchive(samplePath, NULL);
                 if (s) {
+                    s->medium = MEDIUM_RAM;
+                    s->isRelocated = 1;
                     inst->normalNotesSound.sample = s;
                     patchedCount++;
                 }
@@ -1265,6 +1320,8 @@ static void MmSfx_PatchFontSamplesFromMmArchive(SoundFont* font, const char* fon
             if (samplePath[0] && inst) {
                 SoundFontSample* s = (SoundFontSample*)MmAssets_LoadFromMmArchive(samplePath, NULL);
                 if (s) {
+                    s->medium = MEDIUM_RAM;
+                    s->isRelocated = 1;
                     inst->highNotesSound.sample = s;
                     patchedCount++;
                 }
@@ -1281,6 +1338,8 @@ static void MmSfx_PatchFontSamplesFromMmArchive(SoundFont* font, const char* fon
             if (samplePath[0] && font->soundEffects && i < font->numSfx) {
                 SoundFontSample* s = (SoundFontSample*)MmAssets_LoadFromMmArchive(samplePath, NULL);
                 if (s) {
+                    s->medium = MEDIUM_RAM;
+                    s->isRelocated = 1;
                     font->soundEffects[i].sample = s;
                     patchedCount++;
                 }
@@ -1501,10 +1560,21 @@ typedef struct {
     f32 vibratoRate;    // Vibrato LFO rate (Hz), 0 = no vibrato
     f32 vibratoDepth;   // Vibrato pitch modulation depth [0..1]
     // Portamento (pitch sweep from startAdvance to target advance over portaDuration samples)
-    f32 portaStartAdv; // Starting advance rate (0 = no portamento)
-    f32 portaEndAdv;   // Target advance rate
-    f32 portaProgress; // Current progress [0..1], 1 = reached target
-    f32 portaRate;     // Progress increment per sample (1/portaDurationSamples)
+    f32 portaStartAdv;     // Starting advance rate (0 = no portamento)
+    f32 portaEndAdv;       // Target advance rate
+    f32 portaProgress;     // Current progress [0..1], 1 = reached target
+    f32 portaRate;         // Progress increment per sample (1/portaDurationSamples)
+    u32 portaPreHoldSamples; // Hold portaStartAdv for this many samples BEFORE starting porta glide.
+                             // Matches MM seq pattern: notedv portaNote (held) → portamento → notedv mainNote.
+                             // 0 = no pre-hold (porta starts immediately, legacy behavior).
+    u32 startDelaySamples;   // Output samples to wait before producing audio (MM `ldelay N`).
+                             // While >0, the per-sample loop emits silence and decrements.
+    // (NEW) Vibrato gradient state — lerp vibratoRate/vibratoDepth from start to end values
+    // over vibGradSamplesTotal output samples. Matches MM's `vibfreqgrad/vibdepthgrad` opcodes.
+    f32 vibratoRateEnd;       // target rate at end of gradient (0 = no rate gradient)
+    f32 vibratoDepthEnd;      // target depth at end of gradient
+    u32 vibGradSamplesElapsed;// progress counter
+    u32 vibGradSamplesTotal;  // total ramp duration in samples (0 = no gradient)
     // ADSR envelope (replicates N64 sequencer envelope shaping)
     f32 envVolume;        // Current envelope amplitude [0..1]
     f32 envAttackRate;    // Per-sample attack increment (0→1)
@@ -1530,11 +1600,21 @@ static MmPlayingSound sPlayingSounds[MM_DIRECT_MAX_SOUNDS];
 // We don't have ADSR or note-off, so we must whitelist the few sounds that genuinely loop.
 static const u16 sContinuousSfxIds[] = {
     0x0990, // GORON_ROLL (rolling sound, stopped when ball ends)
+    0x0980, // GORON_CHG_ROLL (spike-mode rolling — LAYER_3AB7 has rjump loop in MM seq_0;
+            // without continuous handling, each tumble cycle re-attacks the sample causing
+            // stutter when the user holds A at max charge. Refresh keeps the drone smooth.)
+    0x098F, // GORON_CHG_ROLL_ICE (same loop semantics on ice surfaces)
+    0x099F, // GORON_ROLL_ICE (mirror of GORON_ROLL for ice variant)
     0x08EB, // GORON_BALL_CHARGE (charging up, stopped when released)
     0x09A1, // DEKUNUTS_BUBLE_BREATH (bubble charging, stopped when fired)
     0x09AD, // GORON_SLIP (slipping sound, stopped when grounded)
     0x08ED, // ZORA_SWIM_LV (level swim sound)
     0x08D0, // SLIP_LEVEL (slipping)
+    // Note: 0x1851 NA_SE_IT_DEKUNUTS_FLOWER_ROLL is NOT a continuous SFX —
+    // MM source never triggers it (only referenced as a doc-comment in
+    // src/audio/code_8019AF00.c:4345). The propeller flap during Deku
+    // glide is NA_SE_PL_DEKUNUTS_STRUGGLE (0x09A6), a one-shot fired
+    // per `pn_batabata` anim cycle at frame 6.0 (z_player.c:19194).
     0x5800, // GAKKI instrument notes (stopped on button release)
 };
 static const s32 sContinuousSfxIdsSize = sizeof(sContinuousSfxIds) / sizeof(sContinuousSfxIds[0]);
@@ -1553,6 +1633,67 @@ static bool MmDirectAudio_IsContinuous(u16 mmSfxId) {
 // (AudioSoundFontFactory applies BE16SWAP but mm.o2r stores LE data from 2Ship).
 // All instruments show sus=0.28 instead of 1.0. Until we fix the byte-swap,
 // we use this simple default that sounds correct.
+// MM ADSR envelope presets — values derived from common envelope shapes in
+// seq_0.prg.seq:27151-27600+. Each preset matches a real MM ENVELOPE_xxx point list.
+//
+//   0 = default       (current flat blip — fast atk, no dec, full sus, fast rel)
+//   1 = swell         (ENVELOPE_C018: 48-tick attack swell — TRANSFORM, FLOWER_OPEN)
+//   2 = blip          (ENVELOPE_BFF8: 10-tick spike then immediate decay)
+//   3 = slow_decay    (ENVELOPE_C054: slow attack + long decay tail — magic + voice tails)
+//   4 = sustain_loop  (ENVELOPE_C0B4: instant attack + indefinite sustain — held sounds)
+static void MmDirectAudio_ApplyEnvPreset(MmPlayingSound* snd, u8 envPreset) {
+    switch (envPreset) {
+        case 1: // swell
+            snd->envAttackRate = 1.0f / 1536.0f;  // ~48ms slow swell-in
+            snd->envDecayRate = 0.0f;
+            snd->envSustainLevel = 1.0f;
+            snd->envReleaseRate = 1.0f / 960.0f;  // 30ms gentle release
+            break;
+        case 2: // blip — short percussive
+            snd->envAttackRate = 1.0f / 32.0f;    // 1ms super-fast attack
+            snd->envDecayRate = 1.0f / 320.0f;    // 10ms decay
+            snd->envSustainLevel = 0.0f;          // decays fully (no sustain)
+            snd->envReleaseRate = 1.0f / 160.0f;  // 5ms release
+            break;
+        case 3: // slow_decay — magic/voice tail
+            snd->envAttackRate = 1.0f / 256.0f;   // 8ms attack
+            snd->envDecayRate = 1.0f / 4800.0f;   // 150ms long decay
+            snd->envSustainLevel = 0.5f;          // half-volume sustain
+            snd->envReleaseRate = 1.0f / 1600.0f; // 50ms release
+            break;
+        case 4: // sustain_loop — for held tones (charge, barrier)
+            snd->envAttackRate = 1.0f / 64.0f;    // 2ms attack
+            snd->envDecayRate = 0.0f;
+            snd->envSustainLevel = 1.0f;
+            snd->envReleaseRate = 1.0f / 960.0f;  // 30ms release
+            break;
+        case 5: // instant_then_decay — MM envelopes BFAC/BF98/C03C: 1,32700 → decay to 0.
+                // Used by FLOWER_OPEN L1 (78 B3), DEKUNUTS_ATTACK L0 (46 F5 t48),
+                // DEKUNUTS_OUT_GRD L0 (47 B3), BUBLE_BROKEN (41 C4). Instant attack so
+                // the percussive transient comes through, then long natural decay to silence.
+            snd->envAttackRate = 1.0f / 32.0f;    // 1ms instant attack
+            snd->envDecayRate = 1.0f / 6400.0f;   // 200ms long decay
+            snd->envSustainLevel = 0.0f;          // full decay to silence (no sustain plateau)
+            snd->envReleaseRate = 1.0f / 480.0f;  // 15ms release
+            break;
+        case 6: // instant_then_sustain_low — MM envelopes BF20/BF44/BF64/BF74: instant + decay to ~5000 (~15% max).
+                // Used by DEKUNUTS_OUT_GRD L2 (33 E5 t48), BALL_CHARGE_DASH L0/L1, FACE_CHANGE,
+                // SWIM_DASH L0, LIGHTNING_HARD. Instant attack + decay to a softer sustain plateau.
+            snd->envAttackRate = 1.0f / 32.0f;    // 1ms instant attack
+            snd->envDecayRate = 1.0f / 6400.0f;   // 200ms decay
+            snd->envSustainLevel = 0.15f;         // ~15% sustain (matches BF20 5000/32700)
+            snd->envReleaseRate = 1.0f / 800.0f;  // 25ms release
+            break;
+        case 0:
+        default: // legacy flat blip
+            snd->envAttackRate = 1.0f / 64.0f;
+            snd->envDecayRate = 0.0f;
+            snd->envSustainLevel = 1.0f;
+            snd->envReleaseRate = 1.0f / 320.0f;
+            break;
+    }
+}
+
 static void MmDirectAudio_SetEnvelope(MmPlayingSound* snd, bool isContinuous) {
     snd->envVolume = 0.0f;
     snd->envPhase = ADSR_PHASE_ATTACK;
@@ -1593,6 +1734,48 @@ typedef struct {
     s8 transpose;     // Layer transpose (added to midiNote for pitch calc, 0=none)
     u8 portaNote;     // Portamento start note (0=no portamento, sweeps from here to midiNote+transpose)
     u8 portaSpeed;    // Portamento speed (0=instant, 255=slow sweep). Duration in frames.
+    u8 preHoldTicks;  // Hold portaNote (start pitch) for this many MM seq ticks before porta.
+    u8 vibFreq;       // Vibrato frequency from MM seq `vibfreq N` opcode (0=no vibrato).
+                      // Engine conversion: rateHz = N / 16. So 128 ≈ 8 Hz, 240 ≈ 15 Hz.
+    u8 vibDepth;      // Vibrato depth from MM seq `vibdepth N` opcode (0=no vibrato).
+                      // Engine conversion: depth = N / 512. So 24 ≈ 5%, 88 ≈ 17%.
+    u8 velocity;      // (NEW) Per-note velocity from MM `notedv PITCH, ticks, velocity` (0-127).
+                      // MM applies velocity SQUARED (effects.c:45,53):
+                      //   layer->velocitySquare = SQ(velocity)/SQ(127.0f)
+                      // So velocity=80 → 0.397x volume, velocity=127 → 1.0x. Critical for
+                      // multi-layer SFX balance (each layer has its own velocity in MM).
+                      // 0 = treat as 127 (legacy unity for entries that don't specify).
+    u8 gain;          // (NEW) Channel `gain N` opcode (MM seqplayer.c:1577-1580). UQ4.4 where
+                      // 0x10=1.0 unity. So gain=20 → 1.25x, gain=30 → 1.875x.
+                      // Default 0 = treat as 0x10 (unity), preserving current behavior.
+    u8 ldelayTicks;   // Layer start delay from MM `ldelay N` opcode (seqplayer.c:1031).
+                      // Engine conversion: 1 tick ≈ 256 samples at 32000 Hz.
+    u8 portaModeInv;  // (NEW) Portamento direction flag. MM modes 2 and 4 INVERT the glide
+                      // (target→current instead of current→target — seqplayer.c:922-940).
+                      // 0 = normal (current behavior), 1 = inverse direction.
+    u8 vibFreqEnd;    // (NEW) End value of MM `vibfreqgrad start, target, dur` opcode.
+                      // 0 = static (uses vibFreq); else lerp from vibFreq → vibFreqEnd over vibGradTicks.
+    u8 vibDepthEnd;   // (NEW) End value of MM `vibdepthgrad start, target, dur` opcode.
+                      // 0 = static (uses vibDepth); else lerp from vibDepth → vibDepthEnd.
+    u8 vibGradTicks;  // (NEW) Duration of vibrato gradient in seq ticks. 0 = no gradient.
+    u8 envPreset;     // (NEW) ADSR envelope preset selector for the layer.
+                      // 0 = default (legacy hardcoded blip — fast attack, no decay, full sustain, fast release)
+                      // 1 = swell  (slow 48ms attack + sustain — TRANSFORM, BUBLE_BREATH, CLIMB_CLIFF, etc.)
+                      // 2 = blip   (1ms spike + 10ms decay to zero — short impact one-shots)
+                      // 3 = slow_decay (8ms attack + 150ms decay to 0.5 sustain — magic + voice tails)
+                      // 4 = sustain_loop (2ms attack + full sustain — long held tones, charge, barrier loops)
+                      // 5 = instant_then_decay (1ms attack + 200ms decay to ZERO — MM envelopes BFAC/BF98/C03C)
+                      //     Use for: FLOWER_OPEN L1/L0, DEKUNUTS_ATTACK L0, DEKUNUTS_OUT_GRD L0, BUBLE_BROKEN
+                      // 6 = instant_then_sustain_low (1ms attack + 200ms decay to ~15% sustain — BF20/BF44/BF64/BF74)
+                      //     Use for: DEKUNUTS_OUT_GRD L2, BALL_CHARGE_DASH, FACE_CHANGE, SWIM_DASH, LIGHTNING
+    // (NEW) Sub-note: an additional note that fires AFTER the main one with a delay.
+    // Implements MM's multi-note layer sequences (e.g. `notedv F4, 4, 100; notedv B4, 24, 100`).
+    // Triggered as a SEPARATE playback slot with startDelaySamples preset, so the main and
+    // sub-note overlap as MM intends. To chain >2 notes, additional helper rows can be added.
+    u8 subNoteDelayTicks; // Ticks from main-note start to sub-note play (0 = no sub-note)
+    u8 subNoteInstr;      // Sub-note instrument index (0 = reuse main instr)
+    u8 subNoteNote;       // Sub-note MIDI pitch
+    u8 subNoteVelocity;   // Sub-note velocity (0-127)
 } MmSfxInstrMapEntry;
 
 // Mapping from seq_0.prg.seq channel handlers — verified against MM decomp sequence source.
@@ -1619,59 +1802,104 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0812, 32, 72 },             // LAND L1a: INST_32, C5(72)
     { 0x0812, 26, 65 },             // LAND L1b: INST_26, F4(65)
     { 0x0812, 23, 53 },             // LAND L1c: INST_23, F3(53)
-    { 0x0814, 9, 69 },              // CLIMB_CLIFF: INST_9, A4(69) — seq_0: PITCH_A4
+    // CHAN_PL_CLIMB_CLIFF (seq_0:903-911, sound.txt). env C018 (48-tick slow attack swell to max).
+    { 0x0814, 9, 69, 0, 0, 0, 0, 0, 0, 127, 0, 0, 0, 0, 0, 1, 0 }, // INST_9 A4 env C018 → preset 1
     { 0x0839, 20, 48, 0, 57, 200 }, // SWIM: INST_20, target C3(48), porta from A3(57) — seq_0: porta 0x81
     // CHAN_PL_FREEZE (seq_0): gain=30
-    { 0x0874, 15, 52, 0, 64, 255 }, // L0: INST_15, E3(52), porta from E4(64)
-    { 0x0874, 80, 35, 0, 41, 255 }, // L1: INST_80, B1(35), porta from F2(41)
-    { 0x0877, 9, 53 },              // PUT_OUT_ITEM: INST_9, F3
-    { 0x08D0, 12, 60 },             // SLIP_LEVEL: INST_12, C4
+    // CHAN_EV_FREEZE_S: gain=30 (seq_0). Boosts the icy crackle.
+    { 0x0874, 15, 52, 0, 64, 255, 0, 0, 0, 110, 30, 0 }, // L0: INST_15, E3(52), porta from E4(64)
+    { 0x0874, 80, 35, 0, 41, 255, 0, 0, 0, 110, 30, 0 }, // L1: INST_80, B1(35), porta from F2(41)
+    // CHAN_PL_PUT_OUT_ITEM (seq_0:1546-1556, sound.txt). LAYER_0C4E:
+    //   INST_9 env C070 rr251 → notedv F3(5t,v75) → BF2(10t,v75) → BF2(17t,v75)
+    //   C070 = 40-tick slow attack → sustain max → preset 1 (swell).
+    { 0x0877, 9, 53, 0, 0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 1, 0 }, // env C070 → preset 1
+    // CHAN_PL_SLIP_LEVEL (seq_0:2254-2265, sound.txt). LAYER_10A6 loop:
+    //   INST_12 env C088 rr251 legato → notedv C4(127t,v88) LOOP
+    //   C088 = 225-tick VERY slow attack → sustain at 30000 → preset 1 (swell, sustained)
+    { 0x08D0, 12, 60, 0, 0, 0, 0, 0, 0, 88, 0, 0, 0, 0, 0, 1, 0 }, // env C088+loop → preset 1
+    // CHAN_PL_FACE_UP (seq_0:1297-1310, sound.txt). Used by Zora surfacing from water.
+    // Single layer with 2 sequential notes via instrument change:
+    //   INST_62 env C070 (40-tick slow attack) → porta C4→C5 → INST_19 env C134 (complex) → porta F3→C4
+    //   C070 → preset 1 (swell). C134 has slow attack + decay → preset 1 closest.
+    { 0x0863, 62, 72, 0, 60, 255, 0, 0, 0, 100, 0, 0, 0, 0, 0, 1, 0 }, // L0a env C070 → preset 1
+    { 0x0863, 19, 60, 0, 53, 200, 0, 0, 0, 100, 0, 0, 0, 0, 0, 1, 0 }, // L0b env C134 → preset 1
 
     // === Player Bank: Deku SFX ===
-    // CHAN_PL_DEKUNUTS_FIRE: INST_74, t6, E3 then porta E3→Db4 (seq_0 line 4362)
-    { 0x08E0, 74, 61, 6, 52, 56 }, // INST_74, target Db4(61), t6, porta from E3(52), speed 56
-    // CHAN_PL_DEKUNUTS_IN_GRD = 3 layers (seq_0 line 2364)
-    { 0x08E2, 47, 57, 0, 43, 255 },  // L0: INST_47, A3(57), porta mode82 from G2(43)
-    { 0x08E2, 35, 59, 48, 40, 127 }, // L1: INST_35 t48, B3(59), porta from E2(40) — seq_0: PITCH_B3
-    { 0x08E2, 32, 58 },              // L2: INST_32, BF3(58) loop
-    // CHAN_PL_DEKUNUTS_OUT_GRD = 3 layers (seq_0 line 2390)
-    { 0x08E3, 47, 59, 0, 57, 192 },  // L0: INST_47, B3(59), porta from A3(57) — seq_0: PITCH_B3
-    { 0x08E3, 106, 64 },             // L1: INST_106, E4(64)
-    { 0x08E3, 33, 76, 48, 64, 127 }, // L2: INST_33 t48, E5(76), porta from E4(64)
+    // CHAN_PL_DEKUNUTS_FIRE (seq_0.prg.seq:2344-2350):
+    //   instr SF0_INST_74; transpose 6
+    //   notedv PITCH_E3, 4, 100    ← hold E3 for 4 ticks
+    //   portamento 0x81, PITCH_E3, 56
+    //   notedv PITCH_DF4, 7, 100   ← glide+sustain Db4 for 7 ticks
+    // 12-field entry: { sfxId, instr, mainNote, transpose, portaNote, portaSpeed,
+    //                   preHoldTicks, vibFreq, vibDepth, velocity, gain, ldelayTicks }
+    // DEKUNUTS_FIRE: gain=15, notedv velocity=100 (seq_0:2340 gain + :2347 notedv vel)
+    { 0x08E0, 74, 61, 6, 52, 56, 4, 0, 0, 100, 15, 0 },
+    // CHAN_PL_DEKUNUTS_IN_GRD (seq_0:2364-2388, sound.txt). 3 layers with MM velocities:
+    //   L0 (LAYER_1153): INST_47 porta 0x82 G2→A3 vel110 (the "thud" core)
+    //   L1 (LAYER_1145): INST_35 t48 rr235 porta 0x81 E2→B3 vel62 (bombchu motor scrape, soft)
+    //   L2 (LAYER_113D): INST_32 notedvg BF3 6t vel45 gain128 loop (metal-shield drone, quiet)
+    { 0x08E2, 47, 57, 0, 43, 255, 0, 0, 0, 110, 0, 0 }, // L0 vel=110
+    { 0x08E2, 35, 59, 48, 40, 127, 0, 0, 0, 62,  0, 0 }, // L1 vel=62 (softer)
+    { 0x08E2, 32, 58, 0, 0,   0,   0, 0, 0, 45,  0, 0 }, // L2 vel=45 (background drone)
+    // CHAN_PL_DEKUNUTS_OUT_GRD (seq_0:2390-2415, sound.txt). 3 layers with MM velocities:
+    //   L0 (LAYER_117F): INST_47 env BFAC porta A3→B3 vel100
+    //   L1 (LAYER_1167): INST_106 notedv E4 0t vel100 (instant gulp pop)
+    //   L2 (LAYER_116D): ldelay=6 INST_33 t48 env BF20 porta E4→E5 48t vel95 (high crystal tail)
+    // envPresets reverted: my 5/6 had 200ms decay, too aggressive vs MM's 2s+ envelopes. Default
+    // engine ADSR (sustain max) lets all 3 layers ring through naturally as MM intends.
+    { 0x08E3, 47, 59, 0, 57, 192, 0, 0, 0, 100, 0, 0 }, // L0 vel=100, default env
+    { 0x08E3, 106, 64, 0, 0,   0, 0, 0, 0, 100, 0, 0 }, // L1 vel=100, default env
+    { 0x08E3, 33, 76, 48, 64, 127, 0, 0, 0, 95, 0, 6 }, // L2 ldelay=6 vel=95, default env
 
     // === Player Bank: Goron SFX ===
-    // CHAN_PL_GORON_BALLJUMP: INST_102, porta G2→G3, vibrato (seq_0 line 4379)
-    { 0x08E1, 102, 55, 0, 43, 255 }, // INST_102, target G3(55), porta from G2(43), speed 255
+    // CHAN_PL_GORON_BALLJUMP (seq_0:2352-2362, sound.txt). INST_102, porta G2→G3, vel=74,
+    // vibfreq=128, vibdepthgrad 52→0 dur=10. Velocity 74 (was 110) — MM is softer than we had.
+    { 0x08E1, 102, 55, 0, 43, 255, 0, 128, 52, 74, 0, 0,  0, 0, 0, 10, 0,  0, 0, 0, 0 },
     // CHAN_PL_TRANSFORM (seq_0): INST_68 at channel, 3 layers sharing porta F5→GF5→A5
     // L0+L1: INST_68, t=0/t=5, legato, porta from F5(77), note GF5(78)
-    { 0x08E4, 68, 78, 0, 77, 127 }, // L0: INST_68, GF5(78), porta from F5(77)
-    { 0x08E4, 68, 78, 5, 77, 127 }, // L1: INST_68, GF5(78), t5, porta from F5(77)
-    // L2: INST_64, t=-43, same porta code
-    { 0x08E4, 64, 78, -43, 77, 127 }, // L2: INST_64, GF5(78), t-43, porta from F5(77)
-    // CHAN_PL_TRANSFORM_DEMO (seq_0): INST_47, note G3(55) dur=20, then porta G3(55)→B1(35) dur=35
-    { 0x08E5, 47, 35, 0, 55, 127 }, // INST_47, target B1(35), porta from G3(55)
-    // CHAN_PL_GORON_TO_BALL: same channel as TRANSFORM_DEMO
-    { 0x08E6, 47, 35, 0, 55, 127 }, // INST_47, target B1(35), porta from G3(55)
-    // CHAN_PL_BALL_TO_GORON (seq_0 line 2455): INST_47, porta mode82 from E3(52), note G1(31)
-    { 0x08E7, 47, 31, 0, 52, 208 }, // INST_47, G1(31), porta from E3(52)
-    // CHAN_PL_GORON_PUNCH: 2 layers (verified correct)
-    { 0x08E8, 65, 53 }, // L0: INST_65 (settled_stone_block), F3, dur=0
-    { 0x08E8, 77, 60 }, // L1: INST_77 (mechanical_ramp_up), C4, dur=100
-    // CHAN_PL_GORON_BALL_CHARGE: 2 layers, both looping with porta
-    { 0x08EB, 35, 65, 48, 36, 127 }, // L0: INST_35, F4(65) t48→high, porta from C2(36)
-    { 0x08EB, 75, 64, 2, 36, 127 },  // L1: INST_75, E4(64) t2, porta from C2(36)
+    // CHAN_PL_TRANSFORM: 3 layers + vibfreqgrad 0→255 dur=24, vibdepth=5, ENV swell (ENVELOPE_C018).
+    // envPreset=1 (swell): ~48ms slow attack — the transformation "ascending shimmer" feel.
+    { 0x08E4, 68, 78,   0, 77, 127, 0,   0, 5, 100, 0, 0,  0, 255, 5, 24, 1,  0, 0, 0, 0 }, // L0
+    { 0x08E4, 68, 78,   5, 77, 127, 0,   0, 5, 100, 0, 0,  0, 255, 5, 24, 1,  0, 0, 0, 0 }, // L1
+    { 0x08E4, 64, 78, -43, 77, 127, 0,   0, 5, 100, 0, 0,  0, 255, 5, 24, 1,  0, 0, 0, 0 }, // L2
+    // CHAN_PL_TRANSFORM_DEMO (seq_0:2443-2453, sound.txt). gain=20, INST_47, LAYER_11C3:
+    //   notedvg G3(20t,v60,gain180) [first burst with gain boost] → porta 0x81 G3 127 → B1(35t,v100)
+    // The first G3 burst is collapsed; we keep the dominant porta→B1 tail.
+    { 0x08E5, 47, 35, 0, 55, 127, 0, 0, 0, 100, 20, 0 }, // gain=20 vel=100
+    // CHAN_PL_GORON_TO_BALL (0x8E6): MM reuses CHAN_PL_TRANSFORM_DEMO (same LAYER_11C3).
+    { 0x08E6, 47, 35, 0, 55, 127, 0, 0, 0, 100, 20, 0 }, // gain=20 vel=100
+    // CHAN_PL_BALL_TO_GORON (seq_0:2455-2465, sound.txt). gain=20, LAYER_11D7:
+    //   INST_47 rr245 porta 0x82 E3 208 → notedv G1(35t,v100). Porta mode 0x82 (INVERT direction).
+    { 0x08E7, 47, 31, 0, 52, 208, 0, 0, 0, 100, 20, 0 }, // gain=20 vel=100
+    // CHAN_PL_GORON_PUNCH (seq_0:2467-2482, sound.txt). gain=20, 2 layers, vel=113 each:
+    //   L0 (LAYER_11EC): INST_65 notedv F3 0t vel113 (settled-stone-block impact)
+    //   L1 (LAYER_11F2): INST_77 rr232 notedv C4 100t vel113 (mechanical-ramp-up tail)
+    { 0x08E8, 65, 53, 0, 0, 0, 0, 0, 0, 113, 20, 0 },  // L0 vel=113
+    { 0x08E8, 77, 60, 0, 0, 0, 0, 0, 0, 113, 20, 0 },  // L1 vel=113
+    // CHAN_PL_GORON_BALL_CHARGE (seq_0:2512-2535, sound.txt). 2 looping layers + vibfreq=160 vibdepth=60.
+    //   L0 (LAYER_1240): INST_35 t48 legato porta 0x81 C2 127 → notedv F4(65) 200t vel75 (loop)
+    //   L1 (LAYER_1231): INST_75 t2 legato porta 0x81 C2 127 → notedv E4(64) 200t vel44 (loop, softer)
+    { 0x08EB, 35, 65, 48, 36, 127, 0, 160, 60, 75, 0, 0 }, // L0 vel=75
+    { 0x08EB, 75, 64,  2, 36, 127, 0, 160, 60, 44, 0, 0 }, // L1 vel=44 (background)
 
     // === Player Bank: Zora SFX ===
-    // CHAN_PL_ZORA_SWIM_DASH (seq_0): 3 layers, all with portamento
-    { 0x08EC, 72, 53, 0, 36, 255 },   // L0: INST_72, F3(53), porta from C2(36) — seq_0: porta 0x85
-    { 0x08EC, 27, 41, -12, 53, 255 }, // L1: INST_27, F2(41) t-12, porta from F3(53) — seq_0: porta 0x81
-    { 0x08EC, 20, 73, 0, 48, 200 },   // L2: INST_20, DF5(73), porta from C3(48) — seq_0: porta 0x81
-    // CHAN_PL_ZORA_SWIM_LV: keep only L0 (L1 INST_51 t48 causes extra noise without ADSR)
-    { 0x08ED, 72, 41, 0, 36, 64 }, // INST_72, F2(41) porta from C2(36)
-    // CHAN_PL_ZORA_SWIM_ROLL (seq_0): INST_105, porta from E1(28)→E2(40)
-    { 0x08EE, 105, 40, 0, 28, 160 }, // INST_105, E2(40), porta from E1(28)
-    // CHAN_PL_GORON_SQUAT (seq_0): gain=20, INST_47, porta from G3(55)→B1(35)
-    { 0x08EF, 47, 35, 0, 55, 127 }, // INST_47, B1(35), porta from G3(55)
+    // CHAN_PL_ZORA_SWIM_DASH (seq_0:2537-2554, sound.txt). 3 layers (L1 broken ref):
+    //   L0 (LAYER_1263): INST_72 env BF64 rr231 legato porta 0x85 C2 255 → F3(120t,v100) → C5(64t,v100)
+    //                    BF64 = instant → decay to 5000 → preset 6
+    //   L1 (LAYER_1C67): NOT FOUND in seq_0 (broken reference in MM source). Skipped.
+    //   L2 (LAYER_1259): INST_20 porta 0x81 C3 200 → notedv DF5(140t,v105) (no env)
+    { 0x08EC, 72, 53, 0, 36, 255, 0, 0, 0, 100, 0, 0, 0, 0, 0, 6, 0 }, // L0 env BF64 → preset 6
+    { 0x08EC, 20, 73, 0, 48, 200, 0, 0, 0, 105, 0, 0 }, // L2 (no env)
+    // CHAN_PL_ZORA_SWIM_LV (seq_0:2556-2578, sound.txt). 2 looping layers:
+    //   L0 (LAYER_127C): INST_72 env C080 rr231 porta 0x83 C2 64 → F2(140t,v85) → D2(180t,v85) LOOP
+    //                    C080 = slow attack → sustain max. With rjump loop → preset 4 (sustain_loop).
+    { 0x08ED, 72, 41, 0, 36, 64, 0, 0, 0, 85, 0, 0, 0, 0, 0, 4, 0 }, // L0 env C080 + loop → preset 4
+    // CHAN_PL_ZORA_SWIM_ROLL (seq_0:2580-2589, sound.txt). LAYER_12A5:
+    //   INST_105 rr245 porta 0x81 E1 160 → notedv E2(40t,v65) (no env)
+    { 0x08EE, 105, 40, 0, 28, 160, 0, 0, 0, 65, 0, 0 }, // vel=65 (no env)
+    // CHAN_PL_GORON_SQUAT (seq_0:2591-2600, sound.txt). gain=20, INST_47 porta 0x81 G3 127 → B1(35t,v100).
+    // vel=100 (was 127, too loud). The "thud" of dropping into Goron stance.
+    { 0x08EF, 47, 35, 0, 55, 127, 0, 0, 0, 100, 20, 0 },
 
     // === Player Bank: Zora dummy footstep SFX (0x8F0 range) ===
     // CRITICAL: These are CHAN_PL_DUMMY_240 = footstep table lookup + INST_31 woosh layer.
@@ -1685,46 +1913,88 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x08F5, 31, 23, 0, 53, 207 }, // DUMMY_245: same
 
     // === Player Bank: Goron roll SFX ===
-    // CHAN_PL_GORON_CHG_ROLL: 3 layers
-    { 0x0980, 35, 67, 48, 0, 0 },    // L0: INST_35, G4(67) t48→high(bombchu_motor)
-    { 0x0980, 77, 48, 22, 43, 175 }, // L2: INST_77, C3(48) t22, porta from G2(43)
-    // CHAN_PL_GORON_ROLL (seq_0): gain=15, 3 layers (L0=surface footstep dynamic)
-    { 0x0990, 77, 58 }, // L1: INST_77, BF3(58)
-    { 0x0990, 47, 41 }, // L2: INST_47, F2(41)
+    // CHAN_PL_GORON_CHG_ROLL (seq_0:2734-2749 + 8098-8117, sound.txt). 3 layers + vibfreq=112 vibdepth=60.
+    //   L0 (LAYER_04D4): INST_0 notedv E3(21t,v56) — footstep base (no env)
+    //   L1 (LAYER_13BC): INST_35 t48 notedv G4(40t,v48) — bombchu motor (no env)
+    //   L2 (LAYER_3AB7→3AC5): legato rr235 porta 0x81 G2 175 → notedv C3(96t,v95) LOOP
+    //                          → preset 4 (sustain loop for the spike-mode drone)
+    { 0x0980, 0,  52, 0,  0,   0, 0, 112, 60, 56, 0, 0 }, // L0 footstep (no env)
+    { 0x0980, 35, 67, 48, 0,   0, 0, 112, 60, 48, 0, 0 }, // L1 motor (no env)
+    { 0x0980, 77, 48, 22, 43, 175, 0, 112, 60, 95, 0, 0, 0, 0, 0, 4, 0 }, // L2 LOOP → preset 4
+    // CHAN_PL_GORON_ROLL (seq_0:2751-2771, sound.txt). gain=15, 3 layers.
+    //   L0 (LAYER_04D4): INST_0 footstep (no env)
+    //   L1 (LAYER_13DB): INST_77 notedv BF3(40t,v120) (no env)
+    //   L2 (LAYER_13E1): INST_47 env C00C (20-tick slow attack + 10-tick swell) → preset 1
+    { 0x0990, 0,  52, 0, 0, 0, 0, 0, 0, 56,  15, 0 }, // L0 footstep
+    { 0x0990, 77, 58, 0, 0, 0, 0, 0, 0, 120, 15, 0 }, // L1 BF3 (was missing vel)
+    { 0x0990, 47, 41, 0, 0, 0, 0, 0, 0, 90, 15, 0, 0, 0, 0, 1, 0 }, // L2 env C00C → preset 1
 
     // === Player Bank: Deku SFX (0x9A0 range) ===
-    // CHAN_PL_DEKUNUTS_BUD (seq_0 line 2773): 2 layers
-    // L0: INST_52, porta mode83 from E2(40), note EF1(27) then EF3(51)
-    { 0x09A0, 52, 27, 0, 40, 255 }, // L0: INST_52, EF1(27), porta from E2(40)
-    // L1: same but transpose=7
-    { 0x09A0, 52, 27, 7, 40, 255 }, // L1: INST_52 t7, EF1(27), porta from E2(40)
-    // CHAN_PL_DEKUNUTS_BUBLE_BREATH: 2 layers + vibrato(45Hz,24) (seq_0 line 5143)
-    // L0: INST_74, porta Ab2(44)→A3(57), legato loop
-    { 0x09A1, 74, 57, 0, 44, 255 },
-    // L1: FONTANY_INSTR_8PULSE → use triangle wave approximation, porta F3(53)→D4(62)
-    { 0x09A1, 129, 62, 0, 53, 255 },
-    // CHAN_PL_GORON_BALL_CHARGE_FAILED: 2 layers
-    { 0x09A2, 35, 36, 48, 67, 255 }, // L0: INST_35, C2(36) t48→high, porta from G4(67)
-    { 0x09A2, 75, 36, 2, 64, 255 },  // L1: INST_75, C2(36) t2, porta from E4(64)
-    // CHAN_PL_GORON_BALL_CHARGE_DASH: 3 layers
-    { 0x09A3, 35, 48, 48, 69, 255 }, // L0: INST_35, C3(48) t48→high, porta from A4(69)
-    { 0x09A3, 75, 48, 2, 67, 255 },  // L1: INST_75, C3(48) t2, porta from G4(67)
-    { 0x09A3, 47, 67 },              // L2: INST_47, G4(67)
-    // CHAN_PL_FACE_CHANGE (seq_0): vibfreq=60, vibdepth=40, legato, t=3, porta from G2(43)
-    // Both layers share same notes: F3(53)→C2(36)→B3(59)→C3(48)
-    { 0x09A4, 69, 53, 3, 43, 255 },  // L0: INST_69, F3(53), t3, porta from G2(43)
-    { 0x09A4, 119, 53, 3, 43, 255 }, // L1: INST_119, F3(53), t3, porta from G2(43)
-    // CHAN_PL_DEKUNUTS_ATTACK: 2 layers (L0=shimmer sweep, L1=bass sweep)
-    // L0: INST_46, t48, porta A0(21)→F5(77), speed 255
-    { 0x09A9, 46, 77, 48, 21, 255 },
-    // L1: INST_27, porta A1(33)→C1(24), speed 200
-    { 0x09A9, 27, 24, 0, 33, 200 },
+    // CHAN_PL_DEKUNUTS_BUD (seq_0:2773-2791, sound.txt). MM has 2 layers, each plays a 4-note
+    // sequence: porta E2→EF1(8t) → EF3(16t) → ldelay 50 → porta E3→EF2(8t) → EF4(16t).
+    // L1 transposes the whole body +7 semitones (LAYER_13F2 fallthrough to LAYER_13F4).
+    // We expand each MM layer into TWO rows: the first plays EF1+subNote EF3 (the initial pair),
+    // the second plays EF2+subNote EF4 with ldelay matching MM (8+16+50 = 74 ticks for the 2nd pair).
+    // Velocity 65 per notedv (vs old default 127) — the deep-charge sound is meant to be soft.
+    // L0a: EF1 main + subNote EF3 delay=8
+    { 0x09A0, 52, 27, 0, 40, 255, 0, 0, 0, 65, 0, 0,  0, 0, 0, 0, 0,  8, 52, 51, 65 },
+    // L0b: EF2 main (ldelay 74 = 8+16+50) + subNote EF4 delay=8 (porta from E3)
+    { 0x09A0, 52, 39, 0, 52, 255, 0, 0, 0, 65, 0, 74, 0, 0, 0, 0, 0,  8, 52, 63, 65 },
+    // L1a: EF1+7=BF1 main + subNote EF3+7=BF3 delay=8
+    { 0x09A0, 52, 27, 7, 40, 255, 0, 0, 0, 65, 0, 0,  0, 0, 0, 0, 0,  8, 52, 51, 65 },
+    // L1b: EF2+7=BF2 main (ldelay 74) + subNote EF4+7=BF4 delay=8
+    { 0x09A0, 52, 39, 7, 52, 255, 0, 0, 0, 65, 0, 74, 0, 0, 0, 0, 0,  8, 52, 63, 65 },
+    // CHAN_PL_DEKUNUTS_BUBLE_BREATH (seq_0:2793-2818, sound.txt). 2 looping layers + vibfreq=45 vibdepth=24:
+    //   L0 (LAYER_1436): INST_74 env C018 rr240 legato porta 0x81 AF2 255 → notedv A3(104t,v65) LOOP
+    //                    C018 = 48-tick slow attack → swell to max → sustain. With loop → preset 1 (swell).
+    //   L1 (LAYER_1428): FONTANY_INSTR_8PULSE env C018 rr251 porta F3→D4 vel48 (no rjump = one-shot)
+    { 0x09A1, 74, 57, 0, 44, 255, 0, 45, 24, 65, 0, 0, 0, 0, 0, 1, 0 }, // L0 env C018+loop → preset 1
+    { 0x09A1, 129, 62, 0, 53, 255, 0, 45, 24, 48, 0, 0, 0, 0, 0, 1, 0 }, // L1 env C018 → preset 1
+    // CHAN_PL_GORON_BALL_CHARGE_FAILED (seq_0:2820-2839, sound.txt). 2 layers + vibfreq=112 vibdepth=60.
+    // NOTE: in MM channel, ldlayer 0=LAYER_145D (INST_35) and ldlayer 1=LAYER_1451 (INST_75).
+    //   L0 (LAYER_145D): INST_35 t48 porta 0x81 G4 255 → notedv C2 64t vel75
+    //   L1 (LAYER_1451): INST_75 t2  porta 0x81 E4 255 → notedv C2 64t vel44
+    { 0x09A2, 35, 36, 48, 67, 255, 0, 112, 60, 75, 0, 0 }, // L0 vel=75
+    { 0x09A2, 75, 36, 2,  64, 255, 0, 112, 60, 44, 0, 0 }, // L1 vel=44
+    // CHAN_PL_GORON_BALL_CHARGE_DASH (seq_0:2841-2872, sound.txt). 3 layers + vibfreq=160 vibdepth=60.
+    //   L0 (LAYER_148B): INST_35 t48 env BF20 rr251 legato porta 0x85 A4 255 → C5(12t,v75) → C3(80t,v75) → preset 6
+    //   L1 (LAYER_1477): INST_75 t2  env BF20 rr251 legato porta 0x85 G4 255 → B4(12t,v55) → C3(80t,v55) → preset 6
+    //   L2 (LAYER_149F): INST_47 notedv G4 96t vel110 (explosion punch, no env)
+    { 0x09A3, 35, 48, 48, 69, 255, 0, 160, 60, 75,  0, 0, 0, 0, 0, 6, 0 }, // L0 env BF20 → preset 6
+    { 0x09A3, 75, 48,  2, 67, 255, 0, 160, 60, 55,  0, 0, 0, 0, 0, 6, 0 }, // L1 env BF20 → preset 6
+    { 0x09A3, 47, 67,  0,  0,   0, 0, 160, 60, 110, 0, 0 }, // L2 (no env)
+    // CHAN_PL_FACE_CHANGE (seq_0:2874-2896, sound.txt). vibfreq=60, vibdepth=40, env BF74 rr251.
+    // BF74 = instant attack → decay to 5000 over 700 ticks → preset 6 (instant + low sustain).
+    // LAYER_14B4: INST_69 → LAYER_14B6 (transpose 3, legato, porta 0x85 G2 255)
+    //   notedv F3(56t,v72) → notedv C2(68t,v72) → notedv B3(56t,v72) → notedv C3(68t,v72)
+    // LAYER_14B0: INST_119 (Flute) → same body
+    // 4 notes per layer with cumulative ldelay: 0 / 56 / 124 / 180. envPreset 6 on every row.
+    { 0x09A4,  69, 53, 3, 43, 255, 0, 60, 40, 72, 0, 0,   0, 0, 0, 6, 0 }, // L0a F3 t=0
+    { 0x09A4,  69, 36, 3, 0,   0,  0, 60, 40, 72, 0, 56,  0, 0, 0, 6, 0 }, // L0b C2 t=56
+    { 0x09A4,  69, 59, 3, 0,   0,  0, 60, 40, 72, 0, 124, 0, 0, 0, 6, 0 }, // L0c B3 t=124
+    { 0x09A4,  69, 48, 3, 0,   0,  0, 60, 40, 72, 0, 180, 0, 0, 0, 6, 0 }, // L0d C3 t=180
+    { 0x09A4, 119, 53, 3, 43, 255, 0, 60, 40, 72, 0, 0,   0, 0, 0, 6, 0 }, // L1a F3 t=0
+    { 0x09A4, 119, 36, 3, 0,   0,  0, 60, 40, 72, 0, 56,  0, 0, 0, 6, 0 }, // L1b C2 t=56
+    { 0x09A4, 119, 59, 3, 0,   0,  0, 60, 40, 72, 0, 124, 0, 0, 0, 6, 0 }, // L1c B3 t=124
+    { 0x09A4, 119, 48, 3, 0,   0,  0, 60, 40, 72, 0, 180, 0, 0, 0, 6, 0 }, // L1d C3 t=180
+    // CHAN_PL_DEKUNUTS_ATTACK (seq_0:2968-2985, sound.txt). 2 layers with MM velocities:
+    //   L0 (LAYER_155C): INST_46 env BFAC t48 porta A0→F5 112t vel80 (shimmering treasure pitched up)
+    //   L1 (LAYER_1552): INST_27 porta A1→C1 100t vel110 (whish bass)
+    // envPreset reverted: my preset 5 had 200ms decay, far too short vs MM's ~2s. Default lets
+    // the sample play its full duration without being cut. User reports spin attack was wrong with preset 5.
+    { 0x09A9, 46, 77, 48, 21, 255, 0, 0, 0, 80,  0, 0 }, // L0 vel=80, default env
+    { 0x09A9, 27, 24, 0, 33, 200, 0, 0, 0, 110, 0, 0 }, // L1 vel=110, default env
     { 0x09AA, 127, 4 }, // TRANSFORM_VOICE: DRUM[4]
-    // CHAN_PL_GORON_SLIP (seq_0): INST_111, porta mode01 from A3(57)→C4(60), legato loop
-    { 0x09AD, 111, 60, 0, 57, 100 }, // INST_111, C4(60), porta from A3(57)
-    // CHAN_PL_ZORA_SPARK_BARRIER: 2 layers, both INST_46
-    { 0x09AF, 46, 64, 48, 0, 0 }, // L0: INST_46, E4(64) t48→high(shimmering), legato loop
-    { 0x09AF, 46, 55 },           // L1: INST_46, G3(55), legato loop
+    // CHAN_PL_GORON_SLIP (seq_0:3030-3041, sound.txt). LAYER_15B9:
+    //   INST_111 env C080 legato porta 0x01 A3 100 → notedv C4(32000t,v80) LOOP
+    //   C080 + rjump loop → preset 4 (sustain_loop).
+    { 0x09AD, 111, 60, 0, 57, 100, 0, 0, 0, 80, 0, 0, 0, 0, 0, 4, 0 }, // env C080 + loop → preset 4
+    // CHAN_PL_ZORA_SPARK_BARRIER (seq_0:3052-3071, sound.txt). 2 looping layers:
+    //   L0 (LAYER_15DC): INST_46 env C1A0 rr251 t48 legato → notedv E4(32000t,v90) LOOP
+    //                    C1A0 = pulse (200,32700/200,20000/goto 0) → infinite repeat → preset 4
+    //   L1 (LAYER_15EB): INST_46 legato → notedv G3(32000t,v100) LOOP (no env, just sustain)
+    { 0x09AF, 46, 64, 48, 0, 0, 0, 0, 0, 90,  0, 0, 0, 0, 0, 4, 0 }, // L0 env C1A0 + loop → preset 4
+    { 0x09AF, 46, 55, 0,  0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 4, 0 }, // L1 loop → preset 4
     // CHAN_PL_GORON_STOMACH_EXPLOSION: INST_77, 2 notes F5→A4
     { 0x09B8, 77, 77 }, // INST_77, F5 (first note)
     // CHAN_PL_GORON_DRINK_BOMB: INST_106, t48, porta C2→B2
@@ -1735,56 +2005,120 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x184F, 29, 64 },           // L0: INST_29, E4(64)
     { 0x184F, 26, 62, 48, 0, 0 }, // L1: INST_26 t48, D4(62)→high sample
     { 0x184F, 32, 60 },           // L2: INST_32, C4(60)
-    // CHAN_IT_DEKUNUTS_FLOWER_OPEN: 2 layers
-    { 0x1850, 27, 43, 0, 31, 240 }, // L0: INST_27, G2(43), porta from G1(31) — seq_0: porta 0x84
-    { 0x1850, 78, 59 },             // L1: INST_78, B3
-    { 0x1852, 78, 65 },             // IT_DEKUNUTS_FLOWER_CLOSE: INST_78, F4
-    { 0x1853, 41, 60, 0, 64, 255 }, // IT_DEKUNUTS_BUBLE_BROKEN: INST_41, C4(60), porta from E4(64)
-    { 0x1854, 41, 60, 0, 64, 255 }, // IT_DEKUNUTS_BUBLE_VANISH: INST_41, C4(60), porta from E4(64)
-    // CHAN_IT_SET_TRANSFORM_MASK: sequential INST_9 then INST_28
-    { 0x1856, 9, 55 },  // L0: INST_9, G3
-    { 0x1856, 28, 62 }, // L1: INST_28, D4
+    // CHAN_IT_DEKUNUTS_FLOWER_OPEN (seq_0:4688-4708, sound.txt). 3 layers:
+    //   L2 (LAYER_2186): INST_27 porta G1→G2(10t,v68) + AF2(10t,v70)  ← grace+sub
+    //   L1 (LAYER_2197): INST_78 env BF98 + notedv B3(24t,v108)
+    //   L0 (LAYER_2193): ldelay 10 + transpose +1 + fallthrough to LAYER_2197 → INST_78 C4
+    // Adding the missing AF2 sub-note to L2 (was the actual 2nd note in MM, not silence after G2).
+    // Velocities 68/70/108 per MM seq.
+    // FLOWER_OPEN: REVERTED envPreset 5 (200ms decay was too aggressive vs MM's ~2s).
+    // Keep velocity + AF2 sub-note + L0 pitch bug fix. Engine default ADSR (sustain max) lets
+    // the layered samples play their natural duration without being cut short.
+    { 0x1850, 27, 43, 0, 31, 240, 0, 0, 0, 68, 0, 0,  0, 0, 0, 0, 0,  10, 27, 44, 70 }, // L2: G2+AF2, default env
+    { 0x1850, 78, 59, 0, 0,   0, 0, 0, 0, 108, 0, 0 }, // L1: INST_78 B3 vel=108, default env
+    // L0 BUG FIX kept: midiNote=59 + transpose=1 = C4(60) — MM-accurate vs previous DF4(61).
+    { 0x1850, 78, 59, 1, 0,   0, 0, 0, 0, 108, 0, 10 }, // L0: B3+t1=C4, ldelay=10, vel=108, default env
+    // CHAN_IT_DEKUNUTS_FLOWER_ROLL (seq_0:4710): INST_27, porta D3→D2 — propeller hum during Deku flight.
+    // Was completely MISSING — caused propeller to fall back to wrong default.
+    { 0x1851, 27, 38, 0, 50, 255 }, // INST_27, target D2(38), porta from D3(50), speed 255
+    // CHAN_IT_DEKUNUTS_FLOWER_CLOSE (seq_0:4720-4728, sound.txt). LAYER_21B3:
+    //   INST_78, notedv F4(65) 4ticks vel100 [grace] then notedv B4(71) 24ticks vel100 [dominant]
+    // The brief F4 chirp gives the petal-snap attack; B4 is the sustained closing tone.
+    { 0x1852, 78, 65, 0, 0, 0, 0, 0, 0, 100, 0, 0,  0, 0, 0, 0, 0,  4, 78, 71, 100 }, // F4 + sub B4 delay=4
+    // CHAN_IT_DEKUNUTS_BUBLE_BROKEN (seq_0:4730-4739, sound.txt). LAYER_21C5:
+    //   INST_41 portamento 0x81 E4 255 → notedv C4(24t,v110). env C03C reverted (decay too short).
+    { 0x1853, 41, 60, 0, 64, 255, 0, 0, 0, 110, 0, 0 }, // BUBLE_BROKEN vel=110, default env
+    { 0x1854, 41, 60, 0, 64, 255, 0, 0, 0, 110, 0, 0 }, // BUBLE_VANISH (mirror, no .channel in MM)
+    // CHAN_IT_SET_TRANSFORM_MASK (seq_0:4759-4761, sound.txt). Shares LAYER_08CB with CHANGE_ARMS:
+    //   INST_9 env C064 (swell 14+13 ticks) → notedv G3(6t,v115) → C3(12t,v115)
+    //   INST_28 → notedv D4(15t,v90). C064 → preset 1 (swell).
+    { 0x1856, 9,  55, 0, 0, 0, 0, 0, 0, 115, 0, 0, 0, 0, 0, 1, 0 }, // L0a INST_9 G3 env C064 → preset 1
+    { 0x1856, 28, 62, 0, 0, 0, 0, 0, 0, 90,  0, 0, 0, 0, 0, 1, 0 }, // L0b INST_28 D4 → preset 1
+    // CHAN_IT_SHIELD_SWING (seq_0:3961-3978, sound.txt). 2 layers:
+    //   L0 (LAYER_1CE6): INST_28 notedv F3(18t,v110) — no env
+    //   L1 (LAYER_1CEC): INST_26 t48 env C0B4 → C3(10t,v75) → notedvg E3(4t,v75,gain127) → E3(4t,v75)
+    //                    C0B4 = instant + decay to 5000 → preset 6
+    { 0x181F, 28, 53, 0, 0, 0, 0, 0, 0, 110, 0, 0 }, // L0 F3 vel=110 (no env)
+    { 0x181F, 26, 52, 48, 0, 0, 0, 0, 0, 75, 0, 0, 0, 0, 0, 6, 0 }, // L1 t48 E3 env C0B4 → preset 6
     // CHAN_IT_GORON_PUNCH_SWING: 2 layers both INST_27, porta A1→C1
     { 0x1857, 27, 24, 0, 33, 200 }, // L0: INST_27, C1(24) porta from A1(33)
     { 0x1857, 27, 24, 4, 33, 200 }, // L1: INST_27, C1(24) t4, porta from A1(33)
-    { 0x1858, 15, 36 },             // IT_TRANSFORM_MASK_BROKEN: INST_15, C2
+    // CHAN_IT_TRANSFORM_MASK_BROKEN (seq_0:4789-4801, sound.txt). gain=30. LAYER_221F:
+    //   INST_15, notedv C2(45t,v110), ldelay 20, notedv F2(55t,v110), notedv A2(45t,v110),
+    //   notedv C3(35t,v110). 4-note climbing chord. Each note expanded as own row with
+    //   cumulative ldelay matching MM timing: 0 / 45+20=65 / 65+55=120 / 120+45=165.
+    { 0x1858, 15, 36, 0, 0, 0, 0, 0, 0, 110, 30, 0   }, // C2 t=0
+    { 0x1858, 15, 41, 0, 0, 0, 0, 0, 0, 110, 30, 65  }, // F2 t=65
+    { 0x1858, 15, 45, 0, 0, 0, 0, 0, 0, 110, 30, 120 }, // A2 t=120
+    { 0x1858, 15, 48, 0, 0, 0, 0, 0, 0, 110, 30, 165 }, // C3 t=165
     // CHAN_IT_ZORA_KICK_SWING: 2 layers
     { 0x1859, 27, 38, 2, 50, 255 }, // L0: INST_27, D2(38) t2, porta from D3(50)
     { 0x1859, 39, 42, 0, 72, 255 }, // L1: INST_39, GF2(42) porta from C5(72)
-    // 0x1869 = IT_SHIELD_REMOVE_ZORA — same channel
-    { 0x1869, 27, 38, 2, 50, 255 },
-    { 0x1869, 39, 42, 0, 72, 255 },
+    // 0x1869 IT_SHIELD_REMOVE_ZORA — no dedicated channel in MM seq_0. Previously cloned
+    // from KICK_SWING which played a kick whoosh on shield-remove (wrong). Removed; the
+    // OOT fallback NA_SE_IT_SHIELD_REMOVE in the call site will fire instead.
     { 0x185A, 34, 57, 48, 60, 255 }, // IT_DEKUNUTS_BUBLE_SHOT_LEVEL: INST_34, A3(57) t48, porta from C4(60)
-    // CHAN_IT_GORON_ROLLING_REFLECTION (seq_0): vibfreq=128
-    { 0x185E, 102, 65, 0, 32, 255 }, // L0: INST_102, F4(65), porta from AF1(32)
-    { 0x185E, 21, 47, 0, 66, 255 },  // L1: INST_21, B2(47), porta from GF4(66)
+    // CHAN_IT_GORON_ROLLING_REFLECTION: vibfreq=128, vibdepthgrad 52→0 dur=10 (seq_0:4889)
+    // Use REAL gradient: start depth=52, ramps to 0 over 10 ticks (matches MM bounce decay).
+    { 0x185E, 102, 65, 0, 32, 255, 0, 128, 52, 110, 0, 0,  0, 0, 0, 10, 0,  0, 0, 0, 0 }, // L0
+    { 0x185E,  21, 47, 0, 66, 255, 0, 128, 52, 110, 0, 0,  0, 0, 0, 10, 0,  0, 0, 0, 0 }, // L1
 
     // === Player Bank: Deku form-specific ===
-    { 0x09A6, 27, 43, 0, 40, 255 }, // DEKUNUTS_STRUGGLE: INST_27, G2(43), porta from E2(40) — seq_0: porta 0x83
+    // DEKUNUTS_STRUGGLE (seq_0:2913-2925, sound.txt). LAYER_14F2:
+    //   INST_27 porta 0x83 E2(40) 255 → notedv G2(43,7t,v95) → LAYER_14FB: notedv ?(9t,v95)
+    // The channel uses `rand 12 + stseq` to write a RANDOM pitch C2+rand(0..11) into the
+    // LAYER_14FB notedv each play (so the second note flutters between C2 and B2).
+    // We can't randomize per-play in our row format — we collapse to the dominant first
+    // notedv G2(43) with vel=95. The "flap" character comes mostly from the porta+G2.
+    { 0x09A6, 27, 43, 0, 40, 255, 0, 0, 0, 95, 0, 0 }, // INST_27 G2 vel=95 porta from E2
     { 0x09BF, 74, 71 },             // DEKUNUTS_MISS_FIRE: INST_74, B4
     // === Player Bank: Deku hop SFX (0x09B0-0x09B4) ===
-    { 0x09B0, 129, 60, 0, 36, 255 }, // DEKUNUTS_JUMP L0: TRIANGLE, C4(60) porta from C2(36)
-    { 0x09B0, 4, 57 },               // DEKUNUTS_JUMP L1: INST_4, A3
-    { 0x09B1, 129, 62, 0, 38, 255 }, // DEKUNUTS_JUMP2 L0: TRIANGLE, D4(62) porta from D2(38)
-    { 0x09B1, 4, 57 },               // DEKUNUTS_JUMP2 L1: INST_4, A3
-    { 0x09B2, 129, 64, 0, 40, 255 }, // DEKUNUTS_JUMP3 L0: TRIANGLE, E4(64) porta from E2(40)
-    { 0x09B2, 4, 57 },               // DEKUNUTS_JUMP3 L1: INST_4, A3
-    { 0x09B3, 129, 65, 0, 41, 255 }, // DEKUNUTS_JUMP4 L0: TRIANGLE, F4(65) porta from F2(41)
-    { 0x09B3, 4, 57 },               // DEKUNUTS_JUMP4 L1: INST_4, A3
-    { 0x09B4, 129, 67, 0, 43, 255 }, // DEKUNUTS_JUMP5 L0: TRIANGLE, G4(67) porta from G2(43)
-    { 0x09B4, 4, 57 },               // DEKUNUTS_JUMP5 L1: INST_4, A3
+    // CHAN_PL_DEKUNUTS_JUMP (seq_0:3073-3087, sound.txt). Single dispatcher channel for
+    // JUMP/JUMP2..JUMP8. vibfreq=240, vibdepthgrad 0→16 dur=4.
+    // L0 (LAYER_1619): FONTANY_INSTR_TRIANGLE env BF20 → portamento → notedv C4(20t,v75)
+    //                  BF20 = instant + decay to 5000 → preset 6
+    // L1 (LAYER_0644): INST_4 notedv A3(10t,v63) → F4(30t,v63) — step water grace notes
+    { 0x09B0, 129, 60, 0, 36, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP L0
+    { 0x09B0, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP L1 vel=63
+    { 0x09B1, 129, 62, 0, 38, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP2 L0
+    { 0x09B1, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP2 L1
+    { 0x09B2, 129, 64, 0, 40, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP3 L0
+    { 0x09B2, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP3 L1
+    { 0x09B3, 129, 65, 0, 41, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP4 L0
+    { 0x09B3, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP4 L1
+    { 0x09B4, 129, 67, 0, 43, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP5 L0
+    { 0x09B4, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP5 L1
+
+    // CHAN_PL_DEKUNUTS_DROP_BOMB (seq_0:7771, routed via HONEYCOMB_FALL):
+    // transpose 12, FONTANY_SINE, porta F5→F3, vibfreq=58, vibdepth=4. Was MISSING.
+    { 0x09AC, 130, 53, 12, 77, 255, 0, 58, 4 },  // INST_130 (sine), F3(53) t+12, porta from F5(77)
+
+    // CHAN_PL_TRANSFORM_GIANT (seq_0:3401): 3 layers, vibfreq=88, vibdepth=80.
+    // Was MISSING ENTIRELY — needed by Giant's Mask transform cutscene.
+    { 0x09C5, 74, 65, -12, 33, 255, 0, 88, 80 }, // L0: INST_74 t-12, F4(65), porta from F1(33)
+    { 0x09C5, 17, 65,  -2, 33, 255, 0, 88, 80 }, // L1: INST_17 t-2
+    { 0x09C5, 46, 65, -16, 33, 255, 0, 88, 80 }, // L2: INST_46 t-16
+
+    // CHAN_PL_TRANSFORM_NORMAL (seq_0:3435): same body as GIANT, different porta mode.
+    // Was MISSING ENTIRELY — needed by Giant→Normal revert.
+    { 0x09C6, 74, 65, -12, 33, 255, 0, 88, 80 },
+    { 0x09C6, 17, 65,  -2, 33, 255, 0, 88, 80 },
+    { 0x09C6, 46, 65, -16, 33, 255, 0, 88, 80 },
+
     // === Environment Bank ===
-    // CHAN_EV_LIGHTNING_HARD (seq_0): 3 layers, gain=15
-    // L0: INST_74 t42, env BF44 (shares note with L1)
-    { 0x2912, 74, 72, 42, 0, 0 }, // L0: INST_74, C5(72), t42
-    // L1: INST_47, env BF44 (shares note)
-    { 0x2912, 47, 72 }, // L1: INST_47, C5(72)
-    // L2: INST_74, porta C4(60)→C2(36)
-    { 0x2912, 74, 36, 0, 60, 255 }, // L2: INST_74, C2(36), porta from C4(60)
+    // CHAN_EV_LIGHTNING_HARD (seq_0:9217-9240, sound.txt). 3 layers, gain=15.
+    //   L0/L1 share env BF44 (instant attack + decay to 5000 → preset 6).
+    //   L2 = INST_74 porta C4→C2 (no env on the layer body).
+    { 0x2912, 74, 72, 42, 0, 0, 0, 0, 0, 96, 15, 0, 0, 0, 0, 6, 0 }, // L0 env BF44 → preset 6, gain=15
+    { 0x2912, 47, 72, 0,  0, 0, 0, 0, 0, 96, 15, 0, 0, 0, 0, 6, 0 }, // L1 env BF44 → preset 6, gain=15
+    { 0x2912, 74, 36, 0, 60, 255, 0, 0, 0, 96, 15, 0 }, // L2 (no env), gain=15
     // === System Bank: Transform flash ===
-    { 0x484F, 64, 60, 24, 0, 0 }, // SY_TRANSFORM_MASK_FLASH L0: INST_64, C4(60) t24
-    { 0x484F, 68, 60, 36, 0, 0 }, // SY_TRANSFORM_MASK_FLASH L1: INST_68, C4(60) t36
-    { 0x4835, 64, 60, 24, 0, 0 }, // (legacy ID)
+    // CHAN_SY_TRANSFORM_MASK_FLASH (seq_0:24844-24862, sound.txt). gain=15, 2 layers.
+    //   L0: INST_64 env C09C (800-tick VERY slow attack → sustain) → preset 1 (swell)
+    //   L1: INST_68 env C094 (200-tick slow attack → sustain) → preset 1 (swell)
+    { 0x484F, 64, 60, 24, 0, 0, 0, 0, 0, 75,  15, 0, 0, 0, 0, 1, 0 }, // L0 env C09C → preset 1
+    { 0x484F, 68, 60, 36, 0, 0, 0, 0, 0, 100, 15, 0, 0, 0, 0, 1, 0 }, // L1 env C094 → preset 1
+    { 0x4835, 64, 60, 24, 0, 0, 0, 0, 0, 75,  15, 0, 0, 0, 0, 1, 0 }, // (legacy ID)
 };
 static const s32 sMmSfxInstrMapSize = sizeof(sMmSfxInstrMap) / sizeof(sMmSfxInstrMap[0]);
 
@@ -2009,17 +2343,20 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
     // sfxIndex directly indexes into soundEffects[].
     // =========================================================================
     if (bank == 6) {
-        // Voice bank mapping: sfxIndex → soundEffects[] index
-        // seq_0 uses formula: sfxId = (layer->transposition << 6) + semitone
-        // The soundEffects array is organized in blocks of 64 (per transposition value).
-        // Each form maps to a specific (transposition, semitone_offset) pair:
-        // Verified from seq_0 transpose handlers (lines 26053-26923):
-        //   FD:     CHAN_B87B  trans=0, handlers B690/B6AB/etc → sfx[effect]
-        //   Human:  CHAN_B87B  trans=0, handlers B885/B8A1/etc → sfx[effect]
-        //   NPC:    trans=1                                    → sfx[64+]
-        //   Deku:   CHAN_BC5E  trans=3, handlers B885/B8A1/etc → sfx[(3<<6)+effect]
-        //   Zora:   CHAN_BCF3  trans=3, handlers B690/B6AB/etc → sfx[(3<<6)+effect]
-        //   Goron:  CHAN_BD84  trans=4, handlers B690/B6AB/etc → sfx[(4<<6)+effect]
+        // Voice bank mapping: sfxIndex → soundEffects[] index.
+        // Formula: effectIdx = (transpose << 6) + effect_index_from_array.
+        // The MM SF0 array is organized in 64-entry blocks per `transpose` value;
+        // each form's samples live in their own block. Confirmed by POO_WAIT
+        // (transpose=1, effect=35) playing correctly at index 99.
+        //
+        // Block layout (transpose: block start):
+        //   FD:     CHAN_B87B  trans=0  → block 0   (effects  0-31)
+        //   Human:  CHAN_B87B  trans=0  → block 0   (effects 32-63 ARRAY)
+        //   NPC:    CHAN_*     trans=1  → block 1   (effects 64+)
+        //   Deku:   CHAN_BC5E  trans=3  → block 3   (effects 192+)
+        //   Zora:   CHAN_BCF3  trans=3  → block 3   (effects 192+, different range)
+        //   Goron:  CHAN_BD84  trans=4  → block 4   (effects 256+)
+        //   Scents: LAYER_BE06 trans=1  → block 1   (effects 64+)
         u16 effectIdx;
         if (sfxIndex < 0x20) {
             // Fierce Deity (0x00-0x1F): CHAN_B87B trans=0
@@ -2109,142 +2446,115 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             // NPC voices (0x40-0x7F)
             effectIdx = 64 + (sfxIndex - 0x40);
         } else if (sfxIndex < 0xA0) {
-            // Deku (0x80-0x9F) — complex: each action has unique (transposition, effect) pairs
-            // From seq_0 source:
-            //   SWORD_N (action 0, DUMMY_128): trans=3, effects 28-31 → sfx[220-223]
-            //   SWORD_L (action 1, DUMMY_129): trans=3, effects 32-33 → sfx[224-225]
-            //   LASH    (action 2, DUMMY_130): trans=2, effects 10-11 → sfx[138-139]
-            // For actions we haven't mapped, use trans=3 base offset +28 as fallback
-            // From seq_0 voicebank_table.h + channel handlers:
-            // Each SFX offset maps to a specific CHAN which determines the soundEffect.
-            // sfxId = (transposition << 6) + effect_index
-            {
-                u8 action = sfxIndex - 0x80;
-                // Verified from seq_0.prg.seq: voicebank_table lines 145-176
-                // Format: sfxId = (trans << 6) + first_effect_index
-                static const u16 sDekuActionToSfxId[] = {
-                    // SFX    CHAN used           handler    effects         trans  sfxId=(trans<<6)+eff
-                    // CHAN_BC5E sets transpose=3 (ldi 3 at line 26723 of seq_0)
-                    // sfxId = (3<<6) + effect_index
-                    220, // 0x6880 DUMMY_128 BC5E→B885 [28,29,30,31] t=3 (3<<6)+28=220
-                    224, // 0x6881 DUMMY_129 BC5E→B8A1 [32,33]       t=3 (3<<6)+32=224
-                    220, // 0x6882 (=DUMMY_128)        same as SWORD_N
-                    226, // 0x6883 DUMMY_131 BC64→B8E5 [34,50]       t=3 (3<<6)+34=226
-                    227, // 0x6884 DUMMY_132 BC5E→B912 [35,36]       t=3 (3<<6)+35=227
-                    229, // 0x6885 DUMMY_133 BC5E→B92A [37,38,39]    t=3 (3<<6)+37=229
-                    232, // 0x6886 DUMMY_134 BC5E→B944 [40,41,42]    t=3 (3<<6)+40=232
-                    237, // 0x6887 DUMMY_135 BC5E→B95E [45,46]       t=3 (3<<6)+45=237
-                    235, // 0x6888 DUMMY_136 BC5E→B976 [43,44]       t=3 (3<<6)+43=235
-                    239, // 0x6889 DUMMY_137 BC5E→B98E [47,48]       t=3 (3<<6)+47=239
-                    244, // 0x688A DUMMY_138 BC64→BCA8 [52]          t=3 (3<<6)+52=244
-                    64,  // 0x688B DUMMY_139 BC5E→VO43 [0,1,2]      t=1 (1<<6)+0=64
-                    235, // 0x688C DUMMY_140 BC5E→B9BE [43,44]       t=3 (3<<6)+43=235
-                    212, // 0x688D DUMMY_141 BC5E→B9D6 [20]          t=3 (3<<6)+20=212
-                    20,  // 0x688E DUMMY_46  B87B shared             t=0 fallback
-                    20,  // 0x688F DUMMY_47  - shared                t=0 fallback
-                    243, // 0x6890 DUMMY_144       BCC7    [51]             3     (3<<6)+51=243
-                    20,  // 0x6891 DUMMY_49(NPC)   shared  —               0     fallback=20
-                    20,  // 0x6892 DUMMY_50(NPC)   shared  —               0     fallback=20
-                    20,  // 0x6893 LI_GROAN(FD)    shared  —               0     fallback=20
-                    245, // 0x6894 DUMMY_148       BA3B    [53,54]          3     (3<<6)+53=245
-                    20,  // 0x6895 DUMMY_53(NPC)   shared  —               0     fallback=20
-                    137, // 0x6896 DUMMY_150       BCE1    [9]              2     (2<<6)+9=137
-                    20,  // 0x6897 DUMMY_55(NPC)   shared  —               0     fallback=20
-                    227, // 0x6898 DUMMY_152       BA84    [35]             3     (3<<6)+35=227
-                    20,  // 0x6899 DUMMY_57(NPC)   shared  —               0     fallback=20
-                    241, // 0x689A DUMMY_154       BA9A    [49]             3     (3<<6)+49=241
-                    20,  // 0x689B DUMMY_59(NPC)   shared  —               0     fallback=20
-                    20,  // 0x689C DUMMY_60(NPC)   shared  —               0     fallback=20
-                    20,  // 0x689D NAVY_ENEMY(NPC) shared  —               0     fallback=20
-                    20,  // 0x689E DUMMY_62(NPC)   shared  —               0     fallback=20
-                    28,  // 0x689F LI_SWORD_N(FD)  shared  —               0     fallback=28
-                };
-                effectIdx = (action < 32) ? sDekuActionToSfxId[action] : 220;
-            }
+            // Deku (0x80-0x9F). Each Deku channel `call CHAN_BC5E (or BC64); jump CHAN_B***`.
+            // CHAN_BC5E sets LAYER_B65B transpose=3. CHAN_BC64 sets vibrato 128/88.
+            // SAMPLES are stored pre-transposed in mm.o2r's SF0 (verified empirically:
+            // MS-of-Scents POO_WAIT at index (1<<6)+35=99 plays its correct sample, not
+            // the raw 35 sample). So `effectIdx = (transpose<<6) + raw_effect` IS the
+            // right sample-selection formula. The vibrato wiring below handles the
+            // per-channel modulation that was missing.
+            u8 action = sfxIndex - 0x80;
+            static const u16 sDekuActionToSfxId[] = {
+                // action  sfxId       CHAN→jump→arr           formula
+                220, // 0x6880 DUMMY_128 BC5E→B885 [28..]  (3<<6)+28
+                224, // 0x6881 DUMMY_129 BC5E→B8A1 [32,33] (3<<6)+32
+                220, // 0x6882
+                226, // 0x6883 DUMMY_131 BC64→B8E5 [34,50] (3<<6)+34  (vibrato)
+                227, // 0x6884 DUMMY_132 BC5E→B912 [35,36] (3<<6)+35
+                229, // 0x6885 DUMMY_133 BC5E→B92A [37..]  (3<<6)+37
+                232, // 0x6886 DUMMY_134 BC5E→B944 [40..]  (3<<6)+40
+                237, // 0x6887 DUMMY_135 BC5E→B95E [45,46] (3<<6)+45
+                235, // 0x6888 DUMMY_136 BC5E→B976 [43,44] (3<<6)+43
+                239, // 0x6889 DUMMY_137 BC5E→B98E [47,48] (3<<6)+47
+                244, // 0x688A DUMMY_138 BC64→BCA8 [52]    (3<<6)+52  (vibrato)
+                64,  // 0x688B DUMMY_139 BC5E→VO43 [0,1,2] (1<<6)+0
+                235, // 0x688C DUMMY_140 BC5E→B9BE [43,44] (3<<6)+43
+                212, // 0x688D DUMMY_141 BC5E→B9D6 [20]    (3<<6)+20
+                20,  // 0x688E fallback
+                20,  // 0x688F fallback
+                243, // 0x6890 DUMMY_144 BC64→BCC7 [51]    (3<<6)+51  (vibrato)
+                20,  // 0x6891 fallback
+                20,  // 0x6892 fallback
+                20,  // 0x6893 fallback
+                245, // 0x6894 DUMMY_148 BC64→BA3B [53,54] (3<<6)+53  (vibrato)
+                20,  // 0x6895 fallback
+                137, // 0x6896 DUMMY_150 BC5E→BCE1 [9]     (2<<6)+9   (layer trans=2)
+                20,  // 0x6897 fallback
+                227, // 0x6898 DUMMY_152 BC5E→BA84 [35]    (3<<6)+35
+                20,  // 0x6899 fallback
+                241, // 0x689A DUMMY_154 BC5E→BA9A [49]    (3<<6)+49
+                20,  // 0x689B fallback
+                20,  // 0x689C fallback
+                20,  // 0x689D fallback
+                20,  // 0x689E fallback
+                28,  // 0x689F fallback
+            };
+            effectIdx = (action < 32) ? sDekuActionToSfxId[action] : 220;
         } else if (sfxIndex < 0xC0) {
-            // Zora (0xA0-0xBF) → CHAN_BCF3 sets transpose=3 (line 26824)
-            // Uses same handlers as FD (B690, B6AB, etc.) with trans=3
-            // sfxId = (3<<6) + effect_index
+            // Zora (0xA0-0xBF) → CHAN_BCF3 trans=3 / CHAN_BCF9 vibrato 240/32.
             u8 action = sfxIndex - 0xA0;
             static const u16 sZoraActionToSfxId[] = {
-                // From seq_0 lines 26832-26904: each DUMMY_160+ calls BCF3 then jumps
-                192, // 0x68A0 DUMMY_160 BCF3→B690 [0,1,2,3]   t=3 (3<<6)+0=192
-                196, // 0x68A1 DUMMY_161 BCF3→B6AB [4,5]        t=3 (3<<6)+4=196
-                202, // 0x68A2 DUMMY_162 BCF3→B6D4 [10,11]      t=3 (3<<6)+10=202
-                198, // 0x68A3 DUMMY_163 BCF3→B6FD [6,25]       t=3 (3<<6)+6=198
-                199, // 0x68A4 DUMMY_164 BCF3→B715 [7,8]        t=3 (3<<6)+7=199
-                201, // 0x68A5 DUMMY_165 BCF3→B72D [9,10,11]    t=3 (3<<6)+9=201
-                204, // 0x68A6 DUMMY_166 BCF3→B747 [12,13,14]   t=3 (3<<6)+12=204
-                209, // 0x68A7 DUMMY_167 BCF3→B761 [17,18]      t=3 (3<<6)+17=209
-                207, // 0x68A8 DUMMY_168 BCF3→B779 [15,16]      t=3 (3<<6)+15=207
-                211, // 0x68A9 DUMMY_169 BCF3→B791 [19,23]      t=3 (3<<6)+19=211
-                192, // 0x68AA DUMMY_170 BCF9→ldlayer BD41       special (fallback)
-                192, // 0x68AB DUMMY_171 BCF3→ldlayer BD4E       special (fallback)
-                207, // 0x68AC DUMMY_172 BCF3→B7C2 [15,16]      t=3 (3<<6)+15=207
-                201, // 0x68AD DUMMY_173 BCF3→B72D [9,10,11]    t=3 (3<<6)+9=201
-                192, // 0x68AE fallback
-                192, // 0x68AF fallback
-                192, // 0x68B0 DUMMY_176 BCF3→VO_LI_DRINK       special (fallback)
-                192, // 0x68B1 fallback
-                192, // 0x68B2 fallback
-                192, // 0x68B3 fallback
-                192, // 0x68B4 DUMMY_180 BCF9→special            special (fallback)
-                192, // 0x68B5 fallback
-                192, // 0x68B6 fallback
-                192, // 0x68B7 fallback
-                199, // 0x68B8 DUMMY_184 BCF3→B846 [7]           t=3 (3<<6)+7=199
-                192, // 0x68B9 fallback
-                204, // 0x68BA DUMMY_186 BCF3→B85C [12]          t=3 (3<<6)+12=204
-                192, // 0x68BB fallback
-                192, // 0x68BC fallback
-                192, // 0x68BD fallback
-                192, // 0x68BE fallback
-                192, // 0x68BF fallback
+                192, // 0x68A0 BCF3→B690 [0..]   (3<<6)+0
+                196, // 0x68A1 BCF3→B6AB [4,5]   (3<<6)+4
+                202, // 0x68A2 BCF3→B6D4 [10,11] (3<<6)+10
+                198, // 0x68A3 BCF3→B6FD [6,25]  (3<<6)+6
+                199, // 0x68A4 BCF3→B715 [7,8]   (3<<6)+7
+                201, // 0x68A5 BCF3→B72D [9..]   (3<<6)+9
+                204, // 0x68A6 BCF3→B747 [12..]  (3<<6)+12
+                209, // 0x68A7 BCF3→B761 [17,18] (3<<6)+17
+                207, // 0x68A8 BCF3→B779 [15,16] (3<<6)+15
+                211, // 0x68A9 BCF3→B791 [19,23] (3<<6)+19
+                192, // 0x68AA DUMMY_170 BCF9 (vibrato 240/32)
+                192, // 0x68AB
+                207, // 0x68AC BCF3→B7C2 [15,16] (3<<6)+15
+                201, // 0x68AD BCF3→B72D
+                192, 192, 192, 192, 192, 192,                    // 0x68AE..68B3
+                192, 192, 192, 192,                              // 0x68B4..68B7 (DUMMY_180 BCF9 vibrato)
+                199, // 0x68B8 BCF3→B846 [7] (3<<6)+7
+                192,
+                204, // 0x68BA BCF3→B85C [12] (3<<6)+12
+                192, 192, 192, 192, 192,                         // 0x68BB..68BF
             };
             effectIdx = (action < 32) ? sZoraActionToSfxId[action] : 192;
         } else if (sfxIndex < 0xE0) {
-            // Goron (0xC0-0xDF) → transposition=4, sfx[256+]
-            // From seq_0: CHAN_BD84 sets layer transposition=4
-            // Uses SAME handlers as FD (B690, B6AB, B72D etc.) so same effect indices
-            // effectIdx = (4<<6) + effect = 256 + effect
-            {
-                u8 action = sfxIndex - 0xC0;
-                // Same effect mapping as FD — both use B690/B6AB/B72D handlers
-                static const u16 sGoronActionToSfxId[] = {
-                    256, // action 0 SWORD_N: B690 {0,1,2,3} → 256
-                    260, // action 1 SWORD_L: B6AB {4,5} → 260
-                    266, // action 2 LASH:    B6D4 {10,11} → 266
-                    262, // action 3 HANG:    B6FD {6,25} → 262
-                    263, // action 4 CLIMB_END: B715 {7,8} → 263
-                    265, // action 5 DAMAGE_S: B72D {9,10,11} → 265
-                    268, // action 6 FREEZE:  B747 {12,13,14} → 268
-                    273, // action 7 FALL_S:  B761 {17,18} → 273
-                    271, // action 8 FALL_L:  B779 {15,16} → 271
-                    275, // action 9 BREATH_REST: B791 {19,23} → 275
-                    279, // action 10: ldlayer SF0_EFFECT_23 t=4 → 256+23=279
-                    276, // action 11: ldlayer SF0_EFFECT_20 t=4 → 256+20=276
-                    271, // action 12: B7C2 {15,16} → 271 (=FALL_L)
-                    265, // action 13: B72D {9,10,11} → 265 (=DAMAGE_S)
-                    256, // action 14: B66E {0} → 256
-                    259, // action 15: ldlayer SF0_EFFECT_3 t=4+1 → 256+3=259
-                    283, // action 16: B803 eff=27 → 256+27=283
-                    261, // action 17: B66E {5} → 256+5=261
-                    265, // action 18: fallback
-                    260, // action 19: B66E {4} → 256+4=260
-                    262, // action 20: fallback
-                    262, // action 21: B66E {6} → 256+6=262
-                    268, // action 22: B66E {12} → 256+12=268
-                    256, // action 23: fallback
-                    256, // action 24: fallback
-                    271, // action 25: B779 {15,16} → 271
-                    256, // action 26-31: fallback
-                    256, 256, 256, 256, 256,
-                };
-                effectIdx = (action < 32) ? sGoronActionToSfxId[action] : 256;
-            }
+            // Goron (0xC0-0xDF) → CHAN_BD84 sets transpose=4. Same handlers as FD.
+            u8 action = sfxIndex - 0xC0;
+            static const u16 sGoronActionToSfxId[] = {
+                256, // 0x68C0 SWORD_N    B690 [0..]   (4<<6)+0
+                260, // 0x68C1 SWORD_L    B6AB [4,5]   (4<<6)+4
+                266, // 0x68C2 LASH       B6D4 [10,11] (4<<6)+10
+                262, // 0x68C3 HANG       B6FD [6,25]  (4<<6)+6
+                263, // 0x68C4 CLIMB_END  B715 [7,8]   (4<<6)+7
+                265, // 0x68C5 DAMAGE_S   B72D [9..]   (4<<6)+9
+                268, // 0x68C6 FREEZE     B747 [12..]  (4<<6)+12
+                273, // 0x68C7 FALL_S     B761 [17,18] (4<<6)+17
+                271, // 0x68C8 FALL_L     B779 [15,16] (4<<6)+15
+                275, // 0x68C9 BREATH     B791 [19,23] (4<<6)+19
+                279, // 0x68CA t=4 eff=23
+                276, // 0x68CB t=4 eff=20
+                271, // 0x68CC B7C2
+                265, // 0x68CD B72D
+                256, // 0x68CE B66E [0]
+                259, // 0x68CF eff=3 (4<<6)+3
+                283, // 0x68D0 B803 eff=27 (4<<6)+27
+                261, // 0x68D1 B66E [5]
+                265, // 0x68D2 fallback
+                260, // 0x68D3 B66E [4]
+                262, // 0x68D4 fallback
+                262, // 0x68D5 B66E [6]
+                268, // 0x68D6 B66E [12]
+                256, 256,
+                271, // 0x68D9 B779 [15,16]
+                256, 256, 256, 256, 256,
+            };
+            effectIdx = (action < 32) ? sGoronActionToSfxId[action] : 256;
         } else {
-            // Mask of Scents (0xE0-0xFF)
-            effectIdx = 256 + (sfxIndex - 0xE0);
+            // Mask of Scents range (0x68E0-0x68FF). POO_WAIT verified to work at
+            // (1<<6)+35 = 99 — confirming the (transpose<<6)+effect formula.
+            switch (mmSfxId) {
+                case 0x68E0: effectIdx = 99; break; // POO_WAIT (verified working)
+                default:     effectIdx = 99; break;
+            }
         }
 
         if (effectIdx < font0->numSfx && font0->soundEffects[effectIdx].sample &&
@@ -2450,6 +2760,12 @@ static s32 MmDirectAudio_PlaySinglePCM(s16* pcm, u32 pcmLength, f32 advance, u16
     snd->portaEndAdv = 0.0f;
     snd->portaProgress = 1.0f;
     snd->portaRate = 0.0f;
+    snd->portaPreHoldSamples = 0;
+    snd->startDelaySamples = 0;
+    snd->vibratoRateEnd = 0.0f;
+    snd->vibratoDepthEnd = 0.0f;
+    snd->vibGradSamplesElapsed = 0;
+    snd->vibGradSamplesTotal = 0;
     snd->ownsPcm = 0; // Cached WAV data - do NOT free
     snd->isContinuous = MmDirectAudio_IsContinuous(mmSfxId) ? 1 : 0;
     snd->lastRefreshFrame = sMmAudioFrame;
@@ -2563,6 +2879,12 @@ static s32 MmDirectAudio_PlaySingle(SoundFontSound* sfxSound, f32 pitchScale, f3
     snd->portaEndAdv = 0.0f;
     snd->portaProgress = 1.0f; // 1.0 = no portamento active
     snd->portaRate = 0.0f;
+    snd->portaPreHoldSamples = 0;
+    snd->startDelaySamples = 0;
+    snd->vibratoRateEnd = 0.0f;
+    snd->vibratoDepthEnd = 0.0f;
+    snd->vibGradSamplesElapsed = 0;
+    snd->vibGradSamplesTotal = 0;
     snd->ownsPcm = 1; // ADPCM-decoded data is owned by this slot
     snd->isContinuous = isContinuous ? 1 : 0;
     snd->lastRefreshFrame = sMmAudioFrame;
@@ -2629,26 +2951,49 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
     // Goron/Zora/Deku/FD/HL all have their own samples in mm.o2r
     // =========================================================================
     if (bank == 6) {
-        // Vibrato parameters (from MM seq_0 channel handlers)
-        // NOTE: transpose values (3 for Deku/Zora, 4 for Goron) are LAYER transposition
-        // that select which soundEffect block to use, NOT pitch multipliers.
-        // The selected soundEffects already have correct tuning values for each form.
+        // Voice routing:
+        // - Sample selection uses `(transpose<<6) + effect` formula — samples are
+        //   already pre-arranged in MM SF0 by transpose-block, so this picks the
+        //   form's correct sample directly. POO_WAIT (Mask of Scents, transpose=1)
+        //   at index (1<<6)+35=99 was verified to play its correct sample, proving
+        //   this formula. NO additional pitch shift needed — samples have correct
+        //   tuning baked in.
+        // - Vibrato: VERIFIED VERBATIM from mm_decomp seq_0.prg.seq:26722-26830 — the entry
+        //   channels CHAN_BC5E (Deku) and CHAN_BCF3 (Zora) FALL THROUGH to CHAN_BC64 / CHAN_BCF9
+        //   which set vibrato. So *EVERY* Deku voice that calls CHAN_BC5E (which is most of them)
+        //   gets vibrato 128/88. Same for Zora calling CHAN_BCF3 → vibrato 240/32.
+        //   Prior code only handled 4 Deku + 2 Zora explicit BC64/BCF9 callers — missed SWORD_L
+        //   (0x6881) which is why Deku spin attack voice sounded dry/flat vs MM.
+        //   Goron channels (CHAN_BD84/BD8A) do NOT have a vibrato fall-through.
+        //   FD/Human (CHAN_B87B) does NOT have vibrato (no fall-through).
         f32 vibRate = 0.0f, vibDepth = 0.0f;
-        f32 voiceTranspose = 1.0f; // no pitch transpose — tuning handles it
-        if (mmSfxId >= MM_VOICE_DEKU_BASE && mmSfxId < MM_VOICE_DEKU_BASE + 0x20) {
-            // CHAN_BC5E: vibdepth=88, vibfreq=128
-            vibRate = 128.0f * (1.0f / 16.0f); // 8 Hz
-            vibDepth = 88.0f / 256.0f * 0.03f; // ~1% pitch modulation
-        } else if (mmSfxId >= MM_VOICE_ZORA_BASE && mmSfxId < MM_VOICE_ZORA_BASE + 0x20) {
-            // CHAN_BCF3: vibdepth=32, vibfreq=240
-            vibRate = 240.0f * (1.0f / 16.0f); // 15 Hz
-            vibDepth = 32.0f / 256.0f * 0.03f; // ~0.4% pitch modulation
-        }
-        // Goron (CHAN_BD84): no vibrato, no pitch transpose
 
-        // Use ADPCM from mm.o2r Soundfont_0 (real MM voice recordings)
+        // MM vibrato semantics (verified from mm_decomp seqplayer.c:1379 + effects.c:181):
+        //   vibdepth opcode N → vib->depth = N * 8
+        //   scaledDepth = vib->depth / 4096 → peak pitch modulation [0..1]
+        // Final freqScale oscillates ±scaledDepth around 1.0.
+        // Conversion: vibratoDepth = (mm_vibdepth * 8) / 4096 = mm_vibdepth / 512.
+
+        if (mmSfxId >= 0x6880 && mmSfxId <= 0x689F) {
+            // Deku block: all voices call CHAN_BC5E which falls through to CHAN_BC64.
+            // vibdepth=88, vibfreq=128 (MM seq_0:26726-26727).
+            vibRate = 128.0f * (1.0f / 16.0f);     // ~8 Hz wobble
+            vibDepth = 88.0f / 512.0f;              // ~17% pitch modulation
+        } else if (mmSfxId >= 0x68A0 && mmSfxId <= 0x68BF) {
+            // Zora block: all voices call CHAN_BCF3 which falls through to CHAN_BCF9.
+            // vibdepth=32, vibfreq=240 (MM seq_0:26828-26829). Lighter & faster than Deku.
+            vibRate = 240.0f * (1.0f / 16.0f);     // 15 Hz fast wobble
+            vibDepth = 32.0f / 512.0f;              // ~6% pitch modulation
+        }
+        // Goron (0x68C0-0x68DF), FD (0x6800-0x681F), Human (0x6820-0x683F):
+        // no vibrato in MM seq_0 channel entry points → stay at 0.0f.
+
+        // Use ADPCM from mm.o2r Soundfont_0 (real MM voice recordings).
+        // No voiceTranspose multiplier — samples are stored pre-shifted at their
+        // (transpose<<6)+effect index, and their tuning value is calibrated for
+        // that index. Applying an extra pitch multiplier would double-shift.
         SoundFontSound* sfxSound = MmDirectAudio_GetSound(mmSfxId);
-        f32 pitchScale = sMmLastPitchScale * voiceTranspose;
+        f32 pitchScale = sMmLastPitchScale;
         if (sfxSound && sfxSound->sample) {
             return MmDirectAudio_PlaySingle(sfxSound, pitchScale, freqScale, mmSfxId, vol, pan, vibRate, vibDepth);
         }
@@ -2700,6 +3045,36 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
         s8 transpose = sMmSfxInstrMap[i].transpose;
         u8 portaNote = sMmSfxInstrMap[i].portaNote;
         u8 portaSpeed = sMmSfxInstrMap[i].portaSpeed;
+        u8 preHoldTicks = sMmSfxInstrMap[i].preHoldTicks;
+        u8 entryVelocity = sMmSfxInstrMap[i].velocity;
+        u8 entryGain = sMmSfxInstrMap[i].gain;
+        u8 entryLDelayTicks = sMmSfxInstrMap[i].ldelayTicks;
+        // (NEW) extended fields:
+        u8 entryPortaModeInv = sMmSfxInstrMap[i].portaModeInv;
+        u8 entryVibFreqEnd = sMmSfxInstrMap[i].vibFreqEnd;
+        u8 entryVibDepthEnd = sMmSfxInstrMap[i].vibDepthEnd;
+        u8 entryVibGradTicks = sMmSfxInstrMap[i].vibGradTicks;
+        u8 entryEnvPreset = sMmSfxInstrMap[i].envPreset;
+        u8 entrySubNoteDelay = sMmSfxInstrMap[i].subNoteDelayTicks;
+        u8 entrySubNoteInstr = sMmSfxInstrMap[i].subNoteInstr;
+        u8 entrySubNoteNote = sMmSfxInstrMap[i].subNoteNote;
+        u8 entrySubNoteVel = sMmSfxInstrMap[i].subNoteVelocity;
+        // MM seq tick at default tempo ≈ 16ms ≈ 256 samples at 32000 Hz output.
+        u32 preHoldSamples = (u32)preHoldTicks * 256u;
+        u32 startDelaySamples = (u32)entryLDelayTicks * 256u;
+
+        // Combined entry-level volume multiplier from MM notedv velocity + channel gain:
+        //   velocityScale = (velocity/127)^2  [MM effects.c:45 — squared!]
+        //   gainScale     = gain / 16        [MM gain UQ4.4 where 0x10=unity]
+        // Default 0 in both fields treats as unity (preserves legacy behavior).
+        f32 entryVolScale = 1.0f;
+        if (entryVelocity != 0 && entryVelocity != 127) {
+            f32 v = (f32)entryVelocity / 127.0f;
+            entryVolScale *= v * v;
+        }
+        if (entryGain != 0 && entryGain != 0x10) {
+            entryVolScale *= (f32)entryGain / 16.0f;
+        }
 
         if (instIdx == FONTANY_INSTR_TRIANGLE) {
             // Built-in triangle wave (used by Deku hops)
@@ -2707,20 +3082,24 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
             f32 targetAdvance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
                                 powf(2.0f, ((f32)note - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
             s32 triSlot = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, targetAdvance, mmSfxId,
-                                                      vol * 0.6f, pan, 0.0f, 0.0f);
-            // Apply portamento if specified (sweep from low to target note)
-            if (triSlot > 0 && portaNote > 0 && portaSpeed > 0) {
+                                                      vol * 0.6f * entryVolScale, pan, 0.0f, 0.0f);
+            // Apply portamento, pre-hold, start-delay on the triangle slot
+            if (triSlot > 0) {
                 for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
                     if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
                         sPlayingSounds[s].lifeSamples == 0) {
-                        f32 portaStartAdv = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
-                                            powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
-                        f32 durationSamples = (f32)portaSpeed * 64.0f;
-                        sPlayingSounds[s].portaStartAdv = portaStartAdv;
-                        sPlayingSounds[s].portaEndAdv = targetAdvance;
-                        sPlayingSounds[s].portaProgress = 0.0f;
-                        sPlayingSounds[s].portaRate = 1.0f / durationSamples;
-                        sPlayingSounds[s].advance = portaStartAdv;
+                        sPlayingSounds[s].startDelaySamples = startDelaySamples;
+                        if (portaNote > 0 && portaSpeed > 0) {
+                            f32 portaStartAdv = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
+                                                powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+                            f32 durationSamples = (f32)portaSpeed * 64.0f;
+                            sPlayingSounds[s].portaStartAdv = portaStartAdv;
+                            sPlayingSounds[s].portaEndAdv = targetAdvance;
+                            sPlayingSounds[s].portaProgress = 0.0f;
+                            sPlayingSounds[s].portaRate = 1.0f / durationSamples;
+                            sPlayingSounds[s].advance = portaStartAdv;
+                            sPlayingSounds[s].portaPreHoldSamples = preHoldSamples;
+                        }
                         break;
                     }
                 }
@@ -2752,7 +3131,51 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                     f32 advance = sound->tuning * pitchScale * freqScale;
                     MMSFX_LOG("[MmDirectAudio] INST 0x%04X: inst[%d] note=%d t=%d eff=%d tuning=%.4f advance=%.4f",
                               mmSfxId, instIdx, note, transpose, effectiveNote, sound->tuning, advance);
-                    s32 slot = MmDirectAudio_PlaySingle(sound, pitchScale, freqScale, mmSfxId, vol, pan, 0.0f, 0.0f);
+
+                    // Per-entry vibrato (from MM seq_0 vibfreq/vibdepth opcodes).
+                    // vibFreq=0 → no vibrato. See MmSfxInstrMapEntry comments.
+                    u8 entryVibFreq = sMmSfxInstrMap[i].vibFreq;
+                    u8 entryVibDepth = sMmSfxInstrMap[i].vibDepth;
+                    f32 instVibRate = (entryVibFreq != 0) ? ((f32)entryVibFreq * (1.0f / 16.0f)) : 0.0f;
+                    f32 instVibDepth = (entryVibDepth != 0) ? ((f32)entryVibDepth / 512.0f) : 0.0f;
+
+                    // Apply per-entry velocity²+gain to the spatial volume.
+                    f32 entryAdjustedVol = vol * entryVolScale;
+                    s32 slot = MmDirectAudio_PlaySingle(sound, pitchScale, freqScale, mmSfxId, entryAdjustedVol, pan,
+                                                        instVibRate, instVibDepth);
+
+                    // Apply per-entry features to the slot we just played into.
+                    if (slot > 0) {
+                        for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
+                            if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
+                                sPlayingSounds[s].lifeSamples == 0) {
+                                // ADSR envelope preset (MM ENVELOPE_xxx selectors).
+                                // Overrides the default flat-blip envelope set in
+                                // MmDirectAudio_SetEnvelope so attack/decay/sustain/release
+                                // match MM's per-channel envelope.
+                                if (entryEnvPreset != 0) {
+                                    MmDirectAudio_ApplyEnvPreset(&sPlayingSounds[s], entryEnvPreset);
+                                }
+                                // ldelay: layer start delay
+                                if (startDelaySamples > 0) {
+                                    sPlayingSounds[s].startDelaySamples = startDelaySamples;
+                                }
+                                // Vibrato gradient: ramp vibFreq/vibDepth from start (vibFreq/vibDepth fields)
+                                // toward end values (vibFreqEnd/vibDepthEnd, INCLUDING 0) over vibGradTicks.
+                                // Setting vibGradTicks > 0 enables the ramp; the end values are taken at
+                                // face value — 0 means "lerp to silence" (matches MM's vibdepthgrad N,0,T).
+                                if (entryVibGradTicks > 0) {
+                                    sPlayingSounds[s].vibratoRateEnd =
+                                        (f32)entryVibFreqEnd / 16.0f;
+                                    sPlayingSounds[s].vibratoDepthEnd =
+                                        (f32)entryVibDepthEnd / 512.0f;
+                                    sPlayingSounds[s].vibGradSamplesElapsed = 0;
+                                    sPlayingSounds[s].vibGradSamplesTotal = (u32)entryVibGradTicks * 256u;
+                                }
+                                break;
+                            }
+                        }
+                    }
 
                     // Apply portamento if specified
                     if (slot > 0 && portaNote > 0 && portaSpeed > 0) {
@@ -2771,15 +3194,25 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                                 // Duration: portaSpeed maps to samples (higher = slower)
                                 // N64 portamento speed 255 ≈ ~0.5 sec, speed 200 ≈ ~0.4 sec
                                 f32 durationSamples = (f32)portaSpeed * 64.0f; // ~255*64 = 16320 samples ≈ 0.5s
-                                sPlayingSounds[s].portaStartAdv = portaStartAdv;
-                                sPlayingSounds[s].portaEndAdv = advance;
+                                // Portamento direction: MM modes 0x82, 0x84 (or our portaModeInv=1)
+                                // glide INVERSE (target→start) instead of normal start→target.
+                                // Swap endpoints when inverse to flip the perceived pitch slide.
+                                f32 effStart = portaStartAdv;
+                                f32 effEnd = advance;
+                                if (entryPortaModeInv) {
+                                    effStart = advance;
+                                    effEnd = portaStartAdv;
+                                }
+                                sPlayingSounds[s].portaStartAdv = effStart;
+                                sPlayingSounds[s].portaEndAdv = effEnd;
                                 sPlayingSounds[s].portaProgress = 0.0f;
                                 sPlayingSounds[s].portaRate = 1.0f / durationSamples;
-                                // Start at portamento start pitch
-                                sPlayingSounds[s].advance = portaStartAdv;
-                                MMSFX_LOG(
-                                    "[MmDirectAudio] Porta 0x%04X: startNote=%d→endNote=%d adv=%.4f→%.4f dur=%.0f",
-                                    mmSfxId, (s32)portaNote, (s32)note, portaStartAdv, advance, durationSamples);
+                                sPlayingSounds[s].advance = effStart;
+                                sPlayingSounds[s].portaPreHoldSamples = preHoldSamples;
+                                MMSFX_LOG("[MmDirectAudio] Porta 0x%04X: startNote=%d→endNote=%d adv=%.4f→%.4f "
+                                          "dur=%.0f preHold=%u",
+                                          mmSfxId, (s32)portaNote, (s32)note, portaStartAdv, advance, durationSamples,
+                                          (u32)preHoldSamples);
                                 break;
                             }
                         }
@@ -2800,6 +3233,45 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                                 sPlayingSounds[s].lifeSamples == 0) {
                                 sPlayingSounds[s].maxLifeSamples = maxLife;
                                 break;
+                            }
+                        }
+                    }
+
+                    // (NEW) Sub-note: an additional note that fires AFTER the main note with
+                    // a tick-based delay. Implements MM's multi-note layer sequences like
+                    // `notedv F4, 4, 100; notedv B4, 24, 100` (FLOWER_CLOSE, BUD, etc.).
+                    // Reuses startDelaySamples infrastructure — sub-note plays in its own
+                    // slot with delayed start so it overlaps/follows the main note as MM does.
+                    if (slot > 0 && entrySubNoteNote != 0) {
+                        u8 subInstIdx = (entrySubNoteInstr != 0) ? entrySubNoteInstr : instIdx;
+                        s32 subEffNote = (s32)entrySubNoteNote + (s32)transpose;
+                        if (subEffNote < 0) subEffNote = 0;
+                        if (subEffNote > 127) subEffNote = 127;
+                        SoundFontSound* subSound = MmDirectAudio_GetInstrumentSoundDirect(
+                            font0, subInstIdx, (u8)subEffNote);
+                        if (subSound && subSound->sample) {
+                            f32 subPitchScale = powf(2.0f, ((f32)subEffNote - 60.0f) / 12.0f);
+                            f32 subVolScale = entryVolScale;
+                            if (entrySubNoteVel != 0 && entrySubNoteVel != 127) {
+                                f32 v = (f32)entrySubNoteVel / 127.0f;
+                                // Replace velocity² portion (preserve gain part)
+                                f32 mainVelSq = (entryVelocity != 0 && entryVelocity != 127)
+                                                    ? ((f32)entryVelocity / 127.0f) * ((f32)entryVelocity / 127.0f)
+                                                    : 1.0f;
+                                if (mainVelSq > 0.0001f) subVolScale = (subVolScale / mainVelSq) * (v * v);
+                            }
+                            f32 subVol = vol * subVolScale;
+                            u32 subDelay = (u32)entrySubNoteDelay * 256u;
+                            s32 subSlot = MmDirectAudio_PlaySingle(subSound, subPitchScale, freqScale, mmSfxId,
+                                                                    subVol, pan, instVibRate, instVibDepth);
+                            if (subSlot > 0 && subDelay > 0) {
+                                for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
+                                    if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
+                                        sPlayingSounds[s].lifeSamples == 0) {
+                                        sPlayingSounds[s].startDelaySamples = subDelay;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -2918,10 +3390,22 @@ void MmGakki_PlayNote(s32 form, u8 buttonIndex, Vec3f* pos) {
     MmDirectAudio_PlaySingle(sound, pitchScale, 1.0f, MM_GAKKI_SFXID, vol, pan, 0.0f, 0.0f);
 }
 
+// MM SFX engine tick (mirrors 2Ship code_8019AF00.c:3680-3682).
+// Implemented in soh/mods/sound_translator/mm_audio_sfx.cpp.
+extern "C" void AudioMmSfx_ProcessRequests(void);
+extern "C" void AudioMmSfx_ProcessActiveSfx(void);
+
 // Mix all active MM sounds into the output buffer (called from audio thread)
 // outBuf: interleaved stereo s16 [L0,R0,L1,R1,...], numSamples = stereo pairs
 void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
     sMmAudioFrame++;
+
+    // Drive the MM SFX bank engine each audio callback. Equivalent to 2Ship's
+    // per-frame AudioSfx_ProcessRequests + AudioSfx_ProcessActiveSfx call pair.
+    // Runs at ~audio-callback rate which is close enough to MM's 20-30 fps
+    // tick for freshness/eviction timing.
+    AudioMmSfx_ProcessRequests();
+    AudioMmSfx_ProcessActiveSfx();
 
     // Apply SoH master volume (gSettings.Volume.Master, 0-100, default 40)
     f32 masterVol = (f32)CVarGetInteger("gSettings.Volume.Master", 40) / 100.0f;
@@ -2947,6 +3431,18 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
             continue;
 
         for (u32 i = 0; i < numSamples; i++) {
+            // (NEW) Layer start delay (MM `ldelay N` opcode, seqplayer.c:1031): emit
+            // silence and decrement the counter until the layer's scheduled start.
+            // This lets multi-layer SFX produce MM's intended cascading attack pattern
+            // (thud → ring → tail with ldelay 7 etc.) instead of slamming all layers
+            // simultaneously which produces flam/comb artifacts.
+            if (snd->startDelaySamples > 0) {
+                outBuf[i * 2]     += 0; // silence
+                outBuf[i * 2 + 1] += 0;
+                snd->startDelaySamples--;
+                continue;
+            }
+
             // === ADSR Envelope Processing ===
             // Advance envelope state machine (per output sample, like N64 synthesis.c)
             switch (snd->envPhase) {
@@ -3032,21 +3528,46 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
             // Apply portamento: interpolate advance rate from start to end
             f32 advance = snd->advance;
             if (snd->portaProgress < 1.0f) {
-                advance = snd->portaStartAdv + (snd->portaEndAdv - snd->portaStartAdv) * snd->portaProgress;
-                snd->portaProgress += snd->portaRate;
-                if (snd->portaProgress >= 1.0f) {
-                    snd->portaProgress = 1.0f;
-                    snd->advance = snd->portaEndAdv; // Lock at target pitch
-                    advance = snd->portaEndAdv;
+                // (NEW) Pre-hold phase: keep advance at portaStartAdv (the held
+                // pre-note pitch) for portaPreHoldSamples output samples before
+                // letting the glide begin. Matches MM's seq pattern where a
+                // `notedv portaNote, ticks, vol` plays the start pitch for a
+                // measured duration BEFORE the porta-to-target note follows.
+                if (snd->portaPreHoldSamples > 0) {
+                    advance = snd->portaStartAdv;
+                    snd->portaPreHoldSamples--;
+                } else {
+                    advance = snd->portaStartAdv + (snd->portaEndAdv - snd->portaStartAdv) * snd->portaProgress;
+                    snd->portaProgress += snd->portaRate;
+                    if (snd->portaProgress >= 1.0f) {
+                        snd->portaProgress = 1.0f;
+                        snd->advance = snd->portaEndAdv; // Lock at target pitch
+                        advance = snd->portaEndAdv;
+                    }
+                }
+            }
+
+            // Vibrato — with optional gradient. `vibratoRate`/`vibratoDepth` hold the START
+            // values (never mutated); the gradient lerps toward `vibratoRateEnd`/`DepthEnd`
+            // over `vibGradSamplesTotal` samples. Computed into LOCALS so we don't compound.
+            f32 curVibRate = snd->vibratoRate;
+            f32 curVibDepth = snd->vibratoDepth;
+            if (snd->vibGradSamplesTotal > 0) {
+                f32 t = (f32)snd->vibGradSamplesElapsed / (f32)snd->vibGradSamplesTotal;
+                if (t > 1.0f) t = 1.0f;
+                curVibRate = snd->vibratoRate + (snd->vibratoRateEnd - snd->vibratoRate) * t;
+                curVibDepth = snd->vibratoDepth + (snd->vibratoDepthEnd - snd->vibratoDepth) * t;
+                if (snd->vibGradSamplesElapsed < snd->vibGradSamplesTotal) {
+                    snd->vibGradSamplesElapsed++;
                 }
             }
 
             // Apply vibrato: modulate advance rate with sine LFO
-            if (snd->vibratoRate > 0.0f) {
-                snd->vibratoPhase += snd->vibratoRate / 32000.0f;
+            if (curVibRate > 0.0f) {
+                snd->vibratoPhase += curVibRate / 32000.0f;
                 if (snd->vibratoPhase >= 1.0f)
                     snd->vibratoPhase -= 1.0f;
-                f32 vibMod = sinf(snd->vibratoPhase * 6.2831853f) * snd->vibratoDepth;
+                f32 vibMod = sinf(snd->vibratoPhase * 6.2831853f) * curVibDepth;
                 advance *= (1.0f + vibMod);
             }
             snd->pcmPosition += advance;
@@ -3269,36 +3790,156 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
         MMSFX_LOG("[MmSfx] DIAG: ===== END DIAGNOSTIC =====");
     }
 
-    f32 freq = freqScale ? *freqScale : 1.0f;
-    return MmDirectAudio_Play(sfxId, freq, pos);
+    // === Route via the MM SFX bank engine (vanilla MM behavior) ===
+    // The engine reads the bank tables (importance, sfxParams, randFreq, etc.),
+    // applies priority/eviction, then dispatches to MmDirectAudio via the
+    // dispatcher bridge once a channel is allocated.
+    extern void AudioMmSfx_PlaySfx(u16, Vec3f*, u8, f32*, f32*, s8*);
+    extern void AudioMmSfx_Reset(void);
+    static s32 sMmSfxEngineInitDone = 0;
+    if (!sMmSfxEngineInitDone) {
+        AudioMmSfx_Reset();
+        sMmSfxEngineInitDone = 1;
+    }
+    // Use the static default pos if caller passed NULL — MM's request queue
+    // requires a non-NULL Vec3f for the dedup compare (&req->pos->x).
+    Vec3f* effectivePos = pos ? pos : &gMmSfxDefaultPos;
+    AudioMmSfx_PlaySfx(sfxId, effectivePos, token, freqScale, vol, reverbAdd);
+    return 1;
 }
 
 void MmSfx_Stop(u16 sfxId) {
+    // FIX: Must stop in BOTH the MmDirectAudio playing-sound array AND the
+    // AudioMmSfx bank engine. Without the bank-engine stop, the entry stays
+    // in PLAYING_REFRESH state and the engine re-triggers playback every
+    // audio frame — undoing the StopById fade-out within milliseconds.
+    // Symptom: Goron BALL_CHARGE keeps humming after spike activation because
+    // the bank engine kept refreshing it even though MmDirectAudio faded it.
+    extern void AudioMmSfx_StopById(u32 sfxId);
+    AudioMmSfx_StopById((u32)sfxId);
     MmDirectAudio_StopById(sfxId);
 }
 
-void MmSfx_PlayGoronRoll(Vec3f* pos, f32 speed) {
-    sTempFreqScale = 0.8f + (speed / 20.0f) * 0.4f;
-    if (sTempFreqScale > 1.5f)
-        sTempFreqScale = 1.5f;
-    if (sTempFreqScale < 0.5f)
-        sTempFreqScale = 0.5f;
-    MmSfx_PlayEx(MM_NA_SE_PL_GORON_ROLL, pos, 4, &sTempFreqScale, nullptr, nullptr);
-    // Scale down rolling volume directly in active slots (reduce dB)
+// =============================================================================
+// MmSfxBridge_* — bridge entrypoints called by mm_audio_sfx_dispatch.cpp.
+// Expose the internal MmDirectAudio_Play/Stop functions to the new SFX engine
+// without changing their TU-static linkage.
+// =============================================================================
+s32 MmSfxBridge_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
+    return MmDirectAudio_Play(mmSfxId, freqScale, pos);
+}
+
+void MmSfxBridge_StopByMmSfxId(u16 mmSfxId) {
+    MmDirectAudio_StopById(mmSfxId);
+}
+
+// Force-repatch every instrument/drum/sfx sample pointer in `sf` to a
+// SoundFontSample loaded directly from mm.o2r. Used by mm_bgm_loader to fix
+// stale OOT sample pointers in the global ResourceManager cache after
+// re-loading an MM SoundFont. Without this, the audio synth memcpy's from a
+// stale OOT sampleAddr and crashes when an MM seq triggers a note.
+//
+// `path` must be the o2r-relative path (e.g. "audio/fonts/Soundfont_6") —
+// same format MmAssets_LoadFromMmArchive expects.
+void MmSfxBridge_PatchFontSamples(SoundFont* sf, const char* path) {
+    if (sf == nullptr || path == nullptr) {
+        return;
+    }
+    MmSfx_PatchFontSamplesFromMmArchive(sf, path);
+}
+
+// Returns 1 if any MmDirectAudio slot is currently playing the given mmSfxId
+// (active AND not in late release fade). Used by the MM SFX bank engine to
+// detect when a sample has finished playing so it can clean up the bank entry
+// — mirrors MM's "channel->seqScriptIO[1] == SEQ_IO_VAL_NONE" check.
+s32 MmSfxBridge_IsActive(u16 mmSfxId) {
     for (s32 i = 0; i < MM_DIRECT_MAX_SOUNDS; i++) {
-        if (sPlayingSounds[i].active && sPlayingSounds[i].mmSfxId == MM_NA_SE_PL_GORON_ROLL) {
-            sPlayingSounds[i].volume *= 0.55f;
+        MmPlayingSound* snd = &sPlayingSounds[i];
+        if (snd->active && snd->mmSfxId == mmSfxId) {
+            // Slot is alive. Even RELEASE-phase slots count as alive — they
+            // still emit audio for a few ms while the envelope decays. Only
+            // after the slot is fully released does .active flip to 0.
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// Update pos/vol/freq on an existing MmDirectAudio slot WITHOUT re-triggering
+// the sample. Mirrors MM's AudioSfx_SetProperties — for continuing sustained
+// notes whose source position may have moved.
+void MmSfxBridge_RefreshProperties(u16 mmSfxId, Vec3f* pos, f32 freqScale) {
+    f32 vol, pan;
+    MmDirectAudio_ComputeSpatial(pos, &vol, &pan);
+    for (s32 i = 0; i < MM_DIRECT_MAX_SOUNDS; i++) {
+        MmPlayingSound* snd = &sPlayingSounds[i];
+        if (snd->active && snd->mmSfxId == mmSfxId) {
+            snd->volume = vol;
+            snd->pan = pan;
+            snd->lastRefreshFrame = sMmAudioFrame;
         }
     }
 }
 
+// MM's Audio_PlaySfx_AtPosWithSyncedFreqAndVolume mapping
+// (code_8019AF00.c:4225-4234). Given a freq/vol param:
+//   param ≥ 6.0 → freq=1.1, vol=1.0 (full)
+//   per −1.0 step below 6: freq −= 0.0333, vol −= 0.0375
+// Used by Goron rolling SFX so the cadence/pitch matches MM exactly.
+static void MmSfx_ComputeSyncedFreqVol(f32 param, f32* outFreq, f32* outVol) {
+    f32 t = (param >= 6.0f) ? 0.0f : (6.0f - param);
+    *outFreq = 1.1f - t * 0.0333f;
+    *outVol  = 1.0f - t * 0.0375f;
+    if (*outFreq < 0.5f) *outFreq = 0.5f;
+    if (*outVol  < 0.1f) *outVol  = 0.1f;
+}
+
+// Apply MM's `Player_GetFloorSfx` offset: ice floor adds 0xF to the base ID,
+// swapping ROLL→ROLL_ICE / CHG_ROLL→CHG_ROLL_ICE. Floor type is detected via
+// the caller-supplied floorSfxOffset (matches NA_SE_PL_WALK_* offsets;
+// 0xF == NA_SE_PL_WALK_ICE - NA_SE_PL_WALK_GROUND).
+static u16 MmSfx_ApplyFloorOffset(u16 baseId, u16 floorSfxOffset) {
+    // Only ice swap is meaningful for Goron rolling SFX — other floor offsets
+    // don't have corresponding GORON_ROLL_* variants in MM's playerbank.
+    if (floorSfxOffset == 0xF) return baseId + 0xF;
+    return baseId;
+}
+
+void MmSfx_PlayGoronRoll(Vec3f* pos, f32 speed) {
+    // MM: Audio_PlaySfx_AtPosWithSyncedFreqAndVolume(pos, GoronRoll[+floorOffset], sp54)
+    // where sp54 is the per-frame XZ speed used as freq/vol param.
+    f32 freq, vol;
+    MmSfx_ComputeSyncedFreqVol(speed, &freq, &vol);
+    sTempFreqScale = freq;
+    sTempVol = vol;
+    MmSfx_PlayEx(MM_NA_SE_PL_GORON_ROLL, pos, 4, &sTempFreqScale, &sTempVol, nullptr);
+}
+
 void MmSfx_PlayGoronChgRoll(Vec3f* pos, f32 speed) {
-    sTempFreqScale = 0.8f + (speed / 20.0f) * 0.4f;
-    if (sTempFreqScale > 1.5f)
-        sTempFreqScale = 1.5f;
-    if (sTempFreqScale < 0.5f)
-        sTempFreqScale = 0.5f;
-    MmSfx_PlayEx(MM_NA_SE_PL_GORON_CHG_ROLL, pos, 4, &sTempFreqScale, nullptr, nullptr);
+    f32 freq, vol;
+    MmSfx_ComputeSyncedFreqVol(speed, &freq, &vol);
+    sTempFreqScale = freq;
+    sTempVol = vol;
+    MmSfx_PlayEx(MM_NA_SE_PL_GORON_CHG_ROLL, pos, 4, &sTempFreqScale, &sTempVol, nullptr);
+}
+
+// Variant playback honoring the floor SFX offset (ice→ICE variant).
+void MmSfx_PlayGoronRollWithFloor(Vec3f* pos, f32 speed, u16 floorSfxOffset) {
+    f32 freq, vol;
+    MmSfx_ComputeSyncedFreqVol(speed, &freq, &vol);
+    sTempFreqScale = freq;
+    sTempVol = vol;
+    u16 id = MmSfx_ApplyFloorOffset(MM_NA_SE_PL_GORON_ROLL, floorSfxOffset);
+    MmSfx_PlayEx(id, pos, 4, &sTempFreqScale, &sTempVol, nullptr);
+}
+
+void MmSfx_PlayGoronChgRollWithFloor(Vec3f* pos, f32 speed, u16 floorSfxOffset) {
+    f32 freq, vol;
+    MmSfx_ComputeSyncedFreqVol(speed, &freq, &vol);
+    sTempFreqScale = freq;
+    sTempVol = vol;
+    u16 id = MmSfx_ApplyFloorOffset(MM_NA_SE_PL_GORON_CHG_ROLL, floorSfxOffset);
+    MmSfx_PlayEx(id, pos, 4, &sTempFreqScale, &sTempVol, nullptr);
 }
 
 void MmSfx_PlayGoronCharge(Vec3f* pos, f32 chargeLevel) {

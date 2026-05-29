@@ -1582,9 +1582,34 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
     Player* this = (Player*)thisx;
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
+        // Gerudo Form dual-wield: both hands hold a custom scimitar DL from
+        // gerudo.o2r. The shield slot stays empty (R-hand DL = second sword
+        // instead of a shield). Sheath is hidden — there's nothing to sheathe.
+        // Falls through to vanilla if the .o2r doesn't ship the DL (cosmetic
+        // miss, not a crash).
+        u8 gerudoHandled = 0;
+        if (GerudoForm_IsActive()) {
+            if (limbIndex == PLAYER_LIMB_L_HAND) {
+                Gfx* swordL = GerudoForm_GetSwordDL_L();
+                if (swordL != NULL) {
+                    *dList = swordL;
+                    gerudoHandled = 1;
+                }
+            } else if (limbIndex == PLAYER_LIMB_R_HAND) {
+                Gfx* swordR = GerudoForm_GetSwordDL_R();
+                if (swordR != NULL) {
+                    *dList = swordR;
+                    gerudoHandled = 1;
+                }
+            } else if (limbIndex == PLAYER_LIMB_SHEATH) {
+                *dList = NULL; // no sheath in Gerudo Form
+                gerudoHandled = 1;
+            }
+        }
+
         // PAK Loader: When a custom model or equipment pak is active, try equipment DLs first.
         // If GetEquipDL returns a DL or STUB, use it. If NULL, fall through to vanilla code.
-        {
+        if (!gerudoHandled) {
             u8 pakHandled = 0;
             if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
                                                limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
@@ -2231,8 +2256,17 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             Matrix_Get(&this->shieldMf);
             Player_UpdateShieldCollider(play, this, &this->shieldQuad, sRightHandLimbModelShieldQuadVertices);
 
-            // Shield of Ikana: draw MM Mirror Shield from mm.o2r
-            ExtEquip_DrawShieldDL(play);
+            // Gerudo: skip the shield DL — the dual scimitar at R_HAND was
+            // already drawn by GerudoForm_GetSwordDL_R via OverrideLimbDraw,
+            // and the player sees both swords held up as the "shield" visual
+            // (arms-only kf_hanare_loop override). Mechanics still fire:
+            // shieldMf is captured above and shieldQuad collider was just
+            // activated, so Mirror Shield reflection / deflection / sword
+            // sparks all work 1:1 vanilla. Only the model render is suppressed.
+            if (!GerudoForm_IsActive()) {
+                // Shield of Ikana: draw MM Mirror Shield from mm.o2r
+                ExtEquip_DrawShieldDL(play);
+            }
         }
 
         if (this->actor.scale.y >= 0.0f) {

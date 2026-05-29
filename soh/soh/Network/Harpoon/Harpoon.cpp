@@ -32,6 +32,9 @@ extern PlayState* gPlayState;
 #include "soh/Network/Harpoon/TriforceThief/TriforceThief.h"
 #include "soh/Network/Harpoon/DroppedItems.h"
 #include "soh/Network/Harpoon/Templates.h"
+#include "soh/Network/Harpoon/RemoteSaveEditor.h"
+#include "soh/Network/Harpoon/Combat/CombatSync.h"
+#include "soh/Network/Harpoon/Combat/ProjectileMirror.h"
 #include "soh/Network/Harpoon/HarpoonGamemodeHud.h"
 
 // File-scope extern for the global authorized-transition flag (defined in
@@ -116,6 +119,10 @@ void Harpoon::Disable() {
         }
     }
     clients.clear();
+    // Leak fix: clear VFX-owner table — every Actor* in it points into the
+    // engine's now-recycled actor pool. Keeping stale entries causes wrong
+    // damage routing if the engine reassigns the slot.
+    ClearVfxActorOwners();
     RefreshClientActors();
 }
 
@@ -134,6 +141,13 @@ void Harpoon::OnConnected() {
 
 void Harpoon::OnDisconnected() {
     HarpoonSkinSync::Reset();
+    // Leak fix: drop VFX-owner table on disconnect. No peers left to route
+    // damage to anyway, and the stale Actor* pointers from this session
+    // would otherwise leak into the next reconnect.
+    ClearVfxActorOwners();
+    // Leak fix: drop the per-cid diagnostic memos so they don't grow by
+    // one entry per cid across reconnect cycles.
+    HarpoonDummyPlayer_ClearPerClientDiagnostics();
     RegisterHooks();
 }
 
@@ -1260,6 +1274,31 @@ void Harpoon::HandlePacket_Damage(nlohmann::json payload) {
         break;
     case HARPOON_HIT_RESPONSE_FIRE:            // Fire arrow / Fire rod / Din's Fire
         knockSpeed = 5.0f; knockYVel = 6.0f; invTimer = 30;
+        // Burn DOT is layered on via COMBAT.APPLY_STATUS for SW97;
+        // here we just play the burning flash.
+        Actor_SetColorFilter(&self->actor, 0x4000, 0xFF, 0, 30);  // red flash
+        break;
+    case HARPOON_HIT_RESPONSE_LIGHT:           // Light arrow / Light rod / Magic Light
+        // Golden white flash, medium knockback, long invuln (heavier feel
+        // than electric). 0x8000 prim flag = white color filter.
+        Actor_SetColorFilter(&self->actor, 0x8000, 0xFF, 0, 40);
+        knockSpeed = 6.0f; knockYVel = 7.0f; invTimer = 35;
+        break;
+    case HARPOON_HIT_RESPONSE_DARK:            // Dark arrow / Magic Dark
+        // Purple/black flash + small kb. The blindness status is layered
+        // on via COMBAT.APPLY_STATUS by the SW97 hit path.
+        Actor_SetColorFilter(&self->actor, 0x4000, 0x80, 0, 30);  // darken
+        knockSpeed = 3.0f; knockYVel = 4.0f; invTimer = 20;
+        break;
+    case HARPOON_HIT_RESPONSE_SOUL_DRAIN:      // Soul arrow / Magic Soul / Ikana parry
+        // Yellow tint + drain to attacker. The "drain" amount is sent as
+        // a separate COMBAT.APPLY_STATUS so the attacker actually heals.
+        Actor_SetColorFilter(&self->actor, 0x2000, 0xC0, 0, 25);
+        knockSpeed = 1.0f; knockYVel = 2.0f; invTimer = 20;
+        break;
+    case HARPOON_HIT_RESPONSE_WIND_PUSH:       // Wind arrow / Magic Wind (smaller than WIND_BLOW)
+        knockSpeed = 10.0f; knockYVel = 3.0f; invTimer = 10;
+        finalDamage = 0;                        // pure pushback
         break;
     default:  // NORMAL + unknown — keep legacy feel
         break;
@@ -2022,6 +2061,11 @@ void Harpoon::HandlePacket_RoomLeft(nlohmann::json payload) {
     // join starts the on-screen timer at 00:00 again.
     isPropHuntMode = false;
     HarpoonPropHunt::ResetRoundElapsed();
+    // Leak fix: drop stale Actor*/cid memos on room leave. clients was just
+    // cleared above so any retained Actor* would point into the engine's
+    // recycled actor pool, and per-cid log memos would only ever grow.
+    ClearVfxActorOwners();
+    HarpoonDummyPlayer_ClearPerClientDiagnostics();
     RefreshClientActors();
     SPDLOG_INFO("[Harpoon] Left room");
 }
@@ -2597,6 +2641,16 @@ void Harpoon::HandlePacket_GamemodeManifest(nlohmann::json payload) {
             SPDLOG_INFO("[Harpoon] gamemode '{}' sets sync_cutscenes={}", gid, syncCutscenes);
         }
     }
+    // Cross-gamemode PvP combat damage table (see Combat/CombatSync.h).
+    // Looked up at the top level of the manifest (not under default_config)
+    // so the same key can live alongside permissions / rate-limits.
+    if (currentGamemodeManifest.contains("damage_table") &&
+        currentGamemodeManifest["damage_table"].is_object()) {
+        HarpoonCombat::LoadDamageTable(currentGamemodeManifest["damage_table"]);
+    } else {
+        // No table in YAML — fall back to compile-time defaults.
+        HarpoonCombat::LoadDamageTable(nlohmann::json::object());
+    }
 }
 
 void Harpoon::HandlePacket_RoomEvent(nlohmann::json payload) {
@@ -2624,10 +2678,33 @@ void Harpoon::HandlePacket_RoomEvent(nlohmann::json payload) {
         else if (eventName == "HARPOON.DROP_LEDGER_REQ")       HarpoonDroppedItems::HandleLedgerRequest(payload);
         else if (eventName == "HARPOON.DROP_LEDGER_SNAPSHOT")  HarpoonDroppedItems::HandleLedgerSnapshot(data);
         else if (eventName == "HARPOON.TEMPLATE_APPLY")        HarpoonTemplates::HandleTemplateApply(data);
+        else if (eventName == "HARPOON.SAVE_PEEK_REQUEST")     HarpoonRemoteSaveEditor::HandlePeekRequest(data);
+        else if (eventName == "HARPOON.SAVE_PEEK_RESPONSE")    HarpoonRemoteSaveEditor::HandlePeekResponse(data);
         else if (eventName == "HARPOON.FLAG_OVERRIDE")         HandleHarpoonFlagOverride(data);
         else if (eventName == "HARPOON.PEER_TELEPORT")         HandleHarpoonPeerTeleport(data);
         else if (eventName == "HARPOON.HOST_TRANSFER")         HandleHarpoonHostTransfer(data);
         else SPDLOG_DEBUG("[Harpoon] HARPOON.* unknown event {}", eventName);
+        return;
+    }
+    // Cross-gamemode PvP combat layer (see Combat/CombatSync.h).
+    if (eventName.rfind("COMBAT.", 0) == 0) {
+        const nlohmann::json& data = payload.contains("data") && payload["data"].is_object()
+                                       ? payload["data"] : payload;
+        if      (eventName == "COMBAT.APPLY_STATUS")        HarpoonCombat::HandleApplyStatus(data);
+        else if (eventName == "COMBAT.SHIELD_PARRY")        HarpoonCombat::HandleShieldParry(data);
+        else if (eventName == "COMBAT.SHIELD_REVIVE")       HarpoonCombat::HandleShieldRevive(data);
+        else if (eventName == "COMBAT.AURA_TICK")           HarpoonCombat::HandleAuraTick(data);
+        else if (eventName == "COMBAT.UTILITY_HIT")         HarpoonCombat::HandleUtilityHit(data);
+        else if (eventName == "COMBAT.PROJECTILE_SPAWN")    HarpoonProjectileMirror::HandleSpawn(data);
+        else if (eventName == "COMBAT.PROJECTILE_HIT")      HarpoonProjectileMirror::HandleHit(data);
+        else if (eventName == "COMBAT.PROJECTILE_REFLECT")  HarpoonProjectileMirror::HandleReflect(data);
+        else SPDLOG_DEBUG("[Harpoon] COMBAT.* unknown event {}", eventName);
+        return;
+    }
+    if (eventName == "PLAYER.MASK_EQUIP_START") {
+        const nlohmann::json& data = payload.contains("data") && payload["data"].is_object()
+                                       ? payload["data"] : payload;
+        HarpoonCombat::HandleMaskEquipStart(data);
         return;
     }
     SPDLOG_DEBUG("[Harpoon] ROOM.EVENT name={} (ignored)", eventName);

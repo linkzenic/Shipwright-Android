@@ -40,11 +40,12 @@
 
 // Forward declarations needed by custom items / sw97 / other early includes.
 BAD_RETURN(s32) Player_ZeroSpeedXZ(Player* this);
-// sw97_router.c → z_magic_wind.inc.c calls Player_AnimPlayOnce before its
-// definition (line ~1681). Without this declaration the compiler generates
-// an implicit int() prototype, then errors at the real definition with
-// "different basic types".
+// sw97_router.c → z_magic_wind.inc.c calls Player_AnimPlayOnce and
+// Player_AnimPlayLoop before their definitions (lines ~1698 and ~1702).
+// Without these declarations the compiler generates implicit int() prototypes,
+// then errors at the real definitions with "different basic types" (C2371).
 void Player_AnimPlayOnce(PlayState* play, Player* this, LinkAnimationHeader* anim);
+void Player_AnimPlayLoop(PlayState* play, Player* this, LinkAnimationHeader* anim);
 
 // ============================================================================
 // CUSTOM ITEMS IMPLEMENTATION
@@ -113,6 +114,8 @@ static u8 gSm64MarioInitTried = 0;
 // Original: z64proto/sw97 team
 // ============================================================================
 #include "expansions/sw97/sw97_router.c"
+
+#include "mods/spiritual_stones/spiritual_stones.h"
 
 // Some player animations are played at this reduced speed, for reasons yet unclear.
 // This is called "adjusted" for now.
@@ -1823,9 +1826,12 @@ void Player_RequestRumble(Player* this, s32 sourceStrength, s32 duration, s32 de
 }
 
 void Player_PlayVoiceSfx(Player* this, u16 sfxId) {
-    // Redirect OOT voice to MM equivalent when transformed (including FD skin mode)
-    // Uses IsTransformedAny to include FD which has IsTransformed()=false for gameplay hooks
-    if (TransformMasks_IsTransformedAny()) {
+    // Redirect OOT voice to MM equivalent when transformed (including FD skin mode).
+    // Uses IsTransformedAny to include FD which has IsTransformed()=false for gameplay hooks.
+    // EXCEPT Gerudo: gerudo.o2r doesn't ship MM voice samples, and indexing into a
+    // non-existent SFX block was crashing the audio thread. Fall through to OOT's
+    // normal Link voice instead until a gerudo voice pack is added to mm.o2r.
+    if (TransformMasks_IsTransformedAny() && !GerudoForm_IsActive()) {
         extern void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f * pos);
         TransformMasks_PlayMmVoice(sfxId, &this->actor.projectedPos);
         return;
@@ -2602,6 +2608,13 @@ s32 Player_GetItemOnButton(PlayState* play, s32 index) {
                 return ITEM_NONE;
             }
         }
+        // Bremen / Kamaro mask: same trick — return ITEM_NONE on the B slot so
+        // OOT's Player_ProcessItemButtons treats B as "no item" and won't draw
+        // sword. C-button item slots are unaffected, so the mask can still be
+        // unequipped or swapped from a C button.
+        if (MmMaskWear_BlocksSword()) {
+            return ITEM_NONE;
+        }
         return B_BTN_ITEM;
     } else if (index == 1) {
         return C_BTN_ITEM(0);
@@ -2665,6 +2678,12 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             this->currentMask = PLAYER_MASK_NONE;
         }
     }
+
+    // Bremen / Kamaro sword block lives in Player_GetItemOnButton (index 0):
+    // it returns ITEM_NONE for the B slot while either mask is equipped, so
+    // OOT skips sword draw without short-circuiting this whole function —
+    // that lets C-button mask toggles still reach TransformMasks_WearToggle
+    // so the player can take the mask off.
 
     if (!(this->stateFlags1 & (PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_IN_CUTSCENE)) && !func_8008F128(this)) {
         if (this->itemAction >= PLAYER_IA_FISHING_POLE) {
@@ -3761,19 +3780,11 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                     Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
                 }
             } else if (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY) {
-                // Garo Mask: o2r-loader skin swap (NO mm.o2r required). Toggle on/off.
-                // Routed before TransformMasks_IsEnabled() gate so it works standalone.
-                if (item == ITEM_MM_MASK_GARO) {
-                    const char* cur = O2rLoader_GetForcedName();
-                    if (O2rLoader_HasActiveModel() && cur && strcmp(cur, "garo") == 0) {
-                        O2rLoader_ClearForcedModel();
-                    } else {
-                        O2rLoader_ForceModel("garo");
-                    }
-                    return;
-                }
-                // MM Mask items from 3rd inventory page
-                if (TransformMasks_IsEnabled()) {
+                // MM Mask items from 3rd inventory page. The Garo Mask follows
+                // the same path as the rest (no special legacy O2rLoader skin
+                // swap any more — the mask is now the single activation source
+                // for the full MmForm transformation).
+                if (TransformMasks_IsEnabled() || item == ITEM_MM_MASK_GARO) {
                     TransformMaskId maskType = TransformMasks_GetMaskType(item);
                     if (maskType != TRANSFORM_MASK_NONE) {
                         TransformMasks_HandleMaskUse(play, this, item);
@@ -5202,8 +5213,13 @@ s32 func_808382DC(Player* this, PlayState* play) {
 
                 Player_RequestRumble(this, 180, 20, 100, 0);
 
-                // Signal that a shield block just occurred this frame
+                // Signal that a shield block just occurred this frame.
+                // Called HERE (not from ExtEquip_UpdateBehavior) because
+                // Player_UpdateShape clears AC_BOUNCED before the ext-equip
+                // dispatch runs — these hooks need the flag still live to
+                // read shieldQuad.base.ac (the attacker actor).
                 DivineShield_OnShieldBlock(this, play);
+                Ikana_OnShieldBlock(this, play);
 
                 if (!Player_IsChildWithHylianShield(this)) {
                     if (this->invincibilityTimer >= 0) {
@@ -6986,13 +7002,16 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
                     if ((Player_GetMeleeWeaponHeld(this) != 0) && Player_CanUpdateItems(this)) {
                         func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
                     } else if (TransformMasks_IsTransformed()) {
-            
+
                         s32 form = MmForm_GetCurrentForm();
-                        if (form == 2 /* ZORA */ || form == 0 /* FD */ || form == 5 /* PIKACHU */) {
+                        if (form == 2 /* ZORA */ || form == 0 /* FD */ || form == 5 /* PIKACHU */ ||
+                            form == 7 /* GERUDO */) {
                             // OOT handles jump slash entirely. Anim overrides via MmForm_GetJumpSlashAnim.
                             // Zora: MM velocities (5.0*1.1=5.5, 5.0*0.9=4.5), gravity -0.8f set per-frame.
                             // FD/Pikachu: OOT master sword velocities.
-                            if (form == 2) {
+                            // Gerudo: same arc as Zora (lighter gravity, similar launch) — the dual-
+                            // scimitar spin reads as an aerial slash, not a sword stab.
+                            if (form == 2 || form == 7) {
                                 func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.5f, 4.5f);
                             } else {
                                 func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
@@ -9616,6 +9635,10 @@ void Player_Action_80842180(Player* this, PlayState* play) {
                         sp2C *= CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f);
                     }
                 }
+            }
+
+            if (SpiritualStone_KokiriWalkActive()) {
+                sp2C *= 1.5f;
             }
 
             func_8083DF68(this, sp2C, sp2A);
@@ -13133,23 +13156,26 @@ void Player_Update(Actor* thisx, PlayState* play) {
             // Garo attack kit). All routing lives in transformation_masks.c.
             TransformMasks_FilterB(&sp44);
 
-            // Kamaro dance: freeze ALL input while dancing so player can't move or act.
-            // Dance animation is applied in MmMaskWear_Update after Player_UpdateCommon.
+            // Kamaro dance: strip all input EXCEPT B. In MM, Kamaro is bound
+            // to the B button (DO_ACTION_DANCE), so releasing B must stop the
+            // dance — keeping B live in sp44 lets the mm_mask_wear.cpp dance
+            // loop see the release. All other buttons stripped so sword/items
+            // can't softlock against the dance animation.
             if (MmMaskWear_IsKamaroDancing()) {
-                sp44.cur.button = 0;
-                sp44.press.button = 0;
-                sp44.rel.button = 0;
+                sp44.cur.button &= BTN_B;
+                sp44.press.button &= BTN_B;
+                sp44.rel.button &= BTN_B;
                 sp44.cur.stick_x = 0;
                 sp44.cur.stick_y = 0;
             }
 
-            // Bremen march: zero ONLY the analog stick so Link auto-walks forward
-            // at fixed yaw. Buttons stay live so B-release stops the march (1:1 MM
-            // stop condition). Forward velocity is applied in MmMaskWear_Update.
-            if (MmMaskWear_IsBremenMarching()) {
-                sp44.cur.stick_x = 0;
-                sp44.cur.stick_y = 0;
-            }
+            // Bremen march: DO NOT block input. Per MM z_player.c:14705,
+            // Player_Action_11 reads sPlayerControlInput (raw stick + buttons)
+            // for stick-driven yaw and target-speed. Zeroing here breaks
+            // direction control. Item-use (sword draw, item swap, etc.) is
+            // blocked separately via the MmMaskWear_IsBremenMarching() gate
+            // in Player_ProcessItemButtons, mirroring MM's stateFlags3
+            // PLAYER_STATE3_20000000 early-return at z_player.c:3804-3806.
         }
 
         if (CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f) != 1.0f &&
@@ -13329,6 +13355,9 @@ void Player_Update(Actor* thisx, PlayState* play) {
     // SW97 Shadow Medallion heart→magic exchange — must run before the spell
     // cast pipeline aborts on zero magic, so it lives outside that gate.
     Sw97_TickShadowExchange(play, this);
+
+    // Spiritual stones: C-button hold tracker (summon/warp) + warp-prompt poll.
+    SpiritualStone_TickHold(play, this);
 }
 
 typedef struct BunnyEarKinematics {
@@ -13936,6 +13965,11 @@ void func_8084AEEC(Player* this, f32* arg1, f32 arg2, s16 arg3) {
                 swimMod *= CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f);
             }
         }
+    }
+    if (SpiritualStone_ZoraSwimActive()) {
+        swimMod *= 2.0f;
+    }
+    if (swimMod != 1.0f) {
         temp1 = this->skelAnime.curFrame - 10.0f;
 
         temp2 = (R_RUN_SPEED_LIMIT / 100.0f) * 0.8f * swimMod;
@@ -14459,7 +14493,8 @@ void Player_Action_8084BF1C(Player* this, PlayState* play) {
         phi_f2 = -1.0f;
     }
 
-    this->skelAnime.playSpeed = phi_f2 * phi_f0 + phi_f2 * CVarGetInteger(CVAR_ENHANCEMENT("ClimbSpeed"), 0);
+    this->skelAnime.playSpeed = phi_f2 * phi_f0 + phi_f2 * CVarGetInteger(CVAR_ENHANCEMENT("ClimbSpeed"), 0) +
+                                phi_f2 * (SpiritualStone_GoronClimbActive() ? 2 : 0);
 
     if (this->av2.actionVar2 >= 0) {
         if ((this->actor.wallPoly != NULL) && (this->actor.wallBgId != BGCHECK_SCENE)) {
@@ -16350,6 +16385,28 @@ void Player_UpdateBunnyEars(Player* this) {
 }
 
 s32 Player_ActionHandler_7(Player* this, PlayState* play) {
+    // Transformation masks: form code owns the B-button (Zora combo, Goron punch, etc.).
+    // Bail before OOT's ground-slash path can fire — it calls func_80837948 which reads
+    // D_80854488[Player_GetMeleeWeaponHeld - 1]. For form-no-weapon that index is -1, an
+    // OOB read whose garbage value can include DMG_HAMMER_SWING (0x40), so a form punch
+    // would break hammer rocks (Obj_Hamishi). Also, firing OOT's slash actionFunc on top
+    // of the form's punch combo races the form's collider override and creates softlocks
+    // in the boomerang upper-action chain after a mash-chained combo. FD skin mode keeps
+    // a real sword (Player_GetMeleeWeaponHeld returns BGS index 3), so let it through.
+    //
+    // Gerudo + SHIELDING is an explicit exception: while the vanilla Mirror Shield is up
+    // we want the vanilla shield-thrust attack on B (Link stabs the sword forward). The
+    // Gerudo form pins heldItemAction to Master/Kokiri, so Player_GetMeleeWeaponHeld
+    // returns a real sword index — no OOB read. And the combo is gated out during
+    // SHIELDING (see MmForm_GerudoCanStartGroundCombo), so there's no race with the
+    // form's punch handler.
+    if (TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode()) {
+        u8 gerudoShielding = GerudoForm_IsActive() && (this->stateFlags1 & PLAYER_STATE1_SHIELDING);
+        if (!gerudoShielding) {
+            return 0;
+        }
+    }
+
     if (func_8083C6B8(play, this) == 0) {
         if (func_8083BB20(this) != 0) {
             s32 sp24 = func_80837818(this);

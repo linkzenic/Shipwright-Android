@@ -30,6 +30,23 @@ extern "C" {
 extern size_t sequenceMapSize;
 extern size_t fontMapSize;
 extern char** fontMap;
+extern char** sequenceMap;
+
+// MM BGM custom-seq registration helpers (impl in audio_load.c). Used by
+// soh/mods/sound_translator/mm_bgm_loader.cpp to install MM seqs from mm.o2r.
+s32 AudioLoad_FindNextFreeSeqId(void);
+s32 AudioLoad_FindNextFreeFontIndex(void);
+s32 AudioLoad_RegisterMmSequence(const char* path, u16 seqNum);
+s32 AudioLoad_RegisterMmFont(const char* path, s32 fontIndex);
+
+// One-shot per-player MM seq side-channel primer (impl in code_800F9280.c).
+// Sets seqToPlay[playerIdx] to the 16-bit MM seq id and arms a one-shot bypass
+// flag consumed by the very next Audio_QueueSeqCmd on that player. Use this
+// instead of writing seqReplaced/seqToPlay directly, so the MM bypass cannot
+// leak into the custom/music/* randomizer's own use of those fields.
+void Audio_PrimeMmSideChannel(u8 playerIdx, u16 fullSeqId);
+
+// PopulateMmFontMeta declaration lives below, after the SoundFont typedef.
 
 #define MAX_AUTHENTIC_SEQID 110
 
@@ -247,6 +264,11 @@ typedef struct {
     /* 0x10 */ SoundFontSound* soundEffects;
     s32 fntIndex;
 } SoundFont; // size = 0x14
+
+// SOH-side: shallow-copy a loaded SoundFont's meta + pointers into
+// gAudioContext.soundFonts[fontIndex] so the audio synth thread can resolve
+// instrument/drum/sfx tables without going OOB on MM seqs.
+void AudioLoad_PopulateMmFontMeta(s32 fontIndex, SoundFont* sf);
 
 typedef struct {
     /* 0x00 */ u8* pc;

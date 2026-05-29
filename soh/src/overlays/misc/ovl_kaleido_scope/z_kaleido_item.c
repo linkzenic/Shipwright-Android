@@ -865,15 +865,31 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
     ExtInv_Update();
 
     if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->pageIndex == PAUSE_ITEM)) {
-        // Harpoon GM-mode: C-Up press while hovering an inventory slot
-        // drops the item to the ground. Multiplayer-only (the C bridge
-        // no-ops if not in a Harpoon room). Fires on press-only so it
-        // doesn't conflict with the existing "C-Up held" D-Pad swap mode.
-        if (CHECK_BTN_ALL(input->press.button, BTN_CUP)) {
-            extern void HarpoonDrops_RequestDropFromPause(int tabId, int slot);
-            s16 dropSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
-            if (dropSlot >= 0) {
-                HarpoonDrops_RequestDropFromPause(/*tabId=items*/0, dropSlot);
+        // Harpoon GM-mode: HOLD C-Up for 20 frames (~1/3 sec) while
+        // hovering an inventory slot to drop the item. Multiplayer-only
+        // (the C bridge no-ops if not in a Harpoon room). Holding (not
+        // press-only) prevents accidental drops when the player taps
+        // C-Up to switch into D-Pad swap mode. Counter resets when the
+        // slot changes or C-Up is released.
+        {
+            static s32  sHarpoonHoldFrames = 0;
+            static s16  sHarpoonHoldSlot   = -1;
+            s16 curSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+            if (CHECK_BTN_ALL(input->cur.button, BTN_CUP) && curSlot >= 0) {
+                if (sHarpoonHoldSlot != curSlot) {
+                    sHarpoonHoldSlot   = curSlot;
+                    sHarpoonHoldFrames = 0;
+                }
+                sHarpoonHoldFrames++;
+                if (sHarpoonHoldFrames == 20) {
+                    extern void HarpoonDrops_RequestDropFromPause(int tabId, int slot);
+                    HarpoonDrops_RequestDropFromPause(/*tabId=items*/0, curSlot);
+                    // Continue counting so a long hold doesn't re-fire
+                    // every frame — only the single fire at exactly 20.
+                }
+            } else {
+                sHarpoonHoldFrames = 0;
+                sHarpoonHoldSlot   = -1;
             }
         }
         bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));

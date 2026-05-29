@@ -68,6 +68,11 @@ s32 MmMaskWear_IsKamaroDancing(void);
 // Returns true if Bremen Mask march is active (used by z_player.c to zero stick input).
 s32 MmMaskWear_IsBremenMarching(void);
 
+// Returns true while EITHER Bremen or Kamaro mask is equipped. Used to gate
+// Player_ProcessItemButtons so B-press starts the mask action (march/dance)
+// instead of sword draw.
+s32 MmMaskWear_BlocksSword(void);
+
 // Death hook — reset Bremen progression (chick + cucco). Same persistence
 // model as Chateau Romani: cleared only on Link's death.
 void MmMaskWear_OnDeath(void);

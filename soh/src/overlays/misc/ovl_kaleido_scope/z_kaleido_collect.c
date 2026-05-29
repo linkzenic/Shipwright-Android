@@ -5,6 +5,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "mods/extended_inventory.h"
+#include "mods/spiritual_stones/spiritual_stones.h"
 #include "expansions/sw97/sw97_config.h"
 
 extern const char* digitTextures[];
@@ -277,6 +278,9 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
                                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
                 }
                 Sw97_TryEquipMedallion(play, input);
+                // Spiritual stones: A toggles passive buff, C/DPad equips for warp use.
+                SpiritualStone_TryToggleAtCursor(play, input);
+                SpiritualStone_TryEquipAtCursor(play, input);
             }
 
             if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->cursorSpecialPos == 0)) {
@@ -514,6 +518,10 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
 
     for (sp218 = 0; sp218 < 3; sp218++, sp21A += 4) {
         if (CHECK_QUEST_ITEM(sp218 + 0x12)) {
+            // Visual cue: stones whose passive is OFF render at 50% alpha so
+            // the player can see at a glance which buffs are equipped.
+            u8 stoneAlpha = SpiritualStone_IsPassiveActive(sp218) ? pauseCtx->alpha : (pauseCtx->alpha >> 1);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, stoneAlpha);
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->questVtx[sp21A], 4, 0);
             KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, ExtInv_GetItemIcon(ITEM_KOKIRI_EMERALD + sp218), 24, 24, 0);
         }

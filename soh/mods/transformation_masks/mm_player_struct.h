@@ -35,7 +35,10 @@ typedef enum MmPlayerTransformation {
     MM_PLAYER_FORM_ZORA = 2,
     MM_PLAYER_FORM_DEKU = 3,
     MM_PLAYER_FORM_HUMAN = 4,
-    MM_PLAYER_FORM_MAX = 5
+    MM_PLAYER_FORM_PIKACHU = 5,
+    MM_PLAYER_FORM_GARO = 6,
+    MM_PLAYER_FORM_GERUDO = 7,
+    MM_PLAYER_FORM_MAX = 8
 } MmPlayerTransformation;
 
 // =============================================================================

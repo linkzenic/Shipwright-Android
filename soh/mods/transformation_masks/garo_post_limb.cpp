@@ -26,6 +26,17 @@ extern "C" {
 #include "variables.h"
 }
 
+// Sword trail state exposed by garo_form.cpp. The trail is spawned by
+// GaroAttack_SpawnTrail() at SWING_1 entry; we feed vertex pairs each frame
+// at the L_HAND limb where the live bone matrix is in scope.
+extern "C" u8 GaroAttack_IsTrailActive(void);
+extern "C" s32 GaroAttack_GetTrailEffectIndex(void);
+
+// Approx Garo blade length in bone-local game units. Master Sword in MM
+// uses 4000 (via D_80126080 globals); 3200 keeps Garo's shorter blade from
+// clipping the body during the tight slash arcs of last_hit_motion1.
+#define GARO_POST_LIMB_TRAIL_LENGTH 3200.0f
+
 // -1 = no bodypart mapping. Mirrors sLimbToBodyPart in mm_player_form.cpp.
 static const s8 sGaroLimbToBodyPart[PLAYER_LIMB_MAX] = {
     -1,                         // 0x00 PLAYER_LIMB_NONE
@@ -81,6 +92,24 @@ static void GaroForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, V
     // === 2. leftHandPos + carried-actor sync at L_HAND ===
     if (limbIndex == PLAYER_LIMB_L_HAND) {
         Matrix_MultVec3f(&zeroVec, &player->leftHandPos);
+
+        // ── Sword trail vertex feed ──────────────────────────────────────
+        // When Garo is mid-slash and the trail is active, compute the sword
+        // tip (along local +Y from the hand by GARO_POST_LIMB_TRAIL_LENGTH)
+        // and the hand position itself as the base. Both are transformed
+        // through the live L_HAND bone matrix so they track the slash arc.
+        // Same pattern as mm_player_form.cpp:13312-13329 (Zora fin trail).
+        if (GaroAttack_IsTrailActive()) {
+            EffectBlure* trail = (EffectBlure*)Effect_GetByIndex(GaroAttack_GetTrailEffectIndex());
+            if (trail != NULL) {
+                Vec3f tipLocal = { 0.0f, GARO_POST_LIMB_TRAIL_LENGTH, 0.0f };
+                Vec3f baseLocal = { 0.0f, 0.0f, 0.0f };
+                Vec3f tipWorld, baseWorld;
+                Matrix_MultVec3f(&tipLocal, &tipWorld);
+                Matrix_MultVec3f(&baseLocal, &baseWorld);
+                EffectBlure_AddVertex(trail, &tipWorld, &baseWorld);
+            }
+        }
 
         if (player->actor.scale.y >= 0.0f) {
             Actor* heldActor = player->heldActor;

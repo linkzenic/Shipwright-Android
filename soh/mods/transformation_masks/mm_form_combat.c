@@ -128,6 +128,15 @@ static void MmForm_EnablePunchQuad(Player* player, PlayState* play, u8 step, u8 
     // Reset previous frame's AT state
     Collider_ResetQuadAT(play, &quad->base);
 
+    // Defense: explicitly disable the OTHER melee quad and the body cylinder so any
+    // leftover flags from a prior form (e.g. Goron roll set cylinder.dmgFlags =
+    // DMG_HAMMER_SWING and we transformed to Zora mid-roll) don't register as a
+    // second attack with hammer damage and break hammer rocks during a Zora combo.
+    player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+    player->meleeWeaponQuads[1].info.toucher.dmgFlags = 0;
+    player->cylinder.base.atFlags &= ~AT_ON;
+    player->cylinder.info.toucher.dmgFlags = 0;
+
     // Set directional vertices for this punch type
     MmForm_SetPunchQuadVertices(player, step);
 
@@ -231,6 +240,157 @@ static s32 MmForm_SpawnMovementDust(PlayState* play, Player* player) {
     }
 
     return 0;
+}
+
+// =============================================================================
+// Wall Hit Detection During Punch
+//
+// Replicates MM's func_808401F4 (z_player.c:10513) — runs once per punch frame
+// to detect a wall/dyna in front of the punch and either recoil the player or
+// allow a dyna actor to take damage normally.
+//
+// Two flavours, matching MM:
+//   Goron form (line 10549): heavy hammer-style recoil (-18 speed), spawn dust,
+//     play NA_SE_IT_HAMMER_HIT, screen quake. EXCEPT when the wall is a
+//     DynaPoly actor that the punch quad already hit this/prev frame — then
+//     don't recoil so the actor's AC handler can register the break (this is
+//     what lets Goron Pound smash Bg_Hidan_Dalm totems instead of bouncing).
+//   Non-Goron / Zora (line 10583): lighter recoil (-14 speed), spawn shield
+//     spark particles, play NA_SE_IT_WALL_HIT_HARD. No action change — but
+//     caller must skip enabling the punch quad this frame so the AT collider
+//     doesn't reach through the wall to hit something behind it.
+// =============================================================================
+
+// OoT functions defined in z_player.c but not exposed in headers. Wrapped in
+// extern "C" because this file is #included from mm_player_form.cpp and would
+// otherwise get C++ name mangling on the call sites. `this` is a C++ reserved
+// word so the parameter is named `player` here.
+#ifdef __cplusplus
+extern "C" {
+#endif
+void Player_RequestQuake(PlayState* play, s32 speed, s32 y, s32 countdown);
+void Player_RequestRumble(Player* player, s32 sourceStrength, s32 duration, s32 decreaseRate, s32 distSq);
+#ifdef __cplusplus
+}
+#endif
+
+typedef enum {
+    MMFORM_WALL_HIT_NONE = 0,
+    MMFORM_WALL_HIT_GORON = 1, // Goron path: recoil applied, caller should end the punch
+    MMFORM_WALL_HIT_ZORA = 2,  // Zora path: recoil applied, caller must skip AT enable this frame
+} MmFormWallHitResult;
+
+/**
+ * Detect a wall in front of the punch and apply MM-style recoil.
+ *
+ * @param player    OOT Player pointer
+ * @param play      PlayState
+ * @param step      Current combo step (0..3) — controls reach/height
+ * @param isGoron   1 = Goron heavy-recoil path, 0 = Zora light-recoil path
+ * @param curFrame  Animation curFrame (gFormState.formSkelAnime.curFrame)
+ * @param minFrame  Earliest curFrame the check is allowed to fire. MM's
+ *                  func_808401F4 gates on `meleeWeaponState >= 1`, which is
+ *                  only set AFTER the quad has fired once. We emulate that by
+ *                  requiring the caller to pass `earlyStart + 1.0f` so the
+ *                  quad has had at least one frame to register an AT_HIT —
+ *                  this is what lets the Goron dyna-actor exception fire on
+ *                  breakables like Bg_Hidan_Dalm (otherwise the very first
+ *                  frame would always recoil before the quad could hit).
+ */
+static MmFormWallHitResult MmForm_CheckWallHit(Player* player, PlayState* play, u8 step, u8 isGoron, f32 curFrame,
+                                               f32 minFrame) {
+    if (curFrame < minFrame) {
+        return MMFORM_WALL_HIT_NONE;
+    }
+    // Already bouncing off something this attack — MM line 10518-10519.
+    if ((player->meleeWeaponQuads[0].base.atFlags & AT_BOUNCED) ||
+        (player->meleeWeaponQuads[1].base.atFlags & AT_BOUNCED)) {
+        return MMFORM_WALL_HIT_NONE;
+    }
+    // Don't fire while already recoiling — MM line 10530, 10583.
+    if (player->linearVelocity < 0.0f) {
+        return MMFORM_WALL_HIT_NONE;
+    }
+
+    if (step > 3) {
+        step = 0;
+    }
+
+    // Use the same quad geometry the puñetazo uses, so the wall ray matches
+    // the fist position (sGoronPunchQuadParams is defined above).
+    const f32* params = sGoronPunchQuadParams[step];
+    f32 farDist = params[1];
+    f32 yMid = (params[4] + params[5]) * 0.5f;
+
+    f32 sinYaw = Math_SinS(player->yaw);
+    f32 cosYaw = Math_CosS(player->yaw);
+
+    Vec3f rayStart;
+    rayStart.x = player->actor.world.pos.x;
+    rayStart.y = player->actor.world.pos.y + yMid;
+    rayStart.z = player->actor.world.pos.z;
+
+    // Extend 10 units past the punch tip (matches MM's `+10.0f` in line 10538).
+    f32 reach = farDist + 10.0f;
+    Vec3f rayEnd;
+    rayEnd.x = player->actor.world.pos.x + sinYaw * reach;
+    rayEnd.y = rayStart.y;
+    rayEnd.z = player->actor.world.pos.z + cosYaw * reach;
+
+    CollisionPoly* poly = NULL;
+    s32 bgId = BGCHECK_SCENE;
+    Vec3f hitPos;
+
+    if (!BgCheck_EntityLineTest1(&play->colCtx, &rayStart, &rayEnd, &hitPos, &poly, true, false, false, true, &bgId)) {
+        return MMFORM_WALL_HIT_NONE;
+    }
+    if (poly == NULL) {
+        return MMFORM_WALL_HIT_NONE;
+    }
+    if (SurfaceType_IsIgnoredByEntities(&play->colCtx, poly, bgId)) {
+        return MMFORM_WALL_HIT_NONE;
+    }
+
+    if (isGoron) {
+        // Dyna-actor exception (MM line 10565-10574): if the wall belongs to a
+        // dyna actor that our punch quad already hit, suppress the recoil so
+        // the actor's AC handler can break it (Bg_Hidan_Dalm totem, etc.).
+        if (bgId != BGCHECK_SCENE) {
+            DynaPolyActor* dyna = DynaPoly_GetActor(&play->colCtx, bgId);
+            if (dyna != NULL) {
+                if ((player->meleeWeaponQuads[0].base.atFlags & AT_HIT) &&
+                    (&dyna->actor == player->meleeWeaponQuads[0].base.at)) {
+                    return MMFORM_WALL_HIT_NONE;
+                }
+                if ((player->meleeWeaponQuads[1].base.atFlags & AT_HIT) &&
+                    (&dyna->actor == player->meleeWeaponQuads[1].base.at)) {
+                    return MMFORM_WALL_HIT_NONE;
+                }
+            }
+        }
+
+        // Heavy hammer impact (MM line 10554-10562 + func_808400CC).
+        Player_PlaySfx(&player->actor, NA_SE_IT_HAMMER_HIT);
+        Player_RequestQuake(play, 27767, 7, 20);
+        EffectSsHahen_SpawnBurst(play, &hitPos, 4.0f, 0, 12, 6, 3, -1, 10, NULL);
+        player->linearVelocity = -18.0f;
+        Player_RequestRumble(player, 180, 20, 100, 0);
+
+        // Disable AT immediately — recoil starts now.
+        player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+        player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+        return MMFORM_WALL_HIT_GORON;
+    }
+
+    // Zora / lighter forms (MM line 10583-10605).
+    CollisionCheck_SpawnShieldParticles(play, &hitPos);
+    Player_PlaySfx(&player->actor, NA_SE_IT_WALL_HIT_HARD);
+    player->linearVelocity = -14.0f;
+    Player_RequestRumble(player, 180, 20, 100, 0);
+    // Suppress AT this frame so the swing can't reach past the wall.
+    player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
+    player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
+    return MMFORM_WALL_HIT_ZORA;
 }
 
 #endif // MM_FORM_COMBAT_C

@@ -95,6 +95,18 @@ u8 MmAssets_ResourceExists(const char* path);
  */
 char** MmAssets_ListFiles(const char* searchMask, int* resultSize);
 
+/**
+ * List files matching a pattern, scoped to the mm.o2r archive ONLY.
+ * Unlike MmAssets_ListFiles (which uses the global ArchiveManager and so
+ * sees every archive's contents), this iterates sMmArchive directly so the
+ * result is guaranteed to be MM-only paths.
+ *
+ * @param searchMask Glob pattern (e.g. "audio/sequences*")
+ * @param resultSize Output: number of matching files
+ * @return Array of file paths (caller must free each + the array), or NULL.
+ */
+char** MmAssets_ListMmArchiveFiles(const char* searchMask, int* resultSize);
+
 // =============================================================================
 // Asset Replacement System (OOT → MM replacements)
 // =============================================================================
@@ -280,15 +292,25 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
 void MmSfx_Stop(u16 sfxId);
 
 /**
- * Play Goron roll sound with speed-based pitch
+ * Play Goron roll sound with MM's synced freq/vol mapping.
+ * @param speed XZ speed param (matches MM's sp54/unk_B08 inputs).
  */
 void MmSfx_PlayGoronRoll(Vec3f* pos, f32 speed);
 
 /**
- * Play Goron charged roll sound with speed-based pitch (spikes active)
+ * Play Goron charged roll sound with MM's synced freq/vol mapping.
  * From 2Ship line 19781: NA_SE_PL_GORON_CHG_ROLL when unk_B86[1] != 0
  */
 void MmSfx_PlayGoronChgRoll(Vec3f* pos, f32 speed);
+
+/**
+ * Variants that honor the player's current floorSfxOffset — when the offset
+ * matches MM's ice floor (0xF), the ICE-variant SFX is played
+ * (NA_SE_PL_GORON_ROLL_ICE / NA_SE_PL_GORON_CHG_ROLL_ICE). Mirrors MM's
+ * Player_GetFloorSfx(this, NA_SE_PL_GORON_ROLL) dispatch.
+ */
+void MmSfx_PlayGoronRollWithFloor(Vec3f* pos, f32 speed, u16 floorSfxOffset);
+void MmSfx_PlayGoronChgRollWithFloor(Vec3f* pos, f32 speed, u16 floorSfxOffset);
 
 /**
  * Play Goron charge sound with charge level pitch

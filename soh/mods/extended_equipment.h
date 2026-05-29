@@ -186,6 +186,11 @@ u8 DivineShield_IsFireproof(void);
 void DivineShield_OnShieldBlock(Player* player, PlayState* play);
 
 // ---------------------------------------------------------------------------
+// Shield of Ikana helpers (called from z_player.c at the bounce-detection point)
+// ---------------------------------------------------------------------------
+void Ikana_OnShieldBlock(Player* player, PlayState* play);
+
+// ---------------------------------------------------------------------------
 // Behavior state
 // ---------------------------------------------------------------------------
 

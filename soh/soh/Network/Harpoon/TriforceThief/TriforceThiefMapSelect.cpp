@@ -28,8 +28,8 @@ struct TTMapDef {
 };
 
 constexpr TTMapDef kTTMaps[] = {
-    { "Hyrule Field",         "Wide open field — lots of room to run.",
-      205, "map_select/thumbnail_kakariko_village.png" },
+    { "Death Mountain Trail", "Rocky mountainside trail with cliffs and caves.",
+      317, "map_select/thumbnail_death_mountain.png" },
     { "Zora's River",         "Winding river with cliffs and waterfalls.",
       234, "map_select/thumbnail_zora_river.png" },
     { "Gerudo Fortress",      "Desert compound with rooftops and corridors.",
@@ -38,11 +38,15 @@ constexpr TTMapDef kTTMaps[] = {
       238, "map_select/thumbnail_kokiri_forest.png" },
     { "Kakariko Village",     "Mountain village with rooftops and alleys.",
       219, "map_select/thumbnail_kakariko_village.png" },
-    { "Sacred Forest Meadow", "Forest maze with open clearings.",
-      252, "map_select/thumbnail_forest_temple.png" },
+    { "Goron City",           "Multi-level rocky village with platforms.",
+      333, "map_select/thumbnail_goron_city.png" },
+    { "Desert Colossus",      "Open desert ruins around the Spirit Temple.",
+      291, "map_select/thumbnail_desert_colossus.png" },
+    { "Zora's Domain",        "Underwater cavern around the great waterfall.",
+      264, "map_select/thumbnail_zora_domain.png" },
 };
 constexpr s32 kTTMapCount = (s32)(sizeof(kTTMaps) / sizeof(kTTMaps[0]));
-constexpr int kTTGridCols = 3;
+constexpr int kTTGridCols = 4;
 constexpr int kTTGridRows = 2;
 
 bool sTTTexturesLoaded = false;

@@ -18,6 +18,7 @@
 #include "DroppedItems.h"
 #include "Harpoon.h"
 
+#include <chrono>
 #include <spdlog/spdlog.h>
 
 extern "C" {
@@ -68,6 +69,12 @@ DropEntry* FindEntry(uint64_t dropId) {
     return nullptr;
 }
 
+int64_t NowMs() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(
+        steady_clock::now().time_since_epoch()).count();
+}
+
 void RemoveSpawnedFor(uint64_t dropId, int32_t itemIndex) {
     for (auto it = sSpawned.begin(); it != sSpawned.end(); ) {
         if (it->dropId == dropId &&
@@ -107,6 +114,7 @@ uint64_t AddLocalDrop(uint32_t sourceCid, int16_t sceneNum,
     e.sceneNum       = sceneNum;
     e.x = x; e.y = y; e.z = z;
     e.elapsedMs = 0.0f;
+    e.createdAtMs = NowMs();
     e.allClaimed = false;
     e.items = std::move(items);
     sLedger.push_back(std::move(e));
@@ -125,6 +133,10 @@ void IngestDrop(const nlohmann::json& payload) {
     e.y              = payload.value("y", 0.0f);
     e.z              = payload.value("z", 0.0f);
     e.elapsedMs      = payload.value("elapsedMs", 0.0f);
+    // createdAtMs is a local wall-clock anchor — we don't trust the peer's
+    // clock. Stamp on ingest; in practice the drop just happened across the
+    // network, so this is within network-RTT of the true creation time.
+    e.createdAtMs    = NowMs();
     e.allClaimed     = false;
     if (payload.contains("items") && payload["items"].is_array()) {
         for (const auto& it : payload["items"]) {
@@ -162,27 +174,74 @@ bool ClaimItem(uint64_t dropId, int32_t itemIndex) {
 
 void TickPickupPoll() {
     if (gPlayState == nullptr || Harpoon::Instance == nullptr) return;
+    // Skip pickup while dying / on game-over screen. Without this, the
+    // dying player's actor is still at the death position when our
+    // death-drop spawns the pile right under them — the very next tick
+    // sees N items in radius and the dying player auto-grabs everything
+    // before the game-over UI appears.
+    if (gPlayState->gameOverCtx.state != GAMEOVER_INACTIVE) return;
     Player* lp = GET_PLAYER(gPlayState);
     if (lp == nullptr) return;
     constexpr f32 kPickupRadiusSq = 30.0f * 30.0f;
+    // Grace window so the dropper can walk away from their own pile
+    // after a respawn without instantly re-absorbing it.
+    constexpr f32 kSelfPickupCooldownMs = 5000.0f;
     Vec3f pos = lp->actor.world.pos;
-    // Walk sSpawned and check XZ proximity. Snapshot first since we may
-    // mutate sSpawned via ClaimItem inside OnLocalPickup.
-    std::vector<SpawnedActorKey> snapshot = sSpawned;
-    for (const auto& s : snapshot) {
+    uint32_t ownCid = Harpoon::Instance->ownClientId;
+
+    // Pick up AT MOST ONE item per tick. With a tight pile of N drops,
+    // the previous "pick up everything in range this frame" path would
+    // broadcast N DROP_CLAIM events on the same tick → server's rate
+    // limit (typically 5/sec) trips and most claims get dropped, plus
+    // the screen spams `rate_limited` errors. One-per-tick at 20 fps
+    // still picks up 20 items per second — plenty fast — and lets each
+    // CLAIM through cleanly.
+    //
+    // Find the CLOSEST in-range item so the visually-nearest one gets
+    // grabbed first (better feel than first-in-iteration order).
+    uint64_t bestDropId   = 0;
+    int32_t  bestItemIdx  = -1;
+    f32      bestDistSq   = kPickupRadiusSq;
+    for (const auto& s : sSpawned) {
         if (s.actor == nullptr) continue;
+        const DropEntry* e = FindEntry(s.dropId);
+        if (e != nullptr && e->sourceClientId == ownCid &&
+            e->elapsedMs < kSelfPickupCooldownMs) {
+            continue;  // dropper self-cooldown
+        }
         f32 dx = pos.x - s.actor->world.pos.x;
         f32 dz = pos.z - s.actor->world.pos.z;
-        if (dx * dx + dz * dz <= kPickupRadiusSq) {
-            OnLocalPickup(s.dropId, s.itemIndex);
+        f32 d2 = dx * dx + dz * dz;
+        if (d2 <= bestDistSq) {
+            bestDistSq  = d2;
+            bestDropId  = s.dropId;
+            bestItemIdx = s.itemIndex;
         }
+    }
+    if (bestItemIdx >= 0) {
+        OnLocalPickup(bestDropId, bestItemIdx);
     }
 }
 
 void TickExpiry() {
     if (gPlayState == nullptr) return;
-    // Only tick if local player is in a scene that has at least one
-    // unclaimed drop. Otherwise the timer stays frozen.
+
+    // Wall-clock hard expiry — runs unconditionally so entries in scenes
+    // no one ever visits still get pruned. Without this, the ledger grows
+    // by one entry per death-pile across a 24h+ session.
+    int64_t nowMs = NowMs();
+    for (auto it = sLedger.begin(); it != sLedger.end(); ) {
+        if (nowMs - it->createdAtMs >= kLedgerMaxAgeMs) {
+            RemoveSpawnedFor(it->dropId, -1);
+            it = sLedger.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Only tick the per-frame elapsedMs counter if the local player is in
+    // a scene that has at least one unclaimed drop. Otherwise the timer
+    // stays frozen.
     s32 localScene = gPlayState->sceneNum;
     bool sceneOccupied = false;
     for (const auto& e : sLedger) {
@@ -260,6 +319,21 @@ static s16 PickEnItem00Params(const DroppedItem& di) {
 void SpawnInScene(PlayState* play) {
     if (play == nullptr) return;
     s32 sceneNum = play->sceneNum;
+
+    // When the scene reloads (game-over Continue, normal transition,
+    // entrance warp), every actor from the previous scene is gone but
+    // sSpawned still holds dangling pointers to them. The alreadySpawned
+    // check below would then block respawning the visuals on the second
+    // visit. Detect the transition and drop the stale refs — the actors
+    // are already dead, no Actor_Kill needed.
+    static s32 sLastSpawnedSceneNum = -1;
+    static PlayState* sLastSpawnedPlay = nullptr;
+    if (sceneNum != sLastSpawnedSceneNum || play != sLastSpawnedPlay) {
+        sSpawned.clear();
+        sLastSpawnedSceneNum = sceneNum;
+        sLastSpawnedPlay = play;
+    }
+
     for (auto& e : sLedger) {
         if (e.allClaimed) continue;
         if (e.sceneNum != sceneNum) continue;
@@ -342,6 +416,10 @@ void SpawnInScene(PlayState* play) {
                 k.itemIndex = i;
                 k.actor     = a;
                 sSpawned.push_back(k);
+            } else {
+                SPDLOG_WARN("[Harpoon][Drops] spawn FAILED kind={} itemId=0x{:X} "
+                            "useGiEntry={} (actor cap reached or invalid params?)",
+                            di.kind, (u32)di.itemId, useGiEntry);
             }
         }
     }
@@ -535,7 +613,7 @@ namespace {
 bool HasFairyInBottle() {
     // Bottle slots: gSaveContext.inventory.items[SLOT_BOTTLE_1..4]. In
     // OoT, the values at those slots are the bottle contents (ITEM_FAIRY,
-    // ITEM_POTION_RED, etc.). Walk the four bottle slots.
+    // ITEM_POTION_RED, etc.).
     constexpr s32 BOTTLE_SLOTS[4] = { SLOT_BOTTLE_1, SLOT_BOTTLE_2,
                                       SLOT_BOTTLE_3, SLOT_BOTTLE_4 };
     for (s32 s : BOTTLE_SLOTS) {
@@ -543,6 +621,21 @@ bool HasFairyInBottle() {
         if (gSaveContext.inventory.items[s] == ITEM_FAIRY) return true;
     }
     return false;
+}
+
+// Consume the first fairy bottle found by setting the bottle's contents
+// back to "empty bottle" (ITEM_BOTTLE). Used by the soft-death path so
+// the fairy is actually spent — vanilla behaviour.
+void ConsumeFirstFairyBottle() {
+    constexpr s32 BOTTLE_SLOTS[4] = { SLOT_BOTTLE_1, SLOT_BOTTLE_2,
+                                      SLOT_BOTTLE_3, SLOT_BOTTLE_4 };
+    for (s32 s : BOTTLE_SLOTS) {
+        if (s < 0 || s >= (s32)ARRAY_COUNT(gSaveContext.inventory.items)) continue;
+        if (gSaveContext.inventory.items[s] == ITEM_FAIRY) {
+            gSaveContext.inventory.items[s] = ITEM_BOTTLE;
+            return;
+        }
+    }
 }
 
 }  // anon
@@ -699,10 +792,25 @@ bool TriggerLocalDeathDrop() {
     Player* lp = GET_PLAYER(gPlayState);
     if (lp == nullptr) return false;
 
-    bool isGameOver = !HasFairyInBottle();
-    std::vector<DroppedItem> drop = isGameOver ? BuildGameOverDrop()
-                                               : BuildSoftDeathDrop();
+    // Fairy revive: do NOTHING — the engine handles vanilla fairy revive
+    // (consume fairy, restore HP to full). No drops, no capacity reset,
+    // nothing for us to do.
+    if (HasFairyInBottle()) return false;
+
+    // Real game-over (no fairy). Build the full drop list. The engine
+    // will fire the game-over screen on its own because gSaveContext.health
+    // is already 0 (we don't touch it).
+    std::vector<DroppedItem> drop = BuildGameOverDrop();
     if (drop.empty()) return false;
+    const bool isGameOver = true;
+
+    // Diagnostic: log every item in the drop list so we can see in the
+    // log whether ammo / custom items / etc. are being built. (User
+    // reported ammo + some inventory items not dropping.)
+    for (const auto& di : drop) {
+        SPDLOG_INFO("[Harpoon][Drops]   build entry: kind={} itemId=0x{:X} count={}",
+                    di.kind, (u32)di.itemId, di.count);
+    }
 
     Vec3f pos = lp->actor.world.pos;
     uint64_t dropId = AddLocalDrop(Harpoon::Instance->ownClientId,
@@ -718,6 +826,24 @@ bool TriggerLocalDeathDrop() {
 
     // Strip from local save.
     StripDroppedFromSave(drop, isGameOver);
+
+    // Reset healthCapacity (only) back to 3 hearts on game-over so the
+    // player loses all heart-container upgrades. We deliberately DO NOT
+    // touch gSaveContext.health — it stays at 0, the engine fires the
+    // game-over screen, and on Continue the engine refills HP to the
+    // new (lower) capacity. Previously I was setting health = 16*3 here
+    // which prevented game-over from ever firing because the engine saw
+    // health > 0 and resumed normally.
+    gSaveContext.healthCapacity = 16 * 3;
+
+    // Spawn ground actors IMMEDIATELY on the dying player's machine so
+    // they see the pile right where they died. Without this the actors
+    // only materialize on the next scene-load (which happens during the
+    // game-over reload — but by then the player is at the scene entrance
+    // and would have to walk back to the death spot). For soft-death
+    // (fairy revive) the player stays at the death position, so the
+    // pile should be right under them.
+    SpawnInScene(gPlayState);
 
     SPDLOG_INFO("[Harpoon][Drops] death-drop fired: cid={} scene={} items={} game_over={}",
                 Harpoon::Instance->ownClientId, gPlayState->sceneNum,

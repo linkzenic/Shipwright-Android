@@ -352,7 +352,6 @@ typedef struct {
     u8 postmanHatDashing;          // 1 = fade-out + streak outgoing
     u8 postmanHatArriving;         // 1 = fade-in at destination
     s16 postmanHatTransitionTimer; // Frame counter for both fades
-    u8 postmanMailboxesVisited;    // Bit N = mailbox N visited/unlocked
     u8 postmanHatInputSkip;        // Skip input on first kaleido frame (same-frame A guard)
 
     // ── Mask of Scents (Lost Woods mushroom spots) ───────────────────────

@@ -75,6 +75,15 @@ u32 EffectSsFhgFlash_Init(PlayState* play, u32 index, EffectSs* this, void* init
             this->pos = initParams->pos;
             this->gfx = SEGMENTED_TO_VIRTUAL(D_809A5100);
         }
+
+        // For ANY_ACTOR mode: caller passed the anchor's WORLD position in pos.
+        // Convert to an offset from actor.world.pos and stash in velocity so the
+        // particle tracks the actor as it moves (UpdateShock reads it back).
+        if (initParams->param == FHGFLASH_SHOCK_ANY_ACTOR && this->actor != NULL) {
+            this->velocity.x = initParams->pos.x - this->actor->world.pos.x;
+            this->velocity.y = initParams->pos.y - this->actor->world.pos.y;
+            this->velocity.z = initParams->pos.z - this->actor->world.pos.z;
+        }
     }
     return 1;
 }
@@ -123,11 +132,15 @@ void EffectSsFhgFlash_DrawShock(PlayState* play, u32 index, EffectSs* this) {
     Matrix_Translate(this->pos.x, this->pos.y, this->pos.z, MTXMODE_NEW);
     Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
 
-    if (this->rParam != FHGFLASH_SHOCK_NO_ACTOR) {
+    if (this->rParam != FHGFLASH_SHOCK_NO_ACTOR && this->rParam != FHGFLASH_SHOCK_ANY_ACTOR) {
         Gfx_SetupDL_44Xlu(play->state.gfxCtx);
         Matrix_RotateX((this->rXZRot / 32768.0f) * 1.1416f, MTXMODE_APPLY);
         gDPSetRenderMode(POLY_XLU_DISP++, G_RM_PASS, G_RM_AA_ZB_XLU_DECAL2);
     } else {
+        // NO_ACTOR + ANY_ACTOR both use billboard + SURF2 so the sprite is
+        // visible regardless of mesh coincidence (PLAYER/PG mode uses DECAL2
+        // which only renders where the sprite Z matches an existing mesh poly,
+        // which fails for generic boss anchors that don't lie on a surface).
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
         Matrix_ReplaceRotation(&play->billboardMtxF);
         gDPSetRenderMode(POLY_XLU_DISP++, G_RM_PASS, G_RM_AA_ZB_XLU_SURF2);
@@ -187,6 +200,12 @@ void EffectSsFhgFlash_UpdateShock(PlayState* play, u32 index, EffectSs* this) {
         this->pos.x = phantomGanon->bodyPartsPos[randBodypart].x + Rand_CenteredFloat(15.0f);
         this->pos.y = phantomGanon->bodyPartsPos[randBodypart].y + Rand_CenteredFloat(20.0f);
         this->pos.z = phantomGanon->bodyPartsPos[randBodypart].z + Rand_CenteredFloat(15.0f);
+    } else if (this->rParam == FHGFLASH_SHOCK_ANY_ACTOR) {
+        if (this->actor != NULL) {
+            this->pos.x = this->actor->world.pos.x + this->velocity.x + Rand_CenteredFloat(10.0f);
+            this->pos.y = this->actor->world.pos.y + this->velocity.y + Rand_CenteredFloat(15.0f);
+            this->pos.z = this->actor->world.pos.z + this->velocity.z + Rand_CenteredFloat(10.0f);
+        }
     }
 
     if (this->life < 100) {

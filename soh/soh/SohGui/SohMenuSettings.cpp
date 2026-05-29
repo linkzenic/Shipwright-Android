@@ -652,22 +652,10 @@ void SohMenu::AddMenuSettings() {
             "an artist-authored \"00 - Gerudo Player.o2r\" (Link-21-bone-rigged gerudo skin).\n"
             "Also ships 11 baked gerudo anims (visible in the anim viewer)."));
 
-    AddWidget(path, "Toggle Garo Skin (dev)", WIDGET_BUTTON)
-        .PreFunc([](WidgetInfo& info) {
-            if (!std::filesystem::exists("nei/garo.o2r")) {
-                info.options->disabled = true;
-                info.options->disabledTooltip = "Requires garo.o2r in nei/ folder.\n"
-                                                "Generate it with tools/glb_to_o2r.py.";
-            }
-        })
-        .Callback([](WidgetInfo& info) {
-            const char* cur = O2rLoader_GetForcedName();
-            if (O2rLoader_HasActiveModel() && cur && std::string(cur) == "garo") {
-                O2rLoader_ClearForcedModel();
-            } else {
-                O2rLoader_ForceModel("garo");
-            }
-        });
+    // Garo Mask transformation is now ALWAYS-ON when garo.o2r is present —
+    // wearing the Garo Mask from inventory is the single source of activation.
+    // (Previously there was a CVar gate and a dev toggle button, both removed:
+    // the mask itself is the trigger, matching Gerudo/Goron/Zora/Deku UX.)
 
     // ===================== COLUMN 2: MM Masks =====================
     path.column = SECTION_COLUMN_2;
@@ -869,11 +857,15 @@ void SohMenu::AddMenuSettings() {
                          .DefaultIndex(-1)
                          .Tooltip("Choose a custom model for Child Link."));
 
-        // Equipment-only paks
+        // Equipment Pack lists ANY pak that has at least one equipment DL —
+        // dedicated zzequipment paks AND Combined paks (body + equipment) both
+        // qualify. Selecting a Combined pak here uses its equipment alias
+        // table; the body model side is controlled separately by the Adult /
+        // Child dropdowns above.
         std::map<int32_t, const char*> equipModelMap;
         equipModelMap[-1] = "Default Equipment";
         for (s32 i = 0; i < pakCount; i++) {
-            if (PakLoader_ModelIsEquipmentOnly(i)) {
+            if (PakLoader_ModelHasAnyEquipment(i)) {
                 equipModelMap[i] = PakLoader_GetModelName(i);
             }
         }
@@ -888,7 +880,7 @@ void SohMenu::AddMenuSettings() {
                     opt->comboMap[-1] = "Default Equipment";
                     s32 n = PakLoader_GetModelCount();
                     for (s32 i = 0; i < n; i++) {
-                        if (PakLoader_ModelIsEquipmentOnly(i)) {
+                        if (PakLoader_ModelHasAnyEquipment(i)) {
                             opt->comboMap[i] = PakLoader_GetModelName(i);
                         }
                     }
@@ -1121,6 +1113,132 @@ void SohMenu::AddMenuSettings() {
             "Cheat: automatically gives ITEM_BOMB_ARROWS the moment you obtain any bomb bag.\n"
             "When on, the new bow/slingshot arrow wheel will show a Bomb entry as soon as the\n"
             "bag is yours. Has no effect on the randomizer item pool."));
+
+    // =========================================================================
+    // Equipment Mix — per-slot equipment override, 3 columns:
+    //   1. Swords + Shields (6 dropdowns)
+    //   2. Ranged + tools + ocarinas + boots + gauntlets + bracelet (13)
+    //   3. Child masks (8)
+    // =========================================================================
+    path.sidebarName = "Equipment Mix";
+    path.column = SECTION_COLUMN_1;
+    AddSidebarEntry("Settings", path.sidebarName, 3);
+
+    AddWidget(path, "Per-slot equipment override", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path,
+              "Each slot can pull from a different pak. 'Default' inherits from the main "
+              "Equipment Pack dropdown (or vanilla if no pack selected). Sheathed and "
+              "unsheathed pieces always come from the same source pak so the look stays "
+              "consistent.",
+              WIDGET_TEXT);
+
+    AddWidget(path, "Reset all slots to Default", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            s32 n = PakLoader_GetSlotCount();
+            char cvarName[96];
+            for (s32 i = 0; i < n; i++) {
+                snprintf(cvarName, sizeof(cvarName),
+                         "gMods.PakLoader.SlotMix.%s", PakLoader_GetSlotKey(i));
+                CVarSetInteger(cvarName, -1);
+                PakLoader_SetSlotMix(i, -1);
+            }
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Size(Sizes::Inline)
+                                .Tooltip("Clear every per-slot override at once."));
+
+    // Cached CVar-name strings per slot so the widgets get stable c_str() pointers.
+    // AddMenuSettings is called once at boot, so static storage is fine.
+    static std::vector<std::string> slotCVarNames;
+    {
+        s32 n = PakLoader_GetSlotCount();
+        slotCVarNames.clear();
+        slotCVarNames.reserve(n);
+        for (s32 i = 0; i < n; i++) {
+            slotCVarNames.emplace_back(std::string("gMods.PakLoader.SlotMix.") +
+                                       PakLoader_GetSlotKey(i));
+        }
+    }
+
+    // Slot-grouping for placement across the three columns. Indices must match
+    // sSlotGroups[] order in pak_loader.cpp.
+    //  0: Sword0 (Kokiri)        1: Sword1 (Master)      2: Sword2 (Biggoron)
+    //  3: Shield0 (Deku)         4: Shield1 (Hylian)     5: Shield2 (Mirror)
+    //  6: Bow                    7: Hookshot             8: Slingshot
+    //  9: Boomerang             10: Hammer              11: DekuStick
+    // 12: Bottle                13: OcarinaFairy        14: OcarinaTime
+    // 15: IronBoots             16: HoverBoots          17: Gauntlets
+    // 18: Bracelet              19: MaskSkull           20: MaskSpooky
+    // 21: MaskKeaton            22: MaskTruth           23: MaskGoron
+    // 24: MaskZora              25: MaskGerudo          26: MaskBunny
+
+    auto addSlotWidget = [this, &path](s32 slotIdx) {
+        const char* label = PakLoader_GetSlotLabel(slotIdx);
+        const char* cvarName = slotCVarNames[slotIdx].c_str();
+
+        AddWidget(path, label, WIDGET_CVAR_COMBOBOX)
+            .CVar(cvarName)
+            .RaceDisable(false)
+            .PreFunc([slotIdx](WidgetInfo& info) {
+                // Rebuild every frame so newly-loaded paks appear immediately
+                // and removed paks disappear without a restart. Clamp the CVar
+                // to -1 if it ends up pointing at a slot the chosen pak no
+                // longer satisfies — defends against std::map::at out_of_range
+                // crashes in Combobox<int>.
+                auto opt = std::static_pointer_cast<UIWidgets::ComboboxOptions>(info.options);
+                opt->comboMap.clear();
+                opt->comboMap[-1] = "Default (inherit)";
+                s32 n = PakLoader_GetModelCount();
+                for (s32 i = 0; i < n; i++) {
+                    if (PakLoader_PakProvidesSlot(i, slotIdx)) {
+                        opt->comboMap[i] = PakLoader_GetModelName(i);
+                    }
+                }
+                char cvarName[96];
+                snprintf(cvarName, sizeof(cvarName),
+                         "gMods.PakLoader.SlotMix.%s", PakLoader_GetSlotKey(slotIdx));
+                s32 v = CVarGetInteger(cvarName, -1);
+                if (v >= 0 && !opt->comboMap.count(v)) {
+                    CVarSetInteger(cvarName, -1);
+                }
+            })
+            .PostFunc([slotIdx](WidgetInfo& info) {
+                char cvarName[96];
+                snprintf(cvarName, sizeof(cvarName),
+                         "gMods.PakLoader.SlotMix.%s", PakLoader_GetSlotKey(slotIdx));
+                PakLoader_SetSlotMix(slotIdx, CVarGetInteger(cvarName, -1));
+            })
+            .Options(ComboboxOptions()
+                         .DefaultIndex(-1)
+                         .Tooltip("Pak that provides this piece. 'Default' = inherit "
+                                  "from the Equipment Pack dropdown."));
+    };
+
+    // Column 1 — Swords (0..2) + Shields (3..5)
+    AddWidget(path, "Swords", WIDGET_SEPARATOR_TEXT);
+    for (s32 i = 0; i <= 2; i++) addSlotWidget(i);
+    AddWidget(path, "Shields", WIDGET_SEPARATOR_TEXT);
+    for (s32 i = 3; i <= 5; i++) addSlotWidget(i);
+
+    // Column 2 — Ranged + Tools + Boots + Gauntlets + Bracelet (6..18)
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Ranged & Tools", WIDGET_SEPARATOR_TEXT);
+    for (s32 i = 6; i <= 11; i++) addSlotWidget(i);   // Bow..DekuStick
+    AddWidget(path, "Items", WIDGET_SEPARATOR_TEXT);
+    addSlotWidget(12); // Bottle
+    addSlotWidget(13); // OcarinaFairy
+    addSlotWidget(14); // OcarinaTime
+    AddWidget(path, "Boots & Gauntlets", WIDGET_SEPARATOR_TEXT);
+    addSlotWidget(15); // IronBoots
+    addSlotWidget(16); // HoverBoots
+    addSlotWidget(17); // Gauntlets
+    addSlotWidget(18); // Bracelet
+
+    // Column 3 — Child masks (19..26)
+    path.column = SECTION_COLUMN_3;
+    AddWidget(path, "Child Masks", WIDGET_SEPARATOR_TEXT);
+    for (s32 i = 19; i < PakLoader_GetSlotCount(); i++) addSlotWidget(i);
 }
 
 } // namespace SohGui

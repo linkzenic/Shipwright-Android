@@ -308,18 +308,7 @@ extern const char* MmMasks_GetIconPath(uint16_t itemId);
 extern void* MmAssets_LoadFDSwordIcon(void);
 extern const char* MmAssets_GetChateauIconPath(void);
 
-// Set by z_magic_wind.inc.c while the SW97 Wind Medallion's jetpack window is
-// active — causes ExtInv_GetItemIcon to substitute the wind-jetpack placeholder
-// for the Forest medallion icon on the C-slot.
-extern s32 gSw97WindJetpackIconActive;
-
 void* ExtInv_GetItemIcon(uint16_t itemId) {
-
-    // SW97 Wind Medallion jetpack: replace Forest medallion icon with the
-    // pending2 placeholder (intended to host a custom wind-burst artwork).
-    if (gSw97WindJetpackIconActive && itemId == ITEM_MEDALLION_FOREST) {
-        return (void*)gItemIconPending2Tex;
-    }
 
     // Extended equipment: override A button icon when ext sword/shield is active
     // Suppressed during kaleido equipment screen so vanilla icons show there

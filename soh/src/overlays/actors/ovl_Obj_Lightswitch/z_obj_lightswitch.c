@@ -302,11 +302,16 @@ void ObjLightswitch_SetupOff(ObjLightswitch* this) {
 }
 // A Sun Switch that is currently turned off
 void ObjLightswitch_Off(ObjLightswitch* this, PlayState* play) {
-    // When only SW97 mode is on (cheat off), reject hits from non-SW97 light arrows
-    // so vanilla light arrows still need the Sunlight Arrows cheat.
+    // When only SW97 mode is on (cheat off), reject hits from vanilla light arrows
+    // (so they still need the Sunlight Arrows cheat) but keep vanilla sunlight
+    // sources working — Mirror Shield reflections and the Spirit Temple cobra mirrors
+    // hit this collider as non-arrow actors (e.g. MirRay) with dmgFlags 0x200000.
     u8 acceptHit = 1;
     if (sunSwitchSw97ModeOnLoad && !sunLightArrowsEnabledOnSunSwitchLoad) {
-        acceptHit = ObjLightswitch_IsSw97LightArrow(this->collider.base.ac);
+        Actor* ac = this->collider.base.ac;
+        if (ac != NULL && ac->id == ACTOR_EN_ARROW) {
+            acceptHit = ObjLightswitch_IsSw97LightArrow(ac);
+        }
     }
 
     switch (this->actor.params >> 4 & 3) {

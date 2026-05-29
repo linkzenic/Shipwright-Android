@@ -38,30 +38,114 @@ std::filesystem::path ResolveTemplatesDir() {
 
 nlohmann::json TemplateToJson(const Template& t) {
     nlohmann::json o;
-    o["name"]   = t.name;
-    o["items"]  = nlohmann::json::array();
+    o["name"] = t.name;
+
+    // Inventory.
+    o["items"] = nlohmann::json::array();
     for (auto v : t.items) o["items"].push_back((int)v);
-    o["ammo"]   = nlohmann::json::array();
+    o["ammo"]  = nlohmann::json::array();
     for (auto v : t.ammo) o["ammo"].push_back((int)v);
+
     o["equipment"]      = t.equipment;
     o["upgrades"]       = t.upgrades;
+
     o["rupees"]         = (int)t.rupees;
     o["magic"]          = (int)t.magic;
     o["magicCapacity"]  = (int)t.magicCapacity;
     o["healthCapacity"] = (int)t.healthCapacity;
-    o["questItems"]     = t.questItems;
-    o["dungeonItems"]   = nlohmann::json::array();
+
+    o["questItems"]   = t.questItems;
+    o["dungeonItems"] = nlohmann::json::array();
     for (auto v : t.dungeonItems) o["dungeonItems"].push_back((int)v);
+    o["dungeonKeys"] = nlohmann::json::array();
+    for (auto v : t.dungeonKeys)  o["dungeonKeys"].push_back((int)v);
+    o["gsTokens"] = (int)t.gsTokens;
+
     o["restrictNoClimb"] = t.restrictNoClimb;
     o["restrictNoGrab"]  = t.restrictNoGrab;
     o["restrictNoCrawl"] = t.restrictNoCrawl;
     o["restrictNoTalk"]  = t.restrictNoTalk;
+
+    // Progression flag arrays.
+    o["eventChkInf"] = nlohmann::json::array();
+    for (auto v : t.eventChkInf) o["eventChkInf"].push_back((int)v);
+    o["itemGetInf"]  = nlohmann::json::array();
+    for (auto v : t.itemGetInf)  o["itemGetInf"].push_back((int)v);
+    o["infTable"]    = nlohmann::json::array();
+    for (auto v : t.infTable)    o["infTable"].push_back((int)v);
+    o["eventInf"]    = nlohmann::json::array();
+    for (auto v : t.eventInf)    o["eventInf"].push_back((int)v);
+    o["randomizerInf"] = nlohmann::json::array();
+    for (auto v : t.randomizerInf) o["randomizerInf"].push_back((int)v);
+
+    // File metadata.
+    o["fileNum"]          = (int)t.fileNum;
+    o["playerName"]       = nlohmann::json::array();
+    for (auto v : t.playerName) o["playerName"].push_back((int)v);
+    o["filenameLanguage"] = (int)t.filenameLanguage;
+
+    // Defense / magic.
+    o["isDoubleDefenseAcquired"] = (int)t.isDoubleDefenseAcquired;
+    o["defenseHearts"]           = (int)t.defenseHearts;
+    o["magicLevel"]              = (int)t.magicLevel;
+    o["isMagicAcquired"]         = (int)t.isMagicAcquired;
+    o["isDoubleMagicAcquired"]   = (int)t.isDoubleMagicAcquired;
+
+    // Time / counters.
+    o["dayTime"]     = (int)t.dayTime;
+    o["totalDays"]   = (int)t.totalDays;
+    o["deaths"]      = (int)t.deaths;
+    o["bgsFlag"]     = (int)t.bgsFlag;
+    o["swordHealth"] = (int)t.swordHealth;
+    o["bgsDayCount"] = (int)t.bgsDayCount;
+
+    // Entrance / scene state.
+    o["entranceIndex"] = (int)t.entranceIndex;
+    o["cutsceneIndex"] = (int)t.cutsceneIndex;
+
+    // Timers.
+    o["naviTimer"]       = (int)t.naviTimer;
+    o["timerState"]      = (int)t.timerState;
+    o["timerSeconds"]    = (int)t.timerSeconds;
+    o["subTimerState"]   = (int)t.subTimerState;
+    o["subTimerSeconds"] = (int)t.subTimerSeconds;
+
+    // Settings.
+    o["audioSetting"]   = (int)t.audioSetting;
+    o["n64ddFlag"]      = (int)t.n64ddFlag;
+    o["zTargetSetting"] = (int)t.zTargetSetting;
+
+    // Randomizer-specific scalars.
+    o["triforcePiecesCollected"] = (int)t.triforcePiecesCollected;
+    o["bombchuUpgradeLevel"]     = (int)t.bombchuUpgradeLevel;
+
+    // High scores + gsFlags.
+    o["highScores"] = nlohmann::json::array();
+    for (auto v : t.highScores) o["highScores"].push_back((int)v);
+    o["gsFlags"]    = nlohmann::json::array();
+    for (auto v : t.gsFlags)    o["gsFlags"].push_back((int)v);
+
+    // Scene flags array — 124 scenes × 7 u32. Flattened to a single
+    // 868-element array (saves nested-object overhead in JSON).
+    o["sceneFlags"] = nlohmann::json::array();
+    for (size_t i = 0; i < ARRAY_COUNT(t.sceneFlags); i++) {
+        const auto& s = t.sceneFlags[i];
+        o["sceneFlags"].push_back(s.chest);
+        o["sceneFlags"].push_back(s.swch);
+        o["sceneFlags"].push_back(s.clear);
+        o["sceneFlags"].push_back(s.collect);
+        o["sceneFlags"].push_back(s.unk);
+        o["sceneFlags"].push_back(s.rooms);
+        o["sceneFlags"].push_back(s.floors);
+    }
+
     return o;
 }
 
 Template TemplateFromJson(const nlohmann::json& o) {
     Template t{};
     t.name = o.value("name", std::string());
+
     if (o.contains("items") && o["items"].is_array()) {
         for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.items) && i < o["items"].size(); i++) {
             t.items[i] = (uint8_t)o["items"][i].get<int>();
@@ -84,10 +168,111 @@ Template TemplateFromJson(const nlohmann::json& o) {
             t.dungeonItems[i] = (uint8_t)o["dungeonItems"][i].get<int>();
         }
     }
+    if (o.contains("dungeonKeys") && o["dungeonKeys"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.dungeonKeys) && i < o["dungeonKeys"].size(); i++) {
+            t.dungeonKeys[i] = (int8_t)o["dungeonKeys"][i].get<int>();
+        }
+    }
+    t.gsTokens = (int16_t)o.value("gsTokens", 0);
+
     t.restrictNoClimb = o.value("restrictNoClimb", false);
     t.restrictNoGrab  = o.value("restrictNoGrab",  false);
     t.restrictNoCrawl = o.value("restrictNoCrawl", false);
     t.restrictNoTalk  = o.value("restrictNoTalk",  false);
+
+    if (o.contains("eventChkInf") && o["eventChkInf"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.eventChkInf) && i < o["eventChkInf"].size(); i++) {
+            t.eventChkInf[i] = (uint16_t)o["eventChkInf"][i].get<int>();
+        }
+    }
+    if (o.contains("itemGetInf") && o["itemGetInf"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.itemGetInf) && i < o["itemGetInf"].size(); i++) {
+            t.itemGetInf[i] = (uint16_t)o["itemGetInf"][i].get<int>();
+        }
+    }
+    if (o.contains("infTable") && o["infTable"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.infTable) && i < o["infTable"].size(); i++) {
+            t.infTable[i] = (uint16_t)o["infTable"][i].get<int>();
+        }
+    }
+    if (o.contains("eventInf") && o["eventInf"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.eventInf) && i < o["eventInf"].size(); i++) {
+            t.eventInf[i] = (uint16_t)o["eventInf"][i].get<int>();
+        }
+    }
+    if (o.contains("randomizerInf") && o["randomizerInf"].is_array()) {
+        t.randomizerInf.reserve(o["randomizerInf"].size());
+        for (const auto& v : o["randomizerInf"]) {
+            t.randomizerInf.push_back((uint16_t)v.get<int>());
+        }
+    }
+
+    // File metadata.
+    t.fileNum          = (int32_t)o.value("fileNum", 0);
+    if (o.contains("playerName") && o["playerName"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.playerName) && i < o["playerName"].size(); i++) {
+            t.playerName[i] = (uint8_t)o["playerName"][i].get<int>();
+        }
+    }
+    t.filenameLanguage = (uint8_t)o.value("filenameLanguage", 0);
+
+    // Defense / magic.
+    t.isDoubleDefenseAcquired = (uint8_t)o.value("isDoubleDefenseAcquired", 0);
+    t.defenseHearts           = (int16_t)o.value("defenseHearts", 0);
+    t.magicLevel              = (int8_t)o.value("magicLevel", 0);
+    t.isMagicAcquired         = (uint8_t)o.value("isMagicAcquired", 0);
+    t.isDoubleMagicAcquired   = (uint8_t)o.value("isDoubleMagicAcquired", 0);
+
+    // Time / counters.
+    t.dayTime     = (uint16_t)o.value("dayTime", 0);
+    t.totalDays   = (int32_t)o.value("totalDays", 0);
+    t.deaths      = (uint16_t)o.value("deaths", 0);
+    t.bgsFlag     = (uint8_t)o.value("bgsFlag", 0);
+    t.swordHealth = (uint16_t)o.value("swordHealth", 0);
+    t.bgsDayCount = (int32_t)o.value("bgsDayCount", 0);
+
+    t.entranceIndex = (int32_t)o.value("entranceIndex", 0);
+    t.cutsceneIndex = (int32_t)o.value("cutsceneIndex", 0);
+
+    t.naviTimer       = (uint16_t)o.value("naviTimer", 0);
+    t.timerState      = (int16_t)o.value("timerState", 0);
+    t.timerSeconds    = (int16_t)o.value("timerSeconds", 0);
+    t.subTimerState   = (int16_t)o.value("subTimerState", 0);
+    t.subTimerSeconds = (int16_t)o.value("subTimerSeconds", 0);
+
+    t.audioSetting   = (uint8_t)o.value("audioSetting", 0);
+    t.n64ddFlag      = (int16_t)o.value("n64ddFlag", 0);
+    t.zTargetSetting = (uint8_t)o.value("zTargetSetting", 0);
+
+    t.triforcePiecesCollected = (uint8_t)o.value("triforcePiecesCollected", 0);
+    t.bombchuUpgradeLevel     = (uint8_t)o.value("bombchuUpgradeLevel", 0);
+
+    if (o.contains("highScores") && o["highScores"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.highScores) && i < o["highScores"].size(); i++) {
+            t.highScores[i] = (int32_t)o["highScores"][i].get<int>();
+        }
+    }
+    if (o.contains("gsFlags") && o["gsFlags"].is_array()) {
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.gsFlags) && i < o["gsFlags"].size(); i++) {
+            t.gsFlags[i] = (int32_t)o["gsFlags"][i].get<int>();
+        }
+    }
+    if (o.contains("sceneFlags") && o["sceneFlags"].is_array()) {
+        const auto& arr = o["sceneFlags"];
+        // Flattened 7-per-scene encoding (see TemplateToJson).
+        for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.sceneFlags); i++) {
+            const size_t base = i * 7;
+            if (base + 6 >= arr.size()) break;
+            t.sceneFlags[i].chest   = arr[base + 0].get<uint32_t>();
+            t.sceneFlags[i].swch    = arr[base + 1].get<uint32_t>();
+            t.sceneFlags[i].clear   = arr[base + 2].get<uint32_t>();
+            t.sceneFlags[i].collect = arr[base + 3].get<uint32_t>();
+            t.sceneFlags[i].unk     = arr[base + 4].get<uint32_t>();
+            t.sceneFlags[i].rooms   = arr[base + 5].get<uint32_t>();
+            t.sceneFlags[i].floors  = arr[base + 6].get<uint32_t>();
+        }
+    }
+
     return t;
 }
 
@@ -100,10 +285,7 @@ const Template* Find(const std::string& name) {
     return nullptr;
 }
 
-bool SnapshotLocal(const std::string& name) {
-    if (name.empty()) return false;
-    Template t{};
-    t.name = name;
+void CaptureLocalState(Template& t) {
     for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.items); i++) {
         t.items[i] = gSaveContext.inventory.items[i];
     }
@@ -120,6 +302,85 @@ bool SnapshotLocal(const std::string& name) {
     for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.dungeonItems); i++) {
         t.dungeonItems[i] = gSaveContext.inventory.dungeonItems[i];
     }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.dungeonKeys); i++) {
+        t.dungeonKeys[i] = gSaveContext.inventory.dungeonKeys[i];
+    }
+    t.gsTokens = gSaveContext.inventory.gsTokens;
+
+    // Progression flag arrays.
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.eventChkInf); i++) {
+        t.eventChkInf[i] = gSaveContext.eventChkInf[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.itemGetInf); i++) {
+        t.itemGetInf[i] = gSaveContext.itemGetInf[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.infTable); i++) {
+        t.infTable[i] = gSaveContext.infTable[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.eventInf); i++) {
+        t.eventInf[i] = gSaveContext.eventInf[i];
+    }
+    constexpr size_t kRandInfLen = ARRAY_COUNT(gSaveContext.ship.randomizerInf);
+    t.randomizerInf.assign(gSaveContext.ship.randomizerInf,
+                            gSaveContext.ship.randomizerInf + kRandInfLen);
+
+    // File metadata.
+    t.fileNum = gSaveContext.fileNum;
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.playerName); i++) {
+        t.playerName[i] = gSaveContext.playerName[i];
+    }
+    t.filenameLanguage = gSaveContext.ship.filenameLanguage;
+
+    // Defense / magic acquisition.
+    t.isDoubleDefenseAcquired = gSaveContext.isDoubleDefenseAcquired;
+    t.defenseHearts           = gSaveContext.inventory.defenseHearts;
+    t.magicLevel              = gSaveContext.magicLevel;
+    t.isMagicAcquired         = gSaveContext.isMagicAcquired;
+    t.isDoubleMagicAcquired   = gSaveContext.isDoubleMagicAcquired;
+
+    // Time / counters.
+    t.dayTime     = gSaveContext.dayTime;
+    t.totalDays   = gSaveContext.totalDays;
+    t.deaths      = gSaveContext.deaths;
+    t.bgsFlag     = gSaveContext.bgsFlag;
+    t.swordHealth = gSaveContext.swordHealth;
+    t.bgsDayCount = gSaveContext.bgsDayCount;
+
+    t.entranceIndex = gSaveContext.entranceIndex;
+    t.cutsceneIndex = gSaveContext.cutsceneIndex;
+
+    t.naviTimer       = gSaveContext.naviTimer;
+    t.timerState      = gSaveContext.timerState;
+    t.timerSeconds    = gSaveContext.timerSeconds;
+    t.subTimerState   = gSaveContext.subTimerState;
+    t.subTimerSeconds = gSaveContext.subTimerSeconds;
+
+    t.audioSetting   = gSaveContext.audioSetting;
+    t.n64ddFlag      = gSaveContext.n64ddFlag;
+    t.zTargetSetting = gSaveContext.zTargetSetting;
+
+    t.triforcePiecesCollected = gSaveContext.ship.quest.data.randomizer.triforcePiecesCollected;
+    t.bombchuUpgradeLevel     = gSaveContext.ship.quest.data.randomizer.bombchuUpgradeLevel;
+
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.highScores); i++) {
+        t.highScores[i] = gSaveContext.highScores[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.gsFlags); i++) {
+        t.gsFlags[i] = gSaveContext.gsFlags[i];
+    }
+
+    // Scene flags.
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.sceneFlags); i++) {
+        const auto& s = gSaveContext.sceneFlags[i];
+        t.sceneFlags[i].chest   = s.chest;
+        t.sceneFlags[i].swch    = s.swch;
+        t.sceneFlags[i].clear   = s.clear;
+        t.sceneFlags[i].collect = s.collect;
+        t.sceneFlags[i].unk     = s.unk;
+        t.sceneFlags[i].rooms   = s.rooms;
+        t.sceneFlags[i].floors  = s.floors;
+    }
+
     // Local restrict flags — read off our own HarpoonClient entry.
     if (Harpoon::Instance != nullptr) {
         auto it = Harpoon::Instance->clients.find(Harpoon::Instance->ownClientId);
@@ -130,12 +391,37 @@ bool SnapshotLocal(const std::string& name) {
             t.restrictNoTalk  = it->second.restrictNoTalk;
         }
     }
+}
+
+bool SnapshotLocal(const std::string& name) {
+    if (name.empty()) return false;
+    Template t{};
+    t.name = name;
+    CaptureLocalState(t);
     // Overwrite existing template of same name.
     for (auto& existing : sTemplates) {
         if (existing.name == name) { existing = t; return SaveAll(); }
     }
     sTemplates.push_back(t);
     return SaveAll();
+}
+
+bool SaveAsTemplate(const std::string& name, Template src) {
+    if (name.empty()) return false;
+    src.name = name;
+    for (auto& existing : sTemplates) {
+        if (existing.name == name) { existing = src; return SaveAll(); }
+    }
+    sTemplates.push_back(src);
+    return SaveAll();
+}
+
+nlohmann::json SerializeTemplate(const Template& t) {
+    return TemplateToJson(t);
+}
+
+Template DeserializeTemplate(const nlohmann::json& j) {
+    return TemplateFromJson(j);
 }
 
 bool SaveAll() {
@@ -209,6 +495,90 @@ void ApplyToSave(const Template& t) {
     for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.dungeonItems); i++) {
         gSaveContext.inventory.dungeonItems[i] = t.dungeonItems[i];
     }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.dungeonKeys); i++) {
+        gSaveContext.inventory.dungeonKeys[i] = t.dungeonKeys[i];
+    }
+    gSaveContext.inventory.gsTokens = t.gsTokens;
+
+    // Progression flag arrays — full overwrite.
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.eventChkInf); i++) {
+        gSaveContext.eventChkInf[i] = t.eventChkInf[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.itemGetInf); i++) {
+        gSaveContext.itemGetInf[i] = t.itemGetInf[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.infTable); i++) {
+        gSaveContext.infTable[i] = t.infTable[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.eventInf); i++) {
+        gSaveContext.eventInf[i] = t.eventInf[i];
+    }
+    {
+        const size_t kRandInfLen = ARRAY_COUNT(gSaveContext.ship.randomizerInf);
+        const size_t copyLen = std::min(kRandInfLen, t.randomizerInf.size());
+        for (size_t i = 0; i < copyLen; i++) {
+            gSaveContext.ship.randomizerInf[i] = t.randomizerInf[i];
+        }
+    }
+
+    // File metadata.
+    gSaveContext.fileNum = t.fileNum;
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.playerName); i++) {
+        gSaveContext.playerName[i] = t.playerName[i];
+    }
+    gSaveContext.ship.filenameLanguage = t.filenameLanguage;
+
+    // Defense / magic acquisition.
+    gSaveContext.isDoubleDefenseAcquired = t.isDoubleDefenseAcquired;
+    gSaveContext.inventory.defenseHearts = t.defenseHearts;
+    gSaveContext.magicLevel              = t.magicLevel;
+    gSaveContext.isMagicAcquired         = t.isMagicAcquired;
+    gSaveContext.isDoubleMagicAcquired   = t.isDoubleMagicAcquired;
+
+    // Time / counters.
+    gSaveContext.dayTime     = t.dayTime;
+    gSaveContext.totalDays   = t.totalDays;
+    gSaveContext.deaths      = t.deaths;
+    gSaveContext.bgsFlag     = t.bgsFlag;
+    gSaveContext.swordHealth = t.swordHealth;
+    gSaveContext.bgsDayCount = t.bgsDayCount;
+
+    gSaveContext.entranceIndex = t.entranceIndex;
+    gSaveContext.cutsceneIndex = t.cutsceneIndex;
+
+    gSaveContext.naviTimer       = t.naviTimer;
+    gSaveContext.timerState      = t.timerState;
+    gSaveContext.timerSeconds    = t.timerSeconds;
+    gSaveContext.subTimerState   = t.subTimerState;
+    gSaveContext.subTimerSeconds = t.subTimerSeconds;
+
+    gSaveContext.audioSetting   = t.audioSetting;
+    gSaveContext.n64ddFlag      = t.n64ddFlag;
+    gSaveContext.zTargetSetting = t.zTargetSetting;
+
+    gSaveContext.ship.quest.data.randomizer.triforcePiecesCollected = t.triforcePiecesCollected;
+    gSaveContext.ship.quest.data.randomizer.bombchuUpgradeLevel     = t.bombchuUpgradeLevel;
+
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.highScores); i++) {
+        gSaveContext.highScores[i] = t.highScores[i];
+    }
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.gsFlags); i++) {
+        gSaveContext.gsFlags[i] = t.gsFlags[i];
+    }
+
+    // Scene flags.
+    for (size_t i = 0; i < (size_t)ARRAY_COUNT(t.sceneFlags); i++) {
+        auto& s = gSaveContext.sceneFlags[i];
+        const auto& src = t.sceneFlags[i];
+        s.chest   = src.chest;
+        s.swch    = src.swch;
+        s.clear   = src.clear;
+        s.collect = src.collect;
+        s.unk     = src.unk;
+        s.rooms   = src.rooms;
+        s.floors  = src.floors;
+    }
+
     if (Harpoon::Instance != nullptr) {
         auto it = Harpoon::Instance->clients.find(Harpoon::Instance->ownClientId);
         if (it != Harpoon::Instance->clients.end()) {

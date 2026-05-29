@@ -58,12 +58,17 @@ struct DropEntry {
     int16_t                  sceneNum       = -1;
     float                    x = 0.0f, y = 0.0f, z = 0.0f;
     float                    elapsedMs      = 0.0f;  // ticks only when scene occupied
+    int64_t                  createdAtMs    = 0;     // wall-clock ms at creation, for hard expiry
     bool                     allClaimed     = false;
     std::vector<DroppedItem> items;
 };
 
 // Constants
 constexpr float kDespawnMs = 5.0f * 60.0f * 1000.0f;  // 5 minutes
+// Hard wall-clock ceiling on ledger entries: even if no peer ever enters
+// the entry's scene to tick elapsedMs, drop it after 30 min. Prevents
+// unbounded ledger growth across 24h+ sessions with frequent deaths.
+constexpr int64_t kLedgerMaxAgeMs = 30LL * 60LL * 1000LL;  // 30 minutes
 
 // ---- Ledger management ----
 const std::vector<DropEntry>& GetLedger();

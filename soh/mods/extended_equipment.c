@@ -466,6 +466,20 @@ void ExtEquip_DrawBehavior(void* playerVoid, void* playVoid) {
     Player* player = (Player*)playerVoid;
     PlayState* play = (PlayState*)playVoid;
 
+    // Skip remote dummy players. HarpoonDummyPlayer_Draw delegates to
+    // Player_Draw for skeleton/anim parity, which routes here. But the
+    // extended-equipment draw dispatch reads GLOBAL gExtEquipState (the
+    // LOCAL player's slot indices) — drawing Four Sword clones / Pegasus
+    // wind cone / Magic Cape / IK Axe reticle / Water-Dragon barrier on
+    // remote dummies would render the local player's effects on every
+    // peer's body. Gate on "this player is the local player actor".
+    if (gPlayState != NULL) {
+        Player* localPlayer = GET_PLAYER(gPlayState);
+        if (player != localPlayer) {
+            return;
+        }
+    }
+
     ExtEquip_DrawDispatch(player, play);
 }
 

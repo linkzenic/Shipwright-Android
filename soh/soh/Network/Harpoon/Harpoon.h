@@ -20,6 +20,10 @@ void HarpoonDummyPlayer_Init(Actor* actor, PlayState* play);
 void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play);
 void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play);
 void HarpoonDummyPlayer_Destroy(Actor* actor, PlayState* play);
+// Drop the per-clientId diagnostic memo maps used inside dummy update/draw.
+// Called from Harpoon::OnDisconnected and on room-left so entries don't
+// accumulate one-per-cid across long sessions.
+void HarpoonDummyPlayer_ClearPerClientDiagnostics();
 
 // CVar prefix for Harpoon settings
 #define CVAR_HARPOON(var) "Remote.Harpoon." var
@@ -255,9 +259,13 @@ typedef struct {
     s32 mapSelectIndex;
     bool hasVoted;
 
-    // Triforce Thief — mirror of this client's carrier-timer broadcast.
-    // Refreshed by TRIFORCE_THIEF.CARRIER_TIMER_SYNC; HUD arrow label reads it.
-    s32 ttRupeesRemaining;
+    // Triforce Thief — mirror of this client's carrier-timer broadcast
+    // (descending seconds remaining for the carrier's run). Refreshed by
+    // TRIFORCE_THIEF.CARRIER_TIMER_SYNC; HUD + leaderboard read this.
+    // Field name was `ttRupeesRemaining` historically (when the timer was
+    // rupee-counted); the rename clarifies semantics now that the timer
+    // uses the PropHunt digit overlay and the rupee field is untouched.
+    s32 ttTimerSecondsRemaining;
 
     // Game mode state (from Scooter)
     bool isAlive;
@@ -280,6 +288,22 @@ typedef struct {
     bool restrictNoGrab;
     bool restrictNoCrawl;
     bool restrictNoTalk;
+
+    // ── Cross-gamemode PvP combat state (see Combat/CombatSync.h) ────────
+    // Status-effect timers tick in HarpoonCombat::TickLocal() once per
+    // frame. Broadcasted from attackers via COMBAT.APPLY_STATUS / COMBAT.
+    // PROJECTILE_HIT and applied locally to the LOCAL player only (we
+    // index by ownClientId).
+    uint16_t combatBurnDotFrames;       // Fire DOT: 1♥ per 20 frames
+    uint16_t combatFreezeFrames;        // Ice freeze: no input, no actions
+    uint16_t combatBlindnessFrames;     // Dark-spell blackout overlay
+    uint16_t combatMaskEquipFrames;     // Mask-don animation duration
+    uint8_t  combatShieldRaiseFrames;   // Counts up while shielding
+    uint8_t  combatParryWindowActive;   // 1 if inside a perfect-parry frame
+    uint16_t combatLastParryWeapon;     // HarpoonWeaponId of the last parried attack
+    uint8_t  combatIkanaDeathSaveUsedThisScene;
+    uint8_t  combatZoraBarrierActive;   // 1 while Water Dragon Zora Barrier is up
+    uint16_t combatInvisSuppressFrames; // > 0 = mask invisibility temporarily revealed
 
     // Remote somaria cubes
     struct {
@@ -794,17 +818,37 @@ class Harpoon : public Network {
     // actual attacker, and to suppress friendly-fire on the owner's own VFX.
     void  SetVfxActorOwner(const Actor* actor, uint32_t ownerClientId);
     uint32_t GetVfxActorOwner(const Actor* actor);
+    // Drop every entry in the VFX-actor → owner map. Called on scene
+    // transitions and on disconnect to prevent unbounded growth + stale
+    // Actor* collisions across long sessions.
+    void  ClearVfxActorOwners();
 
     // Story sync helpers
     bool syncCutscenes = false;
 };
 
 // Damage response types
+//
+// Codes 0-4 are the vanilla PLAYER_HIT_RESPONSE_* enum from z64player.h
+// (NONE / KNOCKBACK_LARGE / KNOCKBACK_SMALL / ICE_TRAP / ELECTRIC_SHOCK).
+// Codes 5-12 are Harpoon-specific extensions:
+//   STUN       — short freeze + white-yellow flash (boomerang, Beetle)
+//   FIRE       — burning red flash + medium kb (Fire Rod, Fire Arrow, Din's)
+//   NORMAL     — generic hit + small kb
+//   WIND_BLOW  — zero damage + big horizontal launch (Deku Leaf, Gust Jar)
+//   LIGHT      — golden flash + medium kb (Light Arrow, Light Rod, MagicLight)
+//   DARK       — purple flash + small kb + blindness (Dark Arrow, MagicDark)
+//   SOUL_DRAIN — drain HP to attacker (Soul Arrow, MagicSoul, Ikana parry)
+//   WIND_PUSH  — push knockback only, zero damage (MagicWind, WindArrow)
 typedef enum {
     HARPOON_HIT_RESPONSE_STUN = 5,
     HARPOON_HIT_RESPONSE_FIRE,
     HARPOON_HIT_RESPONSE_NORMAL,
-    HARPOON_HIT_RESPONSE_WIND_BLOW,  // 8 — Deku Leaf / Gust Jar: zero dmg, big horizontal launch
+    HARPOON_HIT_RESPONSE_WIND_BLOW,
+    HARPOON_HIT_RESPONSE_LIGHT,        //  9
+    HARPOON_HIT_RESPONSE_DARK,         // 10
+    HARPOON_HIT_RESPONSE_SOUL_DRAIN,   // 11
+    HARPOON_HIT_RESPONSE_WIND_PUSH,    // 12
 } HarpoonDamageResponseType;
 
 #endif // __cplusplus

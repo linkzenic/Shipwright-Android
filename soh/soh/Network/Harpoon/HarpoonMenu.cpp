@@ -3,6 +3,7 @@
 #include "PropHunt/PropHunt.h"
 #include "TriforceThief/TriforceThief.h"
 #include "Templates.h"
+#include "RemoteSaveEditor.h"
 #include "soh/SohGui/SohMenu.h"
 #include "soh/SohGui/MenuTypes.h"
 #include <libultraship/libultraship.h>
@@ -728,49 +729,42 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                 }
             }
 
-            if (ImGui::CollapsingHeader("Player flags")) {
+            // Player-flags section removed — templates now control
+            // can_climb / can_grab / can_crawl / can_talk per-peer via
+            // the restrictNo* fields baked into each Template. To
+            // restrict a peer, snapshot a template with the desired
+            // restrict flags and apply it to them.
+
+            // Remote Save Editor — open a save-editor-style window that
+            // operates on a CACHED snapshot of a peer's gSaveContext.
+            // The peer answers a peek request with their current save
+            // state; the GM edits the cached Template; Apply uses the
+            // existing TEMPLATE_APPLY broadcast to push the edited
+            // state back to the peer. Host-only (the peer side also
+            // gates this — see HandlePeekRequest).
+            if (ImGui::CollapsingHeader("Remote Save Editor")) {
+                ImGui::TextWrapped(
+                    "Edit any peer's save state. Pick a player below to "
+                    "open the editor window with their current snapshot.");
+                ImGui::Spacing();
+                bool anyPeer = false;
                 for (auto& [cid, c] : harpoon->clients) {
-                    if (!c.online) continue;
-                    // Skip self — host doesn't restrict their own
-                    // movement via this panel.
-                    if (cid == harpoon->ownClientId) continue;
-                    ImGui::PushID((int)cid);
-                    bool noClimb = c.restrictNoClimb;
-                    bool noGrab  = c.restrictNoGrab;
-                    bool noCrawl = c.restrictNoCrawl;
-                    bool noTalk  = c.restrictNoTalk;
-                    // Fall back to "cid<N>" if the peer never sent a
-                    // display name (matches the TT leaderboard pattern).
+                    if (cid == harpoon->ownClientId || !c.online) continue;
+                    anyPeer = true;
+                    ImGui::PushID((int)cid + 11000);
                     std::string label = c.name.empty()
-                        ? ("cid" + std::to_string(cid)) : c.name;
+                                          ? ("cid" + std::to_string(cid))
+                                          : c.name;
                     ImGui::Text("  %s", label.c_str());
-                    ImGui::SameLine(); bool changed = false;
-                    if (ImGui::Checkbox("Climb", &noClimb)) { c.restrictNoClimb = noClimb; changed = true; }
                     ImGui::SameLine();
-                    if (ImGui::Checkbox("Grab",  &noGrab))  { c.restrictNoGrab  = noGrab;  changed = true; }
-                    ImGui::SameLine();
-                    if (ImGui::Checkbox("Crawl", &noCrawl)) { c.restrictNoCrawl = noCrawl; changed = true; }
-                    ImGui::SameLine();
-                    if (ImGui::Checkbox("Talk",  &noTalk))  { c.restrictNoTalk  = noTalk;  changed = true; }
-                    if (changed) {
-                        nlohmann::json env;
-                        env["type"]       = "ROOM.BROADCAST_EVENT";
-                        env["event_name"] = "HARPOON.FLAG_OVERRIDE";
-                        nlohmann::json d;
-                        d["targetClientId"] = cid;
-                        d["noClimb"] = !noClimb;  // inverted: checkbox = allowed?
-                        // Wait — checkbox shows "Climb" as enabled meaning
-                        // restrictNoClimb is FALSE. We track restrictNo* in
-                        // memory but the checkbox checked = allowed.
-                        // Simpler: invert the bool meaning, send what we set.
-                        d["noClimb"] = c.restrictNoClimb;
-                        d["noGrab"]  = c.restrictNoGrab;
-                        d["noCrawl"] = c.restrictNoCrawl;
-                        d["noTalk"]  = c.restrictNoTalk;
-                        env["data"]  = d;
-                        harpoon->SendJsonToRemote(env);
+                    if (ImGui::SmallButton("Edit save…")) {
+                        HarpoonRemoteSaveEditor::OpenForPeer(cid);
                     }
                     ImGui::PopID();
+                }
+                if (!anyPeer) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                        "  (no peers connected)");
                 }
             }
 

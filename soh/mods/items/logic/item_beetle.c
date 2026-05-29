@@ -72,6 +72,14 @@ u8 Beetle_IsFlying(void) {
 
 static void Beetle_DestroySubCam(PlayState* play) {
     if (beetleSubCamId != SUBCAM_FREE) {
+        // Force MAIN_CAM out of CAM_MODE_FOLLOWBOOMERANG before reactivating it.
+        // While the beetle flew we set PLAYER_STATE1_BOOMERANG_THROWN, which
+        // makes z_player.c put MAIN_CAM into FOLLOWBOOMERANG mode pointed at
+        // a stale Player.boomerangActor. Reactivating in that mode can deref
+        // freed memory (Camera_KeepOn1) and crash — common during Barinade
+        // phase 4 where actor churn fills the freed En_Boom slot with valid-
+        // looking data, defeating the camera->target->update == NULL guard.
+        Camera_ChangeMode(Play_GetCamera(play, MAIN_CAM), CAM_MODE_NORMAL);
         Play_ChangeCameraStatus(play, MAIN_CAM, CAM_STAT_ACTIVE);
         Play_ClearCamera(play, beetleSubCamId);
         beetleSubCamId = SUBCAM_FREE;
@@ -315,6 +323,10 @@ static void Beetle_StateFlying(Player* p, PlayState* play) {
     Player_ZeroSpeedXZ(p);
     p->stateFlags1 |= PLAYER_STATE1_BOOMERANG_THROWN;
     p->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
+    // Point boomerangActor at Link himself so the FOLLOWBOOMERANG camera path
+    // (z_player.c:12350) never propagates a stale En_Boom pointer through
+    // Camera_SetParam — Link's actor is always valid.
+    p->boomerangActor = &p->actor;
 
     if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
         Beetle_StartReturn(p, play);

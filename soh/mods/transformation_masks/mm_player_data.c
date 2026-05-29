@@ -20,6 +20,9 @@ u8 sMmPlayerMass[MM_PLAYER_FORM_MAX] = {
     80,  // MM_PLAYER_FORM_ZORA
     20,  // MM_PLAYER_FORM_DEKU
     50,  // MM_PLAYER_FORM_HUMAN
+    50,  // MM_PLAYER_FORM_PIKACHU (not used by MM physics — placeholder)
+    50,  // MM_PLAYER_FORM_GARO (not used by MM physics — placeholder)
+    55,  // MM_PLAYER_FORM_GERUDO (agile warrior, slightly above human)
 };
 
 // =============================================================================
@@ -35,6 +38,9 @@ const char* sMmMaskOffAnims[MM_PLAYER_FORM_MAX] = {
     "__OTR__objects/gameplay_keep/gPlayerAnim_pz_maskoffstart", // ZORA
     "__OTR__objects/gameplay_keep/gPlayerAnim_pn_maskoffstart", // DEKU
     "__OTR__objects/gameplay_keep/gPlayerAnim_cl_setmask",      // HUMAN
+    "__OTR__objects/gameplay_keep/gPlayerAnim_cl_setmask",      // PIKACHU (uses human)
+    "__OTR__objects/gameplay_keep/gPlayerAnim_cl_setmask",      // GARO (uses human)
+    "__OTR__objects/gameplay_keep/gPlayerAnim_cl_setmask",      // GERUDO (humanoid — uses human)
 };
 
 // =============================================================================
@@ -48,6 +54,9 @@ const char* sMmOcarinaStartAnims[MM_PLAYER_FORM_MAX] = {
     "__OTR__objects/gameplay_keep/gPlayerAnim_pz_gakkistart",             // ZORA
     "__OTR__objects/gameplay_keep/gPlayerAnim_pn_gakkistart",             // DEKU
     "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_start", // HUMAN
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_start", // PIKACHU
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_start", // GARO
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_start", // GERUDO (human bipedal)
 };
 
 // Ocarina play animations (from z_player.c D_8085D190)
@@ -57,6 +66,9 @@ const char* sMmOcarinaPlayAnims[MM_PLAYER_FORM_MAX] = {
     "__OTR__objects/gameplay_keep/gPlayerAnim_pz_gakkiplay",              // ZORA
     "__OTR__objects/gameplay_keep/gPlayerAnim_pn_gakkiplay",              // DEKU
     "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_swing", // HUMAN
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_swing", // PIKACHU
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_swing", // GARO
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_okarina_swing", // GERUDO
 };
 
 // =============================================================================
@@ -70,6 +82,9 @@ const char* sMmDoorAOpenAnims[MM_PLAYER_FORM_MAX] = {
     "__OTR__objects/gameplay_keep/gPlayerAnim_pz_doorA_open",             // ZORA
     "__OTR__objects/gameplay_keep/gPlayerAnim_pn_doorA_open",             // DEKU
     "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorA_open",      // HUMAN
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorA_open",      // PIKACHU
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorA_open",      // GARO
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorA_open",      // GERUDO
 };
 
 // Door B (right) open animations
@@ -79,6 +94,9 @@ const char* sMmDoorBOpenAnims[MM_PLAYER_FORM_MAX] = {
     "__OTR__objects/gameplay_keep/gPlayerAnim_pz_doorB_open",             // ZORA
     "__OTR__objects/gameplay_keep/gPlayerAnim_pn_doorB_open",             // DEKU
     "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorB_open",      // HUMAN
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorB_open",      // PIKACHU
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorB_open",      // GARO
+    "__OTR__objects/gameplay_keep/gPlayerAnim_link_demo_doorB_open",      // GERUDO
 };
 
 // =============================================================================
@@ -125,6 +143,30 @@ Vec3f sMmDekuLeftHandOffset = { -30.0f, 50.0f, 0.0f };
 Vec3f sMmDekuRightHandOffset = { 30.0f, 50.0f, 0.0f };
 
 // =============================================================================
+// GERUDO SPECIFIC DATA
+// =============================================================================
+
+// Gerudo idle (sword+shield human stance — but with dual scimitars rendered in hands)
+const char* sMmGerudoIdleAnim = "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_wait";
+
+// Slash combo hit 1 (R-slash). User chose link_normal_light_bom (has _end recovery variant).
+const char* sMmGerudoSlash1Anim    = "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_light_bom";
+const char* sMmGerudoSlash1EndAnim = "__OTR__objects/gameplay_keep/gPlayerAnim_link_normal_light_bom_end";
+
+// Slash combo hit 2 (L-slash).
+const char* sMmGerudoSlash2Anim = "__OTR__objects/gameplay_keep/gPlayerAnim_link_fighter_Lnormal_kiru";
+
+// Slash combo finisher (wide rolling spin 360° AOE).
+const char* sMmGerudoFinisherAnim = "__OTR__objects/gameplay_keep/gPlayerAnim_link_fighter_Wrolling_kiru";
+
+// Jump attack composite: jump_rollkiru chains into Lpower_jump_kiru_end.
+const char* sMmGerudoJumpAtk1Anim = "__OTR__objects/gameplay_keep/gPlayerAnim_link_fighter_jump_rollkiru";
+const char* sMmGerudoJumpAtk2Anim = "__OTR__objects/gameplay_keep/gPlayerAnim_link_fighter_Lpower_jump_kiru_end";
+
+// Block (R hold): MM kf_hanare_loop applied to upper-body limbs only — swords planted, mirror shield.
+const char* sMmGerudoBlockAnim = "__OTR__misc/link_animetion/gPlayerAnim_kf_hanare_loop_Data";
+
+// =============================================================================
 // TRANSFORMATION TIMING DATA
 // =============================================================================
 
@@ -136,6 +178,9 @@ s16 sMmTransformTiming[MM_PLAYER_FORM_MAX][3] = {
     { 0, 14, 20 }, // ZORA
     { 0, 14, 20 }, // DEKU
     { 0, 14, 20 }, // HUMAN
+    { 0, 14, 20 }, // PIKACHU
+    { 0, 14, 20 }, // GARO
+    { 0, 14, 20 }, // GERUDO
 };
 
 // Week event flags by mask (D_8085D908)

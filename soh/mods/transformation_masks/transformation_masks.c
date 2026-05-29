@@ -7,8 +7,18 @@
 
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/transformation_masks/assets/mm_asset_loader.h"
+#include "mods/transformation_masks/gerudo_form.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 #include "mods/o2r_loader/o2r_loader.h"
+#include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
+#include "soh/ResourceManagerHelpers.h"
+#include "functions.h"
+#include <math.h>
+#include <libultraship/log/luslog.h>
 #include <string.h>
+
+// Needed for the Gerudo / Shielding probe in TransformMasks_FilterB.
+extern PlayState* gPlayState;
 
 // =============================================================================
 // Global MmPlayer instance (declared extern in transformation_masks.h)
@@ -61,6 +71,11 @@ extern void MmMaskWear_DeactivateChateauRomani(void);
 // Activated via O2rLoader_ForceModel("garo"); independent of MmForm.
 extern void GaroForm_Update(PlayState* play, Player* player);
 extern void GaroForm_DrawProjectiles(PlayState* play);
+
+// gerudo_form.cpp combat state machine (slash combo + block-mirror).
+// Internal IsActive check makes this a no-op when Gerudo Form isn't the
+// current MM form.
+extern void GerudoForm_Update(PlayState* play, Player* player);
 
 // =============================================================================
 // No-op Action Function (replaces OOT actionFunc while transformed)
@@ -155,12 +170,72 @@ void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos) {
         case MM_PLAYER_FORM_FIERCE_DEITY:
             mmOffset = 0x00;
             break;
+        case MM_PLAYER_FORM_GERUDO:
+            // No MM voice samples for Gerudo — fall through to default so
+            // Player_PlayVoiceSfx ends up calling the OOT path (Link's normal
+            // voice). Mapping a fake offset like 0x40 used to crash the audio
+            // thread because MmSfx_PlayAtPos dereferenced a NULL sample for
+            // SFX IDs the SF0 doesn't contain. When a gerudo voice pack is
+            // added later (pitch-shifted Link or sampled NPC), assign an unused
+            // 0x20-wide block (e.g. 0x40 or 0x60) and ship the samples in mm.o2r.
+            return;
+        case MM_PLAYER_FORM_GARO:
+            // No Garo voice samples shipped yet. Same rationale as Gerudo above:
+            // fall through to default (Link's normal voice) until Garo Master MM
+            // voice samples are bundled. Once available, assign 0x60 offset and
+            // remove this early-return.
+            return;
         default:
             return;
     }
 
     u16 mmSfxId = 0x6800 + mmOffset + action;
+    // Diagnostic so we can see at runtime whether the voice routing fires for
+    // each transformed form. If this log line appears in the SoH log but the
+    // user hears nothing, the failure is downstream (sample missing in SF0,
+    // soundEffects index out of range, or volume=0). If the line does NOT
+    // appear, the upstream Player_PlayVoiceSfx hook never reached us.
+    lusprintf(__FILE__, __LINE__, LUSLOG_LEVEL_INFO,
+              "[MmVoice] form=%d oot=0x%04X offset=0x%X action=0x%X -> mmSfxId=0x%04X",
+              (s32)form, (u32)ootVoiceSfxId, (u32)mmOffset, (u32)action, (u32)mmSfxId);
     MmSfx_PlayAtPos(mmSfxId, pos);
+}
+
+// Redirect OOT floor/walk SFX to MM equivalent for current form. MM's
+// Player_GetFloorSfxByAge adds ageProperties->surfaceSfxIdOffset to the base
+// step SFX so each form picks its own playerbank slot (Deku +0xF0, Zora
+// +0x120, Goron +0x150). Returns 1 if it played a form-specific SFX and the
+// caller should skip the OOT step SFX; returns 0 if no override applies
+// (human/FD/Garo/Gerudo — let OOT handle it).
+u8 TransformMasks_TryPlayMmStepSfx(u16 ootStepSfxId, Vec3f* pos) {
+    if (!MmSfx_IsAvailable()) {
+        return 0;
+    }
+
+    // Values verified verbatim against MM decomp sPlayerAgeProperties[]:
+    //   FD     = 0x80  (mm z_player.c:800)
+    //   Goron  = 0x150 (mm z_player.c:896)
+    //   Zora   = 0x120 (mm z_player.c:992)
+    //   Deku   = 0xF0  (mm z_player.c:1088)
+    //   Human  = 0     (mm z_player.c:1184 — no offset, use OOT path)
+    u16 mmOffset = 0;
+    switch (MmForm_GetCurrentForm()) {
+        case MM_PLAYER_FORM_FIERCE_DEITY: mmOffset = 0x80;  break;
+        case MM_PLAYER_FORM_GORON:        mmOffset = 0x150; break;
+        case MM_PLAYER_FORM_ZORA:         mmOffset = 0x120; break;
+        case MM_PLAYER_FORM_DEKU:         mmOffset = 0xF0;  break;
+        default:
+            // Garo/Gerudo/Human/Pikachu: no MM step SFX override — use OOT.
+            return 0;
+    }
+
+    // MM step IDs live at 0x800-base + floorOffset + form offset. The
+    // ootStepSfxId already contains the floor offset (caller built it via
+    // Player_ApplyFloorSfxOffset or similar), so we just add the form offset
+    // on top.
+    u16 mmSfxId = ootStepSfxId + mmOffset;
+    MmSfx_PlayAtPos(mmSfxId, pos);
+    return 1;
 }
 
 u8 TransformMasks_HasSkeleton(void) {
@@ -202,6 +277,23 @@ void TransformMasks_FilterB(Input* input) {
     if (O2rLoader_HasActiveModel()) {
         const char* o2rName = O2rLoader_GetForcedName();
         if (o2rName != NULL && strcmp(o2rName, "garo") == 0) {
+            input->cur.button &= ~BTN_B;
+            input->press.button &= ~BTN_B;
+        }
+    }
+
+    // Gerudo Form: by default every action falls back to OoT vanilla — the only
+    // explicit Gerudo override is the dual-scimitar combo on B-press from idle/
+    // walk/run. We strip B so OoT's normal sword-draw / actionFunc don't fight
+    // the combo. BUT during SHIELDING B = vanilla shield-thrust attack, which
+    // is exactly what we want — so let B through to vanilla while the shield
+    // is up. Also R is never stripped: vanilla Player_ActionHandler_11 fires
+    // the real Mirror Shield action and GerudoForm_Update pins heldItemAction
+    // to one-handed Master/Kokiri so the pipeline works 1:1.
+    if (GerudoForm_IsActive()) {
+        Player* p = (gPlayState != NULL) ? GET_PLAYER(gPlayState) : NULL;
+        u8 shielding = (p != NULL) && ((p->stateFlags1 & PLAYER_STATE1_SHIELDING) != 0);
+        if (!shielding) {
             input->cur.button &= ~BTN_B;
             input->press.button &= ~BTN_B;
         }
@@ -260,6 +352,9 @@ void TransformMasks_Update(PlayState* play, Player* player) {
     // Garo attack kit (3-slash combo + charge spin). Always called — internal
     // GaroForm_IsActive check no-ops when the Garo skin isn't the active model.
     GaroForm_Update(play, player);
+
+    // Gerudo dual-scimitar combo + block-mirror. Same no-op pattern.
+    GerudoForm_Update(play, player);
 }
 
 void TransformMasks_Draw(PlayState* play, Player* player) {
@@ -337,6 +432,149 @@ f32 TransformMasks_GetFormHeight(void) {
 
 u8 TransformMasks_BlocksLedgeGrab(void) {
     return MmForm_BlocksLedgeGrab();
+}
+
+// =============================================================================
+// Boss Super-Damage API (FD / Pikachu Gigantamax → paralyze-or-damage on bosses)
+// Header: boss_super_damage.h. Bosses call IsActive() in their hit handler
+// and choose their own paralyzed-state condition (typically an actionFunc).
+// =============================================================================
+
+// Defined in pikachu_form.cpp (extern "C"). True only during Pikachu's attack/
+// locked-action frames AND when the Gigantamax mode is on.
+extern u8 gPikaGigantamaxActive;
+
+u8 BossSuperDamage_IsActive(PlayState* play) {
+    if (gPikaGigantamaxActive) {
+        return 1;
+    }
+    // FD form: only count it as a super attack while the melee weapon is
+    // actively swinging. Idle FD walking past a boss must NOT paralyze it.
+    if (MmForm_IsFDSkinMode()) {
+        Player* player = GET_PLAYER(play);
+        if (player != NULL && player->meleeWeaponState != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void BossSuperDamage_SpawnVfx(PlayState* play, Actor* boss, Vec3f* limbWorldPos, s16 scale, s16 count) {
+    s16 i;
+
+    if (limbWorldPos == NULL || boss == NULL) {
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        EffectSsFhgFlash_SpawnShock(play, boss, limbWorldPos, scale, FHGFLASH_SHOCK_ANY_ACTOR);
+    }
+}
+
+// ─── OOT-native lightning sparks (uses gGanonLightningDL from ovl_Boss_Ganon2)
+// This is the same DL used by the Dark Beast Ganon transformation cutscene —
+// a vertical white I4 lightning-bolt sprite (32x160). Always available in oot.otr;
+// no MM asset dependency. Per limb we draw a small burst of bolts with random Y
+// rotation so they radiate outward in XZ.
+
+#define BSD_SPARK_SLOTS 8
+
+typedef struct {
+    Actor* actor;
+    s16 timer;
+} BsdSparkSlot;
+
+static BsdSparkSlot sBsdSparkSlots[BSD_SPARK_SLOTS];
+
+// Resource path for the Ganon transformation lightning DL.
+// Asset path identical to assets/overlays/ovl_Boss_Ganon2/ovl_Boss_Ganon2.h.
+#define BSD_LIGHTNING_DL_PATH "__OTR__overlays/ovl_Boss_Ganon2/gGanonLightningDL"
+
+void BossSuperDamage_StartElectricSparks(Actor* boss, s16 durationFrames) {
+    s32 i;
+    s32 freeSlot = -1;
+
+    if (boss == NULL || durationFrames <= 0) {
+        return;
+    }
+    for (i = 0; i < BSD_SPARK_SLOTS; i++) {
+        if (sBsdSparkSlots[i].actor == boss) {
+            sBsdSparkSlots[i].timer = durationFrames;
+            return;
+        }
+        if (sBsdSparkSlots[i].actor == NULL && freeSlot < 0) {
+            freeSlot = i;
+        }
+    }
+    if (freeSlot >= 0) {
+        sBsdSparkSlots[freeSlot].actor = boss;
+        sBsdSparkSlots[freeSlot].timer = durationFrames;
+    }
+}
+
+void BossSuperDamage_DrawElectricSparks(Actor* boss, PlayState* play, Vec3f* limbsPos, s32 limbCount, f32 scale) {
+    s32 slot = -1;
+    s32 i;
+    s32 j;
+    GraphicsContext* gfxCtx;
+    f32 finalScale;
+    s32 alpha;
+
+    if (boss == NULL || limbsPos == NULL || limbCount <= 0 || play == NULL) {
+        return;
+    }
+    for (i = 0; i < BSD_SPARK_SLOTS; i++) {
+        if (sBsdSparkSlots[i].actor == boss) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        return;
+    }
+    if (sBsdSparkSlots[slot].timer <= 0) {
+        sBsdSparkSlots[slot].actor = NULL;
+        return;
+    }
+    // Alpha fades over the last 30 frames so the burst trails off cleanly.
+    alpha = (sBsdSparkSlots[slot].timer >= 30) ? 255 : (sBsdSparkSlots[slot].timer * 255 / 30);
+    sBsdSparkSlots[slot].timer--;
+
+    // Boss_Ganon2 cutscene uses 0.13 scale on a sprite that's natively ~160 units
+    // tall. We want bolts ~40-80 units long for a boss hit, so scale ~0.025-0.05.
+    // Caller's `scale` parameter (1.0 = typical boss) multiplies this base.
+    finalScale = 0.035f * scale;
+
+    gfxCtx = play->state.gfxCtx;
+
+    OPEN_DISPS(gfxCtx);
+
+    gDPPipeSync(POLY_XLU_DISP++);
+    // Match Boss_Ganon2 transformation lightning: pure white primary, alpha-faded.
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, (u8)alpha);
+
+    for (i = 0; i < limbCount; i++) {
+        // 2 bolts per limb, fanned out via random Y rotation.
+        for (j = 0; j < 2; j++) {
+            f32 yawRad = Rand_ZeroFloat(2.0f * M_PI);
+            f32 zTilt = Rand_CenteredFloat(0.6f);
+            f32 px = limbsPos[i].x + Rand_CenteredFloat(15.0f);
+            f32 py = limbsPos[i].y + Rand_CenteredFloat(15.0f);
+            f32 pz = limbsPos[i].z + Rand_CenteredFloat(15.0f);
+
+            Matrix_Translate(px, py, pz, MTXMODE_NEW);
+            Matrix_Scale(finalScale, finalScale, finalScale, MTXMODE_APPLY);
+            Matrix_RotateY(yawRad, MTXMODE_APPLY);
+            Matrix_RotateZ(zTilt, MTXMODE_APPLY);
+
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(gfxCtx),
+                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+            // The DL is resolved by the SOH GfxWrap layer via its OTR path,
+            // so SEGMENTED_TO_VIRTUAL is a no-op cast here (same as Boss_Ganon2).
+            gSPDisplayList(POLY_XLU_DISP++, (Gfx*)BSD_LIGHTNING_DL_PATH);
+        }
+    }
+
+    CLOSE_DISPS(gfxCtx);
 }
 
 // =============================================================================

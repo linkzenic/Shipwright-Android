@@ -43,8 +43,12 @@ struct MapDef {
     std::vector<SpawnPoint> spawnPoints;
 };
 
-constexpr s32 kMapCount = 6;
+constexpr s32 kMapCount = 8;
 constexpr s32 kSpawnPointsPerMap = 7;
+
+// Lobby entrance (always Hyrule Field's main spawn, regardless of which
+// maps are in the playable roster). 0x0CD = ENTR_HYRULE_FIELD_PAST_BRIDGE_SPAWN.
+constexpr s32 kHyruleFieldLobbyEntrance = 205;
 
 // ---------------------------------------------------------------------------
 // Per-client state
@@ -63,11 +67,65 @@ struct LocalState {
     f32      triforceX = 0.0f, triforceY = 0.0f, triforceZ = 0.0f;
     s32      roundIndex      = 0;          // 1-based round number
 
-    // Round-win timer (rupees-as-countdown).
+    // Round-win timer.
     s32      roundWinSeconds        = 60;  // host-broadcast at round start
-    s32      carrierRupeesRemaining = 0;   // 0 = "no time recorded yet"; persists across drops
-    s32      drainTickCounter       = 0;   // frames-until-next-rupee-decrement
+    s32      carrierRupeesRemaining = 0;   // legacy: kept so existing leaderboard
+                                            // / sync code still compiles. Soft-
+                                            // shadowed by carrierTimerFrames now.
+    s32      drainTickCounter       = 0;   // legacy unused; kept for compat
     bool     roundEnded             = false;
+
+    // Descending timer (frame-precise, ticks 1 per game tick at 20 fps).
+    // Replaces the rupee-as-counter. `gSaveContext.ship.stats.playTimer`
+    // mirrors this each frame so Interface_DrawTotalGameplayTimer (the
+    // same PropHunt-style digit overlay) renders the countdown. Persists
+    // across drops; only reset on round start (HostConfirmMap /
+    // HandleMapConfirmed) and on the round-end broadcast.
+    s32      carrierTimerFrames     = 0;
+
+    // Last "Hurry! N seconds left!" threshold that has been fired this
+    // round. Prevents the threshold from triggering more than once when
+    // the timer briefly hovers around the boundary. -1 = no warning yet.
+    s32      lastWarnSecond         = -1;
+
+    // Last seconds-remaining value the carrier broadcast over
+    // CARRIER_TIMER_SYNC. With the wall-clock drain the integer frame
+    // count can skip over exact multiples of 20, so we broadcast whenever
+    // the whole-second value CHANGES rather than on `frames % 20 == 0`
+    // (which could be missed). -1 = nothing broadcast yet this round.
+    s32      lastSyncSecond         = -1;
+
+    // Wall-clock timestamp (ms) of the host's last STATE_SYNC broadcast.
+    // The host emits an authoritative {carrierClientId, timerSeconds}
+    // packet once per second so peers can converge on conflicting
+    // pickup races or timer drift. 0 = no broadcast yet this round.
+    s64      lastHostSyncMs         = 0;
+
+    // Slow-mo accumulator for the final 5 seconds. While the carrier's
+    // remaining time is <= 5 sec the descending counter ticks at 1/2.5
+    // the normal rate (2.5× slower — "dramatic finale"). Also doubles as
+    // the fractional-frame carry for the wall-clock drain (see below).
+    f32      slowModeAccum          = 0.0f;
+
+    // Wall-clock timestamp (ms, from ImGui::GetTime) of the carrier's
+    // last timer drain. The countdown drains by REAL elapsed time, not
+    // game-logic frames: frame counting froze the timer whenever the
+    // carrier opened the pause menu (logic ticks stop) and drifted
+    // between clients running at different framerates — both showed up
+    // as cross-player timer desync. 0 = "re-seed on next carrier tick"
+    // (set to 0 on pickup / round start so the first tick doesn't drain
+    // a stale delta).
+    s64      carrierTimerLastMs     = 0;
+
+    // Persistent C-button (+ D-pad) item mappings across lobby ↔ round
+    // transitions. ApplyThiefSave overwrites buttonItems[1..7] with the
+    // preset's defaults every time a round starts or ends — clobbering
+    // the user's custom binds (e.g. Hookshot on C-Left). We snapshot
+    // every tick while in lobby, then restore after each preset apply.
+    // Per user spec: ammo and inventory contents CAN be overwritten by
+    // the kit; only the C-button item assignments stay.
+    u8       savedCButtonItems[8]   = {};
+    bool     hasSavedCButtons       = false;
 
     // 3-second "GET READY" countdown at round start. Decrements every tick
     // (20 fps), freezes the local player while > 0, releases on 0.
@@ -78,19 +136,17 @@ struct LocalState {
     // / spawn / void respawn) reset this to false.
     bool     triforceLanded = true;
 
-    // Bunny Hood speed buff bookkeeping. When we set the local player's
-    // currentMask to PLAYER_MASK_BUNNY because they picked up the Triforce,
-    // save the mask they had before so we can restore it on drop. Without
-    // this, dropping the Triforce would clear any legitimately equipped mask.
+    // Carrier speed-buff bookkeeping. While carrying the Triforce we hijack
+    // the SpeedModifier cheat path that z_player.c already reads at 5 sites
+    // (`maxSpeed *= CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f)`)
+    // and force a 1.5x multiplier. We save the user's prior CVars + the
+    // engine-internal `gWalkSpeedToggle` global so dropping the Triforce
+    // restores their original SpeedModifier configuration exactly.
     bool     appliedBunnyHood     = false;
-    s8       savedMaskBeforeBuff  = 0;        // PLAYER_MASK_NONE
     s32      savedBunnyHoodCVar   = 0;        // user's prior MMBunnyHood setting
-    // C-button slot where we placed ITEM_MASK_BUNNY (so Player_Update's
-    // mask-sync sees it on a button and doesn't clear currentMask). Saved
-    // item from that slot lives in `savedMaskSlotItem` so we can restore
-    // on drop.
-    s32      buffMaskSlot         = -1;       // -1 = no slot occupied
-    u8       savedMaskSlotItem    = 0;        // ITEM_NONE
+    f32      savedSpeedModValue   = 1.0f;     // user's prior CVAR_CHEAT(SpeedModifier.Value)
+    s32      savedSpeedToggleCVar = 0;        // user's prior CVAR_CHEAT(SpeedModifier.SpeedToggle)
+    u8       savedWalkSpeedToggle = 0;        // user's prior global toggle state
 
     // One-shot "GO!" flash counter. Set to 20 (1 sec at 20 fps) when the
     // pre-round countdown reaches 0; decremented in DrawHud each frame.
@@ -130,6 +186,22 @@ struct LocalState {
     s32      cutsceneTimer   = 0;     // frames remaining; 0 = inactive
     bool     cutsceneReady   = false; // set true after scene finishes loading
     s16      cutsceneSubCam  = 0;     // SUBCAM_FREE when not active
+
+    // Host-side flag: HostConfirmMap defers Triforce spawn-pick + broadcast
+    // until the new scene's actors are loaded (OnSceneLoaded). Set true when
+    // the map is confirmed; consumed (cleared + spawn broadcast) the moment
+    // OnSceneLoaded fires for the corresponding map. Peers ignore this flag.
+    bool     pendingAnchorPick = false;
+    s32      pendingAnchorMap  = -1;   // map index we're waiting to anchor in
+
+    // Has the round's scene finished loading on this client? Set in
+    // OnSceneLoaded, cleared at every round-start (HandleMapConfirmed /
+    // HostConfirmMap). Lets HandleCutsceneBegin decide whether to flip
+    // cutsceneReady=true immediately (scene already loaded) or wait for
+    // OnSceneLoaded to flip it (scene still streaming). Without this,
+    // peers whose scene loaded BEFORE the host-deferred CUTSCENE_BEGIN
+    // arrives would never see cutsceneReady flip true.
+    bool     sceneLoadedThisRound = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -145,8 +217,15 @@ constexpr const char* kEvtTriforceSpawn    = "TRIFORCE_THIEF.TRIFORCE_SPAWN";
 constexpr const char* kEvtTriforcePickup   = "TRIFORCE_THIEF.TRIFORCE_PICKUP";
 constexpr const char* kEvtTriforceDrop     = "TRIFORCE_THIEF.TRIFORCE_DROP";
 constexpr const char* kEvtCarrierTimerSync = "TRIFORCE_THIEF.CARRIER_TIMER_SYNC";
+constexpr const char* kEvtTimerWarning     = "TRIFORCE_THIEF.TIMER_WARNING";
 constexpr const char* kEvtCutsceneBegin    = "TRIFORCE_THIEF.CUTSCENE_BEGIN";
 constexpr const char* kEvtRoundResult      = "TRIFORCE_THIEF.ROUND_RESULT";
+// Host-only 1 Hz authoritative state sync. The host broadcasts its view of
+// {carrierClientId, timerSeconds} every second so peers can resolve any
+// conflict that crept in through race conditions (e.g. two pickup events
+// at nearly the same time, or local timer drift). Carrier ID snaps to the
+// host's value unconditionally; timer applies monotonically (down only).
+constexpr const char* kEvtStateSync        = "TRIFORCE_THIEF.STATE_SYNC";
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -215,6 +294,16 @@ nlohmann::json BuildTriforceDropPayload(u32 dropperClientId,
 nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex);
 nlohmann::json BuildRoundConfigPayload(s32 winSeconds);
 nlohmann::json BuildCarrierTimerSyncPayload(s32 rupeesRemaining);
+// Host-only 1 Hz authoritative state broadcast. Carries both the current
+// carrierClientId and the timer frames-remaining (frames, not seconds —
+// frames give sub-second precision so peers can snap exactly to the host's
+// value, eliminating the residual ~0.8 s offset that a whole-second floor
+// would leave). Peers apply both fields unconditionally to converge.
+nlohmann::json BuildStateSyncPayload(u32 carrierClientId, s32 timerFrames);
+// Per-second warning broadcast — fires once when the carrier's countdown
+// crosses 10/5/4/3/2/1 seconds remaining. Peers' HandleEvent dispatches
+// it to a Notification::Emit so everyone sees the alert at the same time.
+nlohmann::json BuildTimerWarningPayload(s32 secondsLeft);
 nlohmann::json BuildCutsceneBeginPayload(f32 triforceX, f32 triforceY, f32 triforceZ);
 
 // Notify the TT cutscene state machine that the new scene has finished
@@ -252,6 +341,12 @@ void TeleportToEntrance(s32 entranceIndex);
 // Convenience: apply thief save preset + teleport to the given map's
 // entrance. Called automatically by HandleMapConfirmed.
 void StartLocalRoundOnMap(s32 mapIndex);
+
+// Return players to the lobby (Hyrule Field) after a round ends. Decoupled
+// from the playable map list — lobby is always HF regardless of what's in
+// slot 0 of `kMapInit`. Applies thief save + restores C-buttons + teleports
+// to `kHyruleFieldLobbyEntrance`.
+void TeleportToLobby();
 
 // "Big" game start used to enter Triforce Thief from the title screen
 // or file select. Mirrors HarpoonPropHunt::BigStartGameAs but for TT:

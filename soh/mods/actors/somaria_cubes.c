@@ -112,6 +112,20 @@ static s8 SomariaCube_AllocCollider(PlayState* play, Actor* actor) {
             return i;
         }
     }
+    // No free slot — try to reap dead owners. The Free path can be missed
+    // if a cube is destroyed via Actor_Kill from another system (scene
+    // unload, room transition, etc.) — its slot keeps a dangling owner
+    // pointer that pins the slot forever. After enough churn, allocation
+    // would silently fail (return -1) and new cubes spawn without
+    // collision. Walking the pool to reap any slot whose owner's
+    // `update` callback is NULL recovers those dead-owner slots.
+    for (s8 i = 0; i < SOMARIA_MAX_COLLIDERS; i++) {
+        if (sColliderPool[i].owner != NULL && sColliderPool[i].owner->update == NULL) {
+            sColliderPool[i].owner = actor;
+            Collider_SetCylinder(play, &sColliderPool[i].collider, actor, &sColliderInit);
+            return i;
+        }
+    }
     return -1;
 }
 

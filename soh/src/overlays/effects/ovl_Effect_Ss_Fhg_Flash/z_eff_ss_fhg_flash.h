@@ -34,7 +34,13 @@ typedef enum {
 typedef enum {
     /* 0x00 */ FHGFLASH_SHOCK_NO_ACTOR,
     /* 0x01 */ FHGFLASH_SHOCK_PLAYER,
-    /* 0x02 */ FHGFLASH_SHOCK_PG
+    /* 0x02 */ FHGFLASH_SHOCK_PG,
+    // Re-anchors each frame to (actor->world.pos + offset stored in velocity).
+    // Spawner passes the desired WORLD position (typically a limb position) as
+    // `pos`; Init stores (pos - actor.world.pos) in velocity so the particle
+    // dances around that limb as the actor moves. Use for the FD/Pikachu
+    // Gigantamax super-damage VFX on enemies that lack a bodyPartsPos array.
+    /* 0x03 */ FHGFLASH_SHOCK_ANY_ACTOR
 } FhgFlashLightningParam;
 
 

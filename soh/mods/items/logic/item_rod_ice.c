@@ -90,15 +90,29 @@ u8 IceRod_HasAnyActiveSet(void) {
             return 1;
     return 0;
 }
-static RodProjSet* IceRod_FindFreeSet(void) {
+// Tear down stale colliders before reuse / on deactivation. See the
+// matching helper in item_rod_fire.c for full rationale: the global
+// collider pool was leaking across rod fires after ~2 hours of sustained
+// shooting, breaking hit detection for every "aim/shoot" item.
+static void IceRod_DestroySetColliders(RodProjSet* set, PlayState* play) {
+    if (!set->collidersInited) return;
+    for (s32 i = 0; i < 3; i++) {
+        Collider_DestroyCylinder(play, &set->colliders[i]);
+    }
+    set->collidersInited = 0;
+}
+
+static RodProjSet* IceRod_FindFreeSet(PlayState* play) {
     for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
         if (!sIceProjSets[s].active)
             return &sIceProjSets[s];
-    // All full — recycle oldest (lowest timer)
+    // All full — recycle oldest (lowest timer). Tear down its colliders
+    // BEFORE reuse so stale collider records don't carry over.
     RodProjSet* oldest = &sIceProjSets[0];
     for (s32 s = 1; s < ROD_MAX_PROJ_SETS; s++)
         if (sIceProjSets[s].timer < oldest->timer)
             oldest = &sIceProjSets[s];
+    IceRod_DestroySetColliders(oldest, play);
     return oldest;
 }
 
@@ -123,7 +137,7 @@ static void IceRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
 
 // Spawns single projectile into a free set slot (stab, first-person)
 static void IceRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch, f32 maxRange) {
-    RodProjSet* set = IceRod_FindFreeSet();
+    RodProjSet* set = IceRod_FindFreeSet(play);
     IceRod_InitSetColliders(set, p, play);
 
     set->targetScale = 2.0f;
@@ -148,7 +162,7 @@ static void IceRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* start
 
 // Spawns 3 iceballs spread into a free set slot (slash attack)
 static void IceRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 baseYaw, s16 pitch) {
-    RodProjSet* set = IceRod_FindFreeSet();
+    RodProjSet* set = IceRod_FindFreeSet(play);
     IceRod_InitSetColliders(set, p, play);
 
     set->targetScale = 2.0f;
@@ -292,6 +306,7 @@ static void IceRod_UpdateOneSet(RodProjSet* set, Player* p, PlayState* play) {
 
     if (set->timer == 0 && set->scale < 0.1f) {
         set->active = 0;
+        IceRod_DestroySetColliders(set, play);
         return;
     }
 
@@ -847,8 +862,10 @@ static void IceRod_OnEquip(PlayState* play, Player* p) {
     gCustomItemState.iceRodProjCount = 0;
     iceRodFirstPerson = 0;
     iceRodWaveActive = 0;
-    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++)
+    for (s32 s = 0; s < ROD_MAX_PROJ_SETS; s++) {
+        IceRod_DestroySetColliders(&sIceProjSets[s], play);
         sIceProjSets[s].active = 0;
+    }
 
     iceRodCharging = 0;
     iceRodChargeLevel = 0.0f;

@@ -123,13 +123,15 @@ const PostmanMailboxPoint sMailboxTable[POSTMAN_MAILBOX_COUNT] = {
 };
 
 // ============================================================
-// Unlock state — bitfield in gCustomItemState.postmanMailboxesVisited
+// Unlock state — persisted as RandomizerInf flags
+// RAND_INF_POSTMAN_MAILBOX_0..6 live in gSaveContext.ship.randomizerInf[]
+// which SaveManager loads/saves automatically across all quest types.
 // ============================================================
 
 s32 PostmanHat_IsMailboxUnlocked(s32 idx) {
     if (idx < 0 || idx >= POSTMAN_MAILBOX_COUNT)
         return 0;
-    return (gCustomItemState.postmanMailboxesVisited & (1 << idx)) != 0;
+    return Flags_GetRandomizerInf(RAND_INF_POSTMAN_MAILBOX_0 + idx) != 0;
 }
 
 s32 PostmanHat_GetUnlockedCount(void) {
@@ -152,12 +154,12 @@ static s32 PostmanHat_ProximityUnlock(Player* p, PlayState* play) {
         const PostmanMailboxPoint* m = &sMailboxTable[i];
         if (!PostmanHat_MailboxInScene(m, play->sceneNum))
             continue;
-        if (gCustomItemState.postmanMailboxesVisited & (1 << i))
+        if (Flags_GetRandomizerInf(RAND_INF_POSTMAN_MAILBOX_0 + i))
             continue;
         f32 dx = p->actor.world.pos.x - m->pos.x;
         f32 dz = p->actor.world.pos.z - m->pos.z;
         if ((dx * dx) + (dz * dz) <= (150.0f * 150.0f)) {
-            gCustomItemState.postmanMailboxesVisited |= (1 << i);
+            Flags_SetRandomizerInf(RAND_INF_POSTMAN_MAILBOX_0 + i);
             unlockedThisFrame = 1;
         }
     }

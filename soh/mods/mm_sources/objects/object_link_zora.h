@@ -102,6 +102,12 @@ typedef enum {
 #define gLinkZoraLeftForearmShieldDL "__OTR__objects/object_link_zora/object_link_zora_DL_00CC38"
 #define gLinkZoraRightForearmShieldDL "__OTR__objects/object_link_zora/object_link_zora_DL_00CDA0"
 
+// Special "blade-extended" shield DL drawn ONLY on the RIGHT forearm while
+// PLAYER_STATE1_400000 (Zora shielding) is set. From MM z_player_lib.c:3010
+// (func_80126BD0). When shielding, MM replaces the regular fin DL with this
+// one — the visual shape is different (longer, more shield-like).
+#define gLinkZoraShieldOnlyDL "__OTR__objects/object_link_zora/object_link_zora_DL_0110A8"
+
 // ============================================================================
 // Guitar DLs (from z_player_lib.c L_HAND override during gakki animations)
 // ============================================================================

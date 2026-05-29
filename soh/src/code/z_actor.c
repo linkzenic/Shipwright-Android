@@ -2269,7 +2269,13 @@ void Player_PlaySfx(Actor* actor, u16 sfxId) {
     // MM forms play their own sounds via MmSfx_PlayAtPos / MmForm_PlaySfx.
     // Keep: floor/surface SFX (WALK, JUMP, LAND, SLIP), environmental, water, status effects.
     extern u8 TransformMasks_IsTransformed(void);
-    if (actor->id == ACTOR_PLAYER && TransformMasks_IsTransformed()) {
+    extern u8 GerudoForm_IsActive(void);
+    // Gerudo is the exception — gerudo.o2r doesn't ship MM combat SFX, so its
+    // dual-scimitar combo plays vanilla OOT sword sounds (NA_SE_IT_SWORD_SWING,
+    // etc.) directly. Without this carve-out the swing audio is silently
+    // dropped by the NA_SE_IT_* block below. Same pattern as
+    // Player_PlayVoiceSfx's Gerudo exception (z_player.c:1833).
+    if (actor->id == ACTOR_PLAYER && TransformMasks_IsTransformed() && !GerudoForm_IsActive()) {
         // Block ALL item/weapon SFX (NA_SE_IT_* = 0x1800-0x18FF)
         if ((sfxId & 0xF800) == 0x1800) {
             return;

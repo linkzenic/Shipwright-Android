@@ -27,10 +27,18 @@ static u8 sIkanaDeathSaveUsed = 0;      // Prevent double-revive per life
 static u8 sIkanaDeathSaveAvailable = 1; // Reset on scene change or respawn
 
 // ---------------------------------------------------------------------------
-// Soul Drain: perfect guard detection
+// Soul Drain: guard-window tracker (per-frame)
+//
+// We CANNOT poll `shieldQuad.base.acFlags & AC_BOUNCED` here — by the time
+// the ext-equip dispatch runs (z_player.c:13276), Player_UpdateCommon has
+// already called Collider_ResetQuadAC (z_player.c:13100) and cleared the
+// flag. The actual bounce-detection runs in Ikana_OnShieldBlock below,
+// hooked from z_player.c:5228 (next to DivineShield_OnShieldBlock) where
+// the flag is still live. This function only maintains the guard timer
+// state that the hook consults to know if we're in the perfect-guard window.
+// Age-agnostic: works for both child and adult equipping the Ikana shield.
 // ---------------------------------------------------------------------------
 static void Ikana_UpdateSoulDrain(Player* player, PlayState* play) {
-    // Detect shield raise: player is in guard state (R button held)
     u8 isGuarding = (player->stateFlags1 & PLAYER_STATE1_SHIELDING) != 0;
 
     if (isGuarding && !sIkanaGuardActive) {
@@ -43,29 +51,47 @@ static void Ikana_UpdateSoulDrain(Player* player, PlayState* play) {
         sIkanaGuardActive = 0;
         sIkanaGuardTimer = 0;
     }
+}
 
-    // Check for shield bounce within the perfect guard window
-    if (sIkanaGuardActive && sIkanaGuardTimer <= IKANA_PERFECT_GUARD_WINDOW) {
-        if (player->shieldQuad.base.acFlags & AC_BOUNCED) {
-            // Perfect guard! Get the attacking actor directly
-            Actor* attacker = player->shieldQuad.base.ac;
-            if (attacker != NULL && attacker != &player->actor) {
-                // Drain HP from the attacker
-                if (attacker->colChkInfo.health > IKANA_SOUL_DRAIN_DAMAGE) {
-                    attacker->colChkInfo.health -= IKANA_SOUL_DRAIN_DAMAGE;
-                } else {
-                    attacker->colChkInfo.health = 0;
-                }
+// ---------------------------------------------------------------------------
+// Soul Drain hook: called DIRECTLY from z_player.c the EXACT moment a shield
+// bounce is detected (AC_BOUNCED on shieldQuad). This runs BEFORE
+// Collider_ResetQuadAC clears the flags, so `shieldQuad.base.ac` is still
+// the live attacker pointer. Mirrors DivineShield_OnShieldBlock.
+// ---------------------------------------------------------------------------
+void Ikana_OnShieldBlock(Player* player, PlayState* play) {
+    if (!ExtEquip_IsEnabled())
+        return;
+    if (gExtEquipState.currentExtShield != 3)
+        return;
 
-                // Visual/audio feedback: dark drain sound
-                Audio_PlaySoundGeneral(NA_SE_EN_GANON_AT_RETURN, &player->actor.world.pos, 4,
-                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    // Must be within the perfect-guard window from when shield was raised
+    if (!sIkanaGuardActive || sIkanaGuardTimer > IKANA_PERFECT_GUARD_WINDOW)
+        return;
 
-                // Heal player slightly (soul absorbed)
-                Health_ChangeBy(play, 8); // Half heart
-            }
-        }
+    Actor* attacker = player->shieldQuad.base.ac;
+    if (attacker == NULL || attacker == &player->actor)
+        return;
+
+    // Drain HP from the attacker
+    if (attacker->colChkInfo.health > IKANA_SOUL_DRAIN_DAMAGE) {
+        attacker->colChkInfo.health -= IKANA_SOUL_DRAIN_DAMAGE;
+    } else {
+        attacker->colChkInfo.health = 0;
     }
+
+    // Visual/audio feedback: dark drain sound
+    Audio_PlaySoundGeneral(NA_SE_EN_GANON_AT_RETURN, &player->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+
+    // Heal player slightly (soul absorbed)
+    Health_ChangeBy(play, 8); // Half heart
+
+    // Cross-gamemode PvP: broadcast the soul drain so the
+    // ACTUAL attacker peer (if remote) loses HP + we visibly
+    // heal. shieldType=5 (SHIELD_IKANA), effect=2 (PARRY_SOUL_DRAIN).
+    extern void HarpoonCombat_BroadcastShieldParry_C(int shieldType, int effect);
+    HarpoonCombat_BroadcastShieldParry_C(5, 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +114,11 @@ void Ikana_ConsumeDeathSave(PlayState* play) {
 
     // Restore hearts
     gSaveContext.health = IKANA_REVIVE_HEARTS * 16;
+
+    // Cross-gamemode PvP: broadcast so peers see the revive (dark-purple
+    // flash + HP restoration are mirrored client-side).
+    extern void HarpoonCombat_BroadcastShieldRevive_C(int restoredHealth);
+    HarpoonCombat_BroadcastShieldRevive_C(IKANA_REVIVE_HEARTS * 16);
 
     // Dark flash effect (purple/black)
     play->envCtx.screenFillColor[0] = 80;  // R (dark purple)

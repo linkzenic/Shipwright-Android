@@ -141,6 +141,49 @@ s32 PakLoader_GetSelectedEquipIndex(void);
 u8 PakLoader_ModelIsEquipmentOnly(s32 index);
 
 /**
+ * True iff a pak has at least one entry in its adultEquipDLs or childEquipDLs
+ * map — i.e. it can supply something to the Equipment Pack dropdown.
+ * Lets the menu list Combined paks (body + equipment) alongside dedicated
+ * zzequipment paks instead of hiding them.
+ */
+u8 PakLoader_ModelHasAnyEquipment(s32 index);
+
+// ============================================================================
+// Per-slot Equipment Mix
+// ============================================================================
+//
+// Lets the user override individual equipment pieces (Master Sword, Hylian
+// Shield, Hookshot, ...) from different paks while leaving everything else
+// inheriting from the global Equipment Pack selection or vanilla.
+//
+// Each "slot" groups the Z64O alias offsets that must travel together so
+// sheathed / unsheathed / combined renderings stay visually consistent — a
+// sword's sheath, hilt and blade always come from the same pak.
+
+/** Number of slots exposed (Kokiri/Master/Biggoron Sword, 3 shields, ranged,
+ *  tools, ocarinas, boots, gauntlets, child masks, etc.). */
+s32 PakLoader_GetSlotCount(void);
+
+/** Stable identifier for a slot ("Sword1", "Hookshot", "MaskKeaton", ...).
+ *  Used as the CVar suffix `gMods.PakLoader.SlotMix.<key>`. */
+const char* PakLoader_GetSlotKey(s32 slotIdx);
+
+/** Human-readable label for menu display ("Master Sword", ...). */
+const char* PakLoader_GetSlotLabel(s32 slotIdx);
+
+/** Returns 1 iff `pakIdx`'s adultEquipDLs or childEquipDLs contains at least
+ *  one alias from `slotIdx`'s group. Lets the menu only list paks that
+ *  actually have something for the slot. */
+u8 PakLoader_PakProvidesSlot(s32 pakIdx, s32 slotIdx);
+
+/** Bind a slot to a specific pak. -1 = inherit from the Equipment Pack
+ *  dropdown / body pak / vanilla cascade. */
+void PakLoader_SetSlotMix(s32 slotIdx, s32 pakIdx);
+
+/** Current binding for a slot (-1 if inheriting). */
+s32 PakLoader_GetSlotMix(s32 slotIdx);
+
+/**
  * Force a specific .pak body model by file path (lazy-loaded).
  * Used by custom items (e.g., Kafei Mask, Champion's Tunic).
  * Has priority over user-selected models from the menu.

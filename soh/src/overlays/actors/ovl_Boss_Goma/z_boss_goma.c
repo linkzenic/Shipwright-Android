@@ -7,6 +7,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -1827,31 +1828,55 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
         ColliderInfo* acHitInfo = this->collider.elements[0].info.acHitInfo;
         s32 damage;
 
+        // FD / Pika Gigantamax super-attack path: ignore eye-closed and
+        // SpawnGohmas invulnerability. First hit ALWAYS forces a stun (paralysis
+        // regardless of current animation). Subsequent hits while in FloorStunned
+        // apply direct damage, so mashing kills her fast. VFX = MM electric
+        // sparks radiating from her limbs (port of ACTOR_DRAW_DMGEFF_ELECTRIC_SPARKS).
+        if ((this->collider.elements[0].info.bumperFlags & BUMP_HIT) && BossSuperDamage_IsActive(play)) {
+            this->collider.elements[0].info.bumperFlags &= ~BUMP_HIT;
+            // Refresh the spark timer on every hit so mashing keeps sparks alive.
+            BossSuperDamage_StartElectricSparks(&this->actor, 90);
+
+            if (this->actionFunc == BossGoma_FloorStunned) {
+                // Already paralyzed → damage. Mirror the original FloorStunned
+                // damage path (sibuki burst, dam1 sfx, FloorDamaged transition).
+                s32 dmg = 4;
+                if ((s32)this->actor.colChkInfo.health > dmg) {
+                    this->actor.colChkInfo.health -= dmg;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM1);
+                    BossGoma_SetupFloorDamaged(this);
+                    EffectSsSibuki_SpawnBurst(play, &this->actor.focus.pos);
+                } else {
+                    this->actor.colChkInfo.health = 0;
+                    BossGoma_SetupDefeated(this, play);
+                    Enemy_StartFinishingBlow(play, &this->actor);
+                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                }
+            } else if (this->actionFunc == BossGoma_CeilingMoveToCenter ||
+                       this->actionFunc == BossGoma_CeilingIdle ||
+                       this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas ||
+                       this->actionFunc == BossGoma_CeilingSpawnGohmas) {
+                // On ceiling → knock her down. FallStruckDown → FloorLandStruckDown
+                // → FloorStunned, so the next hit during stun will damage.
+                BossGoma_SetupFallStruckDown(this);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM2);
+            } else {
+                // Anywhere else on the floor → force stun immediately.
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM2);
+                Audio_StopSfxById(NA_SE_EN_GOMA_CRY1);
+                BossGoma_SetupFloorStunned(this);
+                this->sfxFaintTimer = 100;
+                this->framesUntilNextAction = 90;
+                this->timer = 4;
+            }
+            this->invincibilityFrames = 10;
+            return;
+        }
+
         if (this->eyeClosedTimer == 0 && this->actionFunc != BossGoma_CeilingSpawnGohmas &&
             (this->collider.elements[0].info.bumperFlags & BUMP_HIT)) {
             this->collider.elements[0].info.bumperFlags &= ~BUMP_HIT;
-            {
-                // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-                extern u8 gPikaGigantamaxActive;
-                u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
-                if (isGigaHit) {
-                    s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                    if (gigaDmg < 4)
-                        gigaDmg = 4;
-                    this->actor.colChkInfo.health -= gigaDmg;
-                    if ((s8)this->actor.colChkInfo.health <= 0) {
-                        BossGoma_SetupDefeated(this, play);
-                        Enemy_StartFinishingBlow(play, &this->actor);
-                        GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                    } else {
-                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM1);
-                        BossGoma_SetupFloorDamaged(this);
-                        EffectSsSibuki_SpawnBurst(play, &this->actor.focus.pos);
-                    }
-                    this->invincibilityFrames = 10;
-                    return;
-                }
-            }
 
             if (this->actionFunc == BossGoma_CeilingMoveToCenter || this->actionFunc == BossGoma_CeilingIdle ||
                 this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas) {
@@ -2204,6 +2229,22 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
     SkelAnime_DrawSkeletonOpa(play, &this->skelanime, BossGoma_OverrideLimbDraw, BossGoma_PostLimbDraw, this);
 
     CLOSE_DISPS(play->state.gfxCtx);
+
+    // MM-style electric sparks (FD / Pika Gigantamax hit reaction). Anchored on
+    // Gohma's six pre-cached limb world positions: eye, body, tail tip + start,
+    // both claws. Each anchor renders 2 random spike billboards. No-op when the
+    // spark timer is 0 (boss not recently hit).
+    {
+        Vec3f limbs[6];
+        limbs[0] = this->actor.focus.pos;             // eye / head
+        limbs[1] = this->actor.world.pos;             // body center
+        limbs[1].y += 25.0f;                          // raise to torso height
+        limbs[2] = this->lastTailLimbWorldPos;        // tail tip
+        limbs[3] = this->firstTailLimbWorldPos;       // tail start
+        limbs[4] = this->rightHandBackLimbWorldPos;   // right claw
+        limbs[5] = this->leftHandBackLimbWorldPos;    // left claw
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 6, 1.0f);
+    }
 }
 
 void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i) {
