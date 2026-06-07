@@ -636,7 +636,7 @@ void Settings::CreateOptions() {
                 break;
         }
     });
-    OPT_U8(RSK_SHOPSANITY_COUNT, "Shops Item Count", {NumOpts(0, 7/*8*/)}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShopsanityCount"), mOptionDescriptions[RSK_SHOPSANITY_COUNT], WIDGET_CVAR_SLIDER_INT, 0, false, nullptr, IMFLAG_NONE);
+    OPT_U8(RSK_SHOPSANITY_COUNT, "Shops Item Count", {NumOpts(0, 8)}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShopsanityCount"), mOptionDescriptions[RSK_SHOPSANITY_COUNT], WIDGET_CVAR_SLIDER_INT, 0, false, nullptr, IMFLAG_NONE);
     OPT_U8(RSK_SHOPSANITY_PRICES, "Shops Prices", {"Vanilla", "Cheap Balanced", "Balanced", "Fixed", "Range", "Set By Wallet"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShopsanityPrices"), mOptionDescriptions[RSK_SHOPSANITY_PRICES], WIDGET_CVAR_COMBOBOX, RO_PRICE_VANILLA, false, nullptr, IMFLAG_NONE);
     OPT_CALLBACK(RSK_SHOPSANITY_PRICES, {
         HandleShopsanityPriceUI();
@@ -1336,6 +1336,10 @@ void Settings::CreateOptions() {
     OPT_U8(RSK_LOGIC_RULES, "Logic", {"Glitchless", "No Logic"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("LogicRules"), mOptionDescriptions[RSK_LOGIC_RULES], WIDGET_CVAR_COMBOBOX, RO_LOGIC_GLITCHLESS, false, nullptr, IMFLAG_LABEL_INLINE);
     OPT_CALLBACK(RSK_LOGIC_RULES, {
         HandleStartingAgeUI();
+        if (CVarGetInteger(CVAR_RANDOMIZER_SETTING("LogicRules"), RO_LOGIC_GLITCHLESS) != RO_LOGIC_NO_LOGIC &&
+            CVarGetInteger(CVAR_RANDOMIZER_SETTING("ShopsanityCount"), 0) > 7) {
+            CVarSetInteger(CVAR_RANDOMIZER_SETTING("ShopsanityCount"), 7);
+        }
     });
     OPT_BOOL(RSK_ALL_LOCATIONS_REACHABLE, "All Locations Reachable", {"Off", "On"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("AllLocationsReachable"), mOptionDescriptions[RSK_ALL_LOCATIONS_REACHABLE], WIDGET_CVAR_CHECKBOX, RO_GENERIC_ON, false, nullptr, IMFLAG_SAME_LINE);
     OPT_BOOL(RSK_SKULLS_SUNS_SONG, "Night Skulltula's Expect Sun's Song", CVAR_RANDOMIZER_SETTING("GsExpectSunsSong"), mOptionDescriptions[RSK_SKULLS_SUNS_SONG]);

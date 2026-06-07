@@ -369,11 +369,9 @@ void Settings::CreateOptionDescriptions() {
         "\n"
         "1-7 Items - Vanilla shop items will be shuffled among different shops, and "
         "each shop will contain 1-7 non-vanilla shop items.\n"
-        /*
         "\n"
-        "8 Items - All shops will contain 8 non-vanilla shop items.\n"
-        */
-        ;
+        "8 Items - All shops will contain 8 non-vanilla shop items. "
+        "Only available with No Logic, since logic otherwise requires at least one buyable refill per shop.\n";
     mOptionDescriptions[RSK_SHOPSANITY_PRICES] =
         "Vanilla - The same price as the item it replaced.\n"
         "Cheap Balanced - Prices will range between 0 to 95 rupees, favoring lower numbers.\n"

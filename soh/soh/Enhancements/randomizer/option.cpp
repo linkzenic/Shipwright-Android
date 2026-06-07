@@ -321,7 +321,13 @@ void Option::AddWidget(WidgetPath& path) {
                               UIWidgets::IntSliderOptions* sliderOpts =
                                   (UIWidgets::IntSliderOptions*)info.options.get();
                               sliderOpts->Format(this->GetOptionText(this->GetOptionIndex()).c_str());
-                              sliderOpts->Max(this->options.size() - 1);
+                              size_t maxIndex = this->options.size() - 1;
+                              if (this->GetKey() == RSK_SHOPSANITY_COUNT && maxIndex > 7 &&
+                                  CVarGetInteger(CVAR_RANDOMIZER_SETTING("LogicRules"), RO_LOGIC_GLITCHLESS) !=
+                                      RO_LOGIC_NO_LOGIC) {
+                                  maxIndex = 7;
+                              }
+                              sliderOpts->Max(maxIndex);
                           }
                       })
                       .CVar(cvarName.c_str())
