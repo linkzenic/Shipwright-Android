@@ -20,16 +20,17 @@ android {
         }
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 11
-        versionName "9.2.3-linkzenic.1"
+        versionCode 12
+        versionName "9.2.3-linkzenic.2"
     }
     signingConfigs {
         release {
-            if (project.hasProperty('storeFile')) {
-                storeFile file(storeFile)
-                storePassword project.storePassword
-                keyAlias project.keyAlias
-                keyPassword project.keyPassword
+            def releaseStoreFile = project.findProperty('storeFile')
+            if (releaseStoreFile) {
+                storeFile file(releaseStoreFile)
+                storePassword project.findProperty('storePassword')
+                keyAlias project.findProperty('keyAlias')
+                keyPassword project.findProperty('keyPassword')
             }
         }
     }
