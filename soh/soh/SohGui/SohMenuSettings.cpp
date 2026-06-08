@@ -89,6 +89,28 @@ static void SetAndroidTouchControlsDisabled(bool disabled) {
     env->DeleteLocalRef(activityClass);
     env->DeleteLocalRef(activity);
 }
+
+static void OpenAndroidDataFolderChooser() {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (env == nullptr || activity == nullptr) {
+        return;
+    }
+
+    jclass activityClass = env->GetObjectClass(activity);
+    if (activityClass == nullptr) {
+        env->DeleteLocalRef(activity);
+        return;
+    }
+
+    jmethodID method = env->GetMethodID(activityClass, "changeDataFolderFromNative", "()V");
+    if (method != nullptr) {
+        env->CallVoidMethod(activity, method);
+    }
+
+    env->DeleteLocalRef(activityClass);
+    env->DeleteLocalRef(activity);
+}
 #endif
 
 const char* GetGameVersionString(uint32_t index) {
@@ -233,6 +255,19 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Reset Button Combination:", WIDGET_CVAR_BTN_SELECTOR)
         .CVar("gSettings.ResetBtn")
         .Options(BtnSelectorOptions().DefaultValue(BTN_CUSTOM_MODIFIER2));
+#if defined(__ANDROID__)
+    AddWidget(path, "Current Data Folder", WIDGET_CUSTOM).CustomFunction([](WidgetInfo& info) {
+        std::string dataFolderPath = Ship::Context::GetAppDirectoryPath();
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.7f), "Current Data Folder");
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x);
+        ImGui::TextUnformatted(dataFolderPath.c_str());
+        ImGui::PopTextWrapPos();
+    });
+    AddWidget(path, "Change Data Folder", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) { OpenAndroidDataFolderChooser(); })
+        .Options(ButtonOptions().Tooltip("Choose where Android stores saves, mods, settings, and support files."));
+#else
     AddWidget(path, "Open App Files Folder", WIDGET_BUTTON)
         .RaceDisable(false)
         .Callback([](WidgetInfo& info) {
@@ -240,6 +275,7 @@ void SohMenu::AddMenuSettings() {
             SDL_OpenURL(std::string("file:///" + std::filesystem::absolute(filesPath).string()).c_str());
         })
         .Options(ButtonOptions().Tooltip("Opens the folder that contains the save and mods folders, etc."));
+#endif
 
     AddWidget(path, "Boot", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Boot Sequence", WIDGET_CVAR_COMBOBOX)

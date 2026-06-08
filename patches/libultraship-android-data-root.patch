@@ -1,0 +1,67 @@
+diff --git a/include/ship/Context.h b/include/ship/Context.h
+index 15c69b03..dd0526ff 100644
+--- a/include/ship/Context.h
++++ b/include/ship/Context.h
+@@ -44,6 +44,9 @@ class Context {
+     static std::string GetPathRelativeToAppDirectory(const std::string path, std::string appName = "");
+     static std::string GetPathRelativeToAppBundle(const std::string path);
+     static std::string LocateFileAcrossAppDirs(const std::string path, std::string appName = "");
++#if defined(__ANDROID__)
++    static void SetAndroidDataRootPath(const std::string& path);
++#endif
+ 
+     Context(std::string name, std::string shortName, std::string configFilePath);
+     ~Context();
+diff --git a/src/ship/Context.cpp b/src/ship/Context.cpp
+index db139ac5..3f8662fb 100644
+--- a/src/ship/Context.cpp
++++ b/src/ship/Context.cpp
+@@ -25,6 +25,14 @@
+ 
+ namespace Ship {
+ std::weak_ptr<Context> Context::mContext;
++
++#ifdef __ANDROID__
++static std::string sAndroidDataRootPath = "/storage/emulated/0/SOH";
++
++static std::string GetAndroidDataRootPath() {
++    return sAndroidDataRootPath;
++}
++#endif
+ 
+ std::shared_ptr<Context> Context::GetInstance() {
+     return mContext.lock();
+@@ -391,12 +399,17 @@ std::string Context::GetShortName() {
+     return mShortName;
+ }
+ 
++#if defined(__ANDROID__)
++void Context::SetAndroidDataRootPath(const std::string& path) {
++    if (!path.empty()) {
++        sAndroidDataRootPath = path;
++    }
++}
++#endif
++
+ std::string Context::GetAppBundlePath() {
+ #if defined(__ANDROID__)
+-    const char* externaldir = "/storage/emulated/0/SOH";
+-    if (externaldir != NULL) {
+-        return externaldir;
+-    }
++    return GetAndroidDataRootPath();
+ #endif
+ 
+ #ifdef __IOS__
+@@ -458,11 +471,7 @@ std::string Context::GetAppBundlePath() {
+ 
+ std::string Context::GetAppDirectoryPath(std::string appName) {
+ #if defined(__ANDROID__)
+-    const char* externaldir = "/storage/emulated/0/SOH";
+-    if (externaldir != NULL) {
+-        return externaldir;
+-    }
++    return GetAndroidDataRootPath();
+ #endif
+ 
+ #ifdef __IOS__

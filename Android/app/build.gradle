@@ -113,5 +113,26 @@ task wrapper(type: Wrapper) {
     gradleVersion = '8.10.2'
 }
 
+tasks.register("applyLibultrashipAndroidPatch") {
+    doLast {
+        def libultrashipDir = file("${rootProject.projectDir}/../libultraship")
+        def contextFile = file("${libultrashipDir}/src/ship/Context.cpp")
+        if (contextFile.text.contains("sAndroidDataRootPath")) {
+            return
+        }
+
+        exec {
+            workingDir libultrashipDir
+            commandLine "git", "apply", "../patches/libultraship-android-data-root.patch"
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name.startsWith("externalNativeBuild")) {
+        task.dependsOn("applyLibultrashipAndroidPatch")
+    }
+}
+
 task prepareKotlinBuildScriptModel {
 }

@@ -81,6 +81,14 @@
 #include <libultraship/controller/controldeck/ControlDeck.h>
 #include <fast/resource/ResourceType.h>
 
+#ifdef __ANDROID__
+extern "C" void Android_SetDataRootPath(const char* path) {
+    if (path != nullptr) {
+        Ship::Context::SetAndroidDataRootPath(path);
+    }
+}
+#endif
+
 // Resource Types/Factories
 #include "soh/resource/type/Array.h"
 #include <ship/resource/type/Blob.h>

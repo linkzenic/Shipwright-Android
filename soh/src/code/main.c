@@ -39,12 +39,74 @@ OSMesg sSiIntMsgBuf[1];
 #ifdef __ANDROID__
 #include <jni.h>
 #include <SDL.h>
+extern void Android_SetDataRootPath(const char* path);
+
+static void update_native_data_root_path(JNIEnv* env) {
+    jclass mainActivityClass = (*env)->FindClass(env, "com/dishii/soh/MainActivity");
+    if (mainActivityClass == NULL) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        return;
+    }
+
+    jmethodID getPathMethod =
+        (*env)->GetStaticMethodID(env, mainActivityClass, "getDataRootPathFromNative", "()Ljava/lang/String;");
+    if (getPathMethod == NULL) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        (*env)->DeleteLocalRef(env, mainActivityClass);
+        return;
+    }
+
+    jstring javaPath = (jstring)(*env)->CallStaticObjectMethod(env, mainActivityClass, getPathMethod);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, mainActivityClass);
+        return;
+    }
+
+    if (javaPath != NULL) {
+        const char* path = (*env)->GetStringUTFChars(env, javaPath, NULL);
+        if (path != NULL) {
+            Android_SetDataRootPath(path);
+            (*env)->ReleaseStringUTFChars(env, javaPath, path);
+        }
+        (*env)->DeleteLocalRef(env, javaPath);
+    }
+
+    (*env)->DeleteLocalRef(env, mainActivityClass);
+}
+
 void wait_for_java_setup() {
     JNIEnv* env = SDL_AndroidGetJNIEnv();
-    jobject activity = SDL_AndroidGetActivity();
     jclass mainActivityClass = (*env)->FindClass(env, "com/dishii/soh/MainActivity");
+    if (mainActivityClass == NULL) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        return;
+    }
+
     jmethodID waitMethod = (*env)->GetStaticMethodID(env, mainActivityClass, "waitForSetupFromNative", "()V");
+    if (waitMethod == NULL) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        (*env)->DeleteLocalRef(env, mainActivityClass);
+        return;
+    }
+
     (*env)->CallStaticVoidMethod(env, mainActivityClass, waitMethod);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, mainActivityClass);
+        return;
+    }
+
+    (*env)->DeleteLocalRef(env, mainActivityClass);
+    update_native_data_root_path(env);
 }
 #endif
 
