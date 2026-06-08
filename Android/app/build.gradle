@@ -9,7 +9,7 @@ else {
 
 android {
     ndkVersion "26.0.10792818"
-    namespace 'com.linkzenic.soh'
+    namespace 'com.dishii.soh'
     compileSdkVersion 31
     buildFeatures {
         buildConfig = true

@@ -1,4 +1,4 @@
-package com.linkzenic.soh;
+package com.dishii.soh;
 
 import android.content.Context;
 import android.content.res.AssetManager;
