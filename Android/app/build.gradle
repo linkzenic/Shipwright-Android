@@ -129,7 +129,9 @@ tasks.register("applyLibultrashipAndroidPatch") {
 }
 
 tasks.configureEach { task ->
-    if (task.name.startsWith("externalNativeBuild")) {
+    if (task.name.startsWith("configureCMake") ||
+            task.name.startsWith("buildCMake") ||
+            task.name.startsWith("externalNativeBuild")) {
         task.dependsOn("applyLibultrashipAndroidPatch")
     }
 }
