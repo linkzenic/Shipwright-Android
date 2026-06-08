@@ -9,19 +9,19 @@ else {
 
 android {
     ndkVersion "26.0.10792818"
-    namespace 'com.dishii.soh'
+    namespace 'com.linkzenic.soh'
     compileSdkVersion 31
     buildFeatures {
         buildConfig = true
     }
     defaultConfig {
         if (buildAsApplication) {
-            applicationId "com.dishii.soh"
+            applicationId "com.linkzenic.soh"
         }
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 10
-        versionName "9.2.3"
+        versionCode 11
+        versionName "9.2.3-linkzenic.1"
     }
     signingConfigs {
         release {

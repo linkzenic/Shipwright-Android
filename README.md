@@ -21,7 +21,7 @@ The Ship does not include any copyrighted assets. You are required to provide a 
 You can verify you have dumped a supported copy of the game by using the compatibility checker at https://ship.equipment/. If you'd prefer to manually validate your ROM dump, you can cross-reference its `sha1` hash with the hashes [here](docs/supportedHashes.json).
 
 ### 2. Install the APK
-Download and install the APK from the [Releases](https://github.com/please-be-nice/Shipwright-android/releases) page.
+Download and install the APK from the [Releases](https://github.com/linkzenic/Shipwright-Android/releases) page.
 
 ### 3. Set up the game
 
@@ -93,8 +93,8 @@ Building requires [Docker](https://docs.docker.com/get-docker/) (or any OCI-comp
 1. Clone the repository and submodules:
 
     ```bash
-    git clone https://github.com/please-be-nice/Shipwright-android.git
-    cd Shipwright-android
+    git clone https://github.com/linkzenic/Shipwright-Android.git
+    cd Shipwright-Android
     git submodule update --init --recursive
     ```
 

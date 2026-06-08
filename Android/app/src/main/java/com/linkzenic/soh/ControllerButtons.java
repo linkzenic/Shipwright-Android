@@ -1,4 +1,4 @@
-package com.dishii.soh;
+package com.linkzenic.soh;
 
 public class ControllerButtons {
     // Xbox Buttons

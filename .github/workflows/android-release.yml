@@ -90,7 +90,7 @@ jobs:
 
           printf '%s\n\n' "${ANNOTATION_BODY}" > /tmp/release-notes.md
           printf 'SHA256: %s\n' "${{ steps.sha256.outputs.hash }}" >> /tmp/release-notes.md
-          printf 'Verify: `gh attestation verify soh-%s.apk --owner please-be-nice`\n' "${TAG}" >> /tmp/release-notes.md
+          printf 'Verify: `gh attestation verify soh-%s.apk --owner linkzenic`\n' "${TAG}" >> /tmp/release-notes.md
           printf 'Build: %s/%s/actions/runs/%s\n' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" >> /tmp/release-notes.md
 
           gh release create "${TAG}" \

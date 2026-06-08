@@ -1,5 +1,5 @@
 
-package com.dishii.soh;
+package com.linkzenic.soh;
 import org.libsdl.app.SDLActivity;
 
 import android.content.Context;
@@ -63,7 +63,7 @@ public class MainActivity extends SDLActivity{
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        preferences = getSharedPreferences("com.dishii.soh.prefs", Context.MODE_PRIVATE);
+        preferences = getSharedPreferences("com.linkzenic.soh.prefs", Context.MODE_PRIVATE);
 
         Log.i("SoH", "hasStoragePermission=" + hasStoragePermission());
 
