@@ -564,18 +564,9 @@ public class MainActivity extends SDLActivity{
         boolean isMissingSohOtr = !sohOtrFile.exists() && !sohOtrFileLegacy.exists() && !ootO2rFile.exists() && !ootMqO2rFile.exists();
 
         if (!targetRootFolder.exists() || isMissingAssets || isMissingSohOtr) {
-            new AlertDialog.Builder(this)
-                    .setTitle("Setup Required")
-                    .setMessage("Some required files are missing. The app will create them now. This can take a few minutes on SD cards.")
-                    .setCancelable(false)
-                    .setPositiveButton("OK", (dialog, which) -> {
-                        Executors.newSingleThreadExecutor().execute(() -> {
-                            showSetupProgressDialog("Preparing Data Folder",
-                                    "Copying required support files. Please keep Ship of Harkinian open; SD cards may take a few minutes.");
-                            setupFilesInBackground(targetRootFolder);
-                        });
-                    })
-                    .show();
+            showSetupProgressDialog("Preparing Data Folder",
+                    "Copying required support files. Please keep Ship of Harkinian open; SD cards may take a few minutes.");
+            Executors.newSingleThreadExecutor().execute(() -> setupFilesInBackground(targetRootFolder));
         } else {
             // No setup needed; but always ensure soh.o2r is present from APK assets
             if (!sohOtrFile.exists()) {
