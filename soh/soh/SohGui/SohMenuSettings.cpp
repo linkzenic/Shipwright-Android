@@ -332,9 +332,15 @@ void SohMenu::AddMenuSettings() {
                      .Format("%.2fx")
                      .Tooltip("Changes the scaling of the menu elements.")
                      .ShowButtons(true)
-                     .ComponentAlignment(ComponentAlignments::Right)
-                     .LabelPosition(LabelPositions::Far))
-        .Callback([](WidgetInfo& info) { OTRGlobals::Instance->ScaleImGui(); });
+                     .ComponentAlignment(ComponentAlignments::Left)
+                     .LabelPosition(LabelPositions::Above));
+    AddWidget(path, "Reset Menu Scale to 100%", WIDGET_BUTTON)
+        .RaceDisable(false)
+        .Options(ButtonOptions().Tooltip("Resets the menu scale to 100%."))
+        .Callback([](WidgetInfo& info) {
+            CVarSetFloat(CVAR_SETTING("ImGuiScale.Value"), defaultImGuiScale);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        });
 
     // General - About
     path.column = SECTION_COLUMN_2;
