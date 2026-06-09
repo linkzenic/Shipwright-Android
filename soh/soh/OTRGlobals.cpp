@@ -1051,6 +1051,10 @@ void OTRGlobals::ScaleImGui() {
         return;
     }
 
+    if (ImGui::IsAnyMouseDown()) {
+        return;
+    }
+
     ImVec4 currentColors[ImGuiCol_COUNT];
     std::copy(std::begin(ImGui::GetStyle().Colors), std::end(ImGui::GetStyle().Colors), std::begin(currentColors));
 

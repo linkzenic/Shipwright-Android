@@ -685,25 +685,25 @@ void Menu::DrawElement() {
                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
 
     std::unordered_map<std::string, SidebarEntry>* sidebar;
+    ImVec2 buttonSize = ImGui::CalcTextSize(ICON_FA_TIMES_CIRCLE) + style.FramePadding * 2;
+    float headerAvailableWidth = menuSize.x - buttonSize.x * 3 - style.ItemSpacing.x * 3;
     float searchWidth = std::clamp(menuSize.x * 0.14f, 160.0f, 240.0f);
+    if (headerSearch && headerWidth + searchWidth > headerAvailableWidth) {
+        float remainingHeaderWidth = headerAvailableWidth - headerWidth - style.ItemSpacing.x;
+        if (remainingHeaderWidth >= 120.0f) {
+            searchWidth = remainingHeaderWidth;
+        } else {
+            headerSearch = false;
+        }
+    }
     if (headerSearch) {
         headerWidth += searchWidth;
     }
     float headerHeight = headerSizes.at(0).y + style.FramePadding.y * 2;
-    ImVec2 buttonSize = ImGui::CalcTextSize(ICON_FA_TIMES_CIRCLE) + style.FramePadding * 2;
-    bool scrollbar = false;
-    if (headerWidth > menuSize.x - buttonSize.x * 3 - style.ItemSpacing.x * 3) {
-        headerHeight += style.ScrollbarSize;
-        scrollbar = true;
-    }
-    ImVec2 headerSelSize = { menuSize.x - buttonSize.x * 3 - style.ItemSpacing.x * 3, headerHeight };
-    if (scrollbar) {
-        headerSelSize.y += style.ScrollbarSize;
-    }
-    ImGui::SetNextWindowSizeConstraints({ 0, headerHeight }, { headerSelSize.x, headerHeight });
+    ImVec2 headerSelSize = { headerAvailableWidth, headerHeight };
     bool autoFocus = CVarGetInteger(CVAR_SETTING("Menu.SearchAutofocus"), 0);
     ImGui::BeginChild("Header Selection", headerSelSize, ImGuiChildFlags_None,
-                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_HorizontalScrollbar);
+                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
     uint8_t curIndex = 0;
     for (auto& label : menuOrder) {
         if (curIndex != 0) {
