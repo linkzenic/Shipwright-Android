@@ -398,6 +398,10 @@ void Settings::CreateOptionDescriptions() {
         "After choosing a price, set it to the affordable amount based on the wallet required.\n\n"
         "Affordable prices per tier: starter = 1, adult = 100, giant = 201, tycoon = 501\n\n"
         "Use this to enable wallet tier locking, but make shop items not as expensive as they could be.";
+    mOptionDescriptions[RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL] =
+        "Non-randomized shields and tunics sold in shops cannot be purchased until you have first found a shield "
+        "elsewhere. "
+        "Regions containing a shield or tunic will not be hinted foolish.";
     mOptionDescriptions[RSK_FISHSANITY] =
         "Off - Fish will not be shuffled. No changes will be made to fishing behavior.\n\n"
         "Shuffle only Hyrule Loach - Allows you to earn an item by catching the Hyrule Loach at the fishing pond and "

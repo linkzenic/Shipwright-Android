@@ -402,7 +402,8 @@ bool AddCheckToLogic(LocationAccess& locPair, GetAccessibleLocationsStruct& gals
            (quest == RCQUEST_VANILLA && ctx->GetDungeons()->GetDungeonFromScene(parentRegion->scene)->IsVanilla()) ||
            (quest == RCQUEST_MQ && ctx->GetDungeons()->GetDungeonFromScene(parentRegion->scene)->IsMQ()));
 
-    if (!location->IsAddedToPool() && locPair.ConditionsMet(parentRegion, logic->CalculatingAvailableChecks)) {
+    if (!location->IsAddedToPool() && locPair.ConditionsMet(parentRegion, logic->CalculatingAvailableChecks) &&
+        !logic->ShopItemNotForSale(loc)) {
         location->AddToPool();
 
         if (locItem == RG_NONE || logic->CalculatingAvailableChecks) {
@@ -789,12 +790,17 @@ static void CalculateBarren() {
     NotBarren[RA_NONE] = true;
     NotBarren[RA_LINKS_POCKET] = true;
 
+    // When shop shields/tunics are gated behind finding a shield, those items become relevant, so
+    // regions holding a shield or tunic should not be hinted foolish.
+    const bool shieldTunicGate = ctx->GetOption(RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL).Is(RO_GENERIC_ON);
+
     for (RandomizerCheck loc : ctx->allLocations) {
         Rando::ItemLocation* itemLoc = ctx->GetItemLocation(loc);
         std::set<RandomizerArea> locAreas = itemLoc->GetAreas();
         for (auto locArea : locAreas) {
             // If a location has a major item or is a way of the hero location, it is not barren
-            if (NotBarren[locArea] == false && (itemLoc->GetPlacedItem().IsMajorItem() || itemLoc->IsWothCandidate())) {
+            if (NotBarren[locArea] == false && (itemLoc->GetPlacedItem().IsMajorItem() || itemLoc->IsWothCandidate() ||
+                                                (shieldTunicGate && itemLoc->GetPlacedItem().IsShieldOrTunic()))) {
                 NotBarren[locArea] = true;
             }
         }

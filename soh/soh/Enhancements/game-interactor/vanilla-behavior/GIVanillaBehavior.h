@@ -2718,6 +2718,15 @@ typedef enum {
 
     // #### `result`
     // ```c
+    // false
+    // ```
+    // #### `args`
+    // - *EnGirlACanBuyResult
+    // - `RAND_INF`
+    VB_CAN_BUY_SHOP_SHIELD_OR_TUNIC,
+
+    // #### `result`
+    // ```c
     // true
     // ```
     // #### `args`

@@ -650,6 +650,7 @@ void Settings::CreateOptions() {
     OPT_U8(RSK_SHOPSANITY_PRICES_GIANT_WALLET_WEIGHT, "Shops Giant Wallet Weight", {NumOpts(0, 100)}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShopsanityGiantWalletWeight"), mOptionDescriptions[RSK_SHOPSANITY_PRICES_GIANT_WALLET_WEIGHT], WIDGET_CVAR_SLIDER_INT, 10, true, nullptr, IMFLAG_NONE);
     OPT_U8(RSK_SHOPSANITY_PRICES_TYCOON_WALLET_WEIGHT, "Shops Tycoon Wallet Weight", {NumOpts(0, 100)}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShopsanityTycoonWalletWeight"), mOptionDescriptions[RSK_SHOPSANITY_PRICES_TYCOON_WALLET_WEIGHT], WIDGET_CVAR_SLIDER_INT, 10, true, nullptr, IMFLAG_NONE);
     OPT_BOOL(RSK_SHOPSANITY_PRICES_AFFORDABLE, "Shops Affordable Prices", CVAR_RANDOMIZER_SETTING("ShopsanityPricesAffordable"), mOptionDescriptions[RSK_SHOPSANITY_PRICES_AFFORDABLE]);
+    OPT_BOOL(RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL, "Gate Shop Shields & Tunics", CVAR_RANDOMIZER_SETTING("ShopShieldsTunicsGate"), mOptionDescriptions[RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL]);
     OPT_U8(RSK_SHUFFLE_TOKENS, "Token Shuffle", {"Off", "Dungeons", "Overworld", "All Tokens"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShuffleTokens"), mOptionDescriptions[RSK_SHUFFLE_TOKENS], WIDGET_CVAR_COMBOBOX, RO_TOKENSANITY_OFF);
     OPT_U8(RSK_SHUFFLE_SCRUBS, "Scrubs Shuffle", {"Off", "One-Time Only", "All"}, OptionCategory::Setting, CVAR_RANDOMIZER_SETTING("ShuffleScrubs"), mOptionDescriptions[RSK_SHUFFLE_SCRUBS], WIDGET_CVAR_COMBOBOX, RO_SCRUBS_OFF);
     OPT_CALLBACK(RSK_SHUFFLE_SCRUBS, {
@@ -1910,6 +1911,7 @@ void Settings::CreateOptions() {
                                   &mOptions[RSK_SHOPSANITY_PRICES_GIANT_WALLET_WEIGHT],
                                   &mOptions[RSK_SHOPSANITY_PRICES_TYCOON_WALLET_WEIGHT],
                                   &mOptions[RSK_SHOPSANITY_PRICES_AFFORDABLE],
+                                  &mOptions[RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL],
                                   &mOptions[RSK_SHUFFLE_SCRUBS],
                                   &mOptions[RSK_SCRUBS_PRICES],
                                   &mOptions[RSK_SCRUBS_PRICES_FIXED_PRICE],
@@ -2142,6 +2144,7 @@ void Settings::CreateOptions() {
                                             &mOptions[RSK_SHOPSANITY_PRICES_GIANT_WALLET_WEIGHT],
                                             &mOptions[RSK_SHOPSANITY_PRICES_TYCOON_WALLET_WEIGHT],
                                             &mOptions[RSK_SHOPSANITY_PRICES_AFFORDABLE],
+                                            &mOptions[RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL],
                                             &mOptions[RSK_FISHSANITY],
                                             &mOptions[RSK_FISHSANITY_POND_COUNT],
                                             &mOptions[RSK_FISHSANITY_AGE_SPLIT],

@@ -59,6 +59,7 @@ extern "C" {
 #include "src/overlays/actors/ovl_Fishing/z_fishing.h"
 #include "src/overlays/actors/ovl_Obj_Bean/z_obj_bean.h"
 #include "src/overlays/actors/ovl_En_Heishi2/z_en_heishi2.h"
+#include "src/overlays/actors/ovl_En_GirlA/z_en_girla.h"
 #include "draw.h"
 
 static ObjectExtension::Register<DnsItemEntry> RegisterDnsItemEntryOverride;
@@ -443,6 +444,23 @@ void RandomizerOnItemReceiveHandler(GetItemEntry receivedItemEntry) {
         SaveManager::Instance->SaveSection(gSaveContext.fileNum, SECTION_ID_TRACKER_DATA, true);
         randomizerQueuedCheck = RC_UNKNOWN_CHECK;
         randomizerQueuedItemEntry = GET_ITEM_NONE;
+    }
+
+    if (receivedItemEntry.modIndex == MOD_NONE) {
+        switch (receivedItemEntry.itemId) {
+            case ITEM_SHIELD_DEKU:
+                Flags_SetRandomizerInf(RAND_INF_HAS_FOUND_DEKU_SHIELD);
+                break;
+            case ITEM_SHIELD_HYLIAN:
+                Flags_SetRandomizerInf(RAND_INF_HAS_FOUND_HYLIAN_SHIELD);
+                break;
+            case ITEM_TUNIC_GORON:
+                Flags_SetRandomizerInf(RAND_INF_HAS_FOUND_GORON_TUNIC);
+                break;
+            case ITEM_TUNIC_ZORA:
+                Flags_SetRandomizerInf(RAND_INF_HAS_FOUND_ZORA_TUNIC);
+                break;
+        }
     }
 
     if (receivedItemEntry.modIndex == MOD_RANDOMIZER && receivedItemEntry.getItemId == RG_MAGIC_BEAN_PACK) {
@@ -959,6 +977,18 @@ void RandomizerOnVanillaBehaviorHandler(GIVanillaBehavior id, bool* should, va_l
         case VB_CRAWL:
             *should = *should && Flags_GetRandomizerInf(RAND_INF_CAN_CRAWL);
             break;
+        case VB_CAN_BUY_SHOP_SHIELD_OR_TUNIC: {
+            // Gate non-randomized shop shields/tunics behind finding a non-shop copy.
+            if (RAND_GET_OPTION(RSK_SHOP_SHIELDS_AND_TUNICS_ONLY_REFILL).Is(RO_GENERIC_ON)) {
+                EnGirlACanBuyResult* canBuy = va_arg(args, EnGirlACanBuyResult*);
+                RandomizerInf requiredInf = (RandomizerInf)va_arg(args, int);
+                if (!Flags_GetRandomizerInf(requiredInf)) {
+                    *canBuy = CANBUY_RESULT_CANT_GET_NOW;
+                    *should = true;
+                }
+            }
+            break;
+        }
         case VB_ALLOW_ENTRANCE_CS_FOR_EITHER_AGE: {
             s32 entranceIndex = va_arg(args, s32);
 
