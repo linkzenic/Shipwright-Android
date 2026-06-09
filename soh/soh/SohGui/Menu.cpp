@@ -7,6 +7,7 @@
 #include <variant>
 #include <spdlog/fmt/fmt.h>
 #include <tuple>
+#include <algorithm>
 
 extern "C" {
 #include "z64.h"
@@ -656,13 +657,9 @@ void Menu::DrawElement() {
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 8.0f));
     std::string headerIndex = CVarGetString(headerCvar, "Settings");
     ImVec2 pos = window->DC.CursorPos;
-    float centerX = pos.x + windowWidth / 2 - (style.ItemSpacing.x * (menuEntries.size() + 1));
     std::vector<ImVec2> headerSizes;
     float headerWidth = 0.0f;
     bool headerSearch = !CVarGetInteger(CVAR_SETTING("Menu.SidebarSearch"), 0);
-    if (headerSearch) {
-        headerWidth += 200.0f;
-    }
     for (auto& label : menuOrder) {
         ImVec2 size = ImGui::CalcTextSize(label.c_str());
         headerSizes.push_back(size);
@@ -687,6 +684,10 @@ void Menu::DrawElement() {
                       ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
 
     std::unordered_map<std::string, SidebarEntry>* sidebar;
+    float searchWidth = std::clamp(menuSize.x * 0.14f, 160.0f, 240.0f);
+    if (headerSearch) {
+        headerWidth += searchWidth;
+    }
     float headerHeight = headerSizes.at(0).y + style.FramePadding.y * 2;
     ImVec2 buttonSize = ImGui::CalcTextSize(ICON_FA_TIMES_CIRCLE) + style.FramePadding * 2;
     bool scrollbar = false;
@@ -694,11 +695,11 @@ void Menu::DrawElement() {
         headerHeight += style.ScrollbarSize;
         scrollbar = true;
     }
-    ImGui::SetNextWindowSizeConstraints({ 0, headerHeight }, { headerWidth, headerHeight });
     ImVec2 headerSelSize = { menuSize.x - buttonSize.x * 3 - style.ItemSpacing.x * 3, headerHeight };
     if (scrollbar) {
         headerSelSize.y += style.ScrollbarSize;
     }
+    ImGui::SetNextWindowSizeConstraints({ 0, headerHeight }, { headerSelSize.x, headerHeight });
     bool autoFocus = CVarGetInteger(CVAR_SETTING("Menu.SearchAutofocus"), 0);
     ImGui::BeginChild("Header Selection", headerSelSize,
                       ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize,
@@ -744,11 +745,11 @@ void Menu::DrawElement() {
         color.w = 0.6f;
         ImGui::PushStyleColor(ImGuiCol_FrameBg, color);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
-        menuSearch.Draw("##search", 200.0f);
+        menuSearch.Draw("##search", searchWidth);
         menuSearchText = menuSearch.InputBuf;
         menuSearchText.erase(std::remove(menuSearchText.begin(), menuSearchText.end(), ' '), menuSearchText.end());
         if (menuSearchText.length() < 1) {
-            ImGui::SameLine(headerWidth - 200.0f + style.ItemSpacing.x);
+            ImGui::SameLine(std::min(headerWidth, headerSelSize.x) - searchWidth + style.ItemSpacing.x);
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.4f), "Search...");
         }
         ImGui::PopStyleVar();
@@ -810,7 +811,6 @@ void Menu::DrawElement() {
     }
 
     pos.y += headerHeight + style.ItemSpacing.y;
-    pos.x = centerX - menuSize.x / 2 + (style.ItemSpacing.x * (menuEntries.size() + 1));
     window->DrawList->AddRectFilled(pos, pos + ImVec2{ menuSize.x, 4 }, ImGui::GetColorU32({ 255, 255, 255, 255 }),
                                     true, style.WindowRounding);
     pos.y += style.ItemSpacing.y;
@@ -818,11 +818,7 @@ void Menu::DrawElement() {
     float columnHeight = sectionHeight - style.ItemSpacing.y * 4;
     ImGui::SetNextWindowPos(pos + style.ItemSpacing * 2);
 
-    // Increase sidebar width on larger screens to accomodate people scaling their menus.
-    float sidebarWidth = 200 - style.ItemSpacing.x;
-    if (menuSize.x > 1600) {
-        sidebarWidth = menuSize.x * 0.15f;
-    }
+    float sidebarWidth = std::clamp(menuSize.x * 0.16f, 185.0f, 300.0f);
 
     const char* sidebarCvar = menuEntries.at(headerIndex).sidebarCvar;
 
@@ -832,9 +828,8 @@ void Menu::DrawElement() {
     }
     float sectionCenterX = pos.x + (sidebarWidth / 2);
     float topY = pos.y;
-    ImGui::SetNextWindowSizeConstraints({ sidebarWidth, 0 }, { sidebarWidth, columnHeight });
-    ImGui::BeginChild((menuEntries.at(headerIndex).label + " Section").c_str(), { sidebarWidth, columnHeight * 3 },
-                      ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_AlwaysAutoResize, ImGuiWindowFlags_NoTitleBar);
+    ImGui::BeginChild((menuEntries.at(headerIndex).label + " Section").c_str(), { sidebarWidth, columnHeight },
+                      ImGuiChildFlags_None, ImGuiWindowFlags_NoTitleBar);
     for (auto& sidebarLabel : menuEntries.at(headerIndex).sidebarOrder) {
         std::string nextIndex = "";
         UIWidgets::PushStyleButton(menuThemeIndex);
@@ -869,15 +864,14 @@ void Menu::DrawElement() {
     std::string sectionMenuId = sectionIndex + " Settings";
     size_t columns = sidebar->at(sectionIndex).columnCount;
     size_t columnFuncs = sidebar->at(sectionIndex).columnWidgets.size();
-    if (windowWidth < 800) {
+    if (sectionWidth < 760.0f) {
         columns = 1;
     }
     float columnWidth = (sectionWidth - style.ItemSpacing.x * columns) / columns;
     bool useColumns = columns > 1;
     if (!useColumns || (headerSearch && menuSearchText.length() > 0)) {
         ImGui::SameLine();
-        ImGui::SetNextWindowSizeConstraints({ sectionWidth, 0 }, { sectionWidth, columnHeight });
-        ImGui::BeginChild(sectionMenuId.c_str(), { sectionWidth, windowHeight * 4 }, ImGuiChildFlags_AutoResizeY,
+        ImGui::BeginChild(sectionMenuId.c_str(), { sectionWidth, columnHeight }, ImGuiChildFlags_None,
                           ImGuiWindowFlags_NoTitleBar);
     }
     if (headerSearch && menuSearchText.length() > 0) {
@@ -913,8 +907,7 @@ void Menu::DrawElement() {
         for (size_t i = 0; i < columnFuncs; i++) {
             std::string sectionId = fmt::format("{} Column {}", sectionMenuId, i);
             if (useColumns) {
-                ImGui::SetNextWindowSizeConstraints({ columnWidth, 0 }, { columnWidth, columnHeight });
-                ImGui::BeginChild(sectionId.c_str(), { columnWidth, windowHeight * 4 }, ImGuiChildFlags_AutoResizeY,
+                ImGui::BeginChild(sectionId.c_str(), { columnWidth, columnHeight }, ImGuiChildFlags_None,
                                   ImGuiWindowFlags_NoTitleBar);
             }
             // for (auto& entryName : sidebar->at(sectionIndex).sidebarOrder) {
