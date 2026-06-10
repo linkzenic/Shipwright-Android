@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <variant>
 #include <memory>
 
 #include "soh/Enhancements/custom-message/text.h"
