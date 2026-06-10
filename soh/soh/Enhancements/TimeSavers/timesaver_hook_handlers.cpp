@@ -874,6 +874,15 @@ void TimeSaverOnVanillaBehaviorHandler(GIVanillaBehavior id, bool* should, va_li
             }
             break;
         }
+        case VB_SHOULD_OSSAN_CANCEL: {
+            // In shop B means cancel, prevent advancing as if mashing A
+            if (CVarGetInteger(CVAR_ENHANCEMENT("SkipText"), 0)) {
+                Input* input = va_arg(args, Input*);
+                if (!*should)
+                    *should = CHECK_BTN_ALL(input->cur.button, BTN_B);
+            }
+            break;
+        }
         case VB_PLAY_SLOW_CHEST_CS: {
             if (CVarGetInteger(CVAR_ENHANCEMENT("FastChests"), 0)) {
                 *should = false;

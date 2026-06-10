@@ -2201,6 +2201,14 @@ typedef enum {
 
     // #### `result`
     // ```c
+    // CHECK_BTN_ALL(input->press.button, BTN_B)
+    // ```
+    // #### `args`
+    // - `*Input`
+    VB_SHOULD_OSSAN_CANCEL,
+
+    // #### `result`
+    // ```c
     // true
     // ```
     // #### `args`
