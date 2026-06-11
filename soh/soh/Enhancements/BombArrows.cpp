@@ -23,6 +23,16 @@ struct BombArrowData {
 };
 
 static ObjectExtension::Register<BombArrowData> BombArrowDataRegister;
+static u8 sBombArrowButtons = 0;
+static s16 sBombArrowShotWindow = 0;
+
+struct PendingBombArrowEquip {
+    bool active = false;
+    s32 buttonIndex = -1;
+    u8 item = ITEM_NONE;
+};
+
+static PendingBombArrowEquip sPendingEquip = {};
 
 static bool IsBowArrow(EnArrow* arrow) {
     return arrow->actor.params >= ARROW_NORMAL_SILENT && arrow->actor.params <= ARROW_LIGHT;
@@ -67,13 +77,28 @@ static bool IsBombArrowButton(s32 buttonIndex) {
         return false;
     }
 
-    return IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex]) &&
-           gSaveContext.equips.cButtonSlots[buttonIndex - 1] == SLOT_BOMB;
+    return (sBombArrowButtons & (1 << buttonIndex)) != 0 && IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex]);
+}
+
+static void SetBombArrowButton(s32 buttonIndex, bool enabled) {
+    if (buttonIndex < 1 || buttonIndex > 7) {
+        return;
+    }
+
+    if (enabled) {
+        sBombArrowButtons |= (1 << buttonIndex);
+    } else {
+        sBombArrowButtons &= ~(1 << buttonIndex);
+    }
 }
 
 static bool IsActiveBombArrowButton() {
     Player* player = GET_PLAYER(gPlayState);
     return player != nullptr && IsBombArrowButton(player->heldItemButton);
+}
+
+static bool IsBombArrowShotActive() {
+    return IsActiveBombArrowButton() || sBombArrowShotWindow > 0;
 }
 
 static bool CanUseBombArrow(bool requireActiveButton = true) {
@@ -82,7 +107,7 @@ static bool CanUseBombArrow(bool requireActiveButton = true) {
         return false;
     }
 
-    if (requireActiveButton && !IsActiveBombArrowButton()) {
+    if (requireActiveButton && !IsBombArrowShotActive()) {
         return false;
     }
 
@@ -90,14 +115,39 @@ static bool CanUseBombArrow(bool requireActiveButton = true) {
            AMMO(ITEM_BOMB) > 0;
 }
 
-static void EquipBombArrow(PlayState* play, u16 cursorSlot, u8 equippedBowItem) {
+static void EquipBombArrow(PlayState* play, u16 cursorSlot, s32 targetButtonIndex, u8 equippedBowItem) {
     PauseContext* pauseCtx = &play->pauseCtx;
     s16 animX = pauseCtx->itemVtx[cursorSlot * 4].v.ob[0] * 10;
     s16 animY = pauseCtx->itemVtx[cursorSlot * 4].v.ob[1] * 10;
 
-    KaleidoScope_SetupItemEquip(play, equippedBowItem, SLOT_BOMB, animX, animY);
+    sPendingEquip = { true, targetButtonIndex, equippedBowItem };
+    KaleidoScope_SetupItemEquip(play, equippedBowItem, SLOT_BOW, animX, animY);
     Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+}
+
+static void ApplyPendingBombArrowEquip() {
+    if (gPlayState == nullptr || !sPendingEquip.active || gPlayState->pauseCtx.unk_1E4 != 0) {
+        return;
+    }
+
+    gSaveContext.equips.buttonItems[sPendingEquip.buttonIndex] = sPendingEquip.item;
+    gSaveContext.equips.cButtonSlots[sPendingEquip.buttonIndex - 1] = SLOT_BOW;
+    SetBombArrowButton(sPendingEquip.buttonIndex, true);
+    Interface_LoadItemIcon1(gPlayState, sPendingEquip.buttonIndex);
+    sPendingEquip = {};
+}
+
+static void CleanupBombArrowButtons() {
+    if (sBombArrowShotWindow > 0) {
+        sBombArrowShotWindow--;
+    }
+
+    for (s32 buttonIndex = 1; buttonIndex <= 7; buttonIndex++) {
+        if (!IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex])) {
+            SetBombArrowButton(buttonIndex, false);
+        }
+    }
 }
 
 static void SpawnBombArrowExplosion(EnArrow* arrow) {
@@ -165,12 +215,29 @@ void RegisterBombArrows() {
             return;
         }
 
-        EquipBombArrow(play, cursorSlot, equippedItem);
+        EquipBombArrow(play, cursorSlot, targetButtonIndex, equippedItem);
         *should = false;
+    });
+
+    COND_VB_SHOULD(VB_CHANGE_HELD_ITEM_AND_USE_ITEM, CVAR_BOMB_ARROWS_VALUE, {
+        int32_t item = va_arg(args, int32_t);
+
+        if (!IsBowButtonItem(item) || gPlayState == nullptr) {
+            return;
+        }
+
+        s32 buttonIndex = GetPressedEquipButtonIndex(gPlayState);
+        if (IsBombArrowButton(buttonIndex)) {
+            sBombArrowShotWindow = 5;
+        }
     });
 
     COND_ID_HOOK(OnActorInit, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowInit);
     COND_ID_HOOK(OnActorUpdate, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowUpdate);
+    COND_HOOK(OnGameFrameUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
+        ApplyPendingBombArrowEquip();
+        CleanupBombArrowButtons();
+    });
 }
 
 static RegisterShipInitFunc initFunc(RegisterBombArrows, { CVAR_BOMB_ARROWS_NAME });
