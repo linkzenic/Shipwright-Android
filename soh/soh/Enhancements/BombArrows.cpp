@@ -121,6 +121,7 @@ static void EquipBombArrow(PlayState* play, u16 cursorSlot, s32 targetButtonInde
     s16 animY = pauseCtx->itemVtx[cursorSlot * 4].v.ob[1] * 10;
 
     sPendingEquip = { true, targetButtonIndex, equippedBowItem };
+    SetBombArrowButton(targetButtonIndex, true);
     KaleidoScope_SetupItemEquip(play, equippedBowItem, SLOT_BOW, animX, animY);
     Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -235,6 +236,10 @@ void RegisterBombArrows() {
     COND_ID_HOOK(OnActorInit, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowInit);
     COND_ID_HOOK(OnActorUpdate, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowUpdate);
     COND_HOOK(OnGameFrameUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
+        ApplyPendingBombArrowEquip();
+        CleanupBombArrowButtons();
+    });
+    COND_HOOK(OnKaleidoUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
         ApplyPendingBombArrowEquip();
         CleanupBombArrowButtons();
     });
