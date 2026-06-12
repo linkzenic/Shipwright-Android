@@ -34,6 +34,7 @@ static s16 sAllAmmoVtxOffset[] = {
 };
 
 extern const char* _gAmmoDigit0Tex[];
+extern void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot);
 
 // Twilight L-badge: draws gLButtonTex (vanilla 24x32 ia8) as a small 18x12
 // quad CENTERED BELOW the item icon — mirrors the Roc's Feather
@@ -2283,6 +2284,8 @@ void KaleidoScope_SetupItemEquip(PlayState* play, u16 item, u16 slot, s16 animX,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }
+
+    BombArrows_HandleSetupItemEquip(play, &item, &slot);
 
     pauseCtx->equipTargetItem = item;
     pauseCtx->equipTargetSlot = slot;
