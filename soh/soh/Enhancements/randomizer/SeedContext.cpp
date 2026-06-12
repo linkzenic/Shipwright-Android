@@ -13,6 +13,7 @@
 #include "soh/util.h"
 #include "../kaleido.h"
 #include "soh/Enhancements/randomizer/Traps.h"
+#include "soh/Enhancements/randomizer/3drando/random.hpp"
 #include "soh/Enhancements/randomizer/randomizer.h"
 
 #include <fstream>
@@ -330,9 +331,9 @@ void Context::CreateItemOverrides() {
         // If this is an ice trap, store the disguise model in iceTrapModels
         const auto itemLoc = GetItemLocation(locKey);
         if (itemLoc->GetPlacedRandomizerGet() == RG_ICE_TRAP) {
-            ItemOverride val(locKey, Traps::GetTrapTrickModel());
+            ItemOverride val(locKey, Traps::GetTrapTrickModel(&rando_state));
             iceTrapModels[locKey] = val.LooksLike();
-            val.SetTrickName(Traps::GetTrapName(val.LooksLike()));
+            val.SetTrickName(Traps::GetTrapName(val.LooksLike(), &rando_state));
             // If this is ice trap is in a shop, change the name based on what the model will look like
             overrides[locKey] = val;
         }
