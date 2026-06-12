@@ -34,6 +34,9 @@ static s16 sAllAmmoVtxOffset[] = {
 };
 
 extern const char* _gAmmoDigit0Tex[];
+extern void BombArrows_HandlePauseCursor(PlayState* play);
+extern u8 BombArrows_CanCycleBombSlot(void);
+extern u8 BombArrows_IsBombSlotMode(void);
 extern void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot);
 extern u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonIndex, u16* item, u16* slot);
 
@@ -322,6 +325,34 @@ void KaleidoScope_DrawItemCycleExtras(PlayState* play, u8 slot, u8 canCycle, u8 
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void KaleidoScope_DrawBombArrowSlotOverlay(PlayState* play, s16 vtxIndex) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    GraphicsContext* gfxCtx = play->state.gfxCtx;
+    Vtx bombOverlayVtx[4];
+    Vtx* slotVtx = &pauseCtx->itemVtx[vtxIndex];
+
+    for (s32 i = 0; i < 4; i++) {
+        bombOverlayVtx[i] = slotVtx[i];
+    }
+
+    s16 left = slotVtx[0].v.ob[0] + 16;
+    s16 right = slotVtx[0].v.ob[0] + 32;
+    s16 top = slotVtx[0].v.ob[1] - 16;
+    s16 bottom = slotVtx[0].v.ob[1] - 32;
+
+    bombOverlayVtx[0].v.ob[0] = bombOverlayVtx[2].v.ob[0] = left;
+    bombOverlayVtx[1].v.ob[0] = bombOverlayVtx[3].v.ob[0] = right;
+    bombOverlayVtx[0].v.ob[1] = bombOverlayVtx[1].v.ob[1] = top;
+    bombOverlayVtx[2].v.ob[1] = bombOverlayVtx[3].v.ob[1] = bottom;
+
+    OPEN_DISPS(gfxCtx);
+
+    gSPVertex(POLY_OPA_DISP++, bombOverlayVtx, 4, 0);
+    KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, gItemIcons[ITEM_BOMB], 32, 32, 0);
+
+    CLOSE_DISPS(gfxCtx);
 }
 
 void KaleidoScope_HandleItemCycleExtras(PlayState* play, u8 slot, bool canCycle, u8 leftItem, u8 rightItem,
@@ -1631,6 +1662,8 @@ static void ArrowWheel_Draw(PlayState* play) {
 }
 
 void KaleidoScope_HandleItemCycles(PlayState* play) {
+    BombArrows_HandlePauseCursor(play);
+
     // handle the mask select
     KaleidoScope_HandleItemCycleExtras(
         play, SLOT_TRADE_CHILD, CanMaskSelect(),
@@ -1736,6 +1769,8 @@ void KaleidoScope_DrawItemCycles(PlayState* play) {
 
     // Draw Bow / Slingshot press-A selector (Roc's Feather visual)
     ArrowWheel_DrawPressA(play);
+
+    KaleidoScope_DrawItemCycleExtras(play, SLOT_BOMB, BombArrows_CanCycleBombSlot(), ITEM_NONE, ITEM_BOW);
 }
 
 bool IsItemCycling() {
@@ -2178,12 +2213,18 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
 
             gSPVertex(POLY_OPA_DISP++, &pauseCtx->itemVtx[j + 0], 4, 0);
             int itemId = gSaveContext.inventory.items[drawSlot];
-            bool not_acquired = !CHECK_AGE_REQ_SLOT(drawSlot);
+            if (i == SLOT_BOMB && BombArrows_IsBombSlotMode()) {
+                itemId = ITEM_BOW;
+            }
+            bool not_acquired = !CHECK_AGE_REQ_ITEM(itemId);
             if (not_acquired) {
                 gDPSetGrayscaleColor(POLY_OPA_DISP++, 109, 109, 109, 255);
                 gSPGrayscale(POLY_OPA_DISP++, true);
             }
             KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, ExtInv_GetItemIcon(itemId), 32, 32, 0);
+            if (i == SLOT_BOMB && BombArrows_IsBombSlotMode()) {
+                KaleidoScope_DrawBombArrowSlotOverlay(play, j);
+            }
             gSPGrayscale(POLY_OPA_DISP++, false);
             // (Twilight L badge removed from kaleido — the A-press
             //  selector in Clawshot_/Gale_DrawKaleidoSelector now
