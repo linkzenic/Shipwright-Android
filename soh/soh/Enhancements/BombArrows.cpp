@@ -101,9 +101,17 @@ static bool IsBombArrowShotActive() {
     return IsActiveBombArrowButton() || sBombArrowShotWindow > 0;
 }
 
-static bool CanUseBombArrow(bool requireActiveButton = true) {
+static bool CanEquipBombArrow() {
     if (gPlayState == nullptr || !LINK_IS_ADULT || gSaveContext.minigameState ||
         gPlayState->sceneNum == SCENE_SHOOTING_GALLERY) {
+        return false;
+    }
+
+    return INV_CONTENT(ITEM_BOW) == ITEM_BOW && INV_CONTENT(ITEM_BOMB) == ITEM_BOMB;
+}
+
+static bool CanUseBombArrow(bool requireActiveButton = true) {
+    if (!CanEquipBombArrow()) {
         return false;
     }
 
@@ -111,13 +119,12 @@ static bool CanUseBombArrow(bool requireActiveButton = true) {
         return false;
     }
 
-    return INV_CONTENT(SLOT_BOW) == ITEM_BOW && INV_CONTENT(ITEM_BOMB) == ITEM_BOMB && AMMO(ITEM_BOW) > 0 &&
-           AMMO(ITEM_BOMB) > 0;
+    return AMMO(ITEM_BOW) > 0 && AMMO(ITEM_BOMB) > 0;
 }
 
 extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot) {
     if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || *item != ITEM_BOMB ||
-        !CanUseBombArrow(false)) {
+        !CanEquipBombArrow()) {
         return;
     }
 
@@ -136,6 +143,23 @@ extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16*
     SetBombArrowButton(targetButtonIndex, true);
     *item = equippedItem;
     *slot = SLOT_BOW;
+}
+
+extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonIndex, u16* item, u16* slot) {
+    if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || *item != ITEM_BOMB ||
+        targetButtonIndex < 1 || targetButtonIndex > 7 || !CanEquipBombArrow()) {
+        return false;
+    }
+
+    u8 equippedItem = gSaveContext.equips.buttonItems[targetButtonIndex];
+    if (!IsBowButtonItem(equippedItem)) {
+        return false;
+    }
+
+    SetBombArrowButton(targetButtonIndex, true);
+    *item = equippedItem;
+    *slot = SLOT_BOW;
+    return true;
 }
 
 static void ApplyPendingBombArrowEquip() {

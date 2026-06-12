@@ -35,6 +35,7 @@ static s16 sAllAmmoVtxOffset[] = {
 
 extern const char* _gAmmoDigit0Tex[];
 extern void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot);
+extern u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonIndex, u16* item, u16* slot);
 
 // Twilight L-badge: draws gLButtonTex (vanilla 24x32 ia8) as a small 18x12
 // quad CENTERED BELOW the item icon — mirrors the Roc's Feather
@@ -2648,38 +2649,43 @@ void KaleidoScope_UpdateItemEquip(PlayState* play) {
 
             // If the item is on another button already, swap the two
             uint16_t targetButtonIndex = pauseCtx->equipTargetCBtn + 1;
-            for (uint16_t otherSlotIndex = 0; otherSlotIndex < ARRAY_COUNT(gSaveContext.equips.cButtonSlots);
-                 otherSlotIndex++) {
-                uint16_t otherButtonIndex = otherSlotIndex + 1;
-                if (otherSlotIndex == pauseCtx->equipTargetCBtn) {
-                    continue;
-                }
+            u8 bombArrowCommit =
+                BombArrows_HandleEquipCommit(play, targetButtonIndex, &pauseCtx->equipTargetItem, &pauseCtx->equipTargetSlot);
 
-                if (pauseCtx->equipTargetSlot == gSaveContext.equips.cButtonSlots[otherSlotIndex]) {
-                    // Assign the other button to the target's current item
-                    if (gSaveContext.equips.buttonItems[targetButtonIndex] != ITEM_NONE) {
-                        gSaveContext.equips.buttonItems[otherButtonIndex] =
-                            gSaveContext.equips.buttonItems[targetButtonIndex];
-                        gSaveContext.equips.cButtonSlots[otherSlotIndex] =
-                            gSaveContext.equips.cButtonSlots[pauseCtx->equipTargetCBtn];
-                        Interface_LoadItemIcon2(play, otherButtonIndex);
-                    } else {
-                        gSaveContext.equips.buttonItems[otherButtonIndex] = ITEM_NONE;
-                        gSaveContext.equips.cButtonSlots[otherSlotIndex] = SLOT_NONE;
+            if (!bombArrowCommit) {
+                for (uint16_t otherSlotIndex = 0; otherSlotIndex < ARRAY_COUNT(gSaveContext.equips.cButtonSlots);
+                     otherSlotIndex++) {
+                    uint16_t otherButtonIndex = otherSlotIndex + 1;
+                    if (otherSlotIndex == pauseCtx->equipTargetCBtn) {
+                        continue;
                     }
-                    // break; // 'Assume there is only one possible pre-existing equip'
-                }
 
-                // Fix for Equip Dupe
-                if (pauseCtx->equipTargetItem == ITEM_BOW) {
-                    if (gSaveContext.equips.buttonItems[otherButtonIndex] >= ITEM_BOW_ARROW_FIRE &&
-                        gSaveContext.equips.buttonItems[otherButtonIndex] <= ITEM_BOW_ARROW_LIGHT &&
-                        !CVarGetInteger(CVAR_ENHANCEMENT("SeparateArrows"), 0)) {
-                        gSaveContext.equips.buttonItems[otherButtonIndex] =
-                            gSaveContext.equips.buttonItems[targetButtonIndex];
-                        gSaveContext.equips.cButtonSlots[otherSlotIndex] =
-                            gSaveContext.equips.cButtonSlots[pauseCtx->equipTargetCBtn];
-                        Interface_LoadItemIcon2(play, otherButtonIndex);
+                    if (pauseCtx->equipTargetSlot == gSaveContext.equips.cButtonSlots[otherSlotIndex]) {
+                        // Assign the other button to the target's current item
+                        if (gSaveContext.equips.buttonItems[targetButtonIndex] != ITEM_NONE) {
+                            gSaveContext.equips.buttonItems[otherButtonIndex] =
+                                gSaveContext.equips.buttonItems[targetButtonIndex];
+                            gSaveContext.equips.cButtonSlots[otherSlotIndex] =
+                                gSaveContext.equips.cButtonSlots[pauseCtx->equipTargetCBtn];
+                            Interface_LoadItemIcon2(play, otherButtonIndex);
+                        } else {
+                            gSaveContext.equips.buttonItems[otherButtonIndex] = ITEM_NONE;
+                            gSaveContext.equips.cButtonSlots[otherSlotIndex] = SLOT_NONE;
+                        }
+                        // break; // 'Assume there is only one possible pre-existing equip'
+                    }
+
+                    // Fix for Equip Dupe
+                    if (pauseCtx->equipTargetItem == ITEM_BOW) {
+                        if (gSaveContext.equips.buttonItems[otherButtonIndex] >= ITEM_BOW_ARROW_FIRE &&
+                            gSaveContext.equips.buttonItems[otherButtonIndex] <= ITEM_BOW_ARROW_LIGHT &&
+                            !CVarGetInteger(CVAR_ENHANCEMENT("SeparateArrows"), 0)) {
+                            gSaveContext.equips.buttonItems[otherButtonIndex] =
+                                gSaveContext.equips.buttonItems[targetButtonIndex];
+                            gSaveContext.equips.cButtonSlots[otherSlotIndex] =
+                                gSaveContext.equips.cButtonSlots[pauseCtx->equipTargetCBtn];
+                            Interface_LoadItemIcon2(play, otherButtonIndex);
+                        }
                     }
                 }
             }
