@@ -1498,50 +1498,6 @@ bool Logic::SunlightArrows() {
     return ctx->GetOption(RSK_SUNLIGHT_ARROWS) && CanUse(RG_LIGHT_ARROWS);
 }
 
-// Is this best off signaling what you have already traded, or what step you are currently on?
-bool Logic::TradeQuestStep(RandomizerGet rg) {
-    if (ctx->GetOption(RSK_SHUFFLE_ADULT_TRADE)) {
-        return false; // This does not apply when we are shuffling trade items
-    }
-    bool hasState = false;
-    // Falling through each case to test each possibility
-    switch (rg) {
-        case RG_POCKET_EGG:
-            hasState = hasState || HasItem(RG_POCKET_EGG);
-            [[fallthrough]];
-        case RG_COJIRO:
-            hasState = hasState || HasItem(RG_COJIRO);
-            [[fallthrough]];
-        case RG_ODD_MUSHROOM:
-            hasState = hasState || HasItem(RG_ODD_MUSHROOM);
-            [[fallthrough]];
-        case RG_ODD_POTION:
-            hasState = hasState || HasItem(RG_ODD_POTION);
-            [[fallthrough]];
-        case RG_POACHERS_SAW:
-            hasState = hasState || HasItem(RG_POACHERS_SAW);
-            [[fallthrough]];
-        case RG_BROKEN_SWORD:
-            hasState = hasState || HasItem(RG_BROKEN_SWORD);
-            [[fallthrough]];
-        case RG_PRESCRIPTION:
-            hasState = hasState || HasItem(RG_PRESCRIPTION);
-            [[fallthrough]];
-        case RG_EYEDROPS:
-            hasState = hasState || HasItem(RG_EYEDROPS);
-            [[fallthrough]];
-        case RG_CLAIM_CHECK:
-            hasState = hasState || HasItem(RG_CLAIM_CHECK);
-            break;
-        default:
-            SPDLOG_ERROR("TradeQuestStep reached `return false;`. Missing case for RandomizerGet of {}",
-                         static_cast<uint32_t>(rg));
-            assert(false);
-            return false;
-    }
-    return hasState;
-}
-
 bool Logic::CanStandingShield() {
     return CanUse(RG_MIRROR_SHIELD) || (IsAdult && HasItem(RG_HYLIAN_SHIELD)) || CanUse(RG_DEKU_SHIELD);
 }
