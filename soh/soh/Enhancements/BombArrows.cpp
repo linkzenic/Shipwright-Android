@@ -115,16 +115,27 @@ static bool CanUseBombArrow(bool requireActiveButton = true) {
            AMMO(ITEM_BOMB) > 0;
 }
 
-static void EquipBombArrow(PlayState* play, u16 cursorSlot, s32 targetButtonIndex, u8 equippedBowItem) {
-    PauseContext* pauseCtx = &play->pauseCtx;
-    s16 animX = pauseCtx->itemVtx[cursorSlot * 4].v.ob[0] * 10;
-    s16 animY = pauseCtx->itemVtx[cursorSlot * 4].v.ob[1] * 10;
+extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot) {
+    if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || *item != ITEM_BOMB ||
+        !CanUseBombArrow(false)) {
+        return;
+    }
 
-    sPendingEquip = { true, targetButtonIndex, equippedBowItem };
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 targetButtonIndex = pauseCtx->equipTargetCBtn + 1;
+    if (targetButtonIndex < 1 || targetButtonIndex > 7) {
+        return;
+    }
+
+    u8 equippedItem = gSaveContext.equips.buttonItems[targetButtonIndex];
+    if (!IsBowButtonItem(equippedItem)) {
+        return;
+    }
+
+    sPendingEquip = { true, targetButtonIndex, equippedItem };
     SetBombArrowButton(targetButtonIndex, true);
-    KaleidoScope_SetupItemEquip(play, equippedBowItem, SLOT_BOW, animX, animY);
-    Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    *item = equippedItem;
+    *slot = SLOT_BOW;
 }
 
 static void ApplyPendingBombArrowEquip() {
@@ -201,25 +212,6 @@ static void OnBombArrowUpdate(void* actorRef) {
 }
 
 void RegisterBombArrows() {
-    COND_VB_SHOULD(VB_EQUIP_ITEM_TO_C_BUTTON, CVAR_BOMB_ARROWS_VALUE, {
-        PlayState* play = va_arg(args, PlayState*);
-        u16 cursorSlot = va_arg(args, int);
-        u16 cursorItem = va_arg(args, int);
-        s32 targetButtonIndex = GetPressedEquipButtonIndex(play);
-
-        if (targetButtonIndex == -1 || cursorItem != ITEM_BOMB || !CanUseBombArrow(false)) {
-            return;
-        }
-
-        u8 equippedItem = gSaveContext.equips.buttonItems[targetButtonIndex];
-        if (!IsBowButtonItem(equippedItem)) {
-            return;
-        }
-
-        EquipBombArrow(play, cursorSlot, targetButtonIndex, equippedItem);
-        *should = false;
-    });
-
     COND_VB_SHOULD(VB_CHANGE_HELD_ITEM_AND_USE_ITEM, CVAR_BOMB_ARROWS_VALUE, {
         int32_t item = va_arg(args, int32_t);
 
