@@ -1387,6 +1387,35 @@ SoundFont* MmSfx_LoadFont(s32 fontId) {
         // This function re-reads the binary, extracts sample paths, and patches all Sample* pointers.
         MmSfx_PatchFontSamplesFromMmArchive(font, path);
 
+        // CRITICAL FIX: the SoH SF0 conversion mis-encoded `normalRangeHi` for several
+        // range-split instruments. The MM XML has `RangeHi="B5"` (=83) but the binary
+        // ends up with `rangeHi=62` (D4), a -21 semitone shift. That causes notes in
+        // the 63-83 range to be routed to the high sample instead of the normal sample.
+        // Concrete bug: Goron CHG_ROLL L2 plays effective note 70 (C3+t22). MM uses
+        // SAMPLE_0_391 (proper rumble); we end up playing MechanicalRampUp (wrong agudo).
+        // The user reports "el rolling con pinchos no es ese sonido" — exactly this.
+        // Patch the affected instruments to the MM-spec ranges so the right sample plays.
+        if (fontId == 0 && font->instruments && font->numInstruments > 100) {
+            struct RangeOverride { u8 idx; u8 newRangeHi; };
+            static const RangeOverride sRangeFixes[] = {
+                { 33, 83 }, // INST_33 BowstringTwang split — MM RangeHi="B5"
+                { 35, 83 }, // INST_35 BombchuMotor split   — MM RangeHi="B5"
+                { 46, 84 }, // INST_46 ShimmeringTreasure   — MM RangeHi="C6"
+                { 77, 83 }, // INST_77 MechanicalRampUp     — MM RangeHi="B5"
+            };
+            for (size_t k = 0; k < sizeof(sRangeFixes) / sizeof(sRangeFixes[0]); k++) {
+                u8 i = sRangeFixes[k].idx;
+                if (i < font->numInstruments && font->instruments[i]) {
+                    Instrument* inst = font->instruments[i];
+                    if (inst->normalRangeHi < sRangeFixes[k].newRangeHi) {
+                        MMSFX_LOG("[MmSfx] PATCH rangeHi INST[%u] %u → %u", i, inst->normalRangeHi,
+                                  sRangeFixes[k].newRangeHi);
+                        inst->normalRangeHi = sRangeFixes[k].newRangeHi;
+                    }
+                }
+            }
+        }
+
         MmSfxCacheEntry* entry = MmSfxCache_GetFree();
         if (entry) {
             entry->fontId = fontId;
@@ -1610,11 +1639,15 @@ static const u16 sContinuousSfxIds[] = {
     0x09AD, // GORON_SLIP (slipping sound, stopped when grounded)
     0x08ED, // ZORA_SWIM_LV (level swim sound)
     0x08D0, // SLIP_LEVEL (slipping)
-    // Note: 0x1851 NA_SE_IT_DEKUNUTS_FLOWER_ROLL is NOT a continuous SFX —
-    // MM source never triggers it (only referenced as a doc-comment in
-    // src/audio/code_8019AF00.c:4345). The propeller flap during Deku
-    // glide is NA_SE_PL_DEKUNUTS_STRUGGLE (0x09A6), a one-shot fired
-    // per `pn_batabata` anim cycle at frame 6.0 (z_player.c:19194).
+    // 0x1851 NA_SE_IT_DEKUNUTS_FLOWER_ROLL IS continuous — MM verbatim z_player.c:19805
+    // does `Audio_PlaySfx_AtPosWithTimer(... 0x1851, 2.0f * petalSpeed/6000)` every frame
+    // during Deku flight. The pitch tracks the propeller speed, creating the iconic
+    // propeller hum. Without continuous handling, per-frame triggers re-attack the
+    // sample = buzzy stutter. Stopped in MmForm_EndDekuFly.
+    0x1851,
+    0x185A, // DEKUNUTS_BUBLE_SHOT_LEVEL — MM z_en_arrow.c:499 fires every frame during bubble
+            // flight. LAYER_2249 has noteldv PITCH_G4 48t + rjump LAYER_2256 = sustained loop
+            // until note-off. Continuous semantic refreshes single slot vs stacking attacks.
     0x5800, // GAKKI instrument notes (stopped on button release)
 };
 static const s32 sContinuousSfxIdsSize = sizeof(sContinuousSfxIds) / sizeof(sContinuousSfxIds[0]);
@@ -1832,24 +1865,45 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     //   notedv PITCH_DF4, 7, 100   ← glide+sustain Db4 for 7 ticks
     // 12-field entry: { sfxId, instr, mainNote, transpose, portaNote, portaSpeed,
     //                   preHoldTicks, vibFreq, vibDepth, velocity, gain, ldelayTicks }
-    // DEKUNUTS_FIRE: gain=15, notedv velocity=100 (seq_0:2340 gain + :2347 notedv vel)
-    { 0x08E0, 74, 61, 6, 52, 56, 4, 0, 0, 100, 15, 0 },
-    // CHAN_PL_DEKUNUTS_IN_GRD (seq_0:2364-2388, sound.txt). 3 layers with MM velocities:
-    //   L0 (LAYER_1153): INST_47 porta 0x82 G2→A3 vel110 (the "thud" core)
-    //   L1 (LAYER_1145): INST_35 t48 rr235 porta 0x81 E2→B3 vel62 (bombchu motor scrape, soft)
-    //   L2 (LAYER_113D): INST_32 notedvg BF3 6t vel45 gain128 loop (metal-shield drone, quiet)
-    { 0x08E2, 47, 57, 0, 43, 255, 0, 0, 0, 110, 0, 0 }, // L0 vel=110
-    { 0x08E2, 35, 59, 48, 40, 127, 0, 0, 0, 62,  0, 0 }, // L1 vel=62 (softer)
-    { 0x08E2, 32, 58, 0, 0,   0,   0, 0, 0, 45,  0, 0 }, // L2 vel=45 (background drone)
-    // CHAN_PL_DEKUNUTS_OUT_GRD (seq_0:2390-2415, sound.txt). 3 layers with MM velocities:
-    //   L0 (LAYER_117F): INST_47 env BFAC porta A3→B3 vel100
-    //   L1 (LAYER_1167): INST_106 notedv E4 0t vel100 (instant gulp pop)
-    //   L2 (LAYER_116D): ldelay=6 INST_33 t48 env BF20 porta E4→E5 48t vel95 (high crystal tail)
-    // envPresets reverted: my 5/6 had 200ms decay, too aggressive vs MM's 2s+ envelopes. Default
-    // engine ADSR (sustain max) lets all 3 layers ring through naturally as MM intends.
-    { 0x08E3, 47, 59, 0, 57, 192, 0, 0, 0, 100, 0, 0 }, // L0 vel=100, default env
-    { 0x08E3, 106, 64, 0, 0,   0, 0, 0, 0, 100, 0, 0 }, // L1 vel=100, default env
-    { 0x08E3, 33, 76, 48, 64, 127, 0, 0, 0, 95, 0, 6 }, // L2 ldelay=6 vel=95, default env
+    // DEKUNUTS_FIRE (seq_0:2340-2362) VERBATIM:
+    //   gain=15, LAYER_1141: INST_74 preHold=4 notedv E3 4t v100 (grace) → portamento 0x81
+    //   PITCH_E3 56 notedv DF4 (transpose +6) v100.
+    //   envPreset=5 (instant attack + 200ms decay-to-zero) so the launch is a sharp "pffft"
+    //   that ends on its own — INST_74 has a sustain loop that without an envelope would
+    //   ring until maxLife (600ms default), overlapping the VANISH pop.
+    { 0x08E0, 74, 40, 0, 0, 0, 0, 0, 0, 100, 15, 0, 0, 0, 0, 0, 5, 4, 74, 61, 100 },
+    // CHAN_PL_DEKUNUTS_IN_GRD (seq_0:2364-2388). MM velocities + L0 porta INVERTED.
+    // KEY BUG FIX: LAYER_1153 uses `portamento 0x82` (mode INVERT, bit 0x02 set). MM
+    // sweeps A3 → G2 (pitch DESCENDING) = the "diving into flower" feel. Our L0 was
+    // playing G2 → A3 (pitch RISING) = opposite direction. portaModeInv=1 fixes it.
+    // L1 mode 0x81 = forward (E5 → B6 ascending, the bombchu motor accel). L2 no porta.
+    // Field positions: sfxId, instr, note, transpose, portaNote, portaSpeed, preHold, vibFreq,
+    //                  vibDepth, vel, gain, ldelay, portaModeInv(12=1), vibFreqEnd, vibDepthEnd,
+    //                  vibGradTicks, envPreset, subDelay, subInstr, subNote, subVel
+    // CHAN_PL_DEKUNUTS_IN_GRD VERBATIM (seq_0:1133-115C):
+    //   L0 LAYER_1153: INST_47 portamento 0x82 PITCH_G2 255 notedv PITCH_A3 100t v110
+    //     Mode 0x82 = INVERTED (A3→G2 descending sweep). One-shot, no env, no transpose.
+    //   L1 LAYER_1145: INST_35 releaserate 235 transpose 48 portamento 0x81 PITCH_E2 127
+    //     notedv PITCH_B3 100t v62. Bombchu motor accel.
+    //   L2 LAYER_113D: INST_32 notedvg PITCH_BF3 6t v45 gain128 + rjump (looping shimmer)
+    //     This loops continuously while the dive lasts. envPreset=4 (sustain_loop)
+    //     preserves the loop's volume; preset 5 killed it in 200ms = user heard only
+    //     the swoop without the metallic shimmer ("falta un sonido").
+    //   gain=128 on L2 is critical — MM uses gain UQ4.4 where 128=8.0x (the shimmer
+    //   needs the boost to cut through L0+L1 at vel=45).
+    { 0x08E2, 47, 57, 0, 43, 255, 0, 0, 0, 110, 0,  0, 1, 0, 0, 0, 5 }, // L0 sweep preset 5
+    { 0x08E2, 35, 59, 48, 40, 127, 0, 0, 0, 62, 0,  0, 0, 0, 0, 0, 5 }, // L1 motor preset 5
+    { 0x08E2, 32, 58, 0,  0,   0,  0, 0, 0, 90, 16, 0, 0, 0, 0, 0, 4 }, // L2 shimmer gain16(unity) sustain_loop vel=90
+    // CHAN_PL_DEKUNUTS_OUT_GRD (seq_0:2390-2415) VERBATIM:
+    //   L0 LAYER_117F: INST_47 env ENVELOPE_BFAC rr251 portamento 0x81 PITCH_A3 192 notedv B3 100t v100
+    //     ENVELOPE_BFAC = instant attack + ~200ms decay-to-0 → envPreset=5.
+    //     Mode 0x81 = MODE_1 = FORWARD (A3→B3 ascending per seqplayer.c:923-927).
+    //   L1 LAYER_1167: INST_106 notedv E4 0t v100 (instant pop, no porta no env).
+    //   L2 LAYER_116D: ldelay 6 + INST_33 t48 env ENVELOPE_BF20 rr251 portamento 0x81 PITCH_E4 127
+    //                  notedv E5 48t v95. BF20 = instant + decay-to-15% sustain → envPreset=6.
+    { 0x08E3, 47, 59, 0, 57, 192, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 5 }, // L0 vel=100 envPreset 5
+    { 0x08E3, 106, 64, 0, 0,   0, 0, 0, 0, 100, 0, 0 },                  // L1 vel=100
+    { 0x08E3, 33, 76, 48, 64, 127, 0, 0, 0, 95, 0, 6, 0, 0, 0, 0, 6 }, // L2 vel=95 ldelay=6 envPreset 6
 
     // === Player Bank: Goron SFX ===
     // CHAN_PL_GORON_BALLJUMP (seq_0:2352-2362, sound.txt). INST_102, porta G2→G3, vel=74,
@@ -1930,26 +1984,44 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x0990, 47, 41, 0, 0, 0, 0, 0, 0, 90, 15, 0, 0, 0, 0, 1, 0 }, // L2 env C00C → preset 1
 
     // === Player Bank: Deku SFX (0x9A0 range) ===
-    // CHAN_PL_DEKUNUTS_BUD (seq_0:2773-2791, sound.txt). MM has 2 layers, each plays a 4-note
-    // sequence: porta E2→EF1(8t) → EF3(16t) → ldelay 50 → porta E3→EF2(8t) → EF4(16t).
-    // L1 transposes the whole body +7 semitones (LAYER_13F2 fallthrough to LAYER_13F4).
-    // We expand each MM layer into TWO rows: the first plays EF1+subNote EF3 (the initial pair),
-    // the second plays EF2+subNote EF4 with ldelay matching MM (8+16+50 = 74 ticks for the 2nd pair).
-    // Velocity 65 per notedv (vs old default 127) — the deep-charge sound is meant to be soft.
-    // L0a: EF1 main + subNote EF3 delay=8
-    { 0x09A0, 52, 27, 0, 40, 255, 0, 0, 0, 65, 0, 0,  0, 0, 0, 0, 0,  8, 52, 51, 65 },
-    // L0b: EF2 main (ldelay 74 = 8+16+50) + subNote EF4 delay=8 (porta from E3)
-    { 0x09A0, 52, 39, 0, 52, 255, 0, 0, 0, 65, 0, 74, 0, 0, 0, 0, 0,  8, 52, 63, 65 },
-    // L1a: EF1+7=BF1 main + subNote EF3+7=BF3 delay=8
-    { 0x09A0, 52, 27, 7, 40, 255, 0, 0, 0, 65, 0, 0,  0, 0, 0, 0, 0,  8, 52, 51, 65 },
-    // L1b: EF2+7=BF2 main (ldelay 74) + subNote EF4+7=BF4 delay=8
-    { 0x09A0, 52, 39, 7, 52, 255, 0, 0, 0, 65, 0, 74, 0, 0, 0, 0, 0,  8, 52, 63, 65 },
+    // CHAN_PL_DEKUNUTS_BUD (seq_0:2773-2791) VERBATIM:
+    //   L0 LAYER_13F4: INST_52, env ENVELOPE_BFF8 rr251, portamento 0x83 PITCH_E2 255, notedv EF1 8t v65
+    //   L1 LAYER_13F2: transpose 7, fall through to L0 (same body +7 semitones)
+    //   ENVELOPE_BFF8 is a 10-tick hang (sustain) — envPreset=4 (sustain_loop) approximates.
+    //   Mode 0x83 = MODE_3 = FORWARD (portaNote E2 → notedv EF1 = DESCENDING per pitch values).
+    // BUD is a 4-NOTE SEQUENCE per layer (MM seq_0 LAYER_13F4):
+    //   t=0   EF1 8t v65 (porta 0x83 from E2)
+    //   t=8   EF3 16t v65
+    //   t=24  ldelay 50  (silence for 50 ticks while envelope re-resets)
+    //   t=74  EF2 8t v65 (porta 0x83 from E3)
+    //   t=82  EF4 16t v65
+    // L1 LAYER_13F2 transposes the whole chain +7 semitones.
+    // The previous single-row encoding only played note 1, cutting off after ~8 ticks (≈64ms).
+    // We schedule each subsequent note via its own row with ldelayTicks offset.
+    // Note pitches: EF1=27 (E♭1 in MM bank-relative), EF3=51, EF2=39, EF4=63.
+    // envPreset=5 (instant + 200ms decay to 0). Covers each notedv duration (8-16 ticks
+    // = 64-128ms) then fades to silence naturally — produces SEQUENTIAL chimes.
+    // Prior preset 4 (sustain_loop) let all 8 notes ring simultaneously for 375ms (cap)
+    // = wall of cacophony. Preset 2 (10ms decay) was too short — each note inaudible.
+    // Layer 0 (base octave):
+    { 0x09A0, 52, 27, 0, 40, 255, 0, 0, 0, 65, 0, 0,  0, 0, 0, 0, 5 }, // L0 N1 EF1
+    { 0x09A0, 52, 51, 0,  0,   0, 0, 0, 0, 65, 0, 8,  0, 0, 0, 0, 5 }, // L0 N2 EF3 ldelay=8
+    { 0x09A0, 52, 39, 0, 52, 255, 0, 0, 0, 65, 0, 74, 0, 0, 0, 0, 5 }, // L0 N3 EF2 ldelay=74
+    { 0x09A0, 52, 63, 0,  0,   0, 0, 0, 0, 65, 0, 82, 0, 0, 0, 0, 5 }, // L0 N4 EF4 ldelay=82
+    // Layer 1 (transpose +7):
+    { 0x09A0, 52, 27, 7, 40, 255, 0, 0, 0, 65, 0, 0,  0, 0, 0, 0, 5 }, // L1 N1
+    { 0x09A0, 52, 51, 7,  0,   0, 0, 0, 0, 65, 0, 8,  0, 0, 0, 0, 5 }, // L1 N2
+    { 0x09A0, 52, 39, 7, 52, 255, 0, 0, 0, 65, 0, 74, 0, 0, 0, 0, 5 }, // L1 N3
+    { 0x09A0, 52, 63, 7,  0,   0, 0, 0, 0, 65, 0, 82, 0, 0, 0, 0, 5 }, // L1 N4
     // CHAN_PL_DEKUNUTS_BUBLE_BREATH (seq_0:2793-2818, sound.txt). 2 looping layers + vibfreq=45 vibdepth=24:
     //   L0 (LAYER_1436): INST_74 env C018 rr240 legato porta 0x81 AF2 255 → notedv A3(104t,v65) LOOP
     //                    C018 = 48-tick slow attack → swell to max → sustain. With loop → preset 1 (swell).
     //   L1 (LAYER_1428): FONTANY_INSTR_8PULSE env C018 rr251 porta F3→D4 vel48 (no rjump = one-shot)
-    { 0x09A1, 74, 57, 0, 44, 255, 0, 45, 24, 65, 0, 0, 0, 0, 0, 1, 0 }, // L0 env C018+loop → preset 1
-    { 0x09A1, 129, 62, 0, 53, 255, 0, 45, 24, 48, 0, 0, 0, 0, 0, 1, 0 }, // L1 env C018 → preset 1
+    // BUG FIX: prior rows had `1` in vibGradTicks (col 15) but envPreset (col 16) was 0.
+    // Intent was envPreset=1 (swell — MM ENVELOPE_C018, 48-tick attack). Without it the
+    // breath punched in flat instead of inflating.
+    { 0x09A1, 74,  57, 0, 44, 255, 0, 45, 24, 65, 0, 0, 0, 0, 0, 0, 1 }, // L0 env C018 → preset 1
+    { 0x09A1, 129, 62, 0, 53, 255, 0, 45, 24, 48, 0, 0, 0, 0, 0, 0, 1 }, // L1 env C018 → preset 1
     // CHAN_PL_GORON_BALL_CHARGE_FAILED (seq_0:2820-2839, sound.txt). 2 layers + vibfreq=112 vibdepth=60.
     // NOTE: in MM channel, ldlayer 0=LAYER_145D (INST_35) and ldlayer 1=LAYER_1451 (INST_75).
     //   L0 (LAYER_145D): INST_35 t48 porta 0x81 G4 255 → notedv C2 64t vel75
@@ -1977,13 +2049,16 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x09A4, 119, 36, 3, 0,   0,  0, 60, 40, 72, 0, 56,  0, 0, 0, 6, 0 }, // L1b C2 t=56
     { 0x09A4, 119, 59, 3, 0,   0,  0, 60, 40, 72, 0, 124, 0, 0, 0, 6, 0 }, // L1c B3 t=124
     { 0x09A4, 119, 48, 3, 0,   0,  0, 60, 40, 72, 0, 180, 0, 0, 0, 6, 0 }, // L1d C3 t=180
-    // CHAN_PL_DEKUNUTS_ATTACK (seq_0:2968-2985, sound.txt). 2 layers with MM velocities:
-    //   L0 (LAYER_155C): INST_46 env BFAC t48 porta A0→F5 112t vel80 (shimmering treasure pitched up)
-    //   L1 (LAYER_1552): INST_27 porta A1→C1 100t vel110 (whish bass)
-    // envPreset reverted: my preset 5 had 200ms decay, far too short vs MM's ~2s. Default lets
-    // the sample play its full duration without being cut. User reports spin attack was wrong with preset 5.
-    { 0x09A9, 46, 77, 48, 21, 255, 0, 0, 0, 80,  0, 0 }, // L0 vel=80, default env
-    { 0x09A9, 27, 24, 0, 33, 200, 0, 0, 0, 110, 0, 0 }, // L1 vel=110, default env
+    // CHAN_PL_DEKUNUTS_ATTACK (seq_0:154B-156B + LAYER_1552/155C) VERBATIM:
+    //   L0 LAYER_155C: INST_46 env ENVELOPE_BFAC rr251 transpose 48 portamento 0x81 PITCH_A0 255
+    //                  notedv PITCH_F5 112t v80
+    //   L1 LAYER_1552: INST_27 portamento 0x81 PITCH_A1 200 notedv PITCH_C1 100t v110
+    //   notedv=112t @ ~8ms/tick = ~900ms. MM holds the shimmer at full volume across the
+    //   whole spin. envPreset=4 (sustain_loop): 2ms attack + FULL sustain — no decay.
+    //   Prior preset 5 (200ms decay-to-0) made the shimmer effectively silent after 200ms,
+    //   so user heard only the brief percussive portion = "voice no suena, corto y agudo".
+    { 0x09A9, 46, 77, 48, 21, 255, 0, 0, 0, 80,  0, 0, 0, 0, 0, 0, 4 }, // L0 shimmer v80 sustain_loop
+    { 0x09A9, 27, 24, 0,  33, 200, 0, 0, 0, 110, 0, 0, 0, 0, 0, 0, 4 }, // L1 bass v110 sustain_loop
     { 0x09AA, 127, 4 }, // TRANSFORM_VOICE: DRUM[4]
     // CHAN_PL_GORON_SLIP (seq_0:3030-3041, sound.txt). LAYER_15B9:
     //   INST_111 env C080 legato porta 0x01 A3 100 → notedv C4(32000t,v80) LOOP
@@ -2011,20 +2086,27 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     //   L0 (LAYER_2193): ldelay 10 + transpose +1 + fallthrough to LAYER_2197 → INST_78 C4
     // Adding the missing AF2 sub-note to L2 (was the actual 2nd note in MM, not silence after G2).
     // Velocities 68/70/108 per MM seq.
-    // FLOWER_OPEN: REVERTED envPreset 5 (200ms decay was too aggressive vs MM's ~2s).
-    // Keep velocity + AF2 sub-note + L0 pitch bug fix. Engine default ADSR (sustain max) lets
-    // the layered samples play their natural duration without being cut short.
-    { 0x1850, 27, 43, 0, 31, 240, 0, 0, 0, 68, 0, 0,  0, 0, 0, 0, 0,  10, 27, 44, 70 }, // L2: G2+AF2, default env
-    { 0x1850, 78, 59, 0, 0,   0, 0, 0, 0, 108, 0, 0 }, // L1: INST_78 B3 vel=108, default env
-    // L0 BUG FIX kept: midiNote=59 + transpose=1 = C4(60) — MM-accurate vs previous DF4(61).
-    { 0x1850, 78, 59, 1, 0,   0, 0, 0, 0, 108, 0, 10 }, // L0: B3+t1=C4, ldelay=10, vel=108, default env
+    // CHAN_IT_DEKUNUTS_FLOWER_OPEN (seq_0:4688-4708). VERBATIM MM:
+    //   L2 LAYER_2186: INST_27, portamento 0x84 PITCH_G1 240, notedv G2 10t v68, notedv AF2 10t v70
+    //     Mode 0x84 = MODE_4 = INVERTED (notedv→portaNote sweep) per seqplayer.c:930-933.
+    //     So MM sweeps G2→G1 DESCENDING. We were playing ASCENDING G1→G2 wrong before.
+    //     portaModeInv=1 added. AF2 as subNote (delay=10 ticks).
+    //   L1 LAYER_2197: INST_78 env BF98 rr251, notedv B3 24t v108. envPreset=5 (instant+decay).
+    //   L0 LAYER_2193: ldelay 10 + transpose 1 → falls through to LAYER_2197 → C4 with delay.
+    { 0x1850, 27, 43, 0, 31, 240, 0, 0, 0, 68, 0, 0, 1, 0, 0, 0, 5, 10, 27, 44, 70 }, // L2 INVERT + AF2 sub envPreset 5
+    { 0x1850, 78, 59, 0, 0,  0,  0, 0, 0, 108, 0, 0, 0, 0, 0, 0, 5 }, // L1 B3 vel=108 preset 5
+    { 0x1850, 78, 59, 1, 0,  0,  0, 0, 0, 108, 0, 10, 0, 0, 0, 0, 5 }, // L0 B3+t1=C4 ldelay=10 preset 5
     // CHAN_IT_DEKUNUTS_FLOWER_ROLL (seq_0:4710): INST_27, porta D3→D2 — propeller hum during Deku flight.
-    // Was completely MISSING — caused propeller to fall back to wrong default.
-    { 0x1851, 27, 38, 0, 50, 255 }, // INST_27, target D2(38), porta from D3(50), speed 255
-    // CHAN_IT_DEKUNUTS_FLOWER_CLOSE (seq_0:4720-4728, sound.txt). LAYER_21B3:
-    //   INST_78, notedv F4(65) 4ticks vel100 [grace] then notedv B4(71) 24ticks vel100 [dominant]
-    // The brief F4 chirp gives the petal-snap attack; B4 is the sustained closing tone.
-    { 0x1852, 78, 65, 0, 0, 0, 0, 0, 0, 100, 0, 0,  0, 0, 0, 0, 0,  4, 78, 71, 100 }, // F4 + sub B4 delay=4
+    // LAYER_21A5 notedv PITCH_D2 5t v100 — velocity 100/127 ≈ 0.787 squared ≈ 0.62.
+    // Prior 6-field entry left velocity=0 (treated as unity = 100% loud), drowning out wind.
+    { 0x1851, 27, 38, 0, 50, 255, 0, 0, 0, 100, 0, 0 }, // INST_27 D3→D2 porta vel=100 (62% loudness)
+    // CHAN_IT_DEKUNUTS_FLOWER_CLOSE (seq_0:4720-4728, sound.txt) VERBATIM:
+    //   LAYER_21B3: INST_78 notedv F4 4t v100 → notedv B4 24t v100.
+    //   Main note = F4 grace (4 ticks ~32ms), subNote = B4 dominant 24 ticks later.
+    //   Fields: sfxId, instr, midiNote(F4=65), transpose, portaNote, portaSpeed, preHold, vibFreq,
+    //           vibDepth, vel, gain, ldelay, portaModeInv, vibFreqEnd, vibDepthEnd, vibGradTicks,
+    //           envPreset, subNoteDelay(=4), subNoteInstr(=78), subNoteNote(B4=71), subNoteVel(=100).
+    { 0x1852, 78, 65, 0, 0, 0, 0, 0, 0, 100, 0, 0, 0, 0, 0, 0, 5, 4, 78, 71, 100 }, // envPreset=5 instant+decay
     // CHAN_IT_DEKUNUTS_BUBLE_BROKEN (seq_0:4730-4739, sound.txt). LAYER_21C5:
     //   INST_41 portamento 0x81 E4 255 → notedv C4(24t,v110). env C03C reverted (decay too short).
     { 0x1853, 41, 60, 0, 64, 255, 0, 0, 0, 110, 0, 0 }, // BUBLE_BROKEN vel=110, default env
@@ -2043,14 +2125,10 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     // CHAN_IT_GORON_PUNCH_SWING: 2 layers both INST_27, porta A1→C1
     { 0x1857, 27, 24, 0, 33, 200 }, // L0: INST_27, C1(24) porta from A1(33)
     { 0x1857, 27, 24, 4, 33, 200 }, // L1: INST_27, C1(24) t4, porta from A1(33)
-    // CHAN_IT_TRANSFORM_MASK_BROKEN (seq_0:4789-4801, sound.txt). gain=30. LAYER_221F:
-    //   INST_15, notedv C2(45t,v110), ldelay 20, notedv F2(55t,v110), notedv A2(45t,v110),
-    //   notedv C3(35t,v110). 4-note climbing chord. Each note expanded as own row with
-    //   cumulative ldelay matching MM timing: 0 / 45+20=65 / 65+55=120 / 120+45=165.
-    { 0x1858, 15, 36, 0, 0, 0, 0, 0, 0, 110, 30, 0   }, // C2 t=0
-    { 0x1858, 15, 41, 0, 0, 0, 0, 0, 0, 110, 30, 65  }, // F2 t=65
-    { 0x1858, 15, 45, 0, 0, 0, 0, 0, 0, 110, 30, 120 }, // A2 t=120
-    { 0x1858, 15, 48, 0, 0, 0, 0, 0, 0, 110, 30, 165 }, // C3 t=165
+    // CHAN_IT_TRANSFORM_MASK_BROKEN (seq_0:4789-4801, sound.txt). gain=30. LAYER_221F has
+    // 4-note climbing chord C2→F2→A2→C3. REVERTED multi-row: ldelay=65/120/165 at 8ms/tick =
+    // 520ms/960ms/1320ms — way past the mask-break event, sounds disjointed. Single dominant C2.
+    { 0x1858, 15, 36, 0, 0, 0, 0, 0, 0, 110, 30, 0 }, // INST_15 C2 vel=110 gain=30
     // CHAN_IT_ZORA_KICK_SWING: 2 layers
     { 0x1859, 27, 38, 2, 50, 255 }, // L0: INST_27, D2(38) t2, porta from D3(50)
     { 0x1859, 39, 42, 0, 72, 255 }, // L1: INST_39, GF2(42) porta from C5(72)
@@ -2064,13 +2142,13 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     { 0x185E,  21, 47, 0, 66, 255, 0, 128, 52, 110, 0, 0,  0, 0, 0, 10, 0,  0, 0, 0, 0 }, // L1
 
     // === Player Bank: Deku form-specific ===
-    // DEKUNUTS_STRUGGLE (seq_0:2913-2925, sound.txt). LAYER_14F2:
-    //   INST_27 porta 0x83 E2(40) 255 → notedv G2(43,7t,v95) → LAYER_14FB: notedv ?(9t,v95)
-    // The channel uses `rand 12 + stseq` to write a RANDOM pitch C2+rand(0..11) into the
-    // LAYER_14FB notedv each play (so the second note flutters between C2 and B2).
-    // We can't randomize per-play in our row format — we collapse to the dominant first
-    // notedv G2(43) with vel=95. The "flap" character comes mostly from the porta+G2.
-    { 0x09A6, 27, 43, 0, 40, 255, 0, 0, 0, 95, 0, 0 }, // INST_27 G2 vel=95 porta from E2
+    // DEKUNUTS_STRUGGLE (seq_0:2913-2925). VERBATIM MM:
+    //   LAYER_14F2: instr INST_27, portamento 0x83 E2 speed=255, notedv G2 7t v95
+    //   LAYER_14FB: notedv C3 9t v95 (second note in sequence — was MISSING)
+    // Mode 0x83 = MODE_3 = FORWARD (E2→G2 ascending) per seqplayer.c:923-927.
+    // Both layers played concurrently — audit confirmed C3 layer entirely unmapped before.
+    { 0x09A6, 27, 43, 0, 40, 255, 0, 0, 0, 95, 0, 0 }, // L0: INST_27 G2 porta E2, vel=95
+    { 0x09A6, 27, 48, 0, 0,  0,   0, 0, 0, 95, 0, 0 }, // L1: INST_27 C3 (second concurrent layer), vel=95
     { 0x09BF, 74, 71 },             // DEKUNUTS_MISS_FIRE: INST_74, B4
     // === Player Bank: Deku hop SFX (0x09B0-0x09B4) ===
     // CHAN_PL_DEKUNUTS_JUMP (seq_0:3073-3087, sound.txt). Single dispatcher channel for
@@ -2078,16 +2156,30 @@ static const MmSfxInstrMapEntry sMmSfxInstrMap[] = {
     // L0 (LAYER_1619): FONTANY_INSTR_TRIANGLE env BF20 → portamento → notedv C4(20t,v75)
     //                  BF20 = instant + decay to 5000 → preset 6
     // L1 (LAYER_0644): INST_4 notedv A3(10t,v63) → F4(30t,v63) — step water grace notes
-    { 0x09B0, 129, 60, 0, 36, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP L0
-    { 0x09B0, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP L1 vel=63
-    { 0x09B1, 129, 62, 0, 38, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP2 L0
-    { 0x09B1, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP2 L1
-    { 0x09B2, 129, 64, 0, 40, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP3 L0
-    { 0x09B2, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP3 L1
-    { 0x09B3, 129, 65, 0, 41, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP4 L0
-    { 0x09B3, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP4 L1
-    { 0x09B4, 129, 67, 0, 43, 255, 0, 240, 8, 75, 0, 0, 0, 0, 0, 6, 0 }, // JUMP5 L0
-    { 0x09B4, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0 },                 // JUMP5 L1
+    // MM stseq dispatcher VERBATIM (sound.txt ARRAY_1627/162F lookup):
+    //   ALL JUMP variants share LAYER_1623 which dispatches:
+    //     FONTANY_INSTR_TRIANGLE notedv C4 (PITCH_C4 = midiNote 60) 20t v75 with porta from
+    //     ARRAY_1627[variant] → C4. Only the portaNote varies per variant.
+    //   Per ARRAY_1627: JUMP=C2(36), JUMP2=D2(38), JUMP3=E2(40), JUMP4=F2(41), JUMP5=G2(43).
+    //   midiNote = 60 (C4) for ALL variants; only portaNote differs.
+    //   L1 LAYER_0644: INST_4 notedv A3 (57) 10t v63 grace + F4 (65) 30t v63 subNote sustain.
+    //   Per audit: add F4 grace note via subNote on L1.
+    // BUG FIX: prior rows put `6` in vibGradTicks (column 15) but envPreset (column 16) was 0.
+    // Intent was envPreset=6 (instant + decay-to-15% — MM ENVELOPE_BF20). The mistyped column
+    // meant the triangle hop had NO envelope shape → flat blip cut off. Also fixes MM
+    // `vibdepthgrad 0,16,4` → vibDepth start=0, vibDepthEnd=16, vibGradTicks=4.
+    // Fields (17): sfxId, instr, midiNote, transpose, portaNote, portaSpeed, preHold, vibFreq,
+    //              vibDepth, vel, gain, ldelay, portaInv, vibFreqEnd, vibDepthEnd, vibGradTicks, envPreset.
+    { 0x09B0, 129, 60, 0, 36, 255, 0, 240, 0, 75, 0, 0, 0, 240, 16, 4, 6 }, // JUMP  L0 porta C2→C4 vibgrad 0→16
+    { 0x09B0, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0, 0, 0,   0,  0, 0, 10, 4, 65, 63 }, // JUMP  L1 A3 grace → F4 sub
+    { 0x09B1, 129, 60, 0, 38, 255, 0, 240, 0, 75, 0, 0, 0, 240, 16, 4, 6 }, // JUMP2 L0 porta D2→C4
+    { 0x09B1, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0, 0, 0,   0,  0, 0, 10, 4, 65, 63 }, // JUMP2 L1
+    { 0x09B2, 129, 60, 0, 40, 255, 0, 240, 0, 75, 0, 0, 0, 240, 16, 4, 6 }, // JUMP3 L0 porta E2→C4
+    { 0x09B2, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0, 0, 0,   0,  0, 0, 10, 4, 65, 63 }, // JUMP3 L1
+    { 0x09B3, 129, 60, 0, 41, 255, 0, 240, 0, 75, 0, 0, 0, 240, 16, 4, 6 }, // JUMP4 L0 porta F2→C4
+    { 0x09B3, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0, 0, 0,   0,  0, 0, 10, 4, 65, 63 }, // JUMP4 L1
+    { 0x09B4, 129, 60, 0, 43, 255, 0, 240, 0, 75, 0, 0, 0, 240, 16, 4, 6 }, // JUMP5 L0 porta G2→C4
+    { 0x09B4, 4,   57, 0, 0,  0,   0, 0,   0, 63, 0, 0, 0, 0,   0,  0, 0, 10, 4, 65, 63 }, // JUMP5 L1
 
     // CHAN_PL_DEKUNUTS_DROP_BOMB (seq_0:7771, routed via HONEYCOMB_FALL):
     // transpose 12, FONTANY_SINE, porta F5→F3, vibfreq=58, vibdepth=4. Was MISSING.
@@ -2700,6 +2792,33 @@ static void MmWav_GenerateTriangle(void) {
     MMSFX_LOG("[MmWav] Generated triangle wave: %d samples", TRIANGLE_TOTAL_SAMPLES);
 }
 
+// FONTANY_INSTR_SINE (130) — used by DEKUNUTS_DROP_BOMB (seq_0:7779). MM seqplayer.c:1167-1170
+// treats instId >= 0x80 as synthetic waves. Without this, our engine fell through to instrument
+// lookup which fails for idx 130 (Soundfont_0 only has 122 instruments) → SILENT playback.
+#define FONTANY_INSTR_SINE 130
+#define SINE_CYCLE_LEN 64
+#define SINE_NUM_CYCLES 200
+#define SINE_TOTAL_SAMPLES (SINE_CYCLE_LEN * SINE_NUM_CYCLES)
+#define SINE_SAMPLE_RATE 16744
+#define SINE_BASE_NOTE 60
+#define SINE_AMPLITUDE 10000
+
+static s16 sSineWave[SINE_TOTAL_SAMPLES];
+static bool sSineGenerated = false;
+
+static void MmWav_GenerateSine(void) {
+    if (sSineGenerated)
+        return;
+    const f32 twoPi = 6.28318530717958647692f;
+    for (s32 i = 0; i < SINE_TOTAL_SAMPLES; i++) {
+        s32 phase = i % SINE_CYCLE_LEN;
+        f32 angle = twoPi * (f32)phase / (f32)SINE_CYCLE_LEN;
+        sSineWave[i] = (s16)(SINE_AMPLITUDE * sinf(angle));
+    }
+    sSineGenerated = true;
+    MMSFX_LOG("[MmWav] Generated sine wave: %d samples", SINE_TOTAL_SAMPLES);
+}
+
 // Play pre-loaded PCM data (e.g. synthetic triangle wave) into a slot. Does NOT own the PCM data.
 static s32 MmDirectAudio_PlaySinglePCM(s16* pcm, u32 pcmLength, f32 advance, u16 mmSfxId, f32 volume, f32 pan,
                                        f32 vibratoRate, f32 vibratoDepth) {
@@ -2712,8 +2831,11 @@ static s32 MmDirectAudio_PlaySinglePCM(s16* pcm, u32 pcmLength, f32 advance, u16
         if (sPlayingSounds[i].active && sPlayingSounds[i].mmSfxId == mmSfxId)
             existingLayers++;
     }
-    if (existingLayers >= 3)
-        return 1;
+    // Layer cap raised to 8 to accommodate sequential multi-note SFX (BUD 4 notes × 2 layers).
+    // The prior cap of 3 was added to defend against runaway slot allocation when the
+    // same-sfxId search loop existed; with direct-slot writes that defense is no longer needed.
+    if (existingLayers >= 8)
+        return 0; // Skip — return 0 (no slot allocated) so callers see this as "not played".
 
     // Find free slot (prefer evicting non-continuous sounds)
     s32 freeSlot = -1;
@@ -2775,7 +2897,11 @@ static s32 MmDirectAudio_PlaySinglePCM(s16* pcm, u32 pcmLength, f32 advance, u16
     MmDirectAudio_SetEnvelope(snd, snd->isContinuous);
 
     MMSFX_LOG("[MmWav] Playing 0x%04X: %u samples, advance=%.3f, vol=%.3f", mmSfxId, pcmLength, advance, snd->volume);
-    return 1;
+    // Return slot+1 (so 0 means failure/skip; caller decodes index as result-1).
+    // Lets the dispatcher write per-entry envPreset/porta/sub-note to the EXACT slot we
+    // just populated, instead of searching by sfxId — which collides when multiple layers
+    // share the same sfxId (FLOWER_OPEN, BUBLE_BREATH) or when a sub-note races the main.
+    return freeSlot + 1;
 }
 
 // Play a single sample into a slot. Returns 1 if played, 0 if failed.
@@ -2805,11 +2931,11 @@ static s32 MmDirectAudio_PlaySingle(SoundFontSound* sfxSound, f32 pitchScale, f3
             existingLayers++;
         }
     }
-    // Multi-layer SFX can have at most 3 layers (from sMmSfxInstrMap)
-    // But if the same sfxId already has 3+ active layers, skip
-    if (existingLayers >= 3) {
+    // Layer cap raised to 8 (see PCM variant comment). Sequential note chains (BUD)
+    // need more slots than the legacy 3-layer-max budget.
+    if (existingLayers >= 8) {
         free(pcm);
-        return 1; // Already have enough layers
+        return 0; // Skip — return 0 (no slot index produced) so caller's slot > 0 fails.
     }
 
     for (s32 i = 0; i < MM_DIRECT_MAX_SOUNDS; i++) {
@@ -2853,23 +2979,55 @@ static s32 MmDirectAudio_PlaySingle(SoundFontSound* sfxSound, f32 pitchScale, f3
     snd->pan = pan;
     snd->mmSfxId = mmSfxId;
 
-    // Loop handling: only continuous sounds (whitelist) get infinite loops.
-    // In N64, sustain loops (count=-1) are held by ADSR envelopes until note-off.
-    // We don't have ADSR, so one-shot sounds with sustain loops would play forever.
+    // Loop handling: respect the sample's sustain loop ALWAYS so high-pitched
+    // short samples (e.g. ShimmeringTreasure pitched +5oct for DEKUNUTS_ATTACK)
+    // don't end after 49ms when MM holds the notedv for ~900ms.
+    // In MM/N64, sustain loops (count=-1) are held by the ADSR envelope until the
+    // notedv duration ends. We approximate that with a duration cap:
+    //   - Continuous SFX (sContinuousSfxIds): no cap, play until explicit Stop
+    //   - One-shot SFX with loop: auto-stop at ~1.2s (matches typical MM notedv 100-150t)
+    //     The PCM keeps looping until maxLifeSamples is reached, then ADSR release kicks in
     SoundFontSample* sample = sfxSound->sample;
     bool hasLoop = sample->loop && sample->loop->count != 0 && sample->loop->loopEnd > sample->loop->start;
 
-    if (hasLoop && isContinuous) {
-        // Continuous sound: loop until explicitly stopped
+    if (hasLoop) {
         snd->loopStart = sample->loop->start;
         snd->loopEnd = (sample->loop->loopEnd < pcmLength) ? sample->loop->loopEnd : pcmLength;
-        snd->maxLifeSamples = 0; // No auto-stop
-        MMSFX_LOG("[MmDirectAudio] Loop 0x%04X: %u -> %u (continuous)", mmSfxId, snd->loopStart, snd->loopEnd);
+        if (isContinuous) {
+            snd->maxLifeSamples = 0; // No auto-stop
+            MMSFX_LOG("[MmDirectAudio] Loop 0x%04X: %u -> %u (continuous)", mmSfxId, snd->loopStart, snd->loopEnd);
+        } else {
+            // One-shot with loop: cap matches MM notedv ~ release. Per-SFX overrides for
+            // known cases keep flower/strike sounds from ringing too long.
+            // MM tick ≈ 8ms → 100 ticks = 800ms. Most flower SFX notedv 24-30 ticks ≈ 200-250ms.
+            u32 cap = 19200; // default 600ms — covers most notedv 50-80 ticks
+            switch (mmSfxId) {
+                // Goron BALL_CHARGE_DASH layers cap: dash impact ~300ms, NOT a sustained loop.
+                // Prevents the dash sound from being mistaken for a "charging continued" loop.
+                case 0x09A3: cap = 9600; break;
+                // Deku spin attack: notedv 112 ticks ≈ 900ms (the iconic "wsshhh")
+                case 0x09A9: cap = 28800; break;
+                // Deku flower SFX — short notedv 24-30 ticks
+                case 0x1850: cap = 8000; break;  // FLOWER_OPEN notedv 10+10 + 24 ≈ 250ms
+                case 0x1852: cap = 8000; break;  // FLOWER_CLOSE notedv 4+24 ≈ 220ms
+                case 0x09A0: cap = 30000; break; // BUD: 4-note chain with ldelay=82 ticks ≈ 656ms + 200ms decay ≈ 900ms
+                case 0x09A6: cap = 5000; break;  // STRUGGLE notedv 7+9 ticks ≈ 130ms (very short flap)
+                // Deku flower dive/launch: notedv 100 ticks ≈ 800ms
+                case 0x08E2: cap = 25600; break; // IN_GRD ≈ 800ms
+                case 0x08E3: cap = 25600; break; // OUT_GRD ≈ 800ms
+                // Bubble breath / spark barrier are short impacts when not continuous
+                case 0x1853: cap = 8000; break;  // BUBLE_BROKEN notedv 24 ticks
+                case 0x1854: cap = 8000; break;  // BUBLE_VANISH
+            }
+            snd->maxLifeSamples = cap;
+            MMSFX_LOG("[MmDirectAudio] Loop 0x%04X: %u -> %u (one-shot, cap=%u samples ≈ %ums)", mmSfxId,
+                      snd->loopStart, snd->loopEnd, cap, cap * 1000 / 32000);
+        }
     } else {
-        // One-shot sound: play through once, no loop
+        // No loop in sample: play through once, ends when PCM exhausted
         snd->loopStart = 0;
         snd->loopEnd = 0;
-        snd->maxLifeSamples = 0; // Will naturally end when pcm runs out
+        snd->maxLifeSamples = 0;
     }
     snd->lifeSamples = 0;
     snd->vibratoPhase = 0.0f;
@@ -2897,7 +3055,9 @@ static s32 MmDirectAudio_PlaySingle(SoundFontSound* sfxSound, f32 pitchScale, f3
               "env: atk=%.4f dec=%.4f sus=%.2f rel=%.4f relAt=%u",
               mmSfxId, pcmLength, sfxSound->tuning, pitchScale, freqScale, snd->advance, snd->volume,
               snd->envAttackRate, snd->envDecayRate, snd->envSustainLevel, snd->envReleaseRate, snd->envReleaseAt);
-    return 1;
+    // Return slot+1 so the dispatcher knows EXACTLY which slot to configure.
+    // The prior `return 1` boolean forced a same-sfxId scan that collided across layers.
+    return freeSlot + 1;
 }
 
 // Start playing an MM sound with multi-layer support.
@@ -3051,6 +3211,8 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
         u8 entryLDelayTicks = sMmSfxInstrMap[i].ldelayTicks;
         // (NEW) extended fields:
         u8 entryPortaModeInv = sMmSfxInstrMap[i].portaModeInv;
+        u8 entryVibFreq = sMmSfxInstrMap[i].vibFreq;
+        u8 entryVibDepth = sMmSfxInstrMap[i].vibDepth;
         u8 entryVibFreqEnd = sMmSfxInstrMap[i].vibFreqEnd;
         u8 entryVibDepthEnd = sMmSfxInstrMap[i].vibDepthEnd;
         u8 entryVibGradTicks = sMmSfxInstrMap[i].vibGradTicks;
@@ -3076,35 +3238,122 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
             entryVolScale *= (f32)entryGain / 16.0f;
         }
 
+        // Per-entry vibrato (hoisted: triangle/sine and ADPCM all honor it).
+        // Without this, JUMP's `vibfreq 240` + `vibdepthgrad 0,16,4` was a no-op
+        // and BUBLE_BREATH L1's swell was flat.
+        f32 instVibRateOut = (entryVibFreq != 0) ? ((f32)entryVibFreq / 16.0f) : 0.0f;
+        f32 instVibDepthOut = (entryVibDepth != 0) ? ((f32)entryVibDepth / 512.0f) : 0.0f;
+
         if (instIdx == FONTANY_INSTR_TRIANGLE) {
             // Built-in triangle wave (used by Deku hops)
             MmWav_GenerateTriangle();
             f32 targetAdvance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
                                 powf(2.0f, ((f32)note - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
-            s32 triSlot = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, targetAdvance, mmSfxId,
-                                                      vol * 0.6f * entryVolScale, pan, 0.0f, 0.0f);
-            // Apply portamento, pre-hold, start-delay on the triangle slot
-            if (triSlot > 0) {
-                for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
-                    if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
-                        sPlayingSounds[s].lifeSamples == 0) {
-                        sPlayingSounds[s].startDelaySamples = startDelaySamples;
-                        if (portaNote > 0 && portaSpeed > 0) {
-                            f32 portaStartAdv = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
-                                                powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
-                            f32 durationSamples = (f32)portaSpeed * 64.0f;
-                            sPlayingSounds[s].portaStartAdv = portaStartAdv;
-                            sPlayingSounds[s].portaEndAdv = targetAdvance;
-                            sPlayingSounds[s].portaProgress = 0.0f;
-                            sPlayingSounds[s].portaRate = 1.0f / durationSamples;
-                            sPlayingSounds[s].advance = portaStartAdv;
-                            sPlayingSounds[s].portaPreHoldSamples = preHoldSamples;
-                        }
-                        break;
+            s32 triSlotPlus1 = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, targetAdvance, mmSfxId,
+                                                            vol * 0.6f * entryVolScale, pan, instVibRateOut,
+                                                            instVibDepthOut);
+            s32 triSlot = triSlotPlus1 - 1;
+            // Apply envPreset, portamento (incl. portaModeInv), vibrato gradient, ldelay
+            // directly on the just-allocated slot. Was previously search-by-sfxId which
+            // mostly failed for triangle entries (the search predicate worked but the
+            // post-play code never ran in the original triangle branch).
+            if (triSlotPlus1 > 0) {
+                if (entryEnvPreset != 0) {
+                    MmDirectAudio_ApplyEnvPreset(&sPlayingSounds[triSlot], entryEnvPreset);
+                }
+                if (startDelaySamples > 0) {
+                    sPlayingSounds[triSlot].startDelaySamples = startDelaySamples;
+                }
+                if (entryVibGradTicks > 0) {
+                    sPlayingSounds[triSlot].vibratoRateEnd = (f32)entryVibFreqEnd / 16.0f;
+                    sPlayingSounds[triSlot].vibratoDepthEnd = (f32)entryVibDepthEnd / 512.0f;
+                    sPlayingSounds[triSlot].vibGradSamplesElapsed = 0;
+                    sPlayingSounds[triSlot].vibGradSamplesTotal = (u32)entryVibGradTicks * 256u;
+                }
+                if (portaNote > 0 && portaSpeed > 0) {
+                    f32 portaStartAdv = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
+                                        powf(2.0f, ((f32)portaNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+                    f32 durationSamples = (f32)portaSpeed * 64.0f;
+                    f32 effStart = portaStartAdv;
+                    f32 effEnd = targetAdvance;
+                    if (entryPortaModeInv) {
+                        effStart = targetAdvance;
+                        effEnd = portaStartAdv;
                     }
+                    sPlayingSounds[triSlot].portaStartAdv = effStart;
+                    sPlayingSounds[triSlot].portaEndAdv = effEnd;
+                    sPlayingSounds[triSlot].portaProgress = 0.0f;
+                    sPlayingSounds[triSlot].portaRate = 1.0f / durationSamples;
+                    sPlayingSounds[triSlot].advance = effStart;
+                    sPlayingSounds[triSlot].portaPreHoldSamples = preHoldSamples;
                 }
             }
-            played += (triSlot > 0) ? 1 : 0;
+            // Sub-note (e.g. JUMP L1 grace→sustain on triangle): play sub-note on its own slot.
+            if (triSlotPlus1 > 0 && entrySubNoteNote != 0) {
+                s32 subEffNote = (s32)entrySubNoteNote + (s32)transpose;
+                if (subEffNote < 0) subEffNote = 0;
+                if (subEffNote > 127) subEffNote = 127;
+                f32 subAdvance = ((f32)TRIANGLE_SAMPLE_RATE / 32000.0f) *
+                                 powf(2.0f, ((f32)subEffNote - (f32)TRIANGLE_BASE_NOTE) / 12.0f) * freqScale;
+                f32 subVolScale = entryVolScale;
+                if (entrySubNoteVel != 0 && entrySubNoteVel != 127) {
+                    f32 v = (f32)entrySubNoteVel / 127.0f;
+                    f32 mainVelSq = (entryVelocity != 0 && entryVelocity != 127)
+                                        ? ((f32)entryVelocity / 127.0f) * ((f32)entryVelocity / 127.0f)
+                                        : 1.0f;
+                    if (mainVelSq > 0.0001f) subVolScale = (subVolScale / mainVelSq) * (v * v);
+                }
+                u32 subDelay = (u32)entrySubNoteDelay * 256u;
+                s32 subSlotPlus1 = MmDirectAudio_PlaySinglePCM(sTriangleWave, TRIANGLE_TOTAL_SAMPLES, subAdvance,
+                                                                mmSfxId, vol * 0.6f * subVolScale, pan, instVibRateOut,
+                                                                instVibDepthOut);
+                if (subSlotPlus1 > 0 && subDelay > 0) {
+                    sPlayingSounds[subSlotPlus1 - 1].startDelaySamples = subDelay;
+                }
+            }
+            played += (triSlotPlus1 > 0) ? 1 : 0;
+            continue;
+        } else if (instIdx == FONTANY_INSTR_SINE) {
+            // Built-in sine wave (130) — used by DEKUNUTS_DROP_BOMB.
+            MmWav_GenerateSine();
+            f32 targetAdvance = ((f32)SINE_SAMPLE_RATE / 32000.0f) *
+                                powf(2.0f, ((f32)note - (f32)SINE_BASE_NOTE) / 12.0f) * freqScale;
+            s32 sinSlotPlus1 = MmDirectAudio_PlaySinglePCM(sSineWave, SINE_TOTAL_SAMPLES, targetAdvance, mmSfxId,
+                                                            vol * 0.6f * entryVolScale, pan, instVibRateOut,
+                                                            instVibDepthOut);
+            s32 sinSlot = sinSlotPlus1 - 1;
+            if (sinSlotPlus1 > 0) {
+                if (entryEnvPreset != 0) {
+                    MmDirectAudio_ApplyEnvPreset(&sPlayingSounds[sinSlot], entryEnvPreset);
+                }
+                if (startDelaySamples > 0) {
+                    sPlayingSounds[sinSlot].startDelaySamples = startDelaySamples;
+                }
+                if (entryVibGradTicks > 0) {
+                    sPlayingSounds[sinSlot].vibratoRateEnd = (f32)entryVibFreqEnd / 16.0f;
+                    sPlayingSounds[sinSlot].vibratoDepthEnd = (f32)entryVibDepthEnd / 512.0f;
+                    sPlayingSounds[sinSlot].vibGradSamplesElapsed = 0;
+                    sPlayingSounds[sinSlot].vibGradSamplesTotal = (u32)entryVibGradTicks * 256u;
+                }
+                if (portaNote > 0 && portaSpeed > 0) {
+                    f32 portaStartAdv = ((f32)SINE_SAMPLE_RATE / 32000.0f) *
+                                        powf(2.0f, ((f32)portaNote - (f32)SINE_BASE_NOTE) / 12.0f) * freqScale;
+                    f32 durationSamples = (f32)portaSpeed * 16.0f;
+                    f32 effStart = portaStartAdv;
+                    f32 effEnd = targetAdvance;
+                    if (entryPortaModeInv) {
+                        effStart = targetAdvance;
+                        effEnd = portaStartAdv;
+                    }
+                    sPlayingSounds[sinSlot].portaStartAdv = effStart;
+                    sPlayingSounds[sinSlot].portaEndAdv = effEnd;
+                    sPlayingSounds[sinSlot].portaProgress = 0.0f;
+                    sPlayingSounds[sinSlot].portaRate = 1.0f / durationSamples;
+                    sPlayingSounds[sinSlot].advance = effStart;
+                    sPlayingSounds[sinSlot].portaPreHoldSamples = preHoldSamples;
+                }
+            }
+            played += (sinSlotPlus1 > 0) ? 1 : 0;
             continue;
         } else if (instIdx == 127) { // FONTANY_INSTR_DRUM
             // ADPCM from mm.o2r Soundfont_0 (real MM drum samples)
@@ -3132,109 +3381,106 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                     MMSFX_LOG("[MmDirectAudio] INST 0x%04X: inst[%d] note=%d t=%d eff=%d tuning=%.4f advance=%.4f",
                               mmSfxId, instIdx, note, transpose, effectiveNote, sound->tuning, advance);
 
-                    // Per-entry vibrato (from MM seq_0 vibfreq/vibdepth opcodes).
-                    // vibFreq=0 → no vibrato. See MmSfxInstrMapEntry comments.
-                    u8 entryVibFreq = sMmSfxInstrMap[i].vibFreq;
-                    u8 entryVibDepth = sMmSfxInstrMap[i].vibDepth;
-                    f32 instVibRate = (entryVibFreq != 0) ? ((f32)entryVibFreq * (1.0f / 16.0f)) : 0.0f;
-                    f32 instVibDepth = (entryVibDepth != 0) ? ((f32)entryVibDepth / 512.0f) : 0.0f;
+                    // Per-entry vibrato hoisted above the branch (instVibRateOut/instVibDepthOut).
+                    f32 instVibRate = instVibRateOut;
+                    f32 instVibDepth = instVibDepthOut;
 
                     // Apply per-entry velocity²+gain to the spatial volume.
                     f32 entryAdjustedVol = vol * entryVolScale;
-                    s32 slot = MmDirectAudio_PlaySingle(sound, pitchScale, freqScale, mmSfxId, entryAdjustedVol, pan,
-                                                        instVibRate, instVibDepth);
+                    s32 slotPlus1 = MmDirectAudio_PlaySingle(sound, pitchScale, freqScale, mmSfxId, entryAdjustedVol, pan,
+                                                              instVibRate, instVibDepth);
+                    s32 slot = slotPlus1 - 1; // -1 means failure/skip; >=0 is the array index we just wrote.
 
-                    // Apply per-entry features to the slot we just played into.
-                    if (slot > 0) {
-                        for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
-                            if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
-                                sPlayingSounds[s].lifeSamples == 0) {
-                                // ADSR envelope preset (MM ENVELOPE_xxx selectors).
-                                // Overrides the default flat-blip envelope set in
-                                // MmDirectAudio_SetEnvelope so attack/decay/sustain/release
-                                // match MM's per-channel envelope.
-                                if (entryEnvPreset != 0) {
-                                    MmDirectAudio_ApplyEnvPreset(&sPlayingSounds[s], entryEnvPreset);
-                                }
-                                // ldelay: layer start delay
-                                if (startDelaySamples > 0) {
-                                    sPlayingSounds[s].startDelaySamples = startDelaySamples;
-                                }
-                                // Vibrato gradient: ramp vibFreq/vibDepth from start (vibFreq/vibDepth fields)
-                                // toward end values (vibFreqEnd/vibDepthEnd, INCLUDING 0) over vibGradTicks.
-                                // Setting vibGradTicks > 0 enables the ramp; the end values are taken at
-                                // face value — 0 means "lerp to silence" (matches MM's vibdepthgrad N,0,T).
-                                if (entryVibGradTicks > 0) {
-                                    sPlayingSounds[s].vibratoRateEnd =
-                                        (f32)entryVibFreqEnd / 16.0f;
-                                    sPlayingSounds[s].vibratoDepthEnd =
-                                        (f32)entryVibDepthEnd / 512.0f;
-                                    sPlayingSounds[s].vibGradSamplesElapsed = 0;
-                                    sPlayingSounds[s].vibGradSamplesTotal = (u32)entryVibGradTicks * 256u;
-                                }
-                                break;
-                            }
+                    // Apply per-entry features to the EXACT slot PlaySingle populated.
+                    // Direct slot indexing prevents the same-sfxId search collision that previously
+                    // let later layers clobber earlier layers' envPreset/porta/sub-note.
+                    if (slotPlus1 > 0) {
+                        if (entryEnvPreset != 0) {
+                            MmDirectAudio_ApplyEnvPreset(&sPlayingSounds[slot], entryEnvPreset);
+                        }
+                        if (startDelaySamples > 0) {
+                            sPlayingSounds[slot].startDelaySamples = startDelaySamples;
+                        }
+                        if (entryVibGradTicks > 0) {
+                            sPlayingSounds[slot].vibratoRateEnd = (f32)entryVibFreqEnd / 16.0f;
+                            sPlayingSounds[slot].vibratoDepthEnd = (f32)entryVibDepthEnd / 512.0f;
+                            sPlayingSounds[slot].vibGradSamplesElapsed = 0;
+                            sPlayingSounds[slot].vibGradSamplesTotal = (u32)entryVibGradTicks * 256u;
                         }
                     }
 
-                    // Apply portamento if specified
-                    if (slot > 0 && portaNote > 0 && portaSpeed > 0) {
-                        // Find the slot we just played into (most recently activated)
-                        for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
-                            if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
-                                sPlayingSounds[s].lifeSamples == 0) {
-                                // Portamento start pitch: portaNote + transpose (same as target)
-                                s32 portaEffNote = (s32)portaNote + (s32)transpose;
-                                if (portaEffNote < 0)
-                                    portaEffNote = 0;
-                                if (portaEffNote > 127)
-                                    portaEffNote = 127;
-                                f32 portaStartPitch = powf(2.0f, ((f32)portaEffNote - 60.0f) / 12.0f);
-                                f32 portaStartAdv = sound->tuning * portaStartPitch * freqScale;
-                                // Duration: portaSpeed maps to samples (higher = slower)
-                                // N64 portamento speed 255 ≈ ~0.5 sec, speed 200 ≈ ~0.4 sec
-                                f32 durationSamples = (f32)portaSpeed * 64.0f; // ~255*64 = 16320 samples ≈ 0.5s
-                                // Portamento direction: MM modes 0x82, 0x84 (or our portaModeInv=1)
-                                // glide INVERSE (target→start) instead of normal start→target.
-                                // Swap endpoints when inverse to flip the perceived pitch slide.
-                                f32 effStart = portaStartAdv;
-                                f32 effEnd = advance;
-                                if (entryPortaModeInv) {
-                                    effStart = advance;
-                                    effEnd = portaStartAdv;
-                                }
-                                sPlayingSounds[s].portaStartAdv = effStart;
-                                sPlayingSounds[s].portaEndAdv = effEnd;
-                                sPlayingSounds[s].portaProgress = 0.0f;
-                                sPlayingSounds[s].portaRate = 1.0f / durationSamples;
-                                sPlayingSounds[s].advance = effStart;
-                                sPlayingSounds[s].portaPreHoldSamples = preHoldSamples;
-                                MMSFX_LOG("[MmDirectAudio] Porta 0x%04X: startNote=%d→endNote=%d adv=%.4f→%.4f "
-                                          "dur=%.0f preHold=%u",
-                                          mmSfxId, (s32)portaNote, (s32)note, portaStartAdv, advance, durationSamples,
-                                          (u32)preHoldSamples);
-                                break;
-                            }
+                    // Apply portamento if specified — same direct-slot write.
+                    if (slotPlus1 > 0 && portaNote > 0 && portaSpeed > 0) {
+                        s32 portaEffNote = (s32)portaNote + (s32)transpose;
+                        if (portaEffNote < 0)
+                            portaEffNote = 0;
+                        if (portaEffNote > 127)
+                            portaEffNote = 127;
+                        f32 portaStartPitch = powf(2.0f, ((f32)portaEffNote - 60.0f) / 12.0f);
+                        f32 portaStartAdv = sound->tuning * portaStartPitch * freqScale;
+                        f32 durationSamples = (f32)portaSpeed * 16.0f;
+                        // Portamento direction: MM modes 0x82, 0x84 (or our portaModeInv=1)
+                        // glide INVERSE (target→start) instead of normal start→target.
+                        f32 effStart = portaStartAdv;
+                        f32 effEnd = advance;
+                        if (entryPortaModeInv) {
+                            effStart = advance;
+                            effEnd = portaStartAdv;
                         }
+                        sPlayingSounds[slot].portaStartAdv = effStart;
+                        sPlayingSounds[slot].portaEndAdv = effEnd;
+                        sPlayingSounds[slot].portaProgress = 0.0f;
+                        sPlayingSounds[slot].portaRate = 1.0f / durationSamples;
+                        sPlayingSounds[slot].advance = effStart;
+                        sPlayingSounds[slot].portaPreHoldSamples = preHoldSamples;
+                        MMSFX_LOG("[MmDirectAudio] Porta 0x%04X: startNote=%d→endNote=%d adv=%.4f→%.4f "
+                                  "dur=%.0f preHold=%u",
+                                  mmSfxId, (s32)portaNote, (s32)note, portaStartAdv, advance, durationSamples,
+                                  (u32)preHoldSamples);
                     }
 
                     // Set max duration for one-shot SFX that use INST_47 (explosion1)
                     // INST_47 samples are long. In MM, seq_0 uses short note durations + releaserate
                     // to cut them. Without that, they ring forever in our system.
-                    // 1 seq tick ≈ 20ms, 32kHz → 640 samples/tick
-                    if (slot > 0 && instIdx == 47 && !MmDirectAudio_IsContinuous(mmSfxId)) {
+                    // 1 seq tick ≈ 20ms, 32kHz → 640 samples/tick.
+                    // FIX: also cap INST_47 even for continuous SFX (GORON_ROLL 0x0990,
+                    // GORON_CHG_ROLL 0x0980) — those re-trigger every tumble cycle but the
+                    // INST_47 layer plays one notedv (40 ticks ≈ 800ms) once, not continuously.
+                    // Without this cap, the Explosion1 sample (PCM 5.5sec) plays as a sustained
+                    // rumble layered on top of the rolling — the "otro sonido" user reports.
+                    if (slotPlus1 > 0 && instIdx == 47) {
                         u32 maxLife = 35200; // default 55 ticks = 1.1s for INST_47
                         if (mmSfxId == 0x08E7)
                             maxLife = 22400; // BALL_TO_GORON: 35 ticks
                         if (mmSfxId == 0x08EF)
                             maxLife = 22400; // SQUAT: 35 ticks
-                        for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
-                            if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
-                                sPlayingSounds[s].lifeSamples == 0) {
-                                sPlayingSounds[s].maxLifeSamples = maxLife;
-                                break;
-                            }
-                        }
+                        if (mmSfxId == 0x0990 || mmSfxId == 0x0980)
+                            maxLife = 12800; // ROLL / CHG_ROLL: 400ms (one impact per tumble)
+                        if (mmSfxId == 0x09A3)
+                            maxLife = 9600;  // BALL_CHARGE_DASH: 300ms — dash impact must be brief
+                        // 0x08E2 / 0x08E3: don't override — PlaySingle's per-sfx cap (25600)
+                        // already matches MM's notedv 100t. INST_47 cap here applies only when
+                        // PlaySingle's switch doesn't catch it (other INST_47 SFX).
+                        sPlayingSounds[slot].maxLifeSamples = maxLife;
+                    }
+                    // RJUMP LOOP SIMULATION reverted: the forced loop at 48ms re-attacks
+                    // the sample's loud attack portion 20 times/second without re-triggering
+                    // the envelope. Result: a saturated buzz/drone — opposite of the rapid
+                    // "tk-tk" MM intends (which needs envelope re-attack per re-trigger,
+                    // not just PCM wrap). Proper fix requires engine support for per-layer
+                    // retrigger-with-envelope, not a simple loop wrap.
+                    // INST_77 (MechanicalRampUp/SAMPLE_0_391) cap — applies even for
+                    // continuous SFX. MM seq plays INST_77 with finite notedv durations
+                    // (no rjump in single-layer); the sample's natural sustain loop is
+                    // bounded by MM's notedv end. Without this cap, our continuous
+                    // semantic lets the sample loop FOREVER, producing a mechanical hum
+                    // that user reports as "another loop that doesn't stop" alongside
+                    // the proper rolling sound. Per-SFX caps match MM notedv:
+                    //   GORON_ROLL L1 = LAYER_13DB notedv BF3 40 ticks ≈ 320ms
+                    //   GORON_CHG_ROLL has rjump (LAYER_3ACC) — TRUE loop, no cap.
+                    if (slotPlus1 > 0 && instIdx == 77 && mmSfxId == 0x0990) {
+                        u32 maxLife = 10240; // 40 ticks ≈ 320ms — matches MM notedv
+                        sPlayingSounds[slot].maxLifeSamples = maxLife;
                     }
 
                     // (NEW) Sub-note: an additional note that fires AFTER the main note with
@@ -3242,7 +3488,7 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                     // `notedv F4, 4, 100; notedv B4, 24, 100` (FLOWER_CLOSE, BUD, etc.).
                     // Reuses startDelaySamples infrastructure — sub-note plays in its own
                     // slot with delayed start so it overlaps/follows the main note as MM does.
-                    if (slot > 0 && entrySubNoteNote != 0) {
+                    if (slotPlus1 > 0 && entrySubNoteNote != 0) {
                         u8 subInstIdx = (entrySubNoteInstr != 0) ? entrySubNoteInstr : instIdx;
                         s32 subEffNote = (s32)entrySubNoteNote + (s32)transpose;
                         if (subEffNote < 0) subEffNote = 0;
@@ -3254,7 +3500,6 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                             f32 subVolScale = entryVolScale;
                             if (entrySubNoteVel != 0 && entrySubNoteVel != 127) {
                                 f32 v = (f32)entrySubNoteVel / 127.0f;
-                                // Replace velocity² portion (preserve gain part)
                                 f32 mainVelSq = (entryVelocity != 0 && entryVelocity != 127)
                                                     ? ((f32)entryVelocity / 127.0f) * ((f32)entryVelocity / 127.0f)
                                                     : 1.0f;
@@ -3262,21 +3507,25 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                             }
                             f32 subVol = vol * subVolScale;
                             u32 subDelay = (u32)entrySubNoteDelay * 256u;
-                            s32 subSlot = MmDirectAudio_PlaySingle(subSound, subPitchScale, freqScale, mmSfxId,
-                                                                    subVol, pan, instVibRate, instVibDepth);
-                            if (subSlot > 0 && subDelay > 0) {
-                                for (s32 s = 0; s < MM_DIRECT_MAX_SOUNDS; s++) {
-                                    if (sPlayingSounds[s].active && sPlayingSounds[s].mmSfxId == mmSfxId &&
-                                        sPlayingSounds[s].lifeSamples == 0) {
-                                        sPlayingSounds[s].startDelaySamples = subDelay;
-                                        break;
-                                    }
+                            s32 subSlotPlus1 = MmDirectAudio_PlaySingle(subSound, subPitchScale, freqScale, mmSfxId,
+                                                                        subVol, pan, instVibRate, instVibDepth);
+                            if (subSlotPlus1 > 0) {
+                                // Sub-note inherits the entry's envPreset — otherwise the sub stays
+                                // on the default flat-sustain envelope while the main note has the
+                                // intended ADSR shape (FIRE pffft, FLOWER_CLOSE swell, etc.).
+                                if (entryEnvPreset != 0) {
+                                    MmDirectAudio_ApplyEnvPreset(&sPlayingSounds[subSlotPlus1 - 1], entryEnvPreset);
+                                }
+                                // Write startDelaySamples directly — the prior same-sfxId search
+                                // matched the MAIN slot first, inverting MM's grace→sustain order.
+                                if (subDelay > 0) {
+                                    sPlayingSounds[subSlotPlus1 - 1].startDelaySamples = subDelay;
                                 }
                             }
                         }
                     }
 
-                    played += (slot > 0) ? 1 : 0;
+                    played += (slotPlus1 > 0) ? 1 : 0;
                 } else {
                     MMSFX_LOG("[MmDirectAudio] INST 0x%04X: inst[%d] note=%d → NO VALID SOUND (sound=%p)", mmSfxId,
                               instIdx, note, (void*)sound);
@@ -3588,9 +3837,16 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
 static void MmDirectAudio_StopById(u16 mmSfxId) {
     for (s32 i = 0; i < MM_DIRECT_MAX_SOUNDS; i++) {
         if (sPlayingSounds[i].active && sPlayingSounds[i].mmSfxId == mmSfxId) {
-            // Trigger release phase instead of instant kill (prevents click)
+            // HARD STOP: previous behavior used a 10ms release fade, but for
+            // continuous looped SFX like BALL_CHARGE the slot could survive
+            // long enough for the next PlayAtPos refresh (which is racey with
+            // the game thread) to inadvertently reset volume back to full.
+            // Setting active=0 + envVolume=0 IMMEDIATELY kills the mix output
+            // even mid-loop. The 10ms fade was inaudible anyway because most
+            // SFX samples have a few zero-crossings near loop boundaries.
+            sPlayingSounds[i].envVolume = 0.0f;
             sPlayingSounds[i].envPhase = ADSR_PHASE_RELEASE;
-            sPlayingSounds[i].envReleaseRate = 1.0f / 320.0f; // 10ms fade-out
+            sPlayingSounds[i].active = 0;
         }
     }
 }

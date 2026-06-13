@@ -43,6 +43,20 @@ void Sm64Mario_TickTransitionSuspend(PlayState* play, Player* player);
 // (re)created — otherwise the hook would hide Link with nothing to replace it.
 u8 Sm64Mario_IsReady(void);
 
+// True only while the Vanish Cap is worn. Forces NoClip (z_bgcheck.c) so Mario
+// phases walls but floor-based loading zones still trigger.
+u8 Sm64Mario_IsVanishActive(void);
+
+// True while Mario is doing his boss-room "super attack" (the spin, ACT_TWIRLING).
+// Read by boss_super_damage (transformation_masks.c) so the reworked bosses take
+// FD-style paralyze-or-damage from Mario's spin. Gated to boss rooms implicitly:
+// only those bosses query the super-damage system.
+u8 Sm64Mario_IsSuperAttacking(void);
+
+// Mario's independent health as a 0..8 wedge count (SM64 power-meter segments).
+// Read by the HUD HP dial. 8 hits to die; decoupled from Link's heart count.
+s32 Sm64Mario_GetHealthWedges(void);
+
 // Stricter gate for the draw path: true only when Mario is ready AND the
 // mesh buffer has triangles. Prevents the "both invisible" state where
 // sSm64MarioId >= 0 but sm64_mario_tick hasn't populated the buffer yet.
@@ -66,6 +80,62 @@ u8 Sm64Mario_LensActive(void);
 // the equivalent of EnPartner's UseItem. Items spawn at the player actor's
 // position (which is Mario's, post position-writeback) facing Mario's yaw.
 void Sm64Mario_HandleItems(PlayState* play, Player* player);
+
+// --- Mario-mode power-up timer / cooldown (sm64_mario_items.c) ---
+// Four D-pad power-ups, each with a USE timer and a proportional TIMEOUT
+// (cooldown = usedFraction * maxCooldown). Only one is ACTIVE at a time.
+// Slot index order matches the corner HUD top→bottom:
+//   0 = Wing, 1 = Metal, 2 = Vanish, 3 = Fire.
+#define SM64_CAP_HUD_SLOT_COUNT 4
+#define SM64_CAP_PHASE_READY    0
+#define SM64_CAP_PHASE_ACTIVE   1
+#define SM64_CAP_PHASE_COOLDOWN 2
+
+// Advance the active use timer + every cooling slot by one frame. Called from
+// the normal path of Sm64Mario_HandleItems, so it only ticks while Mario mode
+// is genuinely active — naturally frozen during suspend / cutscene / mode-off.
+void Sm64MarioCaps_Tick(void);
+
+// Drop the currently-active cap into its proportional cooldown. Called from
+// Sm64Mario_Reset (mode off / detransform) and Sm64Mario_OnPlayerInit (scene
+// change). Does not clear the persistent per-cap timer state.
+void Sm64MarioCaps_OnSuspend(void);
+
+// HUD read accessors (used by the corner power-up HUD in z_parameter.c).
+u8  Sm64MarioCaps_GetPhase(s32 idx);            // SM64_CAP_PHASE_*
+f32 Sm64MarioCaps_GetCharge(s32 idx);           // 0..1 (ACTIVE drains, COOLDOWN fills, READY=1)
+s32 Sm64MarioCaps_GetRemainingSeconds(s32 idx); // whole seconds left in ACTIVE/COOLDOWN (0 if READY)
+s32 Sm64MarioCaps_GetActiveIndex(void);         // active slot index, or -1
+u8  Sm64MarioCaps_IsFireActive(void);           // true while the Fire cap (D-Up) is active
+
+// Fire Flower: launch a bouncing fireball forward on a fresh B press (Fire cap
+// only). The ball arcs with gravity, bounces off floors, and deals fire damage.
+void Sm64Mario_FireballOnBPress(PlayState* play, Player* player);
+
+// Advance every in-flight Fire Flower fireball one frame (gravity, bounce, fire
+// collider, flame VFX, despawn). Call unconditionally each frame from
+// Sm64Mario_Update so balls finish even after the Fire cap toggles off.
+void Sm64Mario_UpdateFireballs(PlayState* play);
+
+// Free all in-flight fireballs + their colliders. Called on detransform / scene
+// change / suspend (Sm64MarioCaps_OnSuspend) so fire colliders never leak.
+void Sm64Mario_KillAllFireballs(void);
+
+// Draw one camera-facing flame billboard per in-flight fireball at its absolute
+// world position (independent of Mario's facing). Call from Sm64Mario_Draw.
+void Sm64Mario_DrawFireballs(PlayState* play);
+
+// Cappy (Odyssey thrown cap) — throw it (C-Left) in one of four variants,
+// advance the projectile (out/hover/orbit/return + bounce detection + stun
+// collider) each frame, draw it, and free it on suspend. `homing` locks the
+// flight onto the nearest enemy (ignored for SPIN).
+#define SM64_CAPPY_FWD   0  // forward
+#define SM64_CAPPY_DIVE  2  // fast down-forward (air throw)
+#define SM64_CAPPY_SPIN  3  // orbits Mario (wide hit)
+void Sm64Cappy_Throw(PlayState* play, s32 mode, u8 homing);
+void Sm64Cappy_Update(PlayState* play);
+void Sm64Cappy_Draw(PlayState* play);
+void Sm64Cappy_Kill(void);
 
 // Renders the lit deku stick model (gLinkChildLinkDekuStickDL) at Mario's
 // hand whenever the player holds a deku stick C-button. Called from

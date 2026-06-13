@@ -501,6 +501,16 @@ void EnGe2_ForceTalk(EnGe2* this, PlayState* play) {
 }
 
 void EnGe2_SetupCapturePlayer(EnGe2* this, PlayState* play) {
+    // Never start a capture while the guards should be friendly. The friendly
+    // re-check at the bottom of EnGe2_Update only flips this->actor.update on
+    // the NEXT frame, so a detection on the same frame the player becomes a
+    // Gerudo (Gerudo Mask transform) would still capture without this gate.
+    if (GameInteractor_Should(VB_GERUDOS_BE_FRIENDLY, EnGe2_CheckCarpentersFreed())) {
+        this->actor.update = EnGe2_UpdateFriendly;
+        this->actor.targetMode = 6;
+        return;
+    }
+
     this->stateFlags |= GE2_STATE_CAPTURING;
     this->actor.speedXZ = 0.0f;
     EnGe2_ChangeAction(this, GE2_ACTION_CAPTURETURN);

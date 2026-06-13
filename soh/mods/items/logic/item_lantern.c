@@ -97,6 +97,12 @@ static void Lantern_RemoveLight(PlayState* play) {
 
 static void Lantern_SyncToSave(void) {
     gSaveContext.ship.lanternFireType = gCustomItemState.lanternFireType;
+    // Mark this fire type as ever-captured so the kaleido selector can offer it
+    // again after the player extinguishes / swaps. lanternFireType 0 = "none",
+    // which is always implicitly available so we don't track it as a bit.
+    if (gCustomItemState.lanternFireType > 0 && gCustomItemState.lanternFireType < 8) {
+        gSaveContext.ship.lanternCapturedTypes |= (1 << gCustomItemState.lanternFireType);
+    }
 }
 
 // No per-frame sync from save. The save value is loaded into gCustomItemState

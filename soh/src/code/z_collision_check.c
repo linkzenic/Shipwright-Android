@@ -3663,6 +3663,19 @@ u8 CollisionCheck_GetSwordDamage(s32 dmgFlags, PlayState* play) {
     }
 
     {
+        // Fierce Deity: use MM's Fierce Deity damage regardless of Link's equipped sword.
+        // MM D_8085D09C dmgTransformed fields (same for every sword): normal slash = 4, strong
+        // slash (jump/flip/spin finish) = 8, sword beam = up to 4. In OOT the strong/jump attack
+        // already resolves to 8 (flag 0x04000000), so keep 8 there and flatten everything else
+        // (normal slashes 1/2/4 + the beam's 2) to MM's 4. FD is the only sword attacker in FD skin
+        // mode, so gating on a recognized sword hit (damage != 0) is safe; normal play is unaffected.
+        extern u8 TransformMasks_IsFDSkinMode(void);
+        if ((damage != 0) && TransformMasks_IsFDSkinMode()) {
+            damage = (damage >= 8) ? 8 : 4;
+        }
+    }
+
+    {
         extern u8 gIvanPossessActive;
         extern u8 Sm64Mario_IsReady(void);
         if (CVarGetInteger(CVAR_ENHANCEMENT("IvanCoopModeEnabled"), 0) || gIvanPossessActive ||

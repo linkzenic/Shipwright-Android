@@ -13,6 +13,17 @@
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
+
+// Persistent Pikachu Gigantamax flag (defined in pikachu_form.cpp). Used to apply
+// a Pikachu-only ring restriction so its huge attack radius can't reach Phantom
+// Ganon while he's still out in a wall painting (FD / bow are never restricted).
+extern u8 gPikaGigantamaxMode;
+
+// Max XZ distance from the arena center (GND_BOSSROOM_CENTER) at which Pikachu may
+// damage Phantom Ganon. Beyond this he's inside/near a wall painting and immune to
+// Pika only. Measured center (14,-3315) → ring edge (~266,-3466) ≈ 294 units.
+#define GND_PIKA_RING_RADIUS 300.0f
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -1203,27 +1214,61 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
             if (acHit) {
                 this->colliderBody.base.acFlags &= ~AC_HIT;
                 hurtbox = this->colliderBody.info.acHitInfo;
+
+                // FD / Pika Gigantamax super-attack. ONLY the real boss responds —
+                // during phase 1 the horse spawns FAKE Phantom Ganons (GND_FAKE_BOSS)
+                // as painting decoys, and Pikachu's wide attack radius would otherwise
+                // stun/kill a decoy and fire the death cutscene on it → softlock /
+                // "two Phantom Ganons". The body bumper (0xFFCFFFFE) already accepts
+                // FD's sword/beam and Pika's electric, so the AC hit lands normally —
+                // here we just reroute the reaction. Gated on IsFormActive (persistent
+                // form) NOT IsActive (swing frame): FD's remote sword beam
+                // (ACTOR_EN_M_THUNDER) lands its AC hit a frame or more after the swing,
+                // when meleeWeaponState is already 0 — so a swing-gated check would miss
+                // the beam. The AC hit only comes from an FD/Pika attack, so form-gating
+                // is safe (boomerang regression untouched).
+                // Pikachu-ONLY ring restriction: Pika's attack radius is huge, so out
+                // in a wall painting it would reach the real boss and stun/kill him mid-
+                // painting. Gate Pika on XZ distance (Y ignored) from the arena center —
+                // beyond GND_PIKA_RING_RADIUS he's still in/near a painting → Pika immune.
+                // FD and bow are NEVER restricted (their reach is naturally short).
                 {
-                    // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-                    extern u8 gPikaGigantamaxActive;
-                    u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
-                    if (isGigaHit) {
-                        s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
-                        if (gigaDmg < 4)
-                            gigaDmg = 4;
-                        this->actor.colChkInfo.health -= gigaDmg;
+                    f32 gndDx = this->actor.world.pos.x - GND_BOSSROOM_CENTER_X;
+                    f32 gndDz = this->actor.world.pos.z - GND_BOSSROOM_CENTER_Z;
+                    u8 pikaOutOfRing = gPikaGigantamaxMode &&
+                                       (((gndDx * gndDx) + (gndDz * gndDz)) >
+                                        (GND_PIKA_RING_RADIUS * GND_PIKA_RING_RADIUS));
+                if ((this->actor.params == GND_REAL_BOSS) && !pikaOutOfRing &&
+                    BossSuperDamage_IsFormActive(play)) {
+                    BossSuperDamage_StartElectricSparks(&this->actor, 90);
+                    horse->hitTimer = 20;
+                    this->work[GND_INVINC_TIMER] = 10;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_DAMAGE);
+
+                    if (this->flyMode == GND_FLY_PAINTING) {
+                        // Phase 1 (painting/horse minigame): end it INSTANTLY — drop
+                        // the painting flyMode so BossGanondrof_Paintings dismounts him
+                        // into the phase-2 neutral stance next frame. No damage; the
+                        // real fight is phase 2.
+                        this->flyMode = GND_FLY_NEUTRAL;
+                    } else if (this->actionFunc == BossGanondrof_Stunned) {
+                        // Phase 2, already paralyzed → damage. Mashing keeps him stunned
+                        // (re-stun below) and kills him fast.
+                        this->actor.colChkInfo.health -= BossSuperDamage_FormDamage(play);
                         if ((s8)this->actor.colChkInfo.health <= 0) {
+                            this->actor.colChkInfo.health = 0;
                             BossGanondrof_SetupDeath(this, play);
                             Enemy_StartFinishingBlow(play, &this->actor);
                             GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                        } else {
-                            BossGanondrof_SetupStunned(this, play);
-                            this->work[GND_INVINC_TIMER] = 10;
-                            horse->hitTimer = 20;
-                            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_DAMAGE);
+                            return;
                         }
-                        return;
+                        BossGanondrof_SetupStunned(this, play); // refresh the stun for the next mash hit
+                    } else {
+                        // Phase 2, not paralyzed → stun him (skip the energy-ball tennis).
+                        BossGanondrof_SetupStunned(this, play);
                     }
+                    return;
+                }
                 }
             }
             if (this->flyMode != GND_FLY_PAINTING) {
@@ -1317,6 +1362,16 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     osSyncPrintf("MOVE END\n");
     BossGanondrof_SetColliderPos(&this->targetPos, &this->colliderBody);
     BossGanondrof_SetColliderPos(&this->spearTip, &this->colliderSpear);
+    // FD / Pika Gigantamax: vanilla only arms the body collider as a hurtbox while
+    // he's STUNNED (after you reflect his energy ball), blocking, or in the painting
+    // window — so a direct sword/beam in the phase-2 neutral stance registers nothing
+    // and never stuns him. Keep it hittable every frame while a super-form is active
+    // so FD's sword/beam (or Pika) lands its AC hit and BossGanondrof_CollisionCheck
+    // can stun-or-damage. Skip Block so his projectile-deflect (COLTYPE_METAL) stays.
+    if ((this->actor.params == GND_REAL_BOSS) && BossSuperDamage_IsFormActive(play) &&
+        (this->actionFunc != BossGanondrof_Block) && (this->actionFunc != BossGanondrof_Charge)) {
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderBody.base);
+    }
     if ((this->flyMode == GND_FLY_PAINTING) && !horse->bossGndInPainting) {
         CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderBody.base);
     }
@@ -1514,4 +1569,24 @@ void BossGanondrof_Draw(Actor* thisx, PlayState* play) {
     POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
     CLOSE_DISPS(play->state.gfxCtx);
     osSyncPrintf("DRAW END %d\n", this->actor.params);
+
+    // FD / Pika Gigantamax electric light-orb glow (real boss only — never the
+    // painting decoys). bodyPartsPos[1..25] are only populated outside the painting
+    // phase (PostLimbDraw skips them during flyMode GND_FLY_PAINTING), so fall back
+    // to the actor position in phase 1.
+    if (this->actor.params == GND_REAL_BOSS) {
+        Vec3f limbs[12];
+        s32 n;
+        if (this->flyMode != GND_FLY_PAINTING) {
+            for (n = 0; n < 12; n++) {
+                limbs[n] = this->bodyPartsPos[(n * 2) + 1]; // sample every other limb (2..24)
+            }
+        } else {
+            for (n = 0; n < 12; n++) {
+                limbs[n] = this->actor.world.pos;
+                limbs[n].y += 20.0f + (n * 6.0f); // stack a column up the body
+            }
+        }
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 12, 1.0f);
+    }
 }

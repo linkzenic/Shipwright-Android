@@ -11,6 +11,9 @@
  *     VB_GIVE_ITEM_GERUDO_MEMBERSHIP_CARD → false (no card autograntee).
  *   - Sandstorm-OFF enforcement in Haunted Wasteland (per-frame + on
  *     transition end).
+ *   - Haunted Wasteland lost-warp chooser: getting lost no longer loops you
+ *     back — a "Go to:" textbox offers the Gerudo Fortress side or the Desert
+ *     Colossus side of the desert and warps there. Real exits stay vanilla.
  *   - GerudoForm_GetTunicColor helper used by the hybrid render to recolor
  *     the gerudo outfit with Link's current tunic.
  *
@@ -30,6 +33,7 @@
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/ShipInit.hpp"
 #include "soh/cvar_prefixes.h"
 #include "soh/ResourceManagerHelpers.h"
@@ -72,6 +76,67 @@ bool IsWearingGerudoMask() {
 // falling edge → ClearForcedModel. Polled in OnPlayerUpdate.
 bool sPrevWantGerudo = false;
 
+// --- Haunted Wasteland "lost" warp chooser ---------------------------------
+// Gerudo desert skill: instead of the vanilla lost-warp looping you back to
+// the entrance you came from, a "Go to:" two-choice textbox lets you pick
+// which end of the desert to warp to. Genuine exits (next entrance's scene is
+// Gerudo Fortress / Desert Colossus, not the wasteland itself) pass through
+// untouched. Same textbox plumbing as mods/spiritual_stones (open custom
+// textId, then poll msgMode/choiceIndex).
+constexpr uint16_t kWastelandWarpTextId = 0x9FB0; // free slot above spiritual_stones' 0x9FA0-0x9FA2
+bool sWastelandPromptQueued = false; // a lost-warp fired; open the chooser
+bool sWastelandPromptOpen = false;   // chooser textbox currently on screen
+bool sWastelandWarpChosen = false;   // our own warp transition is running; don't re-intercept it
+
+void GerudoForm_TickWastelandWarp(PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    // 1. Intercept exit-surface warps that loop back INTO the wasteland (the
+    //    "you got lost" mechanic warps to a wasteland self-entrance). The two
+    //    real exits load Gerudo Fortress / Desert Colossus scenes, so they
+    //    never match and keep working vanilla.
+    if (!sWastelandWarpChosen && play->transitionTrigger == TRANS_TRIGGER_START) {
+        s32 next = play->nextEntranceIndex;
+        if (next >= 0 && next < ENTR_MAX && gEntranceTable[next].scene == SCENE_HAUNTED_WASTELAND) {
+            play->transitionTrigger = TRANS_TRIGGER_OFF;
+            if (player != nullptr) {
+                // Player_HandleExitsAndVoids set these while arming the exit.
+                player->stateFlags1 &= ~(PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_CUTSCENE);
+            }
+            sWastelandPromptQueued = true;
+        }
+    }
+
+    // 2. Chooser closed → execute the chosen warp.
+    if (sWastelandPromptOpen) {
+        if (play->msgCtx.msgMode == MSGMODE_NONE) {
+            sWastelandPromptOpen = false;
+            sWastelandPromptQueued = false;
+            if (player != nullptr) {
+                player->stateFlags1 &= ~PLAYER_STATE1_IN_CUTSCENE;
+            }
+            sWastelandWarpChosen = true;
+            play->nextEntranceIndex = (play->msgCtx.choiceIndex == 0)
+                                          ? ENTR_HAUNTED_WASTELAND_EAST_EXIT  // Gerudo Fortress side
+                                          : ENTR_HAUNTED_WASTELAND_WEST_EXIT; // Desert Colossus side
+            play->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+            play->transitionTrigger = TRANS_TRIGGER_START;
+        }
+        return;
+    }
+
+    // 3. Open the chooser (never on top of another textbox or a transition).
+    if (sWastelandPromptQueued && play->msgCtx.msgMode == MSGMODE_NONE &&
+        play->transitionTrigger == TRANS_TRIGGER_OFF) {
+        sWastelandPromptQueued = false;
+        sWastelandPromptOpen = true;
+        if (player != nullptr) {
+            player->stateFlags1 |= PLAYER_STATE1_IN_CUTSCENE; // freeze while choosing
+        }
+        Message_StartTextbox(play, kWastelandWarpTextId, nullptr);
+    }
+}
+
 // Defined in mm_player_form.cpp.
 extern "C" MmPlayerTransformation MmForm_GetCurrentForm(void);
 
@@ -97,13 +162,40 @@ void GerudoForm_OnPlayerUpdate() {
     sPrevWantGerudo = want;
 
     // Sandstorm OFF in Haunted Wasteland (per-frame, so toggling the mask
-    // mid-scene clears the sandstorm without re-entering the area).
+    // mid-scene clears the sandstorm without re-entering the area), plus the
+    // lost-warp "Go to:" chooser.
+    //
+    // CRITICAL: never force OFF while a transition is running. Every wasteland
+    // exit/entry uses a TRANS_TYPE_SANDSTORM_* wipe whose completion check
+    // waits for sandstormPrimA/EnvA to fill (z_play.c TRANS_MODE_SANDSTORM) —
+    // and those alphas only advance inside Environment_DrawSandstorm, which is
+    // skipped entirely while sandstormState == SANDSTORM_OFF. Forcing OFF
+    // mid-wipe therefore hangs the transition forever: the player freezes
+    // (LOADING|IN_CUTSCENE) on the exit plane and can never leave the desert.
     if (GerudoForm_IsActive() && gPlayState->sceneNum == SCENE_HAUNTED_WASTELAND) {
-        gPlayState->envCtx.sandstormState = SANDSTORM_OFF;
+        if (gPlayState->transitionTrigger == TRANS_TRIGGER_OFF && gPlayState->transitionMode == TRANS_MODE_OFF) {
+            gPlayState->envCtx.sandstormState = SANDSTORM_OFF;
+        }
+        GerudoForm_TickWastelandWarp(gPlayState);
+    } else if (sWastelandPromptOpen || sWastelandPromptQueued) {
+        // Form deactivated (or left the scene) with the chooser pending —
+        // drop the pending state so the player isn't left frozen.
+        sWastelandPromptQueued = false;
+        sWastelandPromptOpen = false;
+        Player* p = GET_PLAYER(gPlayState);
+        if (p != nullptr) {
+            p->stateFlags1 &= ~PLAYER_STATE1_IN_CUTSCENE;
+        }
     }
 }
 
 void GerudoForm_OnTransitionEnd(int16_t sceneNum) {
+    // Any completed transition resets the chooser plumbing (including our own
+    // chosen warp — the next lost-trigger should prompt again).
+    sWastelandPromptQueued = false;
+    sWastelandPromptOpen = false;
+    sWastelandWarpChosen = false;
+
     if (sceneNum == SCENE_HAUNTED_WASTELAND && GerudoForm_IsActive() && gPlayState != nullptr) {
         gPlayState->envCtx.sandstormState = SANDSTORM_OFF;
     }
@@ -290,6 +382,52 @@ extern "C" void GerudoForm_Init(void) {
             *should = false;
         }
     });
+
+    // En_GeldB (Gerudo Fighter miniboss) — don't throw the player in jail
+    // while the mask is worn. The miniboss is a duel test, not a fortress
+    // patrol; Gerudo lore says they wouldn't capture one of their own.
+    REGISTER_VB_SHOULD(VB_GERUDO_FIGHTER_THROW_LINK_TO_JAIL, {
+        if (GerudoForm_IsActive()) {
+            *should = false;
+        }
+    });
+
+    // Desert skill — Haunted Wasteland "lost" warp chooser.
+    // Two mechanics warp a lost wanderer back in the wasteland:
+    //   1. VB_SET_VOIDOUT_FROM_SURFACE / exit surfaces whose entrance loops
+    //      back into the wasteland itself (intercepted by transitionTrigger in
+    //      GerudoForm_TickWastelandWarp — real exits to Fortress/Colossus are
+    //      excluded because their entrance loads a different scene).
+    //   2. VB_TRIGGER_VOIDOUT — the sinking-sand void planes.
+    // For Gerudo in the wasteland both are converted into the "Go to:" choice
+    // textbox (Gerudo Fortress side / Desert Colossus side) instead of the
+    // vanilla loop-back. Outside Haunted Wasteland the hooks pass through to
+    // vanilla so falling off a cliff still voids out.
+    REGISTER_VB_SHOULD(VB_TRIGGER_VOIDOUT, {
+        if (GerudoForm_IsActive() && gPlayState != nullptr &&
+            gPlayState->sceneNum == SCENE_HAUNTED_WASTELAND) {
+            *should = false;
+            sWastelandPromptQueued = true; // got lost → offer the warp chooser
+        }
+    });
+    REGISTER_VB_SHOULD(VB_SET_VOIDOUT_FROM_SURFACE, {
+        if (GerudoForm_IsActive() && gPlayState != nullptr &&
+            gPlayState->sceneNum == SCENE_HAUNTED_WASTELAND) {
+            *should = false;
+        }
+    });
+
+    // "Go to:" chooser message — injected on demand for our custom textId.
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(
+        [](uint16_t* textId, bool* loadFromMessageTable) {
+            if (*textId != kWastelandWarpTextId) {
+                return;
+            }
+            CustomMessage msg("You are lost in the desert...&Go to:\x1B%gGerudo Fortress&Desert Colossus%w");
+            msg.AutoFormat();
+            msg.LoadIntoFont();
+            *loadFromMessageTable = false;
+        });
 
     COND_HOOK(OnTransitionEnd, true, GerudoForm_OnTransitionEnd);
     COND_HOOK(OnPlayerUpdate, true, GerudoForm_OnPlayerUpdate);
@@ -538,16 +676,16 @@ extern "C" void GerudoForm_Update(PlayState* play, Player* player) {
     // directly on the melee weapon quads independent of heldItemAction.
     if (play != nullptr && player != nullptr) {
         s8 desiredIA = LINK_IS_ADULT ? PLAYER_IA_SWORD_MASTER : PLAYER_IA_SWORD_KOKIRI;
-        // Sync BOTH heldItemAction AND itemAction. Player_SetModelsForHoldingShield
-        // (z_player_lib.c:622) requires (itemAction < 0) || (itemAction == heldItemAction)
-        // before it promotes rightHandType to RH_SHIELD — without this, the shield
-        // DL never draws even though SHIELDING is set ("sigue sin DL"). Vanilla
-        // keeps these in lockstep via Player_SetSwordEquipmentAction; we do the
-        // same here every frame for Gerudo.
-        if (player->heldItemAction != desiredIA) {
+        // Sync heldItemAction AND itemAction, but ONLY when Link is currently
+        // holding a two-handed weapon (BGS / Hammer) — that's the state that
+        // blocks Player_SetModelsForHoldingShield from promoting rightHandType
+        // to RH_SHIELD. For any other heldItemAction (bow, hookshot, sword
+        // master/kokiri already, item use, NONE, etc.) we leave it alone so
+        // vanilla item use / C-button items / temporary equipment swaps all
+        // run unmodified. This is the rule "1:1 vanilla unless explicit".
+        if (player->heldItemAction >= PLAYER_IA_SWORD_BIGGORON &&
+            player->heldItemAction <= PLAYER_IA_HAMMER) {
             player->heldItemAction = desiredIA;
-        }
-        if (player->itemAction != desiredIA) {
             player->itemAction = desiredIA;
         }
         // Gerudo blocks the shield equip slot, so if the player hadn't equipped

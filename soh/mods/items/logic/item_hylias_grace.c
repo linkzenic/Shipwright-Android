@@ -898,3 +898,10 @@ void Player_InitHyliasGraceIA(PlayState* play, Player* p) {
 s32 Player_UpperAction_HyliasGrace(Player* p, PlayState* play) {
     return 0;
 }
+
+// True while the fairy is in free flight (passing through walls). Forces NoClip
+// (z_bgcheck.c) so OOT's standard floor-based loading-zone detection fires — the
+// fairy's own collision bypass left actor.wallPoly stale, so exits didn't trigger.
+s32 HGrace_WantsNoClip(void) {
+    return hgActive && (hgState == HGRACE_STATE_FAIRY);
+}

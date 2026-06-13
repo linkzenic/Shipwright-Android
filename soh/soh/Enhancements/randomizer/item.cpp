@@ -285,7 +285,9 @@ std::shared_ptr<GetItemEntry> Item::GetGIEntry() const { // NOLINT(*-no-recursio
         case RG_PROGRESSIVE_ROCS:
             switch (logic->CurrentInventory(ITEM_ROCS_FEATHER_SKIJER)) {
                 case ITEM_NONE:
-                    actual = RG_ROCS_FEATHER;
+                    // First copy is Skijer's feather — resolve to the progressive entry itself.
+                    // RG_ROCS_FEATHER is the separate vanilla rando feather (Nayru's Love slot).
+                    actual = RG_PROGRESSIVE_ROCS;
                     break;
                 case ITEM_ROCS_FEATHER_SKIJER:
                 case ITEM_ROCS_CAPE:

@@ -25,6 +25,13 @@
 extern "C" {
 #endif
 
+// Custom action IDs added by this fork (Odyssey moveset). The host drives them
+// with p_sm64_set_mario_action() and detects them via SM64MarioState.action.
+// Values mirror src/decomp/include/sm64.h in references/libsm64.
+#define SM64_ACT_CAP_THROW   0x8000058A
+#define SM64_ACT_ROLL        0x00808441
+#define SM64_ACT_CAP_BOUNCE  0x03000884
+
 struct SM64Surface {
     int16_t type;
     int16_t force;

@@ -84,6 +84,11 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
         // MM EnMThunder_Init line 124: shape.rot.y = player.shape.rot.y + 0x8000.
         // Without this, movement formula (-80 * sin(shape.rot.y)) fires beam backward.
         this->actor.shape.rot.y = player->actor.shape.rot.y + 0x8000;
+        // MM EnMThunder_Init line 125: shape.rot.x = -world.rot.x. The spawn passed the
+        // pitch as rotX so BOTH world.rot.x AND shape.rot.x = +beamPitch — drawing the
+        // crescent disc tilted edge-on, which reads as a "cone". Negate it so the flat
+        // disc faces the travel direction like MM (movement still uses world.rot.x).
+        this->actor.shape.rot.x = -this->actor.world.rot.x;
         this->attackStrength = 2; // Sword beam type
         this->isUsingMagic = 0;   // No magic tracking
         // MM: scale starts at 0, ramps to scaleTarget (12) via Math_SmoothStepToF
@@ -93,9 +98,11 @@ void EnMThunder_Init(Actor* thisx, PlayState* play2) {
         this->spinAttackAlpha = 1.0f;    // alphaFrac starts at 1.0
         this->spinTrailTexScroll = 0.0f; // scroll counter
         this->followPlayerTimer = 1;     // timer (MM line 172)
-        // Collider: MM uses DMG_SWORD_BEAM (0x02000000) damage flags, damage=3
+        // Collider: DMG_SWORD_BEAM (0x02000000). Damage = 4 to match MM's FD sword beam (sDamages
+        // max). Enemies that read CollisionCheck_GetSwordDamage get the FD value there; this
+        // toucher.damage covers the few that read it directly.
         this->collider.info.toucher.dmgFlags = 0x02000000; // DMG_SWORD_BEAM
-        this->collider.info.toucher.damage = 3;            // MM line 175
+        this->collider.info.toucher.damage = 4;
         this->collider.dim.height = 60;
         this->collider.dim.yShift = -30;
         this->actor.room = -1;
@@ -369,6 +376,20 @@ static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play) {
         return;
     }
 
+    // FD beam HOMING (SOH enhancement — MM's beam flies straight). The locked target
+    // is stored at spawn (focusActor / arrowPointedActor). Each frame we curve the
+    // beam's travel yaw/pitch toward the target's focus point so moving enemies still
+    // get hit. shape.rot.y carries the +0x8000 the movement formula expects (see Init);
+    // shape.rot.x is kept = -world.rot.x so the disc stays oriented to the new heading.
+    if (this->homingTarget != NULL && this->homingTarget->update != NULL) {
+        Vec3f* targetPos = &this->homingTarget->focus.pos;
+        s16 targetYaw = Math_Vec3f_Yaw(&this->actor.world.pos, targetPos) + 0x8000;
+        s16 targetPitch = Math_Vec3f_Pitch(&this->actor.world.pos, targetPos);
+        Math_ScaledStepToS(&this->actor.shape.rot.y, targetYaw, 0x1000);
+        Math_ScaledStepToS(&this->actor.world.rot.x, targetPitch, 0x1000);
+        this->actor.shape.rot.x = -this->actor.world.rot.x;
+    }
+
     // Movement: direct position update (MM lines 413-417)
     f32 sp2C = -80.0f * Math_CosS(this->actor.world.rot.x);
     this->actor.world.pos.x += sp2C * Math_SinS(this->actor.shape.rot.y);
@@ -382,18 +403,11 @@ static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play) {
     // Scroll counter for texture animation
     this->spinTrailTexScroll += 1.0f;
 
-    // Collider: radius grows with scale (MM line 422)
-    this->collider.dim.radius = (s16)(this->actor.scale.x * 5.0f);
-    // Position offset forward from actor (MM lines 428-432)
-    this->collider.dim.pos.x =
-        (s32)((Math_SinS(this->actor.shape.rot.y) * -5.0f * this->actor.scale.x) + this->actor.world.pos.x);
-    this->collider.dim.pos.y = (s32)this->actor.world.pos.y;
-    this->collider.dim.pos.z =
-        (s32)((Math_CosS(this->actor.shape.rot.y) * -5.0f * this->actor.scale.z) + this->actor.world.pos.z);
-
-    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
-
-    // Hit effect: white flash on enemy body when beam connects (uses gameplay_keep, always loaded)
+    // Die on contact like an arrow: CHECK AT_HIT *BEFORE* CollisionCheck_SetAT. SetAT runs
+    // sATResetFuncs which CLEARS atFlags AT_HIT every frame (z_collision_check.c:1186), so the
+    // old order (SetAT then check) always read 0 → the beam never despawned on a hit (it only
+    // expired by lifetime). Reading it first picks up last frame's registered hit, exactly how
+    // EnArrow does it (z_en_arrow.c:386 checks AT_HIT before its own SetAT).
     if (this->collider.base.atFlags & AT_HIT) {
         Actor* hitActor = this->collider.base.at;
         if (hitActor != NULL) {
@@ -404,6 +418,17 @@ static void EnMThunder_SwordBeamAction(EnMThunder* this, PlayState* play) {
         Actor_Kill(&this->actor);
         return;
     }
+
+    // Collider: radius grows with scale (MM line 422)
+    this->collider.dim.radius = (s16)(this->actor.scale.x * 5.0f);
+    // Position offset forward from actor (MM lines 428-432)
+    this->collider.dim.pos.x =
+        (s32)((Math_SinS(this->actor.shape.rot.y) * -5.0f * this->actor.scale.x) + this->actor.world.pos.x);
+    this->collider.dim.pos.y = (s32)this->actor.world.pos.y;
+    this->collider.dim.pos.z =
+        (s32)((Math_CosS(this->actor.shape.rot.y) * -5.0f * this->actor.scale.z) + this->actor.world.pos.z);
+
+    CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
 
     // Timer (MM line 437-439)
     if (this->followPlayerTimer > 0) {

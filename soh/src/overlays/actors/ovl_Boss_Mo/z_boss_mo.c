@@ -14,6 +14,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 
 #include <string.h>
 
@@ -1772,44 +1773,61 @@ void BossMo_CoreCollisionCheck(BossMo* this, PlayState* play) {
             this->timers[0] = 150;
         }
     }
+
+    // FD / Pika Gigantamax: the nucleus is ALWAYS killable (user request). Bypasses
+    // every vanilla gate (underwater / attacking / invincibility window / must-be-
+    // hookshot-out-first) — any reach stuns + damages the core, mash to kill. Detected
+    // by an accepted AC hit OR the geometric FD-sword/touch reach (bypasses dmgFlags so
+    // it lands even if the core bumper rejects the FD beam). Gated on IsFormActive →
+    // normal play untouched. Death reuses the vanilla guard (don't kill mid-cutscene).
+    if ((this->work[MO_TENT_INVINC_TIMER] == 0) && BossSuperDamage_IsFormActive(play) &&
+        ((this->coreCollider.base.acFlags & AC_HIT) ||
+         BossSuperDamage_FormAttackReaches(play, &this->actor.world.pos,
+                                           BossSuperDamage_FormAttackRange(play) + 40.0f))) {
+        this->coreCollider.base.acFlags &= ~AC_HIT;
+        BossSuperDamage_StartElectricSparks(&this->actor, 90);
+        this->work[MO_TENT_ACTION_STATE] = MO_CORE_STUNNED;
+        this->timers[0] = 25;
+        this->actor.speedXZ = 15.0f;
+        this->actor.world.rot.y = this->actor.yawTowardsPlayer + 0x8000;
+        this->work[MO_CORE_DMG_FLASH_TIMER] = 15;
+        this->work[MO_TENT_INVINC_TIMER] = 10; // short cooldown so mashing lands fast
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MOFER_CORE_DAMAGE);
+        this->actor.colChkInfo.health -= BossSuperDamage_FormDamage(play);
+        this->hitCount++;
+        if ((s8)this->actor.colChkInfo.health <= 0) {
+            this->actor.colChkInfo.health = 0;
+            // Same safety as vanilla: only actually die when no tentacle cutscene camera
+            // is running, else clamp to 1 and let the next hit finish it.
+            if (((sMorphaTent1->csCamera == 0) && (sMorphaTent2 == NULL)) ||
+                ((sMorphaTent1->csCamera == 0) && (sMorphaTent2 != NULL) && (sMorphaTent2->csCamera == 0))) {
+                Enemy_StartFinishingBlow(play, &this->actor);
+                GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
+                this->csState = MO_DEATH_START;
+                sMorphaTent1->drawActor = false;
+                sMorphaTent1->work[MO_TENT_ACTION_STATE] = MO_TENT_DEATH_START;
+                sMorphaTent1->baseAlpha = 0.0f;
+                if (sMorphaTent2 != NULL) {
+                    sMorphaTent2->tent2KillTimer = 1;
+                }
+                if (player->actor.parent != NULL) {
+                    player->av2.actionVar2 = 0x65;
+                    player->actor.parent = NULL;
+                    player->csAction = 0;
+                }
+            } else {
+                this->actor.colChkInfo.health = 1;
+            }
+        }
+        return;
+    }
+
     if (this->coreCollider.base.acFlags & AC_HIT) {
         ColliderInfo* hurtbox = this->coreCollider.info.acHitInfo;
         // "hit!!"
         osSyncPrintf("Core_Damage_check 当り！！\n");
         this->coreCollider.base.acFlags &= ~AC_HIT;
-        {
-            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-            u8 isGigaHit = (hurtbox->toucher.dmgFlags & DMG_UNBLOCKABLE);
-            if (isGigaHit) {
-                s32 gigaDmg = CollisionCheck_GetSwordDamage(hurtbox->toucher.dmgFlags, play);
-                if (gigaDmg < 4)
-                    gigaDmg = 4;
-                this->actor.colChkInfo.health -= gigaDmg;
-                this->work[MO_TENT_ACTION_STATE] = MO_CORE_STUNNED;
-                this->timers[0] = 25;
-                this->actor.speedXZ = 15.0f;
-                this->actor.world.rot.y = this->actor.yawTowardsPlayer + 0x8000;
-                this->work[MO_CORE_DMG_FLASH_TIMER] = 15;
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_MOFER_CORE_DAMAGE);
-                this->hitCount++;
-                if ((s8)this->actor.colChkInfo.health <= 0) {
-                    if (((sMorphaTent1->csCamera == 0) && (sMorphaTent2 == NULL)) ||
-                        ((sMorphaTent1->csCamera == 0) && (sMorphaTent2 != NULL) && (sMorphaTent2->csCamera == 0))) {
-                        Enemy_StartFinishingBlow(play, &this->actor);
-                        GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                        Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
-                        this->csState = MO_DEATH_START;
-                        sMorphaTent1->drawActor = false;
-                        sMorphaTent1->work[MO_TENT_ACTION_STATE] = MO_TENT_DEATH_START;
-                        sMorphaTent1->baseAlpha = 0.0f;
-                        if (sMorphaTent2 != NULL) {
-                            sMorphaTent2->tent2KillTimer = 1;
-                        }
-                    }
-                }
-                return;
-            }
-        }
         if ((hurtbox->toucher.dmgFlags & 0x00020000) && (this->work[MO_TENT_ACTION_STATE] == MO_CORE_ATTACK)) {
             this->work[MO_TENT_ACTION_STATE] = MO_CORE_RETREAT;
         }
@@ -2775,6 +2793,13 @@ void BossMo_DrawCore(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 
     BossMo_DrawEffects(play->specialEffects, play);
+
+    // FD / Pika Gigantamax electric glow on the nucleus. Single anchor at the core's
+    // world position. No-op when the spark timer is 0 (not recently hit).
+    {
+        Vec3f limb = this->actor.world.pos;
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, &limb, 1, 1.0f);
+    }
 }
 
 void BossMo_DrawTent(Actor* thisx, PlayState* play) {

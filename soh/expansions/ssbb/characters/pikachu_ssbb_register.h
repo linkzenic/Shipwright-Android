@@ -9,26 +9,23 @@
 #include "expansions/ssbb/characters/pikachu_ssbb_skin.h"
 #include "expansions/ssbb/characters/pikachu_ssbb_Wait1.h"
 #include "expansions/ssbb/characters/pikachu_ssbb_Wait3.h"
-#include "expansions/ssbb/characters/pikachu_ssbb_Wait1_ssbb.h"
-#include "expansions/ssbb/characters/pikachu_ssbb_Wait3_ssbb.h"
 
 static AnimationHeader* pikachu_ssbb_anims[] = {
     &pikachu_ssbb_Wait1_anim,
     &pikachu_ssbb_Wait3_anim,
 };
 
-static const struct SSBBAnim* pikachu_ssbb_ssbb_anims[] = {
-    &pikachu_ssbb_Wait1_ssbb_anim,
-    &pikachu_ssbb_Wait3_ssbb_anim,
-};
-
+// The SSBBAnim tables are loaded at runtime from NEI/pikachu_anims.bin into
+// pikachu_ssbb_all_anims[] (see pikachu_form.cpp). The character def therefore
+// carries no compiled-in ssbbAnims; pikachu_form sets the initial animation via
+// Pika_SetAction() right after SSBBChar_Init().
 static SSBBCharacterDef pikachu_ssbb_def = {
     .name = "pikachu_ssbb",
     .skeleton = &pikachu_ssbb_skeleton,
     .anims = pikachu_ssbb_anims,
-    .ssbbAnims = pikachu_ssbb_ssbb_anims,
+    .ssbbAnims = NULL,
     .numAnims = 2,
-    .numSSBBAnims = 2,
+    .numSSBBAnims = 0,
     .scale = 0.05f,
     .numLimbs = 48,
     .rotOrder = SSBB_ROT_ORDER_ZYX,

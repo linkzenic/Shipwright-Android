@@ -27,6 +27,7 @@
 #include "mods/extended_inventory.h"
 #include "mods/extended_equipment.h"
 #include "mods/transformation_masks/transformation_masks.h"
+#include "mods/broken_items/broken_items.c" // .c (mods .c are #included, not built as TUs)
 
 static void* sEquipmentFRATexs[] = {
     gPauseEquipment00FRATex, gPauseEquipment01Tex, gPauseEquipment02Tex, gPauseEquipment03Tex, gPauseEquipment04Tex,
@@ -947,13 +948,18 @@ void KaleidoScope_SwitchPage(PauseContext* pauseCtx, u8 pt) {
 void KaleidoScope_HandlePageToggles(PauseContext* pauseCtx, Input* input) {
     s16 Debug_BTN = BTN_L;
     s16 PageLeft_BTN = BTN_Z;
+    // Default OFF: Z (+R) flips kaleido pages, L is freed for the NEI in-page features.
     if (CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0) {
         Debug_BTN = BTN_Z;
         PageLeft_BTN = BTN_L;
     }
 
+    // Debug menu now opens on Debug_BTN + A (was Debug_BTN alone) so a lone L
+    // press stays free for page/overlay use. Both must be held and at least one
+    // freshly pressed this frame (same edge-combo idiom as Player_UpdateNoclip).
+    s32 debugMask = Debug_BTN | BTN_A;
     if (CVarGetInteger(CVAR_DEVELOPER_TOOLS("DebugEnabled"), 0) && (pauseCtx->debugState == 0) &&
-        CHECK_BTN_ALL(input->press.button, Debug_BTN)) {
+        CHECK_BTN_ALL(input->cur.button, debugMask) && CHECK_BTN_ANY(input->press.button, debugMask)) {
         pauseCtx->debugState = 1;
         return;
     }
@@ -1413,6 +1419,7 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
                 }
                 break;
         }
+
     }
 
     Gfx_SetupDL_42Opa(gfxCtx);
@@ -2176,7 +2183,26 @@ void KaleidoScope_UpdateNamePanel(PlayState* play) {
                     textureName = iconNameTextures[sp2A];
                 }
 
-                if (!GameInteractor_Should(VB_DRAW_CUSTOM_ITEM_NAME, false, pauseCtx->namedItem)) {
+                // Twilight Upgrade mode-name swap: when the player has the
+                // corresponding upgrade bit set AND its kaleido toggle is in the
+                // "upgraded" position, show the alternate item name instead of
+                // the vanilla one. C-level override done here to keep the C-only
+                // unity build (no extra .cpp file needed).
+                extern u8 TwilightUpgrade_IsClawshotActive(void);
+                extern u8 TwilightUpgrade_IsGaleBoomerangActive(void);
+                static const char sClawshotName[] = "__OTR__textures/item_name_custom/gClawshotNameTex";
+                static const char sGaleName[] = "__OTR__textures/item_name_custom/gGaleBoomerangNameTex";
+                const char* twilightOverride = NULL;
+                if ((pauseCtx->namedItem == ITEM_HOOKSHOT || pauseCtx->namedItem == ITEM_LONGSHOT) &&
+                    TwilightUpgrade_IsClawshotActive()) {
+                    twilightOverride = sClawshotName;
+                } else if (pauseCtx->namedItem == ITEM_BOOMERANG && TwilightUpgrade_IsGaleBoomerangActive()) {
+                    twilightOverride = sGaleName;
+                }
+
+                if (twilightOverride != NULL) {
+                    memcpy(pauseCtx->nameSegment, twilightOverride, strlen(twilightOverride) + 1);
+                } else if (!GameInteractor_Should(VB_DRAW_CUSTOM_ITEM_NAME, false, pauseCtx->namedItem)) {
                     memcpy(pauseCtx->nameSegment, textureName, strlen(textureName) + 1);
                 }
             }
@@ -3214,6 +3240,10 @@ void KaleidoScope_Draw(PlayState* play) {
         if (!((pauseCtx->state >= 8) && (pauseCtx->state <= 0x11))) {
             KaleidoScope_DrawInfoPanel(play);
         }
+
+        // Broken Modes: full custom overlay on top of everything (cube, prompts,
+        // info panel) when active. No-op otherwise.
+        BrokenItems_DrawOverlay(play);
     }
 
     if ((pauseCtx->state >= 0xB) && (pauseCtx->state <= 0x11)) {
@@ -3540,7 +3570,15 @@ void KaleidoScope_Update(PlayState* play) {
             pauseCtx->stickRelX = input->rel.stick_x;
             pauseCtx->stickRelY = input->rel.stick_y;
             KaleidoScope_UpdateCursorSize(&play->pauseCtx);
-            KaleidoScope_HandlePageToggles(pauseCtx, input);
+            // Broken Modes page: opened from the Map page with the page-change
+            // button, navigated here instead of the normal page rotation.
+            if (BrokenItems_IsActive()) {
+                BrokenItems_Update(play, input);
+            } else if (BrokenItems_ShouldEnter(play)) {
+                BrokenItems_Enter(play);
+            } else {
+                KaleidoScope_HandlePageToggles(pauseCtx, input);
+            }
         } else if ((pauseCtx->pageIndex == PAUSE_QUEST) && ((pauseCtx->unk_1E4 < 3) || (pauseCtx->unk_1E4 == 5))) {
             KaleidoScope_UpdateCursorSize(&play->pauseCtx);
         }

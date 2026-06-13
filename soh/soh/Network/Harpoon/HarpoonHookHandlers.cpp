@@ -2031,18 +2031,12 @@ void Harpoon::RegisterHooks() {
             // value — visually present but stopped. Total survival time
             // across the session.
             if (isPropHuntMode) *should = true;
-            // Triforce Thief reuses the same digit-texture overlay for
-            // the SHARED descending countdown. Every player needs to see
-            // the timer (not just the carrier) — it tells everyone how
-            // long until the round ends. The carrier broadcasts the
-            // authoritative value once per second via CARRIER_TIMER_SYNC,
-            // which the non-carrier HandleCarrierTimerSync handler mirrors
-            // into `playTimer`, so the HUD digits read correctly on every
-            // peer's screen.
-            if (currentRoomGameMode == "triforce_thief" &&
-                gameState == HARPOON_STATE_PLAYING) {
-                *should = true;
-            }
+            // Triforce Thief now uses the engine timer1 (the underwater /
+            // Death Mountain heat MM:SS HUD) instead of the gameplaystats
+            // digit overlay — see TriforceThief.cpp's (a-0) block. So we
+            // DON'T force the gameplay timer here; if we did, it would
+            // render alongside our MM:SS timer and show the upward-counting
+            // play-time stat.
             break;
         }
         default: break;

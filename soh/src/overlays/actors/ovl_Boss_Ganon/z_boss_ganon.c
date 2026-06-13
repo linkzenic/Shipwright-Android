@@ -13,6 +13,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 
 #include <string.h>
 
@@ -2754,37 +2755,63 @@ void BossGanon_UpdateDamage(BossGanon* this, PlayState* play) {
     s16 j;
     ColliderInfo* acHitInfo;
 
+    // FD / Pika Gigantamax: stun-then-damage. NOT vulnerable → BossGanon_SetupVulnerable (the same
+    // dazed/exposed state you normally reach by reflecting his light ball); ALREADY vulnerable →
+    // damage (mash to kill). Detected by an accepted AC hit OR the geometric FD-sword/touch reach
+    // (so FD's sword + remote beam land even if its dmgFlags wouldn't match). Gated on IsFormActive
+    // + unk_2D4 cooldown; BossGanon_Damaged (the hit-reaction anim) is excluded so it paces the mash.
+    if (BossSuperDamage_IsFormActive(play) && ((s8)this->actor.colChkInfo.health > 0) && (this->unk_2D4 == 0) &&
+        ((this->collider.base.acFlags & 2) ||
+         BossSuperDamage_FormAttackReaches(play, &this->actor.world.pos,
+                                           BossSuperDamage_FormAttackRange(play) + 60.0f))) {
+        this->collider.base.acFlags &= ~2;
+        this->unk_2D4 = 6; // short cooldown → mashable in ANY state (the only throttle)
+        // Suppress the vanilla light-arrow-stun VFX: shockGlow (its unk_1A4 buildup) is the
+        // electric-shock overlay from the light-arrow stun — keep ONLY our own glow.
+        this->unk_1A4 = 0;
+        this->shockGlow = false;
+        BossSuperDamage_StartElectricSparks(&this->actor, 90);
+        // "Stunned/open" = the dazed Vulnerable loop OR the Damaged stagger. Hit while open →
+        // DAMAGE; hit in ANY other state (attacking, charging, even mid getup) → STUN him.
+        if ((this->actionFunc == BossGanon_Vulnerable) || (this->actionFunc == BossGanon_Damaged)) {
+            this->actor.colChkInfo.health -= BossSuperDamage_FormDamage(play);
+            if ((s8)this->actor.colChkInfo.health <= 0) {
+                BossGanon_SetupDeathCutscene(this, play);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DEAD);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DD_THUNDER);
+                Sfx_PlaySfxAtPos(&sZeroVec, NA_SE_EN_LAST_DAMAGE);
+                Audio_QueueSeqCmd(0x100100FF);
+                this->screenFlashTimer = 4;
+                GameInteractor_ExecuteOnBossDefeat(&this->actor);
+            } else {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CUTBODY);
+                // If he's recovering (getup sub-states unk_1C2 >= 5), drag him back into the dazed
+                // loop so you can keep stunning/damaging him during the post-recover anim, like Dodongo.
+                if ((this->actionFunc == BossGanon_Vulnerable) && (this->unk_1C2 >= 5)) {
+                    this->unk_1C2 = 4;
+                    this->timers[0] = 70;
+                    this->fwork[GDF_FWORK_1] = Animation_GetLastFrame(&gGanondorfVulnerableAnim);
+                    Animation_MorphToLoop(&this->skelAnime, &gGanondorfVulnerableAnim, 0.0f);
+                }
+                this->unk_1A6 = 15;
+                sBossGanonCape->tearTimer = 1;
+            }
+        } else {
+            // STUN via the short stagger (NOT SetupVulnerable, which plays the light-arrow-hit anim,
+            // spawns 10 shock-sparkle children, and runs the long downed→land→getup sequence — the VFX
+            // + the timer you didn't want). The stagger leads into the damageable Vulnerable loop.
+            BossGanon_SetupDamaged(this, play);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE1);
+            this->unk_1A6 = 15;
+        }
+        return;
+    }
+
     if (this->collider.base.acFlags & 2) {
         this->unk_2D4 = 2;
         this->collider.base.acFlags &= ~2;
         acHitInfo = this->collider.info.acHitInfo;
-
-        {
-            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-            extern u8 gPikaGigantamaxActive;
-            u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
-            if (isGigaHit) {
-                s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                if (gigaDmg < 4)
-                    gigaDmg = 4;
-                this->actor.colChkInfo.health -= gigaDmg;
-                if ((s8)this->actor.colChkInfo.health <= 0) {
-                    BossGanon_SetupDeathCutscene(this, play);
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DEAD);
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DD_THUNDER);
-                    Sfx_PlaySfxAtPos(&sZeroVec, NA_SE_EN_LAST_DAMAGE);
-                    Audio_QueueSeqCmd(0x100100FF);
-                    this->screenFlashTimer = 4;
-                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                } else {
-                    BossGanon_SetupVulnerable(this, play);
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_DAMAGE2);
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_CUTBODY);
-                    this->unk_1A6 = 15;
-                }
-                return;
-            }
-        }
 
         if ((this->actionFunc == BossGanon_HitByLightBall) || (this->actionFunc == BossGanon_ChargeBigMagic)) {
             if (acHitInfo->toucher.dmgFlags & 0x2000) {
@@ -3925,6 +3952,16 @@ void BossGanon_Draw(Actor* thisx, PlayState* play) {
     BossGanon_DrawShadowTexture(shadowTex, this, play);
 
     CLOSE_DISPS(play->state.gfxCtx);
+
+    // FD / Pika Gigantamax electric glow on Ganondorf — torso + head anchors (unk_1FC is his
+    // body-center reference). No-op when the spark timer is 0 (not recently hit).
+    {
+        Vec3f limbs[2];
+        limbs[0] = this->unk_1FC;
+        limbs[1] = this->unk_1FC;
+        limbs[1].y += 40.0f;
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 2, 1.4f);
+    }
 }
 
 s32 BossGanon_CheckFallingPlatforms(BossGanon* this, PlayState* play, Vec3f* checkPos) {

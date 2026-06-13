@@ -71,13 +71,23 @@ struct CustomItemMessageEntry {
  */
 static const CustomItemMessageEntry customItemMessages[] = {
     // Movement Items
-    { RG_ROCS_FEATHER, static_cast<ItemID>(ITEM_ROCS_FEATHER_SKIJER),
+    // Skijer's progressive Roc's Feather (extended inventory page 2)
+    { RG_PROGRESSIVE_ROCS, static_cast<ItemID>(ITEM_ROCS_FEATHER_SKIJER),
       "You got %rRoc's Feather%w!&This magical feather lets you&jump higher than normal.^Assign it to %y\xA1%w and "
       "press&to perform a high jump.&It even works in water!",
       "Du hast %rRocs Feder%w erhalten!&Diese magische Feder lässt&dich höher springen.^Weise sie %y\xA1%w zu und "
       "drücke&um hoch zu springen.&Funktioniert auch im Wasser!",
       "Vous obtenez la %rPlume de Roc%w!&Cette plume magique vous&permet de sauter plus haut.^Assignez-la à %y\xA1%w et "
       "appuyez&pour faire un grand saut.&Fonctionne même dans l'eau!" },
+
+    // Vanilla rando Roc's Feather (shares the Nayru's Love slot, RSK_ROCS_FEATHER)
+    { RG_ROCS_FEATHER, static_cast<ItemID>(ITEM_ROCS_FEATHER_SKIJER),
+      "You got %rRoc's Feather%w!&Assign it to %y\xA1%w and press it&while standing to leap into&the air. It shares "
+      "its slot&with Nayru's Love.",
+      "Du hast %rRocs Feder%w erhalten!&Weise sie %y\xA1%w zu und drücke,&um in die Luft zu springen.&Sie teilt sich "
+      "den Platz mit&Nayrus Umarmung.",
+      "Vous obtenez la %rPlume de Roc%w!&Assignez-la à %y\xA1%w et appuyez&pour bondir dans les airs.&Elle partage son "
+      "emplacement&avec l'Amour de Nayru." },
 
     { RG_ROCS_CAPE, static_cast<ItemID>(ITEM_ROCS_CAPE),
       "You got %rRoc's Cape%w!&This magical cape enhances&your jumping ability.^Now you can perform a&%gdouble jump%w "
@@ -5408,7 +5418,12 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
         // IMPORTANT: Use ExtInv_SetItemById() instead of INV_CONTENT() for custom items
         // to avoid buffer overflow on gItemSlots[] array (which only has 54 elements)
         case RG_ROCS_FEATHER:
-            ExtInv_SetItemById(ITEM_ROCS_FEATHER_SKIJER);
+            // Vanilla rando Roc's Feather: lives in the Nayru's Love slot and cycles with it
+            // (see RocsFeatherCycle.c). Skijer's feather is RG_PROGRESSIVE_ROCS instead.
+            Flags_SetRandomizerInf(RAND_INF_OBTAINED_ROCS_FEATHER);
+            if (INV_CONTENT(ITEM_NAYRUS_LOVE) == ITEM_NONE) {
+                INV_CONTENT(ITEM_NAYRUS_LOVE) = ITEM_ROCS_FEATHER;
+            }
             break;
         case RG_ROCS_CAPE:
             ExtInv_SetItemById(ITEM_ROCS_CAPE);
@@ -5552,6 +5567,11 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_MM_MASK_KEATON:
             ExtInv_SetItemById(ITEM_MM_MASK_KEATON);
+            // Also give OOT Keaton Mask so trade quest interactions work (gate guard, etc.)
+            Flags_SetRandomizerInf(RAND_INF_CHILD_TRADES_HAS_MASK_KEATON);
+            if (INV_CONTENT(ITEM_TRADE_CHILD) == ITEM_NONE) {
+                INV_CONTENT(ITEM_TRADE_CHILD) = ITEM_MASK_KEATON;
+            }
             break;
         case RG_MM_MASK_BREMEN:
             ExtInv_SetItemById(ITEM_MM_MASK_BREMEN);
@@ -5572,6 +5592,11 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_MM_MASK_GORON:
             ExtInv_SetItemById(ITEM_MM_MASK_GORON);
+            // Also give OOT Goron Mask so trade quest interactions work
+            Flags_SetRandomizerInf(RAND_INF_CHILD_TRADES_HAS_MASK_GORON);
+            if (INV_CONTENT(ITEM_TRADE_CHILD) == ITEM_NONE) {
+                INV_CONTENT(ITEM_TRADE_CHILD) = ITEM_MASK_GORON;
+            }
             break;
         case RG_MM_MASK_ROMANI:
             ExtInv_SetItemById(ITEM_MM_MASK_ROMANI);
@@ -5595,6 +5620,11 @@ extern "C" u16 Randomizer_Item_Give(PlayState* play, GetItemEntry giEntry) {
             break;
         case RG_MM_MASK_ZORA:
             ExtInv_SetItemById(ITEM_MM_MASK_ZORA);
+            // Also give OOT Zora Mask so trade quest interactions work
+            Flags_SetRandomizerInf(RAND_INF_CHILD_TRADES_HAS_MASK_ZORA);
+            if (INV_CONTENT(ITEM_TRADE_CHILD) == ITEM_NONE) {
+                INV_CONTENT(ITEM_TRADE_CHILD) = ITEM_MASK_ZORA;
+            }
             break;
         case RG_MM_MASK_KAMARO:
             ExtInv_SetItemById(ITEM_MM_MASK_KAMARO);

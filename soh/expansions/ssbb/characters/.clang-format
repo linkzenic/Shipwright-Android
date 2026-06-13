@@ -1,0 +1,11 @@
+# Generated SSBB character data — skeleton/DL/shadow/skin meshes, textures,
+# voice PCM, animation tables and the runtime-fill headers. These files are
+# machine-generated (apps/brawl_to_oot.py and friends), often huge, and must
+# not be reflowed. DisableFormat keeps clang-format — and therefore the
+# clang-format CI check (run-clang-format.sh) — from touching anything under
+# this directory, the same way soh/assets/* is left alone.
+#
+# Hand-written SSBB subsystem code lives one level up in soh/expansions/ssbb/
+# and is still formatted normally.
+DisableFormat: true
+SortIncludes: false

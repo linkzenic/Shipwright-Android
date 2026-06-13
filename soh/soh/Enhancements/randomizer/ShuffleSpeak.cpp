@@ -3,13 +3,37 @@ extern "C" {
 extern PlayState* gPlayState;
 #include "functions.h"
 #include "overlays/actors/ovl_En_Ossan/z_en_ossan.h"
+#include "mods/transformation_masks/transformation_masks.h"
+}
+
+// MM transformation forms speak their own race's language, regardless of the
+// rando speak flags: Zora->Zora, Goron->Goron, Deku->Deku+Kokiri,
+// Gerudo->Gerudo, Fierce Deity->Hylian.
+static bool FormSpeaksLanguage(RandomizerInf inf) {
+    if (!TransformMasks_IsTransformedAny()) {
+        return false;
+    }
+    switch (MmPlayer_GetForm()) {
+        case MM_PLAYER_FORM_ZORA:
+            return inf == RAND_INF_CAN_SPEAK_ZORA;
+        case MM_PLAYER_FORM_GORON:
+            return inf == RAND_INF_CAN_SPEAK_GORON;
+        case MM_PLAYER_FORM_DEKU:
+            return inf == RAND_INF_CAN_SPEAK_DEKU || inf == RAND_INF_CAN_SPEAK_KOKIRI;
+        case MM_PLAYER_FORM_GERUDO:
+            return inf == RAND_INF_CAN_SPEAK_GERUDO;
+        case MM_PLAYER_FORM_FIERCE_DEITY:
+            return inf == RAND_INF_CAN_SPEAK_HYLIAN;
+        default:
+            return false;
+    }
 }
 
 void RegisterShuffleSpeak() {
     bool shouldRegister = IS_RANDO && Rando::Context::GetInstance()->GetOption(RSK_SHUFFLE_SPEAK).Get();
 
     COND_VB_SHOULD(VB_BUSINESS_SCRUB_SPEAK, shouldRegister, {
-        if (!Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_DEKU)) {
+        if (!Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_DEKU) && !FormSpeaksLanguage(RAND_INF_CAN_SPEAK_DEKU)) {
             *should = false;
         }
     });
@@ -18,6 +42,16 @@ void RegisterShuffleSpeak() {
         Actor* talkActor = GET_PLAYER(gPlayState)->talkActor;
         if (talkActor != NULL && talkActor->category == ACTORCAT_NPC &&
             !(talkActor->flags & ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED)) {
+            // Garo form: shadowy dealers will also talk to a Garo, in addition
+            // to the Hylian speak flag / Fierce Deity form.
+            if (TransformMasks_IsTransformedAny() && MmPlayer_GetForm() == MM_PLAYER_FORM_GARO) {
+                switch (talkActor->id) {
+                    case ACTOR_EN_GB:
+                    case ACTOR_EN_SSH:
+                    case ACTOR_EN_JS:
+                        return;
+                }
+            }
             RandomizerInf inf = RAND_INF_MAX;
             switch (talkActor->id) {
                 case ACTOR_EN_DNS:
@@ -129,12 +163,17 @@ void RegisterShuffleSpeak() {
                         !Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_GORON) &&
                         !Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_HYLIAN) &&
                         !Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_KOKIRI) &&
-                        !Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_ZORA)) {
+                        !Flags_GetRandomizerInf(RAND_INF_CAN_SPEAK_ZORA) &&
+                        !FormSpeaksLanguage(RAND_INF_CAN_SPEAK_DEKU) &&
+                        !FormSpeaksLanguage(RAND_INF_CAN_SPEAK_GERUDO) &&
+                        !FormSpeaksLanguage(RAND_INF_CAN_SPEAK_GORON) &&
+                        !FormSpeaksLanguage(RAND_INF_CAN_SPEAK_HYLIAN) &&
+                        !FormSpeaksLanguage(RAND_INF_CAN_SPEAK_ZORA)) {
                         *should = false;
                     }
                     return;
             }
-            if (inf != RAND_INF_MAX && !Flags_GetRandomizerInf(inf)) {
+            if (inf != RAND_INF_MAX && !Flags_GetRandomizerInf(inf) && !FormSpeaksLanguage(inf)) {
                 *should = false;
             }
         }

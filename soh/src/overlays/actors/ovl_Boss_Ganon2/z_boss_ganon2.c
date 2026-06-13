@@ -10,6 +10,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 
 #include <string.h>
 
@@ -1943,36 +1944,46 @@ void BossGanon2_CollisionCheck(BossGanon2* this, PlayState* play) {
         }
     }
 
+    // FD / Pika Gigantamax: mash the TAIL (the weak point, elements[15]) and DELIVER THE FINAL BLOW.
+    // Vanilla gates the kill behind the Master-Sword pickup + downed sequence (it even disables the
+    // bumpers while downed, see above) — FD/Pika bypass all that. Detected GEOMETRICALLY at the tail
+    // so it lands even while the bumpers are disabled. health<=0 → func_80901020 (death cutscene, which
+    // doesn't need the Master Sword in hand). Short unk_316 cooldown → mashable. Form-gated → the normal
+    // light-arrow→tail→Master-Sword fight is untouched.
+    if (BossSuperDamage_IsFormActive(play) && (this->unk_316 == 0) && ((s8)this->actor.colChkInfo.health > 0)) {
+        Vec3f tailPos;
+        tailPos.x = this->unk_424.elements[15].dim.worldSphere.center.x;
+        tailPos.y = this->unk_424.elements[15].dim.worldSphere.center.y;
+        tailPos.z = this->unk_424.elements[15].dim.worldSphere.center.z;
+        if ((this->unk_424.elements[15].info.bumperFlags & 2) || (this->unk_424.elements[0].info.bumperFlags & 2) ||
+            BossSuperDamage_FormAttackReaches(play, &tailPos, BossSuperDamage_FormAttackRange(play) + 80.0f)) {
+            this->unk_424.elements[15].info.bumperFlags &= ~2;
+            this->unk_424.elements[0].info.bumperFlags &= ~2;
+            BossSuperDamage_StartElectricSparks(&this->actor, 90);
+            this->unk_316 = 8; // short cooldown → mashable
+            this->unk_342 = 5;
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
+            Audio_StopSfxById(NA_SE_EN_MGANON_UNARI);
+            this->actor.colChkInfo.health -= BossSuperDamage_FormDamage(play);
+            if ((s8)this->actor.colChkInfo.health <= 0) {
+                this->actor.colChkInfo.health = 0;
+                func_80901020(this, play); // FINAL BLOW — FD/Pika finishes him (no Master Sword needed)
+            } else {
+                // Stagger only — deliberately DON'T enter func_80900818's downed phase, which disables
+                // the bumpers (so the remote beam would stop registering). Keeping him out of it lets
+                // FD's sword AND beam mash the tail straight through to the kill.
+                func_80900210(this, play);
+            }
+            return;
+        }
+    }
+
     osSyncPrintf("this->look_on %d\n", this->unk_313);
     if (this->unk_313) {
         if (this->actionFunc != func_808FFFE0) {
             if (this->unk_424.elements[0].info.bumperFlags & 2) {
                 this->unk_424.elements[0].info.bumperFlags &= ~2;
                 acHitInfo = this->unk_424.elements[0].info.acHitInfo;
-                {
-                    // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-                    extern u8 gPikaGigantamaxActive;
-                    u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
-                    if (isGigaHit) {
-                        s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                        if (gigaDmg < 4)
-                            gigaDmg = 4;
-                        this->actor.colChkInfo.health -= gigaDmg;
-                        if ((s8)this->actor.colChkInfo.health <= 1)
-                            this->actor.colChkInfo.health = 1;
-                        this->unk_316 = 60;
-                        this->unk_342 = 5;
-                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
-                        Audio_StopSfxById(NA_SE_EN_MGANON_UNARI);
-                        temp_v0_4 = this->actor.colChkInfo.health;
-                        if (temp_v0_4 <= 0) {
-                            func_80901020(this, play);
-                        } else {
-                            func_809000A0(this, play);
-                        }
-                        return;
-                    }
-                }
                 if ((acHitInfo->toucher.dmgFlags & 0x2000) && (this->actionFunc != func_80900890)) {
                     func_809000A0(this, play);
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
@@ -2004,30 +2015,6 @@ void BossGanon2_CollisionCheck(BossGanon2* this, PlayState* play) {
         if (this->unk_424.elements[15].info.bumperFlags & 2) {
             this->unk_424.elements[15].info.bumperFlags &= ~2;
             acHitInfo = this->unk_424.elements[15].info.acHitInfo;
-            {
-                // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-                extern u8 gPikaGigantamaxActive;
-                u8 isGigaHit = (acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
-                if (isGigaHit) {
-                    s32 gigaDmg = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play);
-                    if (gigaDmg < 4)
-                        gigaDmg = 4;
-                    this->actor.colChkInfo.health -= gigaDmg;
-                    if ((s8)this->actor.colChkInfo.health <= 1)
-                        this->actor.colChkInfo.health = 1;
-                    this->unk_316 = 60;
-                    this->unk_342 = 5;
-                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_MGANON_DAMAGE);
-                    Audio_StopSfxById(NA_SE_EN_MGANON_UNARI);
-                    temp_v0_4 = this->actor.colChkInfo.health;
-                    if (temp_v0_4 <= 0) {
-                        func_80901020(this, play);
-                    } else {
-                        func_80900210(this, play);
-                    }
-                    return;
-                }
-            }
             this->unk_316 = 60;
             this->unk_344 = 0x32;
             this->unk_342 = 5;
@@ -2172,6 +2159,15 @@ void BossGanon2_Update(Actor* thisx, PlayState* play) {
         if (this->subCamId == 0) {
             CollisionCheck_SetAT(play, &play->colChkCtx, &this->unk_444.base);
         }
+    }
+
+    // FD / Pika: aim the lock-on + the FD homing beam at the TAIL (the weak point, elements[15])
+    // instead of Ganon's body, so the beams always fly to the tail and you can mash it. Only while
+    // alive and in form → the normal fight / death-cam focus is untouched.
+    if (BossSuperDamage_IsFormActive(play) && ((s8)this->actor.colChkInfo.health > 0)) {
+        this->actor.focus.pos.x = this->unk_424.elements[15].dim.worldSphere.center.x;
+        this->actor.focus.pos.y = this->unk_424.elements[15].dim.worldSphere.center.y;
+        this->actor.focus.pos.z = this->unk_424.elements[15].dim.worldSphere.center.z;
     }
     if ((this->unk_332 == 0) && (this->unk_336 != 0)) {
         if (this->unk_336 == 2) {
@@ -2918,6 +2914,19 @@ void BossGanon2_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 
     BossGanon2_DrawEffects(play);
+
+    // FD / Pika Gigantamax electric glow — tail (elements[15], the weak point) + head (elements[0]).
+    // No-op when the spark timer is 0 (not recently hit).
+    {
+        Vec3f limbs[2];
+        limbs[0].x = this->unk_424.elements[15].dim.worldSphere.center.x;
+        limbs[0].y = this->unk_424.elements[15].dim.worldSphere.center.y;
+        limbs[0].z = this->unk_424.elements[15].dim.worldSphere.center.z;
+        limbs[1].x = this->unk_424.elements[0].dim.worldSphere.center.x;
+        limbs[1].y = this->unk_424.elements[0].dim.worldSphere.center.y;
+        limbs[1].z = this->unk_424.elements[0].dim.worldSphere.center.z;
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 2, 1.5f);
+    }
 }
 
 void BossGanon2_UpdateEffects(BossGanon2* this, PlayState* play) {

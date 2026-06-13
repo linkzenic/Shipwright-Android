@@ -5,6 +5,14 @@
 #include "soh/ResourceManagerHelpers.h"
 #include <assert.h>
 
+// Power-ups that FORCE the NoClip wall-bypass for the player (independent of the
+// gCheats.NoClip CVar): SM64 Mario's Vanish Cap and Hylia's Grace fairy flight.
+// Both phase through walls; forcing NoClip here keeps actor.wallPoly from going
+// stale so OOT's floor-based loading-zone detection still fires. Defined in
+// expansions/sm64/sm64_mario.c and mods/items/logic/item_hylias_grace.c.
+extern u8 Sm64Mario_IsVanishActive(void);
+extern s32 HGrace_WantsNoClip(void);
+
 #define SS_NULL 0xFFFF
 
 // bccFlags
@@ -1902,7 +1910,8 @@ s32 BgCheck_CheckWallImpl(CollisionContext* colCtx, u16 xpFlags, Vec3f* posResul
     s32 bgId2;
     f32 nx, ny, nz; // unit normal of polygon
 
-    if (CVarGetInteger(CVAR_CHEAT("NoClip"), 0) && actor != NULL && actor->id == ACTOR_PLAYER) {
+    if ((CVarGetInteger(CVAR_CHEAT("NoClip"), 0) || Sm64Mario_IsVanishActive() || HGrace_WantsNoClip()) &&
+        actor != NULL && actor->id == ACTOR_PLAYER) {
         return false;
     }
 

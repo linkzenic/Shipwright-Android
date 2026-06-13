@@ -1837,6 +1837,21 @@ void Player_PlayVoiceSfx(Player* this, u16 sfxId) {
         return;
     }
 
+    // === Gerudo voice — auto-loaded from gerudo.o2r ===
+    // The form bundles 86 AI-converted voice samples under voice/<HEX>/*.ogg.
+    // gerudo_voice.cpp scans them on first call, decodes to mono s16 PCM, and
+    // publishes them via its own mixer (same audio-thread hook as VoicePack).
+    // PlayIfMatch returns 1 if a matching sample was queued — in that case
+    // skip the vanilla voice path so we don't double up.
+    if (GerudoForm_IsActive() && this->actor.category == ACTORCAT_PLAYER) {
+        extern u8 GerudoVoice_PlayIfMatch(u16 sfxId, Vec3f * pos);
+        u16 finalSfxId = (u16)(sfxId + this->ageProperties->unk_92);
+        if (GerudoVoice_PlayIfMatch(finalSfxId, &this->actor.projectedPos)) {
+            return;
+        }
+        // No gerudo sample for this slot — fall through to vanilla Link voice.
+    }
+
     if (this->actor.category == ACTORCAT_PLAYER) {
         Player_PlaySfx(this, sfxId + this->ageProperties->unk_92);
     } else {
@@ -3780,10 +3795,10 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                     Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
                 }
             } else if (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY) {
-                // MM Mask items from 3rd inventory page. The Garo Mask follows
-                // the same path as the rest (no special legacy O2rLoader skin
-                // swap any more — the mask is now the single activation source
-                // for the full MmForm transformation).
+                // MM Mask items from 3rd inventory page. Garo gets routed
+                // through the MmForm pipeline like the others (full transform
+                // with flash + cutscene). The Garo MmForm branch is passive
+                // so Link's normal gameplay (items, swim, sword) still runs 1:1.
                 if (TransformMasks_IsEnabled() || item == ITEM_MM_MASK_GARO) {
                     TransformMaskId maskType = TransformMasks_GetMaskType(item);
                     if (maskType != TRANSFORM_MASK_NONE) {
@@ -3792,13 +3807,18 @@ void Player_UseItem(PlayState* play, Player* this, s32 item) {
                     }
                 }
                 // Kafei Mask Transform: handled inside MmMaskWear_Toggle
-                // MM Bunny Hood: use OOT Bunny Hood behavior (speed + jump)
-                if (item == ITEM_MM_MASK_BUNNY) {
+                // MM masks with an OOT counterpart behave 1:1 with the OOT trade mask:
+                // Bunny Hood (speed + jump), Keaton Mask (gate guard) and Mask of Truth
+                // (gossip stones, Deku Theater) wear the OOT mask so all NPC interactions work.
+                if (item == ITEM_MM_MASK_BUNNY || item == ITEM_MM_MASK_KEATON || item == ITEM_MM_MASK_TRUTH) {
+                    s32 ootMask = (item == ITEM_MM_MASK_BUNNY)    ? PLAYER_MASK_BUNNY
+                                  : (item == ITEM_MM_MASK_KEATON) ? PLAYER_MASK_KEATON
+                                                                  : PLAYER_MASK_TRUTH;
                     TransformMasks_WearClear(); // Clear any other MM worn mask
                     if (this->currentMask != PLAYER_MASK_NONE) {
                         this->currentMask = PLAYER_MASK_NONE;
                     } else {
-                        this->currentMask = PLAYER_MASK_BUNNY;
+                        this->currentMask = ootMask;
                     }
                     gSaveContext.ship.maskMemory = this->currentMask;
                     func_808328EC(this, NA_SE_PL_CHANGE_ARMS);
@@ -4820,6 +4840,18 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
         }
     }
 
+    // MHR moveset (Skijer's NEI > MHR Anims): user-bound animation for this
+    // melee slot. Note arg2 already includes the +2 combo promotion above, so
+    // first-swing and combo bindings hit different slots. Runs LAST: an
+    // explicit user binding wins over form defaults.
+    {
+        extern LinkAnimationHeader* MhrMoveset_GetMeleeAnim(s32 mwa);
+        LinkAnimationHeader* mhrAnim = MhrMoveset_GetMeleeAnim(arg2);
+        if (mhrAnim != NULL) {
+            Player_AnimPlayOnceAdjusted(play, this, mhrAnim);
+        }
+    }
+
     if ((arg2 != PLAYER_MWA_FLIPSLASH_START) && (arg2 != PLAYER_MWA_JUMPSLASH_START)) {
         Player_StartAnimMovement(play, this, 0x209);
     }
@@ -4853,13 +4885,42 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
         // Target priority: hard lock-on (focusActor) → soft offering target (arrowPointedActor) → level.
         // Yaw is overridden in EnMThunder_Init from player->actor.shape.rot.y + 0x8000, so spawn yaw arg = 0.
         Actor* fdTarget = (this->focusActor != NULL) ? this->focusActor : play->actorCtx.targetCtx.arrowPointedActor;
-        s16 beamPitch =
+        s16 beamPitch;
+        // When the player isn't locked onto anything, auto-seek the nearest enemy/boss
+        // within range so the FD beam still chases targets (user: "que persiga a los
+        // enemigos constantemente"). The beam then homes on it each frame in
+        // EnMThunder_SwordBeamAction; combined with the lock-on case, moving enemies
+        // no longer dodge a straight shot.
+        if (fdTarget == NULL) {
+            s32 fdCat;
+            f32 fdBestDist = 800.0f; // only auto-acquire within 800 units
+            for (fdCat = 0; fdCat < 2; fdCat++) {
+                s32 fdCatId = (fdCat == 0) ? ACTORCAT_ENEMY : ACTORCAT_BOSS;
+                Actor* fdActor = play->actorCtx.actorLists[fdCatId].head;
+                while (fdActor != NULL) {
+                    if (fdActor->update != NULL) {
+                        f32 fdDist =
+                            Math_Vec3f_DistXYZ(&this->bodyPartsPos[PLAYER_BODYPART_WAIST], &fdActor->world.pos);
+                        if (fdDist < fdBestDist) {
+                            fdBestDist = fdDist;
+                            fdTarget = fdActor;
+                        }
+                    }
+                    fdActor = fdActor->next;
+                }
+            }
+        }
+        beamPitch =
             (fdTarget != NULL) ? Math_Vec3f_Pitch(&this->bodyPartsPos[PLAYER_BODYPART_WAIST], &fdTarget->focus.pos) : 0;
         Actor* beam =
             Actor_Spawn(&play->actorCtx, play, ACTOR_EN_M_THUNDER, this->bodyPartsPos[PLAYER_BODYPART_WAIST].x,
                         this->bodyPartsPos[PLAYER_BODYPART_WAIST].y, this->bodyPartsPos[PLAYER_BODYPART_WAIST].z,
                         beamPitch, 0, 0, 0x80);
         if (beam != NULL) {
+            // Hand the beam its locked target so EnMThunder_SwordBeamAction can home in
+            // on it each frame (moving enemies still get hit). NULL when there's no
+            // lock-on → the beam flies straight ahead like MM.
+            ((EnMThunder*)beam)->homingTarget = fdTarget;
             // Direct magic subtraction (MM MAGIC_CONSUME_DEITY_BEAM behavior)
             gSaveContext.magic -= 1;
             if (gSaveContext.magic < 0) {
@@ -5299,12 +5360,19 @@ s32 func_808382DC(Player* this, PlayState* play) {
                 static u8 D_808544F4[] = { 120, 60 };
                 s32 sp48 = func_80838144(sFloorType);
 
+                // Gerudo Mask "Desert Immunity": skip the hot-floor / lava-floor
+                // damage paths entirely. Gerudos are native to the desert and the
+                // lore-skill is they don't burn on hot sand or Spirit Temple lava
+                // floor. Wall damage (arm 1) is left untouched — that's spikes
+                // and not desert. The two floor-damage arms (arm 2 / arm 3) are
+                // both gated.
+                u8 gerudoDesertImmune = GerudoForm_IsActive();
                 if (((this->actor.wallPoly != NULL) &&
                      SurfaceType_IsWallDamage(&play->colCtx, this->actor.wallPoly, this->actor.wallBgId)) ||
-                    ((sp48 >= 0) &&
+                    (!gerudoDesertImmune && (sp48 >= 0) &&
                      SurfaceType_IsWallDamage(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId) &&
                      (this->floorTypeTimer >= D_808544F4[sp48])) ||
-                    ((sp48 >= 0) &&
+                    (!gerudoDesertImmune && (sp48 >= 0) &&
                      ((this->currentTunic != PLAYER_TUNIC_GORON && CVarGetInteger(CVAR_CHEAT("SuperTunic"), 0) == 0) ||
                       (this->floorTypeTimer >= D_808544F4[sp48])))) {
                     this->floorTypeTimer = 0;
@@ -5352,8 +5420,10 @@ s32 Player_ActionHandler_12(Player* this, PlayState* play) {
 
     // Transformation masks: Goron cannot climb medium/high ledges (MM z_player.c:6209)
     // Instead, Goron handles ledges with a ground-based jump in MmForm_UpdateActive.
-    if (!TransformMasks_BlocksLedgeGrab() && !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) &&
-        (this->ledgeClimbType >= 2) &&
+    // Minish tiny mode can't ledge-vault either: the vault teleport/anim offsets
+    // assume normal scale and trap the player in the jump state.
+    if (!TransformMasks_BlocksLedgeGrab() && !MinishTiny_IsActive() &&
+        !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && (this->ledgeClimbType >= 2) &&
         (!(this->stateFlags1 & PLAYER_STATE1_IN_WATER) || (this->ageProperties->unk_14 > this->yDistToLedge))) {
         sp3C = 0;
 
@@ -6783,9 +6853,15 @@ void Player_SetupRoll(Player* this, PlayState* play) {
     }
 
     Player_SetupAction(play, this, Player_Action_Roll, 0);
-    LinkAnimation_PlayOnceSetSpeed(play, &this->skelAnime,
-                                   GET_PLAYER_ANIM(PLAYER_ANIMGROUP_landing_roll, this->modelAnimType),
-                                   1.25f * sWaterSpeedFactor);
+    {
+        // MHR moveset: user-bound roll animation.
+        extern LinkAnimationHeader* MhrMoveset_GetMoveAnim(s32 moveId);
+        LinkAnimationHeader* rollAnim = MhrMoveset_GetMoveAnim(4 /* MHR_MOVE_ROLL */);
+        if (rollAnim == NULL) {
+            rollAnim = GET_PLAYER_ANIM(PLAYER_ANIMGROUP_landing_roll, this->modelAnimType);
+        }
+        LinkAnimation_PlayOnceSetSpeed(play, &this->skelAnime, rollAnim, 1.25f * sWaterSpeedFactor);
+    }
     gSaveContext.ship.stats.count[COUNT_ROLLS]++;
 }
 
@@ -6800,7 +6876,18 @@ s32 Player_TryRoll(Player* this, PlayState* play) {
 }
 
 void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
-    func_80838940(this, D_80853D4C[controlStickDirection][0], !(controlStickDirection & 1) ? 5.8f : 3.5f, play,
+    // MHR moveset: user-bound dodge-hop animation (moveId 0..3 matches the
+    // controlStickDirection index of D_80853D4C: fwd/right/backflip/left).
+    // Only the main hop anim is overridable — the landing anims stay vanilla.
+    LinkAnimationHeader* hopAnim;
+    {
+        extern LinkAnimationHeader* MhrMoveset_GetMoveAnim(s32 moveId);
+        hopAnim = MhrMoveset_GetMoveAnim(controlStickDirection);
+        if (hopAnim == NULL) {
+            hopAnim = D_80853D4C[controlStickDirection][0];
+        }
+    }
+    func_80838940(this, hopAnim, !(controlStickDirection & 1) ? 5.8f : 3.5f, play,
                   NA_SE_VO_LI_SWORD_N);
 
     if (controlStickDirection) {}
@@ -7161,6 +7248,15 @@ s32 Player_ActionHandler_11(Player* this, PlayState* play) {
                 anim = GET_PLAYER_ANIM(PLAYER_ANIMGROUP_defense, this->modelAnimType);
             } else {
                 anim = &gPlayerAnim_clink_normal_defense_ALL;
+            }
+
+            // MHR moveset: user-bound shield raise animation.
+            {
+                extern LinkAnimationHeader* MhrMoveset_GetShieldAnim(s32 loopPhase);
+                LinkAnimationHeader* mhrShield = MhrMoveset_GetShieldAnim(0);
+                if (mhrShield != NULL) {
+                    anim = mhrShield;
+                }
             }
 
             if (anim != this->skelAnime.animation) {
@@ -7642,9 +7738,12 @@ void func_8083D53C(PlayState* play, Player* this) {
             }
 
             s32 form = (s32)MmForm_GetCurrentForm();
-            // Zora (2), Fierce Deity (4), Pikachu (5): fall through to OOT's normal water handling
+            // Zora (2), Fierce Deity (4), Pikachu (5), Gerudo (7): fall through to OOT's
+            // normal water handling. Gerudo is "vanilla Link with combat overrides only" —
+            // swim is not an explicit override, so OOT owns the full swim transition (dive,
+            // surface float, ledge climb out, dolphin dive, etc.).
             if (form != 2 /* MM_PLAYER_FORM_ZORA */ && form != 4 /* MM_PLAYER_FORM_FIERCE_DEITY */ &&
-                form != 5 /* MM_PLAYER_FORM_PIKACHU */) {
+                form != 5 /* MM_PLAYER_FORM_PIKACHU */ && form != 7 /* MM_PLAYER_FORM_GERUDO */) {
                 // Goron/Deku: just track IN_WATER flag, don't enter OOT swim
                 if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
                     this->stateFlags1 |= PLAYER_STATE1_IN_WATER;
@@ -7654,7 +7753,7 @@ void func_8083D53C(PlayState* play, Player* this) {
                 }
                 return;
             }
-            // Zora/FD: continue to OOT's water handling below (func_8083D36C etc.)
+            // Zora/FD/Pikachu/Gerudo: continue to OOT's water handling below (func_8083D36C etc.)
         }
 
         if (this->ageProperties->unk_2C < this->actor.yDistToWater) {
@@ -8370,8 +8469,9 @@ s32 Player_TryEnteringCrawlspace(Player* this, PlayState* play, u32 interactWall
     f32 zVertex2;
     s32 i;
 
-    if (!LINK_IS_ADULT && !TransformMasks_IsTransformed() && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) &&
-        (interactWallFlags & 0x30)) {
+    // Minish tiny mode walks straight through crawlspaces — never enter the crawl state
+    if (!LINK_IS_ADULT && !TransformMasks_IsTransformed() && !MinishTiny_IsActive() &&
+        !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) && (interactWallFlags & 0x30)) {
         if (!GameInteractor_Should(VB_CRAWL, true)) {
             return false;
         }
@@ -10012,7 +10112,13 @@ s32 func_80842DF4(PlayState* play, Player* this) {
 void Player_Action_80843188(Player* this, PlayState* play) {
     if (LinkAnimation_Update(play, &this->skelAnime)) {
         if (!Player_IsChildWithHylianShield(this)) {
-            Player_AnimPlayLoop(play, this, GET_PLAYER_ANIM(PLAYER_ANIMGROUP_defense_wait, this->modelAnimType));
+            // MHR moveset: user-bound shield hold loop.
+            extern LinkAnimationHeader* MhrMoveset_GetShieldAnim(s32 loopPhase);
+            LinkAnimationHeader* shieldLoop = MhrMoveset_GetShieldAnim(1);
+            if (shieldLoop == NULL) {
+                shieldLoop = GET_PLAYER_ANIM(PLAYER_ANIMGROUP_defense_wait, this->modelAnimType);
+            }
+            Player_AnimPlayLoop(play, this, shieldLoop);
         }
         this->av2.actionVar2 = 1;
         this->av1.actionVar1 = 0;
@@ -12007,6 +12113,13 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         ceilingCheckHeight = this->ageProperties->ceilingCheckHeight;
     }
 
+    // Minish tiny mode: radius/ceiling already come scaled from ageProperties,
+    // but the wall probe height is hardcoded — shrink it so tiny Link can walk
+    // under low openings instead of being stopped by walls above his head
+    if (MinishTiny_IsActive()) {
+        vWallCheckHeight = 4.0f;
+    }
+
     if (this->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_FLOOR_DISABLED)) {
         if (this->stateFlags1 & PLAYER_STATE1_FLOOR_DISABLED) {
             this->actor.bgCheckFlags &= ~1;
@@ -12031,6 +12144,12 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
 
     if (flags & 4) {
         this->stateFlags3 |= PLAYER_STATE3_CHECK_FLOOR_WATER_COLLISION;
+    }
+
+    // Minish tiny mode: while squeezing through a crawlspace hole poly, drop the
+    // wall check (bit 1) for a few frames so tiny Link walks through the opening
+    if (MinishTiny_CrawlspacePassthrough(this, play)) {
+        flags &= ~1;
     }
 
     Math_Vec3f_Copy(&unusedWorldPos, &this->actor.world.pos);
@@ -12803,6 +12922,17 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
 
             Actor_UpdateVelocityXZGravity(&this->actor);
 
+            // Minish tiny mode: scale the WORLD displacement (not linearVelocity).
+            // linearVelocity/speedXZ stay full-magnitude so OOT's run-state speed
+            // thresholds (3.6/4.0) still engage — otherwise the player bounces
+            // between idle and run-stop every frame and never moves. Only the
+            // applied velocity is reduced, giving ~20% travel speed.
+            if (MinishTiny_IsActive()) {
+                f32 tinySpeed = MinishTiny_GetSpeedFactor();
+                this->actor.velocity.x *= tinySpeed;
+                this->actor.velocity.z *= tinySpeed;
+            }
+
             if ((this->pushedSpeed != 0.0f) && !Player_InCsMode(play) &&
                 !(this->stateFlags1 &
                   (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_CLIMBING_LADDER)) &&
@@ -13178,6 +13308,13 @@ void Player_Update(Actor* thisx, PlayState* play) {
             // PLAYER_STATE3_20000000 early-return at z_player.c:3804-3806.
         }
 
+        // Gust jar: strip L/R from sp44 BEFORE Player_UpdateCommon so the
+        // vanilla shield handler never sees BTN_R while the player is aiming
+        // / sucking / holding a stored blow. Handle_GustJar's own L/R cycle
+        // logic reads play->state.input[0] (untouched) so cycling still works.
+        // Mirrors the TransformMasks_FilterB pattern above.
+        GustJar_FilterPlayerInput(&sp44);
+
         if (CVarGetFloat(CVAR_CHEAT("SpeedModifier.Value"), 1.0f) != 1.0f &&
             CVarGetInteger(CVAR_CHEAT("SpeedModifier.SpeedToggle"), 0)) {
             const s32 mod1Mask = CVarGetInteger(CVAR_CHEAT("SpeedModifier.Btn"), BTN_CUSTOM_MODIFIER1);
@@ -13218,14 +13355,20 @@ void Player_Update(Actor* thisx, PlayState* play) {
         // at Mario's position in Mario's facing — Ivan-the-Fairy-style. Mario
         // never enters Link's first-person aim mode, so FIRST_PERSON / unk_6AD
         // are not in the yield list.
-        s32 marioYieldToOot =
-            (this->stateFlags1 & (PLAYER_STATE1_TALKING |
-                                  PLAYER_STATE1_CARRYING_ACTOR |
-                                  PLAYER_STATE1_GETTING_ITEM |
-                                  PLAYER_STATE1_IN_ITEM_CS |
-                                  PLAYER_STATE1_CLIMBING_LEDGE |
-                                  PLAYER_STATE1_HANGING_OFF_LEDGE)) != 0;
-        if (Sm64Mario_IsReady() && !marioYieldToOot) {
+        // Yield (don't pause OOT's action func) whenever OOT is scripting the
+        // player — Sm64Mario_OotIsScriptingPlayer (sm64_mario.c) covers:
+        //  - Player_InBlockingCsMode: cutscene/csAction/transition-start/loading/
+        //    magic/hookshot-fly;
+        //  - talk / item-get / ledge climb (the old narrow list);
+        //  - the multi-frame DOOR + entrance/exit WALK-THROUGH, detected by
+        //    action-func identity (Player_Action_80845EF8/80845CA4). doorType is
+        //    nulled at 13089 before the walk, so only the action func persists.
+        // The SAME predicate is what Sm64Mario_Update parks on, so the pause gate
+        // and the libsm64 park never disagree. Letting the action func run is what
+        // makes doors/void/cutscene/exit COMPLETE instead of freezing (softlock).
+        // CARRYING_ACTOR is intentionally NOT yielded: Mario keeps libsm64 control
+        // while carrying (Sm64Mario_TryGrabOrThrow pins/throws the held item).
+        if (Sm64Mario_IsReady() && !Sm64Mario_OotIsScriptingPlayer(play, this)) {
             this->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
         }
 
@@ -13234,6 +13377,32 @@ void Player_Update(Actor* thisx, PlayState* play) {
         // touches Link's health, state, or velocity — the damage is forwarded
         // to Mario's libsm64 knockback animation instead.
         Sm64Mario_InterceptDamage(play, this);
+
+        // Pikachu: read the damage TYPE (acHitEffect: 1=fire 2=ice 3=electric)
+        // before Player_UpdateCommon consumes it, to drive the Pokemon-style
+        // status chip on the Pikachu HUD (burned/freeze/paralyzed). Cosmetic
+        // only — never scrubs the hit.
+        {
+            extern u8 MmForm_IsPikachuActive(void);
+            extern void PikachuForm_InterceptStatus(PlayState* play, Player* player);
+            if (MmForm_IsPikachuActive()) {
+                PikachuForm_InterceptStatus(play, this);
+            }
+        }
+
+        // SM64 Mario: swap A<->B for OOT's action system only (this sp44 copy).
+        // OOT's A is the contextual button (talk / check / open / lift), so the
+        // swap makes those fire on real-B. libsm64 reads the REAL buttons from
+        // play->state.input[0] (Sm64Mario_Update), so Mario still jumps on A and
+        // punches on B. Net: B = punch + contextual interact, A = pure jump. The
+        // interaction handlers above (~13050) read sControlInput = this copy.
+        if (Sm64Mario_IsReady()) {
+#define SM64_SWAP_AB(b) (((b) & ~(BTN_A | BTN_B)) | (((b) & BTN_A) ? BTN_B : 0) | (((b) & BTN_B) ? BTN_A : 0))
+            sp44.cur.button = SM64_SWAP_AB(sp44.cur.button);
+            sp44.press.button = SM64_SWAP_AB(sp44.press.button);
+            sp44.rel.button = SM64_SWAP_AB(sp44.rel.button);
+#undef SM64_SWAP_AB
+        }
 
         Player_UpdateCommon(this, play, &sp44);
 
@@ -13289,8 +13458,17 @@ void Player_Update(Actor* thisx, PlayState* play) {
 
     // Make Link normal size when going through doors and crawlspaces and when climbing ladders.
     // Otherwise Link can glitch out, being in unloaded rooms or falling OoB.
-    if (this->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER || this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE ||
-        this->stateFlags2 & PLAYER_STATE2_CRAWLING) {
+    // SKIP this reset when a TransformMasks form OR Fierce Deity skin mode is active: those own
+    // their actor.scale (FD skin uses 0.015f, the MM forms 0.01f) and re-apply it every frame in
+    // their own update loop. This unconditional reset to 0.01f during cutscenes/ladders/doors/
+    // crawlspaces was visibly shrinking FD back to Link size whenever one of those states fired.
+    // FD skin returns false from TransformMasks_IsTransformed() (OOT handles its gameplay), so it
+    // needs its own explicit exemption here.
+    extern u8 TransformMasks_IsTransformed(void);
+    extern u8 TransformMasks_IsFDSkinMode(void);
+    if ((this->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER || this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE ||
+         this->stateFlags2 & PLAYER_STATE2_CRAWLING) &&
+        !TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode()) {
         this->actor.scale.x = 0.01f;
         this->actor.scale.y = 0.01f;
         this->actor.scale.z = 0.01f;

@@ -270,9 +270,12 @@ void KaleidoScope_DrawQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
 
             KaleidoScope_SetCursorVtx(pauseCtx, sp216 * 4, pauseCtx->questVtx);
 
-            // SW97: L toggles arrow/slingshot mode; C-button equips in current mode
+            // SW97: the freed shoulder button toggles arrow/slingshot mode; C-button equips in current mode.
+            // (Freed = the shoulder NOT bound to kaleido tab switching — see NGCKaleidoSwitcher.)
             if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->cursorSpecialPos == 0)) {
-                if (SW97_MEDALLIONS_ENABLED() && CHECK_BTN_ALL(input->press.button, BTN_L)) {
+                bool ngcModeQ = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
+                s16 freedBtnQ = ngcModeQ ? BTN_Z : BTN_L;
+                if (SW97_MEDALLIONS_ENABLED() && CHECK_BTN_ALL(input->press.button, freedBtnQ)) {
                     sSw97ArrowMode ^= 1;
                     Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);

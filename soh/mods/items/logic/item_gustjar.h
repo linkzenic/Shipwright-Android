@@ -26,6 +26,10 @@
 #define GUST_MODE_ABSORB 2
 #define GUST_MODE_BLOW 3
 #define GUST_MODE_ELEMENT_SELECT 4
+// LOADED — gust jar is primed with an element but doesn't auto-discharge.
+// Entered from ABSORB by pressing L+R together (cycles element + stores blow);
+// exits to BLOW when the player releases the C-button (manual discharge).
+#define GUST_MODE_LOADED 5
 
 // Element types (selected from medallions)
 typedef enum {
@@ -59,6 +63,11 @@ typedef enum {
 #define gjFirstPerson gCustomItemState.gustJarFirstPersonActive
 #define gjAimMode gCustomItemState.gustJarAimMode
 #define gjButtonMask gCustomItemState.gustJarButtonMask
+#define gjBlowDir gCustomItemState.gustJarBlowDir
+
+// Blow direction values (gjBlowDir):
+#define GUST_DIR_SUCK 0
+#define GUST_DIR_BLOW 1
 
 // Collider init — DMG_HAMMER_SWING (bit 6) | DMG_EXPLOSIVE (bit 3) = 0x48
 // This triggers AC_HIT on pots, rocks, grass, crates via their own break handlers
@@ -138,5 +147,17 @@ static const struct {
 // rather than #include this file.
 void GustJar_SpawnSuckVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw);
 void GustJar_SpawnBlowVFX(PlayState* play, Vec3f* nozzle, s16 aimYaw, u8 element);
+
+// Returns the medallion ITEM_* matching the gust jar's currently-selected element,
+// or -1 when the element is WIND (no overlay needed). Used by the C-button HUD
+// draw (z_parameter.c) to show which element is currently primed on the gust jar.
+s32 GustJar_GetActiveMedallionItem(void);
+
+// Strip L/R from a player Input copy when the gust jar is the active aimable
+// item. Called from inside Player_Update (z_player.c) BEFORE sp44 is handed to
+// Player_UpdateCommon — this is the only point early enough to prevent the
+// vanilla shield action from latching onto BTN_R. Modelled after
+// TransformMasks_FilterB.
+void GustJar_FilterPlayerInput(Input* input);
 
 #endif // ITEM_GUSTJAR_H

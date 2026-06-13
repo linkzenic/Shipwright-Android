@@ -346,7 +346,9 @@ bool Logic::HasItem(RandomizerGet itemName) {
         case RG_CHATEAU_ROMANI:
             return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_CHATEAU_ROMANI, true);
         case RG_ROCS_FEATHER:
-            return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROCS_FEATHER_SKIJER, true);
+            // Vanilla rando Roc's Feather (RSK_ROCS_FEATHER) — independent from Skijer's
+            // progressive Roc's items (RG_PROGRESSIVE_ROCS, gated by RSK_SKIJER_CUSTOM_ITEMS).
+            return ctx->GetOption(RSK_ROCS_FEATHER) && CheckRandoInf(RAND_INF_OBTAINED_ROCS_FEATHER);
         case RG_ROCS_CAPE:
             return ctx->GetOption(RSK_SKIJER_CUSTOM_ITEMS) && CheckInventory(ITEM_ROCS_CAPE, true);
         case RG_PROGRESSIVE_ROCS:
@@ -2333,6 +2335,59 @@ void Logic::ApplyItemEffect(Item& item, bool state) {
                 case RG_HYLIA_LAB_KEY:
                 case RG_FISHING_HOLE_KEY:
                     SetRandoInf(RandoGetToRandInf.at(randoGet), state);
+                    break;
+                // MM Masks (Page 3): mark the extended-inventory item so CanUse(RG_MM_MASK_*)
+                // works during seed generation. Masks with an OOT child-trade counterpart also
+                // set the corresponding trade flag — the MM mask IS the OOT mask (1:1), matching
+                // the in-game give path in Randomizer_Item_Give.
+                case RG_MM_MASK_POSTMAN:
+                case RG_MM_MASK_ALL_NIGHT:
+                case RG_MM_MASK_BLAST:
+                case RG_MM_MASK_STONE:
+                case RG_MM_MASK_GREAT_FAIRY:
+                case RG_MM_MASK_DEKU:
+                case RG_MM_MASK_KEATON:
+                case RG_MM_MASK_BREMEN:
+                case RG_MM_MASK_BUNNY:
+                case RG_MM_MASK_DON_GERO:
+                case RG_MM_MASK_SCENTS:
+                case RG_MM_MASK_GORON:
+                case RG_MM_MASK_ROMANI:
+                case RG_MM_MASK_CIRCUS_LEADER:
+                case RG_MM_MASK_KAFEI:
+                case RG_MM_MASK_COUPLE:
+                case RG_MM_MASK_TRUTH:
+                case RG_MM_MASK_ZORA:
+                case RG_MM_MASK_KAMARO:
+                case RG_MM_MASK_GIBDO:
+                case RG_MM_MASK_GARO:
+                case RG_MM_MASK_CAPTAIN:
+                case RG_MM_MASK_GIANT:
+                case RG_MM_MASK_FIERCE_DEITY:
+                    SetInventory(item.GetGIEntry()->itemId, (!state ? ITEM_NONE : item.GetGIEntry()->itemId));
+                    switch (randoGet) {
+                        case RG_MM_MASK_KEATON:
+                            SetRandoInf(RAND_INF_CHILD_TRADES_HAS_MASK_KEATON, state);
+                            break;
+                        case RG_MM_MASK_BUNNY:
+                            SetRandoInf(RAND_INF_CHILD_TRADES_HAS_MASK_BUNNY, state);
+                            break;
+                        case RG_MM_MASK_GORON:
+                            SetRandoInf(RAND_INF_CHILD_TRADES_HAS_MASK_GORON, state);
+                            break;
+                        case RG_MM_MASK_ZORA:
+                            SetRandoInf(RAND_INF_CHILD_TRADES_HAS_MASK_ZORA, state);
+                            break;
+                        case RG_MM_MASK_TRUTH:
+                            SetRandoInf(RAND_INF_CHILD_TRADES_HAS_MASK_TRUTH, state);
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+                // Vanilla rando Roc's Feather (Nayru's Love slot item, NOT Skijer's progressive)
+                case RG_ROCS_FEATHER:
+                    SetRandoInf(RAND_INF_OBTAINED_ROCS_FEATHER, state);
                     break;
                 case RG_TRIFORCE_PIECE:
                     mSaveContext->ship.quest.data.randomizer.triforcePiecesCollected += (!state ? -1 : 1);

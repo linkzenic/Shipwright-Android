@@ -31,6 +31,7 @@ extern GameState* gGameState;
 #include "soh/SaveManager.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/enhancementTypes.h"  // BUNNY_HOOD_VANILLA / BUNNY_HOOD_FAST_AND_JUMP
+#include "soh/Enhancements/nametag.h"
 extern "C" void Save_InitFile(int isDebug);
 
 // Forward declaration — defined in soh/ResourceManagerHelpers.cpp. No public
@@ -90,6 +91,7 @@ struct LeaderboardRow {
     std::string name;
     s32         carrySecs;
     s32         rank;
+    std::string team;
 };
 std::vector<LeaderboardRow> sLeaderboard;
 
@@ -774,11 +776,6 @@ void HandleMapConfirmed(const nlohmann::json& p) {
     sLocal.carrierRupeesRemaining = 0;
     sLocal.drainTickCounter       = 0;
     sLocal.carrierTimerFrames     = 0;          // descending timer reset
-    // Mirror to the HUD field too — otherwise the digit overlay reads the
-    // stale frames left over from the previous round's carrier (peers
-    // saw 5:00 at the start of round 2 because the mirror at the bottom
-    // of TickFrame only fires while the LOCAL player is the carrier).
-    gSaveContext.ship.stats.playTimer = 0;
     sLocal.lastWarnSecond         = -1;
     sLocal.preRoundCountdownFrames = 60;       // 3-second GET READY
     sLocal.triforceLanded         = true;
@@ -842,16 +839,39 @@ void HandleTriforceSpawn(const nlohmann::json& p) {
 void HandleTriforcePickup(const nlohmann::json& p) {
     sLocal.carrierClientId = p.value("carrierClientId", 0u);
     sLocal.role = (sLocal.carrierClientId != 0) ? Role::Thief : Role::Thief;
-    // Announce by display name, falling back to clientId.
+    // Resolve the carrier's TEAM and cache it so the drain block doesn't
+    // need to lookup the clients map every frame. Also snapshot the
+    // active team's frozen timer value into the drain working buffer so
+    // the drain resumes from where their team left off (per-team timer
+    // model: the other team's timer is frozen at its own last value).
+    sLocal.currentCarrierTeam.clear();
     std::string who = "Someone";
     if (Harpoon::Instance != nullptr && sLocal.carrierClientId != 0) {
         auto it = Harpoon::Instance->clients.find(sLocal.carrierClientId);
-        if (it != Harpoon::Instance->clients.end() && !it->second.name.empty()) {
-            who = it->second.name;
+        if (it != Harpoon::Instance->clients.end()) {
+            if (!it->second.name.empty()) who = it->second.name;
+            else who = "cid" + std::to_string(sLocal.carrierClientId);
+            sLocal.currentCarrierTeam = it->second.team;
         } else {
             who = "cid" + std::to_string(sLocal.carrierClientId);
         }
     }
+    if (sLocal.currentCarrierTeam == "red") {
+        sLocal.carrierTimerFrames = sLocal.redTimerFrames;
+    } else if (sLocal.currentCarrierTeam == "blue") {
+        sLocal.carrierTimerFrames = sLocal.blueTimerFrames;
+    } else {
+        // Carrier has no team (joined mid-round without picking, or
+        // TEAM_ASSIGN hasn't propagated yet). Default to RED so the
+        // round still progresses — the host's next STATE_SYNC will
+        // resolve the conflict and a TEAM_ASSIGN will overwrite this.
+        sLocal.currentCarrierTeam = "red";
+        sLocal.carrierTimerFrames = sLocal.redTimerFrames;
+    }
+    sLocal.slowModeAccum      = 0.0f;
+    sLocal.carrierTimerLastMs = 0;   // re-anchor on next drain tick
+    sLocal.lastSyncSecond     = -1;
+
     Notification::Emit({
         .prefix = "Triforce Thief",
         .message = who + " grabbed the Triforce!",
@@ -881,50 +901,68 @@ void HandleTriforceDrop(const nlohmann::json& p) {
     sLocal.dropFlyTimer = 180;   // ~9 sec safety fuse — long enough for the
                                   // 0.97-friction "ice-slide" to settle naturally
 
-    // 30-frame pickup cooldown on the dropper only — they have to chase it.
-    // Other clients can grab it immediately once it lands. TickFrame
-    // counts at ~20 logic ticks/sec (R_UPDATE_RATE = 3, matches the rest
-    // of TT timer math like `dropFlyTimer = 180 = ~9s`), so 30 frames =
-    // ~1.5 seconds real-time. Was 90 (~4.5s) which felt sluggish.
-    if (dropper != 0) {
-        sLocal.pickupCooldownByCid[dropper] = 30;
-    }
+    // (Regrab cooldown removed per playtest feedback: even the dropper
+    //  can grab the Triforce instantly the moment it lands — no chase
+    //  penalty. dropFlyTimer > 0 is still the only gate while airborne.)
 
-    // Shared timer: every drop adds 10 seconds to the SHARED countdown
-    // (user spec). The timer is a single value all clients agree on —
-    // whoever holds the Triforce when it hits 0 wins. Drops are a
-    // dramatic reset that gives players more breathing room. All
-    // clients apply this locally on the drop event for deterministic
-    // sync; carrier's per-second CARRIER_TIMER_SYNC broadcast corrects
-    // any drift.
-    sLocal.carrierTimerFrames += 10 * 20;
-    // Re-arm the slow-mo accumulator: with +10s added, we're above the
-    // 5-second slow-mo threshold so we restart at full speed.
-    if (sLocal.carrierTimerFrames > 5 * 20) {
-        sLocal.slowModeAccum = 0.0f;
+    // Per-team timer model:
+    //   (a) Save the drained value back to the DROPPER's team store so
+    //       their counter freezes at the right number until they (or a
+    //       teammate) grabs it again.
+    //   (b) Award the +10 sec DEFENSIVE bonus to the dropper's team
+    //       (user spec: dropping = team gets breathing room). Clamp at
+    //       the round-start cap so the timer can't grow past `start`.
+    std::string dropperTeam;
+    if (Harpoon::Instance != nullptr && dropper != 0) {
+        auto it = Harpoon::Instance->clients.find(dropper);
+        if (it != Harpoon::Instance->clients.end()) {
+            dropperTeam = it->second.team;
+        }
     }
-    // Re-arm warning thresholds so they fire again as the timer
-    // descends through them post-drop.
-    if (sLocal.carrierTimerFrames > 10 * 20) {
-        sLocal.lastWarnSecond = -1;
+    const s32 capFrames = sLocal.roundWinSeconds * 20;
+    if (dropperTeam == "red") {
+        sLocal.redTimerFrames = sLocal.carrierTimerFrames + 10 * 20;
+        if (sLocal.redTimerFrames > capFrames) sLocal.redTimerFrames = capFrames;
+    } else if (dropperTeam == "blue") {
+        sLocal.blueTimerFrames = sLocal.carrierTimerFrames + 10 * 20;
+        if (sLocal.blueTimerFrames > capFrames) sLocal.blueTimerFrames = capFrames;
     }
+    // Clear the current carrier's team cache since no one's carrying now.
+    sLocal.currentCarrierTeam.clear();
+    sLocal.slowModeAccum  = 0.0f;
+    sLocal.lastWarnSecond = -1;
 
     Notification::Emit({
         .prefix = "Triforce Thief",
-        .message = "Triforce knocked loose! +10s",
+        .message = "Triforce knocked loose! Team "
+                   + (dropperTeam == "red" ? std::string("Red")
+                                            : dropperTeam == "blue" ? std::string("Blue")
+                                                                     : std::string(""))
+                   + " +10s",
         .remainingTime = 3.0f,
     });
 }
 
 void HandleRoundResult(const nlohmann::json& p) {
-    // Silent round end (parity with PropHunt's HandleRoundResult). Per user
-    // spec: no winner notification text — players just see the leaderboard
-    // modal. The winnerClientId is still logged for diagnostics.
-    u32 winner = p.value("winnerClientId", 0u);
-    s32 round  = p.value("roundIndex", sLocal.roundIndex);
-    SPDLOG_INFO("[Harpoon][TriforceThief] round {} ended winner=cid{} (silent)",
-                round, winner);
+    u32 winner             = p.value("winnerClientId", 0u);
+    s32 round              = p.value("roundIndex", sLocal.roundIndex);
+    std::string winnerTeam = p.value("winnerTeam", std::string());
+    SPDLOG_INFO("[Harpoon][TriforceThief] round {} ended winner=cid{} team='{}'",
+                round, winner, winnerTeam);
     (void)winner;
+
+    // Team-mode winner banner. Per user spec: "Team Red Wins!" /
+    // "Team Blue Wins!" notification on round end, in addition to the
+    // leaderboard modal.
+    if (!winnerTeam.empty()) {
+        std::string label = (winnerTeam == "red") ? "Red" :
+                            (winnerTeam == "blue") ? "Blue" : winnerTeam;
+        Notification::Emit({
+            .prefix        = "Triforce Thief",
+            .message       = "Team " + label + " Wins!",
+            .remainingTime = 5.0f,
+        });
+    }
 
     // Build the leaderboard so DrawHud can render the centered modal.
     // Stays visible until LocallyConfirmMap / HostConfirmMap clears it on
@@ -940,11 +978,18 @@ void HandleRoundResult(const nlohmann::json& p) {
     sLocal.carrierRupeesRemaining = 0;
     sLocal.drainTickCounter       = 0;
     sLocal.carrierTimerFrames     = 0;
-    gSaveContext.ship.stats.playTimer = 0;
+    sLocal.redTimerFrames         = 0;
+    sLocal.blueTimerFrames        = 0;
+    sLocal.currentCarrierTeam.clear();
     sLocal.lastWarnSecond         = -1;
     sLocal.dropFlyTimer           = 0;
     sLocal.pickupCooldownByCid.clear();
     sLocal.role                   = Role::Unassigned;
+    // Hide both engine timer slots at round end.
+    gSaveContext.timerState      = TIMER_STATE_OFF;
+    gSaveContext.subTimerState   = SUBTIMER_STATE_OFF;
+    gSaveContext.timerSeconds    = 0;
+    gSaveContext.subTimerSeconds = 0;
 
     // Tear down the appear-cutscene subcamera if it's still up (corner case:
     // the round ended in the middle of the intro orbit). Restore the main
@@ -1016,96 +1061,112 @@ void HandleEvent(const nlohmann::json& envelope) {
     }
     else if (evt == kEvtRoundConfig) {
         // Host broadcasts win-seconds at the start of each round so every
-        // client agrees on how long the carrier needs to hold.
+        // client agrees on how long each team needs to hoard.
         s32 ws = data.value("winSeconds", 60);
-        if (ws < 5)   ws = 5;
-        if (ws > 600) ws = 600;
+        if (ws < 5)  ws = 5;
+        if (ws > 99) ws = 99;  // team-mode cap per user spec
         sLocal.roundWinSeconds = ws;
-        // Seed the descending timer IMMEDIATELY (don't wait for the first
-        // pickup). Previously OnLocalPickup seeded it, which raced the
-        // ROUND_CONFIG arrival — peers picked up the Triforce before
-        // ROUND_CONFIG had updated roundWinSeconds, leaving the timer
-        // at the default 60s regardless of the host's slider. Seeding
-        // here means: as soon as we know the round-win seconds, the
-        // shared timer is ready.
+        // Seed BOTH per-team timers + the working buffer so peers display
+        // the full duration before the first pickup.
+        sLocal.redTimerFrames     = ws * 20;
+        sLocal.blueTimerFrames    = ws * 20;
         sLocal.carrierTimerFrames = ws * 20;
-        gSaveContext.ship.stats.playTimer = sLocal.carrierTimerFrames;
+        sLocal.currentCarrierTeam.clear();
         sLocal.lastWarnSecond     = -1;
         sLocal.slowModeAccum      = 0.0f;
-        sLocal.carrierTimerLastMs = 0;   // re-seed wall-clock anchor next carrier tick
+        sLocal.carrierTimerLastMs = 0;
         sLocal.lastSyncSecond     = -1;
-        sLocal.lastHostSyncMs     = 0;   // host emits first STATE_SYNC immediately next tick
+        sLocal.lastHostSyncMs     = 0;
+        // Engine timer1/subTimer stay OFF — the team HUD is a custom
+        // ImGui overlay (see DrawHud), so we don't want the vanilla
+        // env-hazard digits drawing on top of it.
+        gSaveContext.timerState      = TIMER_STATE_OFF;
+        gSaveContext.subTimerState   = SUBTIMER_STATE_OFF;
+        gSaveContext.timerSeconds    = 0;
+        gSaveContext.subTimerSeconds = 0;
     }
     else if (evt == kEvtCarrierTimerSync) {
-        // Shared timer sync. The current carrier broadcasts the
-        // authoritative value once per second. Non-carrier peers adopt
-        // it as their local view of the shared countdown — this is how
-        // every client agrees on "the timer" without each computing
-        // their own. The local carrier ignores incoming sync (we're
-        // the authority for our own tick).
+        // Legacy carrier-broadcast sync. Now that the host is the SINGLE
+        // timer authority (10 Hz STATE_SYNC), peers and carriers both
+        // ignore this payload aside from updating the leaderboard mirror
+        // so per-player carry stats still aggregate.
         u32 src       = envelope.value("source", 0u);
-        // Wire format preserves the historical `rupeesRemaining` key for
-        // protocol compat — semantically it's "shared timer seconds".
         s32 remaining = data.value("rupeesRemaining", 0);
         if (Harpoon::Instance != nullptr && src != 0) {
             auto it = Harpoon::Instance->clients.find(src);
             if (it != Harpoon::Instance->clients.end()) {
                 it->second.ttTimerSecondsRemaining = remaining;
             }
-            if (!IsLocalCarrier()) {
-                // Drift correction from the carrier's authoritative value,
-                // but ONLY in the downward direction. Every client also
-                // drains carrierTimerFrames locally in TickFrame via real
-                // wall-clock (std::chrono), so this sync usually arrives
-                // close to or slightly above our local value (the carrier
-                // broadcasts a whole-second FLOOR — `carrierTimerFrames /
-                // 20`). Applying it unconditionally would snap a local
-                // value of 41.3 sec back up to 42.0 when the carrier
-                // broadcasts 42 — that's the upward visible movement the
-                // user originally reported. We only accept the sync when
-                // it represents a DECREASE: this corrects clients that
-                // drifted ahead of the carrier (e.g. clock skew, larger
-                // local elapsedMs), but never moves the display upward.
-                // The +10 bump on drop is handled by the DROP event, not
-                // this sync path, so it's not affected.
-                s32 syncedFrames = remaining * 20;
-                if (syncedFrames < sLocal.carrierTimerFrames) {
-                    sLocal.carrierTimerFrames = syncedFrames;
-                    sLocal.slowModeAccum      = 0.0f;
-                }
-                // playTimer mirroring is handled by the (a-0) pin every
-                // frame; no need to write it here.
-            }
         }
     }
     else if (evt == kEvtStateSync) {
-        // Host's 1-Hz authoritative state. Resolves two kinds of conflict:
-        //
-        //   1. carrierClientId: pickup events can arrive in different
-        //      orders on different clients (server relay is best-effort).
-        //      The host's view is authoritative — snap to it
-        //      unconditionally.
-        //
-        //   2. timerFrames: every client drains locally via wall-clock
-        //      and can drift by a few hundred ms in either direction.
-        //      The host's value is the tie-breaker — snap to it
-        //      UNCONDITIONALLY so peers converge with the host every
-        //      second, in EITHER direction. The frames-precise wire
-        //      format eliminates the ~0.8 s residual offset that an
-        //      integer-second floor would leave (host at 36.8 broadcasts
-        //      36 → peer snaps to 36.0 → permanent 0.8 s gap; with
-        //      frames the snap is exact). The +10 on drop still comes
-        //      through the dedicated TRIFORCE_DROP event.
-        //
-        //      Re-anchor `carrierTimerLastMs` to "now" so the next local
-        //      drain tick computes elapsedMs from THIS moment — without
-        //      that, a stale anchor would double-drain on the next tick.
-        u32 hostCarrier = data.value("carrierClientId", 0u);
-        s32 hostFrames  = data.value("timerFrames", 0);
-        sLocal.carrierClientId    = hostCarrier;
-        sLocal.carrierTimerFrames = hostFrames;
+        // Host's 1-Hz authoritative state. Carries the full team-mode
+        // snapshot: carrierClientId + redTimerFrames + blueTimerFrames.
+        // All three fields snap unconditionally — the host is the
+        // tie-breaker for any conflict (pickup race, timer drift). The
+        // +10 bump on drop still goes through the TRIFORCE_DROP event,
+        // not this sync path.
+        u32 hostCarrier   = data.value("carrierClientId", 0u);
+        s32 hostRed       = data.value("redTimerFrames",  0);
+        s32 hostBlue      = data.value("blueTimerFrames", 0);
+        sLocal.carrierClientId  = hostCarrier;
+        sLocal.redTimerFrames   = hostRed;
+        sLocal.blueTimerFrames  = hostBlue;
+        // Recompute current carrier's team from the host-authoritative
+        // carrier ID + our clients map (which TEAM_ASSIGN keeps in sync).
+        sLocal.currentCarrierTeam.clear();
+        if (Harpoon::Instance != nullptr && hostCarrier != 0) {
+            auto it = Harpoon::Instance->clients.find(hostCarrier);
+            if (it != Harpoon::Instance->clients.end()) {
+                sLocal.currentCarrierTeam = it->second.team;
+            }
+        }
+        // Snapshot the active team's value into the drain working buffer
+        // so the next TickFrame drain works on the correct timer.
+        if (sLocal.currentCarrierTeam == "red") {
+            sLocal.carrierTimerFrames = sLocal.redTimerFrames;
+        } else if (sLocal.currentCarrierTeam == "blue") {
+            sLocal.carrierTimerFrames = sLocal.blueTimerFrames;
+        }
         sLocal.slowModeAccum      = 0.0f;
         sLocal.carrierTimerLastMs = TT_NowMs();
+    }
+    else if (evt == kEvtTeamAssign) {
+        // Peer chose a team in the Network/Harpoon tab. Update the
+        // clients map so nametag tint + friendly-fire gate see the new
+        // value. Re-register the dummy's nametag with the new color so
+        // the change is visible immediately (HarpoonDummyPlayer reads
+        // client.team at register time, but Init only runs once per
+        // dummy spawn).
+        u32 targetId = data.value("targetClientId", 0u);
+        std::string teamStr = data.value("team", std::string());
+        if (Harpoon::Instance != nullptr && targetId != 0) {
+            auto it = Harpoon::Instance->clients.find(targetId);
+            if (it != Harpoon::Instance->clients.end()) {
+                it->second.team = teamStr;
+                if (it->second.player != nullptr) {
+                    Actor* a = (Actor*)it->second.player;
+                    NameTag_RemoveAllForActor(a);
+                    NameTagOptions opts{};
+                    TeamColor tc = TeamRGB(teamStr);
+                    opts.textColor.r = tc.r;
+                    opts.textColor.g = tc.g;
+                    opts.textColor.b = tc.b;
+                    opts.textColor.a = 255;
+                    NameTag_RegisterForActorWithOptions(
+                        a, it->second.name.c_str(), opts);
+                }
+            }
+            // If WE are the target (host's auto-assign at round-start
+            // includes our own clientId), reflect the team locally so
+            // the friendly-fire gate + Triforce drop +10 use the right
+            // value without waiting for SetLocalTeam.
+            if (targetId == Harpoon::Instance->ownClientId) {
+                sLocal.team = teamStr;
+                CVarSetString("gTriforceThief.Team", teamStr.c_str());
+                CVarSave();
+            }
+        }
     }
     else if (evt == kEvtTimerWarning) {
         // Carrier crossed a warning threshold (10/5/4/3/2/1 sec left).
@@ -1207,6 +1268,29 @@ bool PickTriforceAnchor(Vec3f* outPos) {
             valid.push_back(a);
         }
     }
+    // Additional filter: keep candidates that are far enough from where
+    // the local player just entered the scene. The entrance puts every
+    // player roughly there, so we don't want the Triforce to spawn on
+    // top of them. 800u (~ 8 m) is wide enough to push the piece a
+    // proper jog away without exhausting candidates on tight maps.
+    Player* localP = GET_PLAYER(gPlayState);
+    if (localP != nullptr && !valid.empty()) {
+        constexpr f32 kMinDistSq = 800.0f * 800.0f;
+        std::vector<Actor*> farEnough;
+        farEnough.reserve(valid.size());
+        for (Actor* a : valid) {
+            f32 dx = a->world.pos.x - localP->actor.world.pos.x;
+            f32 dy = a->world.pos.y - localP->actor.world.pos.y;
+            f32 dz = a->world.pos.z - localP->actor.world.pos.z;
+            if (dx * dx + dy * dy + dz * dz >= kMinDistSq) {
+                farEnough.push_back(a);
+            }
+        }
+        // Only collapse to the far-enough set if we still have options.
+        // If the map is small enough that every anchor sits inside the
+        // entrance radius, fall back to the regular valid list.
+        if (!farEnough.empty()) valid.swap(farEnough);
+    }
     // If filtering wiped every candidate (extreme edge case), fall back
     // to the unfiltered list rather than fail outright.
     std::vector<Actor*>& pool = valid.empty() ? candidates : valid;
@@ -1239,11 +1323,27 @@ void OnSceneLoaded() {
             sLocal.triforceY = anchor.y;
             sLocal.triforceZ = anchor.z;
         } else {
-            // Fallback: first JSON spawn point so the round still starts.
+            // Fallback: pick the JSON spawn point that's farthest from
+            // the local player's entrance position so the Triforce
+            // doesn't land on top of them. Players just entered the
+            // scene → their world.pos is the entrance spawn.
             const MapDef* m = GetMap(sLocal.pendingAnchorMap);
             if (m != nullptr && !m->spawnPoints.empty()) {
-                const SpawnPoint& sp = m->spawnPoints[0];
-                sLocal.currentSpawn = 0;
+                s32 pickIdx = 0;
+                f32 bestDistSq = -1.0f;
+                Player* localP = (gPlayState != nullptr) ? GET_PLAYER(gPlayState) : nullptr;
+                if (localP != nullptr) {
+                    for (size_t i = 0; i < m->spawnPoints.size(); i++) {
+                        const SpawnPoint& sp = m->spawnPoints[i];
+                        f32 dx = sp.x - localP->actor.world.pos.x;
+                        f32 dy = sp.y - localP->actor.world.pos.y;
+                        f32 dz = sp.z - localP->actor.world.pos.z;
+                        f32 d  = dx * dx + dy * dy + dz * dz;
+                        if (d > bestDistSq) { bestDistSq = d; pickIdx = (s32)i; }
+                    }
+                }
+                const SpawnPoint& sp = m->spawnPoints[pickIdx];
+                sLocal.currentSpawn = pickIdx;
                 sLocal.triforceX = sp.x;
                 sLocal.triforceY = sp.y;
                 sLocal.triforceZ = sp.z;
@@ -1325,10 +1425,14 @@ nlohmann::json BuildTriforceDropPayload(u32 dropperClientId,
     return _Envelope(kEvtTriforceDrop, std::move(d));
 }
 
-nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex) {
+nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex,
+                                       const std::string& winnerTeam) {
     nlohmann::json d;
     d["winnerClientId"] = winnerClientId;
     d["roundIndex"]     = roundIndex;
+    if (!winnerTeam.empty()) {
+        d["winnerTeam"] = winnerTeam;
+    }
 
     // Embed a per-client leaderboard snapshot. Carry seconds is derived
     // from the descending timer: `roundWinSeconds - secondsRemaining`.
@@ -1354,6 +1458,7 @@ nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex) {
             nlohmann::json row;
             row["clientId"]  = cid;
             row["carrySecs"] = carrySecs;
+            row["team"]      = c.team;
             lb.push_back(row);
         }
     }
@@ -1372,12 +1477,16 @@ void BuildLeaderboardFromPayload(const nlohmann::json& p) {
         LeaderboardRow r;
         r.clientId  = e.value("clientId", 0u);
         r.carrySecs = e.value("carrySecs", 0);
+        r.team      = e.value("team", std::string());
         std::string fallback = "cid" + std::to_string(r.clientId);
         if (Harpoon::Instance != nullptr) {
             auto it = Harpoon::Instance->clients.find(r.clientId);
             if (it != Harpoon::Instance->clients.end() &&
                 !it->second.name.empty()) {
                 r.name = it->second.name;
+                // Payload's team may be stale if a peer joined after
+                // ROUND_RESULT was built — prefer the live value.
+                if (!it->second.team.empty()) r.team = it->second.team;
             } else {
                 r.name = fallback;
             }
@@ -1387,8 +1496,18 @@ void BuildLeaderboardFromPayload(const nlohmann::json& p) {
         r.rank = 0;
         sLeaderboard.push_back(r);
     }
+    // Team-grouped sort: reds first (descending by carrySecs), then blues,
+    // then unassigned. Within each group, descending carrySecs.
     std::sort(sLeaderboard.begin(), sLeaderboard.end(),
               [](const LeaderboardRow& a, const LeaderboardRow& b) {
+                  auto teamOrder = [](const std::string& t) {
+                      if (t == "red")  return 0;
+                      if (t == "blue") return 1;
+                      return 2;
+                  };
+                  s32 oa = teamOrder(a.team);
+                  s32 ob = teamOrder(b.team);
+                  if (oa != ob) return oa < ob;
                   return a.carrySecs > b.carrySecs;
               });
     // Shared placement on ties: 1, 1, 3, 3, 5, ...
@@ -1418,11 +1537,49 @@ nlohmann::json BuildCarrierTimerSyncPayload(s32 rupeesRemaining) {
     return _Envelope(kEvtCarrierTimerSync, std::move(d));
 }
 
-nlohmann::json BuildStateSyncPayload(u32 carrierClientId, s32 timerFrames) {
+nlohmann::json BuildStateSyncPayload(u32 carrierClientId,
+                                     s32 redTimerFrames,
+                                     s32 blueTimerFrames) {
     nlohmann::json d;
     d["carrierClientId"] = carrierClientId;
-    d["timerFrames"]     = timerFrames;
+    d["redTimerFrames"]  = redTimerFrames;
+    d["blueTimerFrames"] = blueTimerFrames;
     return _Envelope(kEvtStateSync, std::move(d));
+}
+
+nlohmann::json BuildTeamAssignPayload(u32 targetClientId,
+                                      const std::string& team) {
+    nlohmann::json d;
+    d["targetClientId"] = targetClientId;
+    d["team"]           = team;
+    return _Envelope(kEvtTeamAssign, std::move(d));
+}
+
+TeamColor TeamRGB(const std::string& team) {
+    if (team == "red")  return { 235,  60,  60 };
+    if (team == "blue") return {  60, 120, 235 };
+    return { 255, 215,   0 };  // vanilla gold (no team / spectator / ground)
+}
+
+void SetLocalTeam(const std::string& team) {
+    sLocal.team = team;
+    CVarSetString("gTriforceThief.Team", team.c_str());
+    CVarSave();
+    if (Harpoon::Instance != nullptr && Harpoon::Instance->ownClientId != 0) {
+        // Local apply so our own clients[] entry reflects the choice
+        // (server relay excludes the sender, so we won't get our own
+        // broadcast back). Color follows team.
+        auto it = Harpoon::Instance->clients.find(Harpoon::Instance->ownClientId);
+        if (it != Harpoon::Instance->clients.end()) {
+            it->second.team = team;
+            TeamColor tc = TeamRGB(team);
+            it->second.color.r = tc.r;
+            it->second.color.g = tc.g;
+            it->second.color.b = tc.b;
+        }
+        Harpoon::Instance->SendJsonToRemote(
+            BuildTeamAssignPayload(Harpoon::Instance->ownClientId, team));
+    }
 }
 
 nlohmann::json BuildTimerWarningPayload(s32 secondsLeft) {
@@ -1445,6 +1602,83 @@ nlohmann::json BuildCutsceneBeginPayload(f32 triforceX, f32 triforceY, f32 trifo
 // ---------------------------------------------------------------------------
 
 void DrawHud() {
+    // --- Centered team-timer overlay (Mario Kart Shine Thief style) ---
+    // Two compact MM:SS displays at top-center: red on the left, blue on
+    // the right, with a small Triforce shape between them. Rendered with
+    // ImDrawList primitives so the icon can't break on missing glyphs.
+    if (sLocal.inRound && !sLocal.roundEnded) {
+        auto vp = ImGui::GetMainViewport();
+        ImDrawList* fg = ImGui::GetForegroundDrawList(vp);
+        ImFont* font   = ImGui::GetFont();
+        const f32 digitScale = 1.8f;          // half the previous 3.5
+        const f32 iconSize   = 22.0f;         // triangle width/height in px
+
+        auto formatMMSS = [](s32 frames, char* out, size_t outSz) {
+            if (frames < 0) frames = 0;
+            s32 secs = frames / 20;
+            s32 mm   = secs / 60;
+            s32 ss   = secs % 60;
+            snprintf(out, outSz, "%02d:%02d", mm, ss);
+        };
+
+        char redStr[8], blueStr[8];
+        formatMMSS(sLocal.redTimerFrames,  redStr,  sizeof(redStr));
+        formatMMSS(sLocal.blueTimerFrames, blueStr, sizeof(blueStr));
+
+        ImVec2 redSz  = font->CalcTextSizeA(font->FontSize * digitScale, FLT_MAX, 0.0f, redStr);
+        ImVec2 blueSz = font->CalcTextSizeA(font->FontSize * digitScale, FLT_MAX, 0.0f, blueStr);
+        const f32 gap  = 12.0f;
+        f32 totalW = redSz.x + gap + iconSize + gap + blueSz.x;
+        f32 maxH   = (redSz.y > iconSize) ? redSz.y : iconSize;
+        f32 baseX  = vp->Pos.x + vp->Size.x * 0.5f - totalW * 0.5f;
+        f32 baseY  = vp->Pos.y + 14.0f;
+
+        // Background panel for readability.
+        ImVec2 padTL(baseX - 10.0f, baseY - 4.0f);
+        ImVec2 padBR(baseX + totalW + 10.0f, baseY + maxH + 4.0f);
+        fg->AddRectFilled(padTL, padBR, IM_COL32(0, 0, 0, 180), 5.0f);
+        fg->AddRect(padTL, padBR, IM_COL32(255, 255, 255, 80), 5.0f, 0, 1.0f);
+
+        // Red timer (left).
+        f32 redY = baseY + (maxH - redSz.y) * 0.5f;
+        fg->AddText(font, font->FontSize * digitScale,
+                    ImVec2(baseX + 1, redY + 1),
+                    IM_COL32(0, 0, 0, 200), redStr);
+        fg->AddText(font, font->FontSize * digitScale,
+                    ImVec2(baseX, redY),
+                    IM_COL32(235, 60, 60, 255), redStr);
+
+        // Triforce icon (middle) — outline triangle drawn with primitives
+        // so it always renders. Tinted by the live carrier's team (gold
+        // when dropped). Resolve team at render time so a TEAM_ASSIGN
+        // that landed AFTER the pickup is honored too.
+        TeamColor iconTc{ 255, 215, 0 };
+        if (sLocal.carrierClientId != 0 && Harpoon::Instance != nullptr) {
+            auto it = Harpoon::Instance->clients.find(sLocal.carrierClientId);
+            if (it != Harpoon::Instance->clients.end() && !it->second.team.empty()) {
+                iconTc = TeamRGB(it->second.team);
+            }
+        }
+        f32 iconX = baseX + redSz.x + gap;
+        f32 iconY = baseY + (maxH - iconSize) * 0.5f;
+        ImVec2 p0(iconX + iconSize * 0.5f, iconY);                // top
+        ImVec2 p1(iconX,                   iconY + iconSize);      // bottom-left
+        ImVec2 p2(iconX + iconSize,        iconY + iconSize);      // bottom-right
+        ImU32 iconCol = IM_COL32(iconTc.r, iconTc.g, iconTc.b, 255);
+        fg->AddTriangleFilled(p0, p1, p2, iconCol);
+        fg->AddTriangle(p0, p1, p2, IM_COL32(0, 0, 0, 220), 1.5f);
+
+        // Blue timer (right).
+        f32 blueX = iconX + iconSize + gap;
+        f32 blueY = baseY + (maxH - blueSz.y) * 0.5f;
+        fg->AddText(font, font->FontSize * digitScale,
+                    ImVec2(blueX + 1, blueY + 1),
+                    IM_COL32(0, 0, 0, 200), blueStr);
+        fg->AddText(font, font->FontSize * digitScale,
+                    ImVec2(blueX, blueY),
+                    IM_COL32(60, 120, 235, 255), blueStr);
+    }
+
     ImGui::SetNextWindowPos(ImVec2(12.0f, 80.0f), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.55f);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
@@ -1673,16 +1907,30 @@ void DrawHud() {
             ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f),
                                 "  ROUND OVER  ");
             ImGui::Separator();
+            // Team-grouped rendering: rows are sorted red → blue → none,
+            // we insert a header before the first row of each team.
+            std::string lastTeam = "__none__";
             for (const auto& r : sLeaderboard) {
-                const char* suffix = (r.rank == 1) ? "st"
-                                   : (r.rank == 2) ? "nd"
-                                   : (r.rank == 3) ? "rd" : "th";
-                ImVec4 col = (r.rank == 1) ? ImVec4(1.0f, 0.85f, 0.2f, 1.0f)
-                            : (r.rank == 2) ? ImVec4(0.8f, 0.8f, 0.85f, 1.0f)
-                            : (r.rank == 3) ? ImVec4(0.85f, 0.55f, 0.3f, 1.0f)
-                                            : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-                ImGui::TextColored(col, "  %d%s  %-16s  %02d:%02d",
-                                    r.rank, suffix, r.name.c_str(),
+                if (r.team != lastTeam) {
+                    lastTeam = r.team;
+                    ImVec4 hcol(0.7f, 0.7f, 0.7f, 1.0f);
+                    const char* hlabel = "  -- No Team --  ";
+                    if (r.team == "red")  {
+                        hcol   = ImVec4(0.92f, 0.30f, 0.30f, 1.0f);
+                        hlabel = "  -- Team Red --  ";
+                    } else if (r.team == "blue") {
+                        hcol   = ImVec4(0.30f, 0.55f, 0.92f, 1.0f);
+                        hlabel = "  -- Team Blue --  ";
+                    }
+                    ImGui::TextColored(hcol, "%s", hlabel);
+                }
+                ImVec4 col = (r.team == "red")
+                              ? ImVec4(0.92f, 0.30f, 0.30f, 1.0f)
+                            : (r.team == "blue")
+                              ? ImVec4(0.30f, 0.55f, 0.92f, 1.0f)
+                              : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                ImGui::TextColored(col, "    %-16s  %02d:%02d",
+                                    r.name.c_str(),
                                     r.carrySecs / 60, r.carrySecs % 60);
             }
             ImGui::Separator();
@@ -1762,7 +2010,22 @@ void DrawTriforceAboveHead(Actor* actor, PlayState* play) {
     Graph_OpenDisps(dispRefs, __gfxCtx, __FILE__, __LINE__);
 
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-    gDPSetEnvColor(POLY_XLU_DISP++, 255, 223, 0, 230);
+    // Team-tinted Triforce above the carrier's head. Resolve the carrier's
+    // team at RENDER TIME from the live clients map (not the cached
+    // sLocal.currentCarrierTeam) so a TEAM_ASSIGN that arrived after the
+    // pickup is honored without waiting for the next STATE_SYNC. Falls
+    // back to gold when team is unknown.
+    {
+        TeamColor tc{ 255, 223, 0 };
+        if (sLocal.carrierClientId != 0 && Harpoon::Instance != nullptr) {
+            auto it = Harpoon::Instance->clients.find(sLocal.carrierClientId);
+            if (it != Harpoon::Instance->clients.end() &&
+                !it->second.team.empty()) {
+                tc = TeamRGB(it->second.team);
+            }
+        }
+        gDPSetEnvColor(POLY_XLU_DISP++, tc.r, tc.g, tc.b, 230);
+    }
 
     Matrix_Push();
     Matrix_Translate(actor->world.pos.x,
@@ -1784,12 +2047,8 @@ bool ShouldPickupTriforce(f32 px, f32 py, f32 pz) {
     if (!sLocal.inRound || sLocal.roundEnded) return false;
     if (sLocal.carrierClientId != 0) return false;
     if (sLocal.dropFlyTimer > 0) return false;   // mid-flight, untouchable
-    // Per-client cooldown: the player who just dropped it can't re-grab
-    // it for 90 frames. Everyone else can.
-    if (Harpoon::Instance != nullptr) {
-        auto it = sLocal.pickupCooldownByCid.find(Harpoon::Instance->ownClientId);
-        if (it != sLocal.pickupCooldownByCid.end() && it->second > 0) return false;
-    }
+    // (Per-client regrab cooldown removed per playtest feedback. Anyone
+    //  including the dropper can pick it up the instant it lands.)
     // 60 unit radius in 3D + 100 unit vertical leeway. Matches Scooter's
     // PVP pickup AABB roughly.
     f32 dx = px - sLocal.triforceX;
@@ -1875,20 +2134,9 @@ void OnLocalPickup() {
     // reset forces an immediate sync broadcast of the current second.
     sLocal.carrierTimerLastMs = 0;
     sLocal.lastSyncSecond     = -1;
-
-    // 3-second pickup invincibility so the carrier can't be instantly
-    // spammed with arrows/projectiles the moment they grab the Triforce.
-    // Engine reads `invincibilityTimer` per Player_Update tick (60fps
-    // engine convention, e.g. vanilla damage knockback = 0x28 = 40 fr ≈
-    // 0.66s), so 180 = ~3 sec of i-frames. Vanilla OoT damage paths
-    // honor this field, so all incoming hits during the window are
-    // ignored automatically — no extra plumbing needed.
-    if (gPlayState != nullptr) {
-        Player* lp = GET_PLAYER(gPlayState);
-        if (lp != nullptr) {
-            lp->invincibilityTimer = 180;
-        }
-    }
+    // (Pickup invincibility removed per playtest feedback: the 3-second
+    //  i-frame window felt too long and let carriers tank too many hits
+    //  right after grabbing. No invuln now — drop is on the very first hit.)
 }
 
 // Host-only round starter — applies map locally and broadcasts the
@@ -1897,6 +2145,36 @@ void OnLocalPickup() {
 // vote tally, and the random auto-pick.
 void HostConfirmMap(s32 mapIdx) {
     if (Harpoon::Instance == nullptr) return;
+
+    // 0) Team-required gate: refuse to start the round if any online
+    //    player hasn't chosen a team (per user spec). The host gets a
+    //    notification listing the offenders so they know who to remind.
+    {
+        std::vector<std::string> teamless;
+        for (auto& [cid, c] : Harpoon::Instance->clients) {
+            if (!c.online) continue;
+            if (c.team.empty()) {
+                teamless.push_back(c.name.empty()
+                                       ? ("cid" + std::to_string(cid))
+                                       : c.name);
+            }
+        }
+        if (!teamless.empty()) {
+            std::string list;
+            for (size_t i = 0; i < teamless.size(); i++) {
+                if (i) list += ", ";
+                list += teamless[i];
+            }
+            Notification::Emit({
+                .prefix        = "Triforce Thief",
+                .message       = "Cannot start: no team for " + list,
+                .remainingTime = 6.0f,
+            });
+            SPDLOG_INFO("[Harpoon][TriforceThief] round-start blocked: {} teamless",
+                        (s32)teamless.size());
+            return;
+        }
+    }
 
     // 1) Local apply.
     StartLocalRoundOnMap(mapIdx);
@@ -1919,16 +2197,24 @@ void HostConfirmMap(s32 mapIdx) {
     sLocal.appliedBunnyHood        = false;
 
     // Host doesn't receive their own ROUND_CONFIG broadcast (server relay
-    // excludes the sender). Seed the descending timer here using our
-    // slider value so the first carrier's countdown starts at the
-    // host-selected round-win seconds, not the default 60.
+    // excludes the sender). Seed BOTH per-team timers here using our
+    // slider value so each team's countdown starts at the host-selected
+    // round-win seconds.
+    sLocal.redTimerFrames     = sLocal.roundWinSeconds * 20;
+    sLocal.blueTimerFrames    = sLocal.roundWinSeconds * 20;
     sLocal.carrierTimerFrames = sLocal.roundWinSeconds * 20;
-    gSaveContext.ship.stats.playTimer = sLocal.carrierTimerFrames;
+    sLocal.currentCarrierTeam.clear();
     sLocal.lastWarnSecond     = -1;
     sLocal.slowModeAccum      = 0.0f;
-    sLocal.carrierTimerLastMs = 0;   // re-seed wall-clock anchor next carrier tick
+    sLocal.carrierTimerLastMs = 0;
     sLocal.lastSyncSecond     = -1;
-    sLocal.lastHostSyncMs     = 0;   // host emits first STATE_SYNC immediately next tick
+    sLocal.lastHostSyncMs     = 0;
+    // Custom ImGui team-HUD: keep engine timer1/subTimer OFF so vanilla
+    // env-hazard digits don't draw under the overlay.
+    gSaveContext.timerState      = TIMER_STATE_OFF;
+    gSaveContext.subTimerState   = SUBTIMER_STATE_OFF;
+    gSaveContext.timerSeconds    = 0;
+    gSaveContext.subTimerSeconds = 0;
 
     // Clear last round's leaderboard so the modal stops rendering.
     sLeaderboard.clear();
@@ -2271,38 +2557,28 @@ void TickFrame() {
             sLocal.savedCButtonItems[i] = gSaveContext.equips.buttonItems[i];
         }
         sLocal.hasSavedCButtons = true;
+
+        // Team auto-restore on first lobby tick after (re)connect: if the
+        // CVar has a saved team and the local view doesn't know it yet,
+        // re-apply through SetLocalTeam (broadcasts TEAM_ASSIGN to peers
+        // so the rest of the room sees our team without a manual click).
+        if (sLocal.team.empty()) {
+            const char* saved = CVarGetString("gTriforceThief.Team", "");
+            if (saved != nullptr && saved[0] != '\0') {
+                SetLocalTeam(std::string(saved));
+            }
+        }
     }
 
-    // (a-0) Pin the HUD timer field to the shared countdown.
-    //
-    //       The HUD reads `playTimer/2 + pauseTimer/3` (see
-    //       GAMEPLAYSTAT_TOTAL_TIME in soh/Enhancements/gameplaystats.h).
-    //       Both counters leak through if left alone:
-    //
-    //       • playTimer is incremented in z_play.c:1180 every gameplay
-    //         frame (!isPaused gate). Without our pin the digits would
-    //         creep upward in the no-carrier window. Pinning to
-    //         carrierTimerFrames (which only decreases while someone
-    //         carries, +10 on drop, otherwise frozen) gives us the
-    //         monotonic countdown the user wants. Runs before the
-    //         pre-round early-return so the GET READY countdown is
-    //         pinned to the full value too.
-    //
-    //       • pauseTimer is incremented in z_kaleido_scope_call.c:63
-    //         every frame the pause menu is open. Each kaleido second
-    //         added 0.3 sec to the display via `pauseTimer/3` — the
-    //         user reported this as "the timer goes UP during pause".
-    //         Wiping pauseTimer to 0 every frame eliminates that leak;
-    //         the formula reduces to just `playTimer/2`.
-    //
-    //       Both writes are UNCONDITIONAL during the round (no kaleido
-    //       gate): per user spec, when the carrier holds the Triforce
-    //       the timer must keep counting DOWN even with the pause menu
-    //       open. Wall-clock drain (via TT_NowMs) ensures this happens
-    //       regardless of game-frame freezes.
+    // (a-0) HUD: team mode uses a custom ImGui overlay (see DrawHud for
+    //       the centered red/blue MM:SS panel). Force the engine timer1
+    //       and subTimer to OFF so the vanilla white/yellow digits don't
+    //       double-render under our overlay.
     if (sLocal.inRound && !sLocal.roundEnded) {
-        gSaveContext.ship.stats.pauseTimer = 0;
-        gSaveContext.ship.stats.playTimer  = sLocal.carrierTimerFrames;
+        gSaveContext.timerState      = TIMER_STATE_OFF;
+        gSaveContext.subTimerState   = SUBTIMER_STATE_OFF;
+        gSaveContext.timerSeconds    = 0;
+        gSaveContext.subTimerSeconds = 0;
     }
 
     // (a-1) "GET READY" pre-round countdown. While > 0, freeze the local
@@ -2464,48 +2740,33 @@ void TickFrame() {
         }
     }
 
-    // (a) Shared descending timer. EVERY client drains carrierTimerFrames
-    //     locally via wall-clock time whenever SOMEONE holds the Triforce
-    //     (carrierClientId != 0). This is per user spec: "el check es si
-    //     alguien tiene el triforce" — the timer reduces for everyone
-    //     when anyone carries, not only on the local carrier's machine.
+    // (a) Host-only timer drain. Per user spec: only the host advances
+    //     the per-team countdowns; everyone else just displays the
+    //     authoritative state broadcast by the host (a.7) at 10 Hz. No
+    //     wall-clock drain on peers means no drift, no rounding races,
+    //     and the host's view is the SINGLE source of truth.
     //
-    //     Why drain on every client instead of carrier-broadcast-only:
-    //       * Display stays smooth (sub-second) on every screen, not
-    //         steppy 1-Hz from sync packets.
-    //       * Pause/framerate immunity: each client's std::chrono runs
-    //         independently in real time.
-    //       * Cross-player consistency: identical real-time deltas
-    //         applied everywhere, with the sync handler correcting any
-    //         drift DOWNWARD only (see HandleEvent → CARRIER_TIMER_SYNC).
-    //         Upward snap-back from rounding floors is suppressed there,
-    //         so the displayed timer never moves up (except +10 on drop,
-    //         which is a separate event applied identically everywhere).
-    //
-    //     The carrier remains the authority for broadcasts, warnings,
-    //     and the win declaration — only its broadcast block fires.
-    if (sLocal.inRound && !sLocal.roundEnded &&
+    //     Warnings (10/5/3/.../1 sec) are still emitted by the host and
+    //     mirrored to peers via TIMER_WARNING for simultaneity.
+    bool isHostForTimer = (Harpoon::Instance != nullptr &&
+                           Harpoon::Instance->ownClientId != 0 &&
+                           Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
+    if (isHostForTimer && sLocal.inRound && !sLocal.roundEnded &&
         sLocal.carrierClientId != 0 && sLocal.carrierTimerFrames > 0) {
         s64 nowMs = TT_NowMs();
         if (sLocal.carrierTimerLastMs == 0) {
-            sLocal.carrierTimerLastMs = nowMs;  // first tick this carry — seed only
+            sLocal.carrierTimerLastMs = nowMs;
         }
         s64 elapsedMs = nowMs - sLocal.carrierTimerLastMs;
         sLocal.carrierTimerLastMs = nowMs;
-        if (elapsedMs < 0) elapsedMs = 0;
-        // Cap a single step so a pathological stall (alt-tab for minutes)
-        // doesn't instantly zero the clock. A real freeze of a few seconds
-        // still drains correctly — nobody can freeze the round by pausing.
+        if (elapsedMs < 0)    elapsedMs = 0;
         if (elapsedMs > 5000) elapsedMs = 5000;
 
-        // Real ms → frame-units (20 per second). Slow-mo for the final
-        // 5 seconds: drain at 1/2.5 the rate ("dramatic finale").
         f32 drainFrames = (f32)elapsedMs * (20.0f / 1000.0f);
         constexpr s32 kSlowModeThresholdFrames = 5 * 20;  // last 5 sec
         if (sLocal.carrierTimerFrames <= kSlowModeThresholdFrames) {
-            drainFrames *= 0.4f;  // 1 / 2.5
+            drainFrames *= 0.4f;  // 1 / 2.5 slow-mo finale
         }
-        // Fractional carry (slowModeAccum) keeps sub-frame precision.
         sLocal.slowModeAccum += drainFrames;
         s32 wholeFrames = (s32)sLocal.slowModeAccum;
         if (wholeFrames > 0) {
@@ -2513,71 +2774,94 @@ void TickFrame() {
             sLocal.carrierTimerFrames -= wholeFrames;
             if (sLocal.carrierTimerFrames < 0) sLocal.carrierTimerFrames = 0;
         }
-        gSaveContext.ship.stats.playTimer = sLocal.carrierTimerFrames;
-
-        // Carrier-only authority duties: broadcast on second change,
-        // fire warnings, declare the win. Non-carriers just drained
-        // locally above for their display.
-        if (IsLocalCarrier()) {
-            s32 secsLeft = sLocal.carrierTimerFrames / 20;
-            if (secsLeft != sLocal.lastSyncSecond) {
-                sLocal.lastSyncSecond = secsLeft;
-                Harpoon::Instance->SendJsonToRemote(
-                    BuildCarrierTimerSyncPayload(secsLeft));
-            }
-
-            // Per-second warnings at 10/5/4/3/2/1 sec, once each.
-            s32 curSec = (sLocal.carrierTimerFrames + 19) / 20;  // ceil
-            static const s32 kThresholds[] = { 10, 5, 4, 3, 2, 1 };
-            for (s32 t : kThresholds) {
-                if (curSec == t && sLocal.lastWarnSecond != t) {
-                    sLocal.lastWarnSecond = t;
-                    Notification::Emit({
-                        .prefix = "Triforce Thief",
-                        .message = "Hurry! " + std::to_string(t) + " seconds left!",
-                        .remainingTime = 2.5f,
-                    });
-                    Harpoon::Instance->SendJsonToRemote(
-                        BuildTimerWarningPayload(t));
-                    break;
-                }
-            }
-
-            if (sLocal.carrierTimerFrames <= 0) {
-                sLocal.roundEnded = true;
-                u32 winner = Harpoon::Instance->ownClientId;
-                Harpoon::Instance->SendJsonToRemote(
-                    BuildRoundResultPayload(winner, sLocal.roundIndex));
-                // Apply locally too — relay excludes the sender.
-                nlohmann::json local;
-                local["winnerClientId"] = winner;
-                local["roundIndex"]     = sLocal.roundIndex;
-                HandleRoundResult(local);
+        // Resolve carrier's team if not cached (race with TEAM_ASSIGN).
+        if (sLocal.currentCarrierTeam.empty() &&
+            Harpoon::Instance != nullptr) {
+            auto it = Harpoon::Instance->clients.find(sLocal.carrierClientId);
+            if (it != Harpoon::Instance->clients.end() &&
+                !it->second.team.empty()) {
+                sLocal.currentCarrierTeam = it->second.team;
+            } else {
+                sLocal.currentCarrierTeam = "red";
             }
         }
-    } else if (sLocal.carrierClientId == 0) {
-        // No carrier — timer paused. Re-anchor so the next carry's first
-        // tick seeds fresh instead of draining the idle gap.
+        if (sLocal.currentCarrierTeam == "red") {
+            sLocal.redTimerFrames = sLocal.carrierTimerFrames;
+        } else if (sLocal.currentCarrierTeam == "blue") {
+            sLocal.blueTimerFrames = sLocal.carrierTimerFrames;
+        }
+
+        // Host emits warnings + mirrors them to peers for simultaneous popups.
+        s32 curSec = (sLocal.carrierTimerFrames + 19) / 20;  // ceil
+        static const s32 kThresholds[] = { 10, 5, 4, 3, 2, 1 };
+        for (s32 t : kThresholds) {
+            if (curSec == t && sLocal.lastWarnSecond != t) {
+                sLocal.lastWarnSecond = t;
+                Notification::Emit({
+                    .prefix = "Triforce Thief",
+                    .message = "Hurry! " + std::to_string(t) + " seconds left!",
+                    .remainingTime = 2.5f,
+                });
+                Harpoon::Instance->SendJsonToRemote(
+                    BuildTimerWarningPayload(t));
+                break;
+            }
+        }
+    } else if (isHostForTimer && sLocal.carrierClientId == 0) {
+        // No carrier — host's wall-clock anchor resets so the next
+        // pickup tick seeds fresh.
         sLocal.carrierTimerLastMs = 0;
     }
 
-    // (a.7) Host authoritative state sync (1 Hz). The room host broadcasts
-    //       its view of {carrierClientId, timerSeconds} every second so
-    //       peers can resolve any conflict that crept in via race
-    //       conditions: e.g. two players whose pickup events arrived in
-    //       different orders on different clients (resulting in disagreement
-    //       on who's carrying), or accumulated timer drift between local
-    //       drains. Peers' HandleEvent snaps carrierClientId to the host's
-    //       value unconditionally and applies the timer monotonically (down
-    //       only — never moves the display upward, per the established
-    //       "never goes up" invariant).
+    // (a.6) Host-authoritative win declaration. Either team's timer
+    //       hitting 0 ends the round in their favor. The host runs the
+    //       check on its authoritative red/blueTimerFrames (the per-team
+    //       stores, which the drain block keeps in sync with whichever
+    //       team is currently carrying). The winnerClientId is the team's
+    //       current carrier when known, else the first member found in
+    //       the room of that team — purely cosmetic for the leaderboard.
+    {
+        bool isHostLocal = (Harpoon::Instance->ownClientId != 0 &&
+                            Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
+        if (isHostLocal && sLocal.inRound && !sLocal.roundEnded) {
+            std::string winnerTeam;
+            if (sLocal.redTimerFrames <= 0)       winnerTeam = "red";
+            else if (sLocal.blueTimerFrames <= 0) winnerTeam = "blue";
+            if (!winnerTeam.empty()) {
+                sLocal.roundEnded = true;
+                // Prefer the current carrier as the "winner client id"
+                // (used by the leaderboard modal as the highlighted row).
+                u32 winnerCid = (sLocal.currentCarrierTeam == winnerTeam)
+                                    ? sLocal.carrierClientId : 0u;
+                if (winnerCid == 0 && Harpoon::Instance != nullptr) {
+                    for (auto& [cid, c] : Harpoon::Instance->clients) {
+                        if (c.team == winnerTeam) { winnerCid = cid; break; }
+                    }
+                }
+                Harpoon::Instance->SendJsonToRemote(
+                    BuildRoundResultPayload(winnerCid, sLocal.roundIndex, winnerTeam));
+                // Apply locally too — relay excludes the sender.
+                nlohmann::json local;
+                local["winnerClientId"] = winnerCid;
+                local["roundIndex"]     = sLocal.roundIndex;
+                local["winnerTeam"]     = winnerTeam;
+                HandleRoundResult(local);
+            }
+        }
+    }
+
+    // (a.7) Host authoritative state sync (10 Hz). The host is the SINGLE
+    //       source of truth for the timer per user spec: peers never
+    //       drain locally — they just snap to whatever the host says.
+    //       At 10 Hz the displayed value updates roughly every 100 ms,
+    //       which is smooth enough to feel continuous.
     {
         bool isHostLocal = (Harpoon::Instance->ownClientId != 0 &&
                             Harpoon::Instance->ownClientId == Harpoon::Instance->hostClientId);
         if (isHostLocal && sLocal.inRound && !sLocal.roundEnded) {
             s64 nowMs = TT_NowMs();
             if (sLocal.lastHostSyncMs == 0 ||
-                (nowMs - sLocal.lastHostSyncMs) >= 1000) {
+                (nowMs - sLocal.lastHostSyncMs) >= 100) {
                 sLocal.lastHostSyncMs = nowMs;
                 // Broadcast exact frames (not floored seconds) so peers
                 // snap to the host's sub-second-precise value. With a
@@ -2586,7 +2870,8 @@ void TickFrame() {
                 // permanent ~0.8 s offset.
                 Harpoon::Instance->SendJsonToRemote(
                     BuildStateSyncPayload(sLocal.carrierClientId,
-                                          sLocal.carrierTimerFrames));
+                                          sLocal.redTimerFrames,
+                                          sLocal.blueTimerFrames));
             }
         }
     }

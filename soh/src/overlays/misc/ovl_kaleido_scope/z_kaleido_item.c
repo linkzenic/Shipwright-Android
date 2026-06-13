@@ -12,6 +12,8 @@
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/extended_inventory.c"
 #include "mods/items/custom_items.h"
+#include "mods/items/logic/item_lantern.h" // LanternFireType enum (Vacía/Regular/Blue/Poe/Green)
+#include "mods/items/logic/twilight_upgrade.h" // Clawshot / Gale Boomerang mode selectors
 #include "expansions/sw97/sw97_config.h"
 
 u8 gAmmoItems[] = {
@@ -32,6 +34,59 @@ static s16 sAllAmmoVtxOffset[] = {
 };
 
 extern const char* _gAmmoDigit0Tex[];
+
+// Twilight L-badge: draws gLButtonTex (vanilla 24x32 ia8) as a small 18x12
+// quad CENTERED BELOW the item icon — mirrors the Roc's Feather
+// "cycle extras" pattern (small mini-icons under the main item) instead of
+// the overlapping corner badge we had before, which looked cramped.
+//
+// Implementation: separate static Vtx buffer so we don't mutate the
+// kaleido's per-slot itemVtx array (which the cursor + equip animations
+// also reach into). Caller passes the item slot's vertex offset `j` so we
+// can derive the icon's top-left screen coords.
+static Vtx sTwilightLBadgeVtx[4] = {
+    { { { 0, 0, 0 }, 0, { 0,       0       }, { 0xFF, 0xFF, 0xFF, 0xFF } } },
+    { { { 0, 0, 0 }, 0, { 24 << 5, 0       }, { 0xFF, 0xFF, 0xFF, 0xFF } } },
+    { { { 0, 0, 0 }, 0, { 0,       32 << 5 }, { 0xFF, 0xFF, 0xFF, 0xFF } } },
+    { { { 0, 0, 0 }, 0, { 24 << 5, 32 << 5 }, { 0xFF, 0xFF, 0xFF, 0xFF } } },
+};
+
+static void Kaleido_DrawTwilightLBadge(PauseContext* pauseCtx, GraphicsContext* gfxCtx, int j) {
+    OPEN_DISPS(gfxCtx);
+
+    // Icon is 32×32 anchored at itemVtx[j+0] (top-left). Badge goes
+    // CENTERED HORIZONTALLY just below the icon's bottom edge.
+    // Badge size: 18 wide × 14 tall (~75% scale of 24×32 texture; close
+    // enough to native aspect that the L glyph stays readable).
+    s16 icoX = pauseCtx->itemVtx[j + 0].v.ob[0];
+    s16 icoY = pauseCtx->itemVtx[j + 0].v.ob[1];
+    s16 bW = 18;
+    s16 bH = 14;
+    s16 bX = icoX + (32 - bW) / 2;   // (32 - 18) / 2 = 7 → centered under icon
+    s16 bY = icoY - 32 - 2;          // 2px gap below the icon bottom (icoY - 32)
+
+    sTwilightLBadgeVtx[0].v.ob[0] = bX;       sTwilightLBadgeVtx[0].v.ob[1] = bY;
+    sTwilightLBadgeVtx[1].v.ob[0] = bX + bW;  sTwilightLBadgeVtx[1].v.ob[1] = bY;
+    sTwilightLBadgeVtx[2].v.ob[0] = bX;       sTwilightLBadgeVtx[2].v.ob[1] = bY - bH;
+    sTwilightLBadgeVtx[3].v.ob[0] = bX + bW;  sTwilightLBadgeVtx[3].v.ob[1] = bY - bH;
+
+    gSPVertex(POLY_OPA_DISP++, sTwilightLBadgeVtx, 4, 0);
+    POLY_OPA_DISP = KaleidoScope_QuadTextureIA8(POLY_OPA_DISP, (void*)gLButtonTex, 24, 32, 0);
+
+    CLOSE_DISPS(gfxCtx);
+}
+
+// Returns 1 if the given item ID should display the Twilight L badge —
+// i.e. the player owns the corresponding Twilight sub-upgrade.
+static u8 Kaleido_ShouldDrawTwilightLBadge(s16 itemId) {
+    if (itemId == ITEM_HOOKSHOT || itemId == ITEM_LONGSHOT) {
+        return TwilightUpgrade_HasClawshot();
+    }
+    if (itemId == ITEM_BOOMERANG) {
+        return TwilightUpgrade_HasGaleBoomerang();
+    }
+    return 0;
+}
 
 s8 ItemInSlotUsesAmmo(s16 slot) {
     s16 item = gSaveContext.inventory.items[slot];
@@ -352,32 +407,558 @@ bool CanMaskSelect() {
 
 extern void* ExtInv_GetItemIcon(uint16_t itemId);
 
-// ── Lantern Kaleido Extinguish ───────────────────────────────────────────────
-static s32 sLanternHoldTimer = 0;
+// ── Lantern Kaleido Fire-Type Selector ───────────────────────────────────────
+// Press A on the lantern in kaleido → opens an overlay with all ever-captured
+// fire types (tracked persistently in gSaveContext.ship.lanternCapturedTypes)
+// plus a "Vacía" / extinguish slot. Stick L/R cycles, press A confirms, B
+// cancels. Replaces the old hold-C-to-extinguish shortcut.
+#define LANTERN_SELECTOR_MAX 5
 
-static void Lantern_HandleKaleidoExtinguish(PlayState* play) {
+static u8  sLanternSelectorActive = 0;
+static s8  sLanternSelectorCursor = 0;
+static s32 sLanternSelectorStickHeld = 0;
+static s32 sLanternAnimTimer = 0; // 0..5 — matches sSlotCycleActiveAnimTimer easing in DrawItemCycleExtras
+
+// Tint colors per LanternFireType — used by the overlay draw to indicate which
+// fuel is in each slot without needing dedicated icons.
+//   0 NONE: dim gray (extinguished)
+//   1 REGULAR: orange
+//   2 BLUE: cyan
+//   3 POE: magenta
+//   4 GREEN: green
+static const u8 sLanternTypeTint[5][3] = {
+    { 110, 110, 110 },
+    { 255, 140,  40 },
+    {  60, 180, 255 },
+    { 220,  80, 220 },
+    {  80, 230, 100 },
+};
+
+// Forward declarations — defined below.
+// Used by Lantern / Gust Jar / Arrow Wheel press-A handlers.
+// leftSize / rightSize: texture native size in pixels (32 for item icons,
+// 24 for quest medallion icons). Mod authors pass the actual size of the
+// PNG they're displaying so UVs scale correctly inside the 32x32 quad.
+static void KaleidoCycle_DrawRocStyle(PlayState* play, s32 visualSlot, u8 isCycling,
+                                       u8 hasLeftItem, u8 hasRightItem,
+                                       void* leftIconTex, void* rightIconTex,
+                                       const u8* leftTint, const u8* rightTint,
+                                       s32 leftSize, s32 rightSize);
+static void ArrowWheel_Build(void);
+
+static u8 Lantern_BuildSelectorEntries(u8 entries[LANTERN_SELECTOR_MAX]) {
+    u8 count = 0;
+    // "Vacía" / extinguish is always selectable
+    entries[count++] = LANTERN_FIRE_NONE;
+    for (u8 t = LANTERN_FIRE_REGULAR; t <= LANTERN_FIRE_GREEN; t++) {
+        if (gSaveContext.ship.lanternCapturedTypes & (1 << t)) {
+            entries[count++] = t;
+        }
+    }
+    return count;
+}
+
+static void Lantern_HandleKaleidoSelector(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
 
     s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
-    if (cursorItem != ITEM_LANTERN || gCustomItemState.lanternFireType == 0) {
-        sLanternHoldTimer = 0;
+    if (cursorItem != ITEM_LANTERN) {
+        if (sLanternSelectorActive) {
+            sLanternSelectorActive = 0;
+            gCurrentItemCyclingSlot = -1;
+        }
         return;
     }
 
-    u8 cHeld = CHECK_BTN_ANY(input->cur.button, BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT);
-    if (cHeld) {
-        sLanternHoldTimer++;
-        if (sLanternHoldTimer >= 20) {
-            // Extinguish!
-            gCustomItemState.lanternFireType = 0;
-            sLanternHoldTimer = 0;
-            Audio_PlaySoundGeneral(NA_SE_EV_FIRE_PILLAR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+    u8 entries[LANTERN_SELECTOR_MAX];
+    u8 count = Lantern_BuildSelectorEntries(entries);
+
+    // Roc's Feather-style cycle: A toggles cycle mode; stick L/R applies the
+    // change immediately and updates the visible prev/next mini icons. Single
+    // press of A confirms exit (no separate confirm cursor).
+    bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_A) && count > 1) {
+        sLanternSelectorActive = !sLanternSelectorActive;
+        if (sLanternSelectorActive) {
+            gCurrentItemCyclingSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+        } else {
+            gCurrentItemCyclingSlot = -1;
+        }
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    if (sLanternSelectorActive) {
+        pauseCtx->cursorColorSet = 8;
+        if ((pauseCtx->stickRelX > 30 || pauseCtx->stickRelY > 30) ||
+            (dpad && CHECK_BTN_ANY(input->press.button, BTN_DRIGHT | BTN_DUP))) {
+            // Cycle to next captured fire type.
+            for (u8 i = 0; i < count; i++) {
+                if (entries[i] == gCustomItemState.lanternFireType) {
+                    gCustomItemState.lanternFireType = entries[(i + 1) % count];
+                    gSaveContext.ship.lanternFireType = gCustomItemState.lanternFireType;
+                    Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    break;
+                }
+            }
+        } else if ((pauseCtx->stickRelX < -30 || pauseCtx->stickRelY < -30) ||
+                   (dpad && CHECK_BTN_ANY(input->press.button, BTN_DLEFT | BTN_DDOWN))) {
+            for (u8 i = 0; i < count; i++) {
+                if (entries[i] == gCustomItemState.lanternFireType) {
+                    gCustomItemState.lanternFireType = entries[(i + count - 1) % count];
+                    gSaveContext.ship.lanternFireType = gCustomItemState.lanternFireType;
+                    Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                    break;
+                }
+            }
+        }
+        // Keep cycling slot in sync with cursor position (gets reset to -1 if
+        // user moves cursor off the lantern).
+        gCurrentItemCyclingSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+    }
+
+    // Legacy path (kept disabled — unreachable, A press above always returns).
+    if (0 && CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        if (!sLanternSelectorActive) {
+            // Open — cursor starts at current fire type if present in the list.
+            sLanternSelectorActive = 1;
+            sLanternSelectorCursor = 0;
+            for (u8 i = 0; i < count; i++) {
+                if (entries[i] == gCustomItemState.lanternFireType) {
+                    sLanternSelectorCursor = i;
+                    break;
+                }
+            }
+            sLanternSelectorStickHeld = 0;
+            // Use the existing kaleido cycling lock so other A handlers don't
+            // also fire (equip-to-button, exit pause, etc.) while the overlay
+            // is open. SLOT_LANTERN is the lantern's inventory slot.
+            gCurrentItemCyclingSlot = SLOT_LANTERN;
+            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                    &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        } else {
+            // Confirm — apply selection and close.
+            u8 newType = entries[sLanternSelectorCursor];
+            if (newType != gCustomItemState.lanternFireType) {
+                gCustomItemState.lanternFireType = newType;
+                gSaveContext.ship.lanternFireType = newType;
+                Audio_PlaySoundGeneral(newType == LANTERN_FIRE_NONE ? NA_SE_EV_FIRE_PILLAR : NA_SE_EV_FLAME_IGNITION,
+                                       &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultReverb);
+            } else {
+                Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+            sLanternSelectorActive = 0;
+            gCurrentItemCyclingSlot = -1;
+        }
+        return;
+    }
+
+    if (!sLanternSelectorActive) {
+        return;
+    }
+
+    // B cancels without applying.
+    if (CHECK_BTN_ALL(input->press.button, BTN_B)) {
+        sLanternSelectorActive = 0;
+        gCurrentItemCyclingSlot = -1;
+        Audio_PlaySoundGeneral(NA_SE_SY_CANCEL, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    // Stick L/R cycles selection (with debounce so a held stick doesn't spam).
+    s32 stickX = input->rel.stick_x;
+    if (stickX > 30 && !sLanternSelectorStickHeld) {
+        sLanternSelectorCursor = (sLanternSelectorCursor + 1) % count;
+        sLanternSelectorStickHeld = 1;
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    } else if (stickX < -30 && !sLanternSelectorStickHeld) {
+        sLanternSelectorCursor = (sLanternSelectorCursor + count - 1) % count;
+        sLanternSelectorStickHeld = 1;
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    } else if (stickX > -20 && stickX < 20) {
+        sLanternSelectorStickHeld = 0;
+    }
+}
+
+// Draw the selector overlay around the lantern icon — shows each available
+// fire type tinted by its color, with the cursor highlighted.
+// New Lantern draw — uses the shared Roc's Feather helper. Shows prev/next
+// captured fire types as left/right mini lantern icons tinted by their flame
+// color, with the A-button hint when idle and dark circles when cycling.
+static void Lantern_DrawKaleidoSelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_LANTERN) {
+        // Helper handles timer decay when not on this slot.
+        KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], 0, 0, 0, NULL, NULL, NULL, NULL, 0, 0);
+        return;
+    }
+
+    u8 entries[LANTERN_SELECTOR_MAX];
+    u8 count = Lantern_BuildSelectorEntries(entries);
+    if (count <= 1) {
+        return;
+    }
+
+    void* lanternTex = ExtInv_GetItemIcon(ITEM_LANTERN);
+    if (lanternTex == NULL) {
+        return;
+    }
+
+    // Find prev/next fire types relative to the current selection.
+    u8 cur = gCustomItemState.lanternFireType;
+    u8 prevType = cur, nextType = cur;
+    for (u8 i = 0; i < count; i++) {
+        if (entries[i] == cur) {
+            prevType = entries[(i + count - 1) % count];
+            nextType = entries[(i + 1) % count];
+            break;
+        }
+    }
+
+    // Lantern icon is 32x32.
+    KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sLanternSelectorActive,
+                              /*hasLeftItem=*/1, /*hasRightItem=*/1,
+                              lanternTex, lanternTex,
+                              sLanternTypeTint[prevType], sLanternTypeTint[nextType],
+                              /*leftSize=*/32, /*rightSize=*/32);
+}
+
+static void Lantern_DrawKaleidoSelector_OLD(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_LANTERN) {
+        if (sLanternAnimTimer > 0) {
+            sLanternAnimTimer--;
+        }
+        return;
+    }
+
+    // Animate cycle transition (same easing as mask/Nayru cycle so the lantern
+    // selector visually matches the Roc's Feather pattern).
+    if (sLanternSelectorActive) {
+        if (sLanternAnimTimer < 5) {
+            sLanternAnimTimer++;
         }
     } else {
-        sLanternHoldTimer = 0;
+        if (sLanternAnimTimer > 0) {
+            sLanternAnimTimer--;
+        }
     }
+
+    u8 entries[LANTERN_SELECTOR_MAX];
+    u8 count = Lantern_BuildSelectorEntries(entries);
+    void* lanternTex = ExtInv_GetItemIcon(ITEM_LANTERN);
+    if (lanternTex == NULL || count == 0) {
+        return;
+    }
+
+    s32 cursorSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+    s32 vtxIdx = cursorSlot * 4;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+
+    Vtx* itemTopLeft = &pauseCtx->itemVtx[vtxIdx];
+    Vtx* itemBottomRight = &itemTopLeft[3];
+    s16 halfX = (itemBottomRight->v.ob[0] - itemTopLeft->v.ob[0]) / 2;
+    s16 halfY = (itemBottomRight->v.ob[1] - itemTopLeft->v.ob[1]) / 2;
+    Matrix_Translate(itemTopLeft->v.ob[0] + halfX, itemTopLeft->v.ob[1] + halfY, 0, MTXMODE_APPLY);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+    // ── A-button indicator (only when idle, signaling "press A to open") ──
+    // Mirrors the Roc's Feather / Nayru / mask hint at z_kaleido_item.c:212.
+    if (!sLanternSelectorActive && sLanternAnimTimer == 0 && pauseCtx->cursorSpecialPos == 0) {
+        Color_RGB8 aButtonColor = { 0, 100, 255 };
+        if (CVarGetInteger(CVAR_COSMETIC("HUD.AButton.Changed"), 0)) {
+            aButtonColor = CVarGetColor24(CVAR_COSMETIC("HUD.AButton.Value"), aButtonColor);
+        } else if (CVarGetInteger(CVAR_COSMETIC("DefaultColorScheme"), COLORSCHEME_N64) == COLORSCHEME_GAMECUBE) {
+            aButtonColor = (Color_RGB8){ 0, 255, 100 };
+        }
+        gSPVertex(POLY_OPA_DISP++, sCycleAButtonVtx, 4, 0);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, aButtonColor.r, aButtonColor.g, aButtonColor.b, pauseCtx->alpha);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, gABtnSymbolTex, G_IM_FMT_IA, G_IM_SIZ_8b, 24, 16, 0,
+                            G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, 4, 4, G_TX_NOLOD, G_TX_NOLOD);
+        gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+    }
+
+    // ── Fire-type row (only when selector active) ──
+    // Drawn above the lantern icon, each slot tinted by its color so the
+    // player sees which captured types are available + which is selected.
+    if (sLanternSelectorActive) {
+        static const s16 sSlotSpacing = 22;
+        s16 totalW = (count - 1) * sSlotSpacing;
+        s16 startX = -(totalW / 2);
+        s16 baseY = -32;
+
+        for (u8 i = 0; i < count; i++) {
+            u8 type = entries[i];
+            const u8* tint = sLanternTypeTint[type];
+            u8 alpha = (i == sLanternSelectorCursor) ? pauseCtx->alpha : (pauseCtx->alpha >> 1);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, tint[0], tint[1], tint[2], alpha);
+
+            Vtx* slotVtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, 4 * sizeof(Vtx));
+            for (s32 vi = 0; vi < 4; vi++) {
+                slotVtx[vi] = pauseCtx->itemVtx[vtxIdx + vi];
+                // Reposition relative to the (already-translated) cursor origin.
+                slotVtx[vi].v.ob[0] = slotVtx[vi].v.ob[0] - itemTopLeft->v.ob[0] - halfX + startX + i * sSlotSpacing;
+                slotVtx[vi].v.ob[1] = slotVtx[vi].v.ob[1] - itemTopLeft->v.ob[1] - halfY + baseY;
+            }
+            gSPVertex(POLY_OPA_DISP++, slotVtx, 4, 0);
+            KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, lanternTex, 32, 32, 0);
+        }
+    }
+
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ── Roc's Feather-style cycle visual helper ─────────────────────────────────
+// Renders the same UI as KaleidoScope_DrawItemCycleExtras (mask/Nayru/Roc's
+// Feather pattern): A-button hint when idle, prev/next mini icons that
+// expand to full size with a dark circle when cycling. Reusable across items
+// that have their own state (lantern fire type, gust jar element, etc.)
+// without needing to swap the inventory slot itself.
+//
+// Arguments:
+//   visualSlot   - cursor visual position (pauseCtx->cursorSlot[PAUSE_ITEM])
+//   isCycling    - whether the selector is in active cycle mode
+//   hasLeftItem  - draw the left alternative
+//   hasRightItem - draw the right alternative
+//   leftIconTex  - RGBA32 texture for the left mini icon
+//   rightIconTex - RGBA32 texture for the right mini icon
+//   leftTint     - 3-byte RGB tint or NULL for white
+//   rightTint    - 3-byte RGB tint or NULL for white
+static void KaleidoCycle_DrawRocStyle(PlayState* play, s32 visualSlot, u8 isCycling,
+                                       u8 hasLeftItem, u8 hasRightItem,
+                                       void* leftIconTex, void* rightIconTex,
+                                       const u8* leftTint, const u8* rightTint,
+                                       s32 leftSize, s32 rightSize) {
+    if (visualSlot < 0 || visualSlot >= (s32)ARRAY_COUNT(sSlotCycleActiveAnimTimer)) return;
+    if (leftSize <= 0) leftSize = 32;
+    if (rightSize <= 0) rightSize = 32;
+    PauseContext* pauseCtx = &play->pauseCtx;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    if (isCycling) {
+        if (sSlotCycleActiveAnimTimer[visualSlot] < 5) sSlotCycleActiveAnimTimer[visualSlot]++;
+    } else {
+        if (sSlotCycleActiveAnimTimer[visualSlot] > 0) sSlotCycleActiveAnimTimer[visualSlot]--;
+    }
+
+    if (hasLeftItem || hasRightItem) {
+        Matrix_Push();
+        Vtx* itemTopLeft = &pauseCtx->itemVtx[visualSlot * 4];
+        Vtx* itemBottomRight = &itemTopLeft[3];
+        s16 halfX = (itemBottomRight->v.ob[0] - itemTopLeft->v.ob[0]) / 2;
+        s16 halfY = (itemBottomRight->v.ob[1] - itemTopLeft->v.ob[1]) / 2;
+        Matrix_Translate(itemTopLeft->v.ob[0] + halfX, itemTopLeft->v.ob[1] + halfY, 0, MTXMODE_APPLY);
+
+        f32 animScale = (f32)(5 - sSlotCycleActiveAnimTimer[visualSlot]) / 5;
+        if (!isCycling || sSlotCycleActiveAnimTimer[visualSlot] < 5) {
+            f32 finalScale = 1.0f - (0.675f * animScale);
+            Matrix_Translate(0, -15.0f * animScale, 0, MTXMODE_APPLY);
+            Matrix_Scale(finalScale, finalScale, 1.0f, MTXMODE_APPLY);
+        }
+        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+        // A-button hint when idle
+        if (!isCycling && sSlotCycleActiveAnimTimer[visualSlot] == 0 && pauseCtx->cursorSpecialPos == 0) {
+            Color_RGB8 aButtonColor = { 0, 100, 255 };
+            if (CVarGetInteger(CVAR_COSMETIC("HUD.AButton.Changed"), 0)) {
+                aButtonColor = CVarGetColor24(CVAR_COSMETIC("HUD.AButton.Value"), aButtonColor);
+            } else if (CVarGetInteger(CVAR_COSMETIC("DefaultColorScheme"), COLORSCHEME_N64) == COLORSCHEME_GAMECUBE) {
+                aButtonColor = (Color_RGB8){ 0, 255, 100 };
+            }
+            gSPVertex(POLY_OPA_DISP++, sCycleAButtonVtx, 4, 0);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, aButtonColor.r, aButtonColor.g, aButtonColor.b, pauseCtx->alpha);
+            gDPLoadTextureBlock(POLY_OPA_DISP++, gABtnSymbolTex, G_IM_FMT_IA, G_IM_SIZ_8b, 24, 16, 0,
+                                G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP, 4, 4, G_TX_NOLOD, G_TX_NOLOD);
+            gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+        }
+
+        // Dark circles behind icons when cycling
+        if (isCycling) {
+            gSPVertex(POLY_OPA_DISP++, sCycleCircleVtx, 8, 0);
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 0, 0, 0, (u8)(pauseCtx->alpha * (1.0f - animScale)));
+            gDPLoadTextureBlock_4b(POLY_OPA_DISP++, gPausePromptCursorTex, G_IM_FMT_I, 48, 48, 0,
+                                   G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                                   G_TX_NOLOD, G_TX_NOLOD);
+            if (hasLeftItem) gSP1Quadrangle(POLY_OPA_DISP++, 0, 2, 3, 1, 0);
+            if (hasRightItem) gSP1Quadrangle(POLY_OPA_DISP++, 4, 6, 7, 5, 0);
+        }
+
+        // Left + right icons.
+        // KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, tex, w, h, vtxOff) renders
+        // the texture at its native (w x h) into the quad starting at vtxOff
+        // within sCycleExtraItemVtx (0 = left slot, 4 = right slot).
+        gSPVertex(POLY_OPA_DISP++, sCycleExtraItemVtx, 8, 0);
+        if (hasLeftItem && leftIconTex != NULL) {
+            u8 r = leftTint ? leftTint[0] : 255;
+            u8 g = leftTint ? leftTint[1] : 255;
+            u8 b = leftTint ? leftTint[2] : 255;
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, pauseCtx->alpha);
+            KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, leftIconTex, leftSize, leftSize, 0);
+        }
+        if (hasRightItem && rightIconTex != NULL) {
+            u8 r = rightTint ? rightTint[0] : 255;
+            u8 g = rightTint ? rightTint[1] : 255;
+            u8 b = rightTint ? rightTint[2] : 255;
+            gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, pauseCtx->alpha);
+            KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, rightIconTex, rightSize, rightSize, 4);
+        }
+
+        Matrix_Pop();
+    }
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// ── Twilight Upgrade Mode Selectors ─────────────────────────────────────────
+// When the player owns the Twilight Upgrade, pressing A on Hookshot / Longshot
+// (Clawshot toggle) or Boomerang (Gale Boomerang toggle) opens a 2-slot kaleido
+// overlay that picks between vanilla mode and the upgraded mode. Mirrors the
+// Lantern selector pattern exactly — same A-press flow, stick L/R navigation,
+// A confirms / B cancels, animated A-button hint when idle.
+
+#define TWILIGHT_TOGGLE_VANILLA 0
+#define TWILIGHT_TOGGLE_UPGRADED 1
+#define TWILIGHT_TOGGLE_SLOTS 2
+
+// Clawshot selector state
+static u8  sClawshotSelectorActive = 0;
+static s8  sClawshotSelectorCursor = 0;
+static s32 sClawshotSelectorStickHeld = 0;
+static s32 sClawshotAnimTimer = 0;
+// Gale Boomerang selector state
+static u8  sGaleSelectorActive = 0;
+static s8  sGaleSelectorCursor = 0;
+static s32 sGaleSelectorStickHeld = 0;
+static s32 sGaleAnimTimer = 0;
+
+// Helper: returns 1 if the cursor item is a hookshot/longshot.
+static u8 TwilightSel_IsHookshotItem(s32 item) {
+    return item == ITEM_HOOKSHOT || item == ITEM_LONGSHOT;
+}
+
+// ── Clawshot Mode Selector (Hookshot/Longshot icon) ─────────────────────────
+// A-press toggle restored — single tap flips clawshotModeActive instantly,
+// same one-shot pattern as GustJar_HandlePressASelector. The selector flag
+// (sClawshotSelectorActive) gates the "cycling" animation in the draw
+// function so the icons briefly expand to the small-flip pattern. Held
+// state isn't needed since there are only two modes; one tap = swap.
+static void Clawshot_HandleKaleidoSelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (!TwilightSel_IsHookshotItem(cursorItem) || !TwilightUpgrade_HasClawshot()) {
+        if (sClawshotSelectorActive) {
+            sClawshotSelectorActive = 0;
+            gCurrentItemCyclingSlot = -1;
+        }
+        return;
+    }
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        u8 newMode = TwilightUpgrade_IsClawshotActive() ? 0 : 1;
+        TwilightUpgrade_SetClawshotActive(newMode);
+        sClawshotSelectorActive = !sClawshotSelectorActive; // flash anim
+        gCurrentItemCyclingSlot = sClawshotSelectorActive ? pauseCtx->cursorSlot[PAUSE_ITEM] : -1;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+}
+
+// Draws the small left/right flip — vanilla hookshot/longshot vs clawshot —
+// via the shared KaleidoCycle_DrawRocStyle helper (same renderer Lantern,
+// GustJar press-A, and arrows use). Both sides render the same base icon
+// because we don't yet have a dedicated clawshot texture in use; tint
+// distinguishes them: white = vanilla, cyan = clawshot (TP chain colour).
+// When ITEM_CLAWSHOT-style texture eventually replaces tint, pass it as
+// rightIconTex instead.
+static void Clawshot_DrawKaleidoSelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (!TwilightSel_IsHookshotItem(cursorItem) || !TwilightUpgrade_HasClawshot()) {
+        // Reset animation when leaving the hookshot/longshot cursor.
+        if (sClawshotAnimTimer > 0) sClawshotAnimTimer--;
+        return;
+    }
+
+    void* baseTex = ExtInv_GetItemIcon(cursorItem);
+    if (baseTex == NULL) return;
+
+    static const u8 sVanillaTint[3]  = { 255, 255, 255 };
+    static const u8 sClawshotTint[3] = {  80, 220, 255 };
+
+    KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sClawshotSelectorActive,
+                              /*hasLeft=*/1, /*hasRight=*/1,
+                              baseTex, baseTex,
+                              sVanillaTint, sClawshotTint,
+                              /*leftSize=*/32, /*rightSize=*/32);
+}
+
+// ── Gale Boomerang Mode Selector (Boomerang icon) ───────────────────────────
+static void Gale_HandleKaleidoSelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_BOOMERANG || !TwilightUpgrade_HasGaleBoomerang()) {
+        if (sGaleSelectorActive) {
+            sGaleSelectorActive = 0;
+            gCurrentItemCyclingSlot = -1;
+        }
+        return;
+    }
+
+    // A-press toggle restored — single tap flips galeBoomerangModeActive,
+    // same one-shot pattern as Clawshot above.
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        u8 newMode = TwilightUpgrade_IsGaleBoomerangActive() ? 0 : 1;
+        TwilightUpgrade_SetGaleBoomerangActive(newMode);
+        sGaleSelectorActive = !sGaleSelectorActive; // flash anim
+        gCurrentItemCyclingSlot = sGaleSelectorActive ? pauseCtx->cursorSlot[PAUSE_ITEM] : -1;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+}
+
+// Same small-flip pattern as Clawshot above — vanilla boomerang (white)
+// vs gale boomerang (pale green TP wind tint), via the shared helper.
+static void Gale_DrawKaleidoSelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_BOOMERANG || !TwilightUpgrade_HasGaleBoomerang()) {
+        if (sGaleAnimTimer > 0) sGaleAnimTimer--;
+        return;
+    }
+
+    void* baseTex = ExtInv_GetItemIcon(ITEM_BOOMERANG);
+    if (baseTex == NULL) return;
+
+    static const u8 sVanillaTint[3] = { 255, 255, 255 };
+    static const u8 sGaleTint[3]    = { 180, 255, 160 };
+
+    KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sGaleSelectorActive,
+                              /*hasLeft=*/1, /*hasRight=*/1,
+                              baseTex, baseTex,
+                              sVanillaTint, sGaleTint,
+                              /*leftSize=*/32, /*rightSize=*/32);
 }
 
 // ── Gust Jar Kaleido Element Cycle ──────────────────────────────────────────
@@ -412,6 +993,97 @@ static void GustJar_BuildKaleidoElements(void) {
 static u8 sGustOverlayActive = 0;
 static s16 sGustHoldTimer = 0;
 #define GUST_KALEIDO_HOLD_FRAMES 20 // Hold C for 20 frames before overlay appears
+
+// Press-A element selector (Roc's Feather style — mirrors lantern selector).
+// Coexists with the hold-C wheel below; either trigger cycles elements.
+static u8 sGustPressASelectorActive = 0;
+static const u16 sGustElemToMedallion[6] = {
+    ITEM_MEDALLION_FOREST, // WIND
+    ITEM_MEDALLION_FIRE,   // FIRE
+    ITEM_MEDALLION_WATER,  // ICE
+    ITEM_MEDALLION_SHADOW, // SHADOW
+    ITEM_MEDALLION_SPIRIT, // SPIRIT
+    ITEM_MEDALLION_LIGHT,  // LIGHT
+};
+
+static void GustJar_HandlePressASelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_GUST_JAR) {
+        if (sGustPressASelectorActive) {
+            sGustPressASelectorActive = 0;
+            gCurrentItemCyclingSlot = -1;
+        }
+        return;
+    }
+
+    GustJar_BuildKaleidoElements();
+    if (sGustAvailCount <= 1) {
+        return; // nothing to cycle
+    }
+
+    bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        sGustPressASelectorActive = !sGustPressASelectorActive;
+        gCurrentItemCyclingSlot = sGustPressASelectorActive ? pauseCtx->cursorSlot[PAUSE_ITEM] : -1;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    if (!sGustPressASelectorActive) return;
+    pauseCtx->cursorColorSet = 8;
+    gCurrentItemCyclingSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+
+    if ((pauseCtx->stickRelX > 30 || pauseCtx->stickRelY > 30) ||
+        (dpad && CHECK_BTN_ANY(input->press.button, BTN_DRIGHT | BTN_DUP))) {
+        sGustElemCursor = (sGustElemCursor + 1) % sGustAvailCount;
+        gCustomItemState.gustJarElement = sGustAvailElems[sGustElemCursor];
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    } else if ((pauseCtx->stickRelX < -30 || pauseCtx->stickRelY < -30) ||
+               (dpad && CHECK_BTN_ANY(input->press.button, BTN_DLEFT | BTN_DDOWN))) {
+        sGustElemCursor = (sGustElemCursor + sGustAvailCount - 1) % sGustAvailCount;
+        gCustomItemState.gustJarElement = sGustAvailElems[sGustElemCursor];
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+}
+
+static void GustJar_DrawPressASelector(PlayState* play) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_GUST_JAR) {
+        KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], 0, 0, 0, NULL, NULL, NULL, NULL, 0, 0);
+        return;
+    }
+
+    GustJar_BuildKaleidoElements();
+    if (sGustAvailCount <= 1) return;
+
+    // Prev/next medallion icons relative to the current element.
+    u8 cur = gCustomItemState.gustJarElement;
+    u8 prevElem = cur, nextElem = cur;
+    for (u8 i = 0; i < sGustAvailCount; i++) {
+        if (sGustAvailElems[i] == cur) {
+            prevElem = sGustAvailElems[(i + sGustAvailCount - 1) % sGustAvailCount];
+            nextElem = sGustAvailElems[(i + 1) % sGustAvailCount];
+            break;
+        }
+    }
+
+    void* leftTex = ExtInv_GetItemIcon(sGustElemToMedallion[prevElem]);
+    void* rightTex = ExtInv_GetItemIcon(sGustElemToMedallion[nextElem]);
+
+    // Quest medallion icons are 24x24 (z_kaleido_collect.c:450).
+    KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sGustPressASelectorActive,
+                              leftTex != NULL, rightTex != NULL,
+                              leftTex, rightTex, NULL, NULL,
+                              /*leftSize=*/24, /*rightSize=*/24);
+}
 
 static void GustJar_HandleElementCycle(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
@@ -572,7 +1244,8 @@ static void GustJar_DrawElementCycle(PlayState* play) {
 #define ARROW_WHEEL_MAX_ENTRIES 7 // 6 medallion arrows + bomb arrows
 
 // Element ids 0-5 map to medallions (Wind=Forest, Fire, Ice=Water, Light, Shadow, Spirit).
-// Id 6 = Bomb.
+// Id 6 = Bomb Arrow.
+#define ARROW_WHEEL_ENTRY_BOMB    6
 static const s32 sArrowWheelItem[ARROW_WHEEL_MAX_ENTRIES] = {
     ITEM_SW97_ARROW_WIND, ITEM_SW97_ARROW_FIRE,  ITEM_SW97_ARROW_ICE,  ITEM_SW97_ARROW_LIGHT,
     ITEM_SW97_ARROW_DARK, ITEM_SW97_ARROW_SOUL,  ITEM_BOMB_ARROWS,
@@ -601,6 +1274,152 @@ static s16 sArrowWheelHoldTimer = 0;
 static s32 sArrowWheelLastCBtn = -1;
 static s32 sArrowWheelStickHeld = 0;
 
+// Press-A selector (Roc's Feather style) — alternative to the hold-C wheel.
+static u8  sArrowWheelPressAActive = 0;
+
+// Find which C-button currently has the bow/slingshot or a cycled arrow item.
+// Returns the cursor index into sArrowWheelEntries (0..N-1) for the current
+// item, or -1 if not found. Writes the C-button index (0=C-Left, 1=C-Down,
+// 2=C-Right) into *outCBtn, or -1 if no relevant C-button.
+static s8 ArrowWheel_GetCurrentEntry(s32* outCBtn) {
+    *outCBtn = -1;
+    for (s32 i = 1; i <= 3; i++) {
+        u8 item = gSaveContext.equips.buttonItems[i];
+        s8 entry = -1;
+        if (item == ITEM_BOW || item == ITEM_SLINGSHOT) {
+            entry = 0; // default to WIND
+        } else if (item >= ITEM_SW97_ARROW_FIRE && item <= ITEM_SW97_ARROW_WIND) {
+            for (u8 k = 0; k < 6; k++) {
+                if ((s32)sArrowWheelItem[k] == (s32)item) {
+                    entry = (s8)k;
+                    break;
+                }
+            }
+        } else if (item == ITEM_BOMB_ARROWS) {
+            entry = ARROW_WHEEL_ENTRY_BOMB;
+        }
+        if (entry >= 0) {
+            *outCBtn = i - 1;
+            for (u8 k = 0; k < sArrowWheelAvailCount; k++) {
+                if (sArrowWheelEntries[k] == (u8)entry) {
+                    return (s8)k;
+                }
+            }
+            return -1;
+        }
+    }
+    return -1;
+}
+
+// Apply the selected entry to the given C-button.
+static void ArrowWheel_ApplyEntry(PlayState* play, u8 entryIdx, s32 cBtn) {
+    if (cBtn < 0 || cBtn > 2 || entryIdx >= sArrowWheelAvailCount) return;
+    u8 entry = sArrowWheelEntries[entryIdx];
+    s32 chosenItem = sArrowWheelItem[entry];
+    s32 targetButtonIndex = cBtn + 1; // buttonItems[0] is B
+    gSaveContext.equips.buttonItems[targetButtonIndex] = chosenItem;
+    gSaveContext.equips.cButtonSlots[cBtn] = 0xFF; // not-from-inventory marker
+    Interface_LoadItemIcon1(play, targetButtonIndex);
+}
+
+// Resolve a wheel entry to its display icon texture.
+static void* ArrowWheel_GetEntryIcon(u8 entry) {
+    if (entry == ARROW_WHEEL_ENTRY_BOMB) {
+        return ExtInv_GetItemIcon(ITEM_BOMB_ARROWS);
+    } else if (entry < 6) {
+        return ExtInv_GetItemIcon(sArrowWheelMedallion[entry]);
+    }
+    return NULL;
+}
+
+static void ArrowWheel_HandlePressA(PlayState* play) {
+    if (!SW97_MEDALLIONS_ENABLED()) {
+        sArrowWheelPressAActive = 0;
+        return;
+    }
+    PauseContext* pauseCtx = &play->pauseCtx;
+    Input* input = &play->state.input[0];
+
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_BOW && cursorItem != ITEM_SLINGSHOT) {
+        if (sArrowWheelPressAActive) {
+            sArrowWheelPressAActive = 0;
+            gCurrentItemCyclingSlot = -1;
+        }
+        return;
+    }
+
+    ArrowWheel_Build();
+    if (sArrowWheelAvailCount <= 1) return;
+
+    s32 cBtn = -1;
+    s8 curIdx = ArrowWheel_GetCurrentEntry(&cBtn);
+    if (cBtn < 0) return; // bow/slingshot not on any C-button — nothing to cycle
+    if (curIdx < 0) curIdx = 0;
+
+    bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));
+
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        sArrowWheelPressAActive = !sArrowWheelPressAActive;
+        gCurrentItemCyclingSlot = sArrowWheelPressAActive ? pauseCtx->cursorSlot[PAUSE_ITEM] : -1;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    if (!sArrowWheelPressAActive) return;
+    pauseCtx->cursorColorSet = 8;
+    gCurrentItemCyclingSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+
+    s8 newIdx = -1;
+    if ((pauseCtx->stickRelX > 30 || pauseCtx->stickRelY > 30) ||
+        (dpad && CHECK_BTN_ANY(input->press.button, BTN_DRIGHT | BTN_DUP))) {
+        newIdx = (curIdx + 1) % sArrowWheelAvailCount;
+    } else if ((pauseCtx->stickRelX < -30 || pauseCtx->stickRelY < -30) ||
+               (dpad && CHECK_BTN_ANY(input->press.button, BTN_DLEFT | BTN_DDOWN))) {
+        newIdx = (curIdx + sArrowWheelAvailCount - 1) % sArrowWheelAvailCount;
+    }
+
+    if (newIdx >= 0) {
+        ArrowWheel_ApplyEntry(play, newIdx, cBtn);
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    }
+}
+
+static void ArrowWheel_DrawPressA(PlayState* play) {
+    if (!SW97_MEDALLIONS_ENABLED()) return;
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
+    if (cursorItem != ITEM_BOW && cursorItem != ITEM_SLINGSHOT) {
+        KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], 0, 0, 0, NULL, NULL, NULL, NULL, 0, 0);
+        return;
+    }
+
+    ArrowWheel_Build();
+    if (sArrowWheelAvailCount <= 1) return;
+
+    s32 cBtn = -1;
+    s8 curIdx = ArrowWheel_GetCurrentEntry(&cBtn);
+    if (curIdx < 0) curIdx = 0;
+
+    u8 prevEntry = sArrowWheelEntries[(curIdx + sArrowWheelAvailCount - 1) % sArrowWheelAvailCount];
+    u8 nextEntry = sArrowWheelEntries[(curIdx + 1) % sArrowWheelAvailCount];
+
+    void* leftTex = ArrowWheel_GetEntryIcon(prevEntry);
+    void* rightTex = ArrowWheel_GetEntryIcon(nextEntry);
+
+    // Per-entry native size: medallion icons (entries 0-5) are 24x24, bomb arrows
+    // and bombchus (entries 6-7) are 32x32. Mixed prev/next is supported.
+    s32 leftSize = (prevEntry < 6) ? 24 : 32;
+    s32 rightSize = (nextEntry < 6) ? 24 : 32;
+
+    KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sArrowWheelPressAActive,
+                              leftTex != NULL, rightTex != NULL,
+                              leftTex, rightTex, NULL, NULL,
+                              leftSize, rightSize);
+}
+
 static void ArrowWheel_Build(void) {
     sArrowWheelAvailCount = 0;
     for (s32 i = 0; i < 6; i++) {
@@ -612,7 +1431,7 @@ static void ArrowWheel_Build(void) {
         }
     }
     if (INV_CONTENT(ITEM_BOMB_ARROWS) != ITEM_NONE) {
-        sArrowWheelEntries[sArrowWheelAvailCount++] = 6; // Bomb
+        sArrowWheelEntries[sArrowWheelAvailCount++] = ARROW_WHEEL_ENTRY_BOMB;
     }
     if (sArrowWheelCursor >= sArrowWheelAvailCount) {
         sArrowWheelCursor = 0;
@@ -713,8 +1532,14 @@ static void ArrowWheel_Draw(PlayState* play) {
 
     for (u8 i = 0; i < sArrowWheelAvailCount; i++) {
         u8 entry = sArrowWheelEntries[i];
-        bool isBomb = (entry == 6);
-        s32 iconItem = isBomb ? ITEM_BOMB_ARROWS : sArrowWheelMedallion[entry];
+        bool isBomb = (entry == ARROW_WHEEL_ENTRY_BOMB);
+        bool is32px = isBomb; // bomb arrows icon is 32x32
+        s32 iconItem;
+        if (isBomb) {
+            iconItem = ITEM_BOMB_ARROWS;
+        } else {
+            iconItem = sArrowWheelMedallion[entry];
+        }
         void* tex = ExtInv_GetItemIcon(iconItem);
         if (tex == NULL) continue;
 
@@ -728,9 +1553,8 @@ static void ArrowWheel_Draw(PlayState* play) {
             elemVtx[vi].v.ob[1] += sArrowWheelOffY[i];
         }
 
-        if (isBomb) {
-            // Bomb arrows icon is 32x32 — remap UVs so full texture fits the slot quad
-            // (same pattern as z_kaleido_collect.c arrow-mode weapon overlay).
+        if (is32px) {
+            // 32x32 icons (bomb arrows / bombchu) — remap UVs to fit the slot quad.
             elemVtx[0].v.tc[0] = 0;        elemVtx[0].v.tc[1] = 0;
             elemVtx[1].v.tc[0] = 32 << 5;  elemVtx[1].v.tc[1] = 0;
             elemVtx[2].v.tc[0] = 0;        elemVtx[2].v.tc[1] = 32 << 5;
@@ -792,8 +1616,24 @@ void KaleidoScope_HandleItemCycles(PlayState* play) {
     // Handle Bow/Slingshot elemental-arrow wheel (hold-C on bow or slingshot)
     ArrowWheel_Handle(play);
 
-    // Handle Lantern extinguish (long-press C while cursor on lantern)
-    Lantern_HandleKaleidoExtinguish(play);
+    // Handle Lantern fire-type selector (press A on lantern → stick L/R picks
+    // between captured types + Vacía, press A confirms / B cancels)
+    Lantern_HandleKaleidoSelector(play);
+
+    // Twilight Upgrade mode toggles — A on hookshot/longshot (Clawshot) or
+    // boomerang (Gale Boomerang) opens a 2-slot selector. Gated by the
+    // corresponding twilightUpgrade bit so the toggles stay hidden until the
+    // player obtains the upgrade.
+    Clawshot_HandleKaleidoSelector(play);
+    Gale_HandleKaleidoSelector(play);
+
+    // Gust Jar press-A element selector (Roc's Feather style — coexists with
+    // the hold-C wheel below).
+    GustJar_HandlePressASelector(play);
+
+    // Bow / Slingshot press-A arrow selector (Roc's Feather style — coexists
+    // with the hold-C arrow wheel below).
+    ArrowWheel_HandlePressA(play);
 }
 
 void KaleidoScope_DrawItemCycles(PlayState* play) {
@@ -823,6 +1663,19 @@ void KaleidoScope_DrawItemCycles(PlayState* play) {
 
     // Draw Bow/Slingshot elemental-arrow wheel overlay
     ArrowWheel_Draw(play);
+
+    // Draw Lantern fire-type selector overlay (only when active)
+    Lantern_DrawKaleidoSelector(play);
+
+    // Draw Twilight Upgrade mode toggles (Clawshot + Gale Boomerang)
+    Clawshot_DrawKaleidoSelector(play);
+    Gale_DrawKaleidoSelector(play);
+
+    // Draw Gust Jar press-A selector (Roc's Feather visual)
+    GustJar_DrawPressASelector(play);
+
+    // Draw Bow / Slingshot press-A selector (Roc's Feather visual)
+    ArrowWheel_DrawPressA(play);
 }
 
 bool IsItemCycling() {
@@ -907,18 +1760,15 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
         if (pauseCtx->cursorSpecialPos == 0) {
             pauseCtx->cursorColorSet = 4;
 
-            // Page switching logic
-            // Page switch button preference: 0=L, 1=A, 2=Both (default)
-            // NGCKaleidoSwitcher overrides: L is reserved for tab switching when NGC mode is on
+            // Inventory sub-page switch (vanilla / custom items / MM masks).
+            // It uses whichever shoulder button is NOT bound to kaleido tab
+            // switching: tab switching (KaleidoScope_HandlePageToggles) uses L
+            // by default (NGCKaleidoSwitcher) and Z when the switcher is off, so
+            // this takes the freed button and the two never collide.
             bool ngcMode = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
-            int pageSwitchMode = CVarGetInteger("gMods.PageSwitch.Button", 2);
-            bool useLButton = (pageSwitchMode == 0 || pageSwitchMode == 2) && !ngcMode;
-            bool useAButton = (pageSwitchMode == 1 || pageSwitchMode == 2);
+            s16 freedBtn = ngcMode ? BTN_Z : BTN_L;
 
-            bool inputL = CHECK_BTN_ALL(input->press.button, BTN_L) && useLButton;
-            bool inputA = CHECK_BTN_ALL(input->press.button, BTN_A) && useAButton && !IsItemCycling();
-
-            if (ExtInv_CanSwitchPage() && (inputL || inputA)) {
+            if (ExtInv_CanSwitchPage() && CHECK_BTN_ALL(input->press.button, freedBtn) && !IsItemCycling()) {
                 ExtInv_SwitchPage();
                 Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                        &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -1279,6 +2129,10 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
             }
             KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, ExtInv_GetItemIcon(itemId), 32, 32, 0);
             gSPGrayscale(POLY_OPA_DISP++, false);
+            // (Twilight L badge removed from kaleido — the A-press
+            //  selector in Clawshot_/Gale_DrawKaleidoSelector now
+            //  serves as the visual mode-toggle hint. The L hint stays
+            //  on the C-button HUD for in-gameplay binding feedback.)
         }
     }
 

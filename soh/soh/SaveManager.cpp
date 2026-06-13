@@ -799,6 +799,10 @@ void SaveManager::InitFileNormal() {
     gSaveContext.ship.pendingIceTrapCount = 0;
     gSaveContext.ship.maskMemory = PLAYER_MASK_NONE;
     gSaveContext.ship.lanternFireType = 0;
+    gSaveContext.ship.lanternCapturedTypes = 0;
+    gSaveContext.ship.twilightUpgrade = 0;
+    gSaveContext.ship.clawshotModeActive = 0;
+    gSaveContext.ship.galeBoomerangModeActive = 0;
     gSaveContext.ship.extEquipSword = 0;
     gSaveContext.ship.extEquipShield = 0;
     gSaveContext.ship.extEquipTunic = 0;
@@ -2163,6 +2167,10 @@ void SaveManager::LoadBaseVersion4() {
     SaveManager::Instance->LoadData("filenameLanguage", gSaveContext.ship.filenameLanguage);
     SaveManager::Instance->LoadData("maskMemory", gSaveContext.ship.maskMemory);
     SaveManager::Instance->LoadData("lanternFireType", gSaveContext.ship.lanternFireType);
+    SaveManager::Instance->LoadData("lanternCapturedTypes", gSaveContext.ship.lanternCapturedTypes);
+    SaveManager::Instance->LoadData("twilightUpgrade", gSaveContext.ship.twilightUpgrade);
+    SaveManager::Instance->LoadData("clawshotModeActive", gSaveContext.ship.clawshotModeActive);
+    SaveManager::Instance->LoadData("galeBoomerangModeActive", gSaveContext.ship.galeBoomerangModeActive);
     SaveManager::Instance->LoadData("extEquipSword", gSaveContext.ship.extEquipSword);
     SaveManager::Instance->LoadData("extEquipShield", gSaveContext.ship.extEquipShield);
     SaveManager::Instance->LoadData("extEquipTunic", gSaveContext.ship.extEquipTunic);
@@ -2336,6 +2344,10 @@ void SaveManager::SaveBase(SaveContext* saveContext, int sectionID, bool fullSav
     SaveManager::Instance->SaveData("filenameLanguage", saveContext->ship.filenameLanguage);
     SaveManager::Instance->SaveData("maskMemory", saveContext->ship.maskMemory);
     SaveManager::Instance->SaveData("lanternFireType", saveContext->ship.lanternFireType);
+    SaveManager::Instance->SaveData("lanternCapturedTypes", saveContext->ship.lanternCapturedTypes);
+    SaveManager::Instance->SaveData("twilightUpgrade", saveContext->ship.twilightUpgrade);
+    SaveManager::Instance->SaveData("clawshotModeActive", saveContext->ship.clawshotModeActive);
+    SaveManager::Instance->SaveData("galeBoomerangModeActive", saveContext->ship.galeBoomerangModeActive);
     SaveManager::Instance->SaveData("extEquipSword", saveContext->ship.extEquipSword);
     SaveManager::Instance->SaveData("extEquipShield", saveContext->ship.extEquipShield);
     SaveManager::Instance->SaveData("extEquipTunic", saveContext->ship.extEquipTunic);

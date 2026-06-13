@@ -11,14 +11,22 @@
 #include "mods/transformation_masks/boss_super_damage.h"
 #include "mods/o2r_loader/o2r_loader.h"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
-#include "soh/ResourceManagerHelpers.h"
 #include "functions.h"
-#include <math.h>
 #include <libultraship/log/luslog.h>
 #include <string.h>
 
 // Needed for the Gerudo / Shielding probe in TransformMasks_FilterB.
 extern PlayState* gPlayState;
+
+// Matrix_GetCurrent is defined in soh/src/code/sys_matrix.c but is not declared
+// in any SoH public header — it leaks out of frame_interpolation.cpp and
+// sw97_compat.h with the proper `MtxF*` return type. Without a forward decl
+// here, line 576 below makes the compiler synthesize an implicit `int()`
+// prototype, which then conflicts with sw97_compat.h's correct prototype the
+// moment z_player.c includes sw97_router.c → sw97_compat.h. Result: C2040 in
+// sw97_compat.h. Forward-declaring it here matches the actual signature and
+// resolves the conflict.
+extern MtxF* Matrix_GetCurrent(void);
 
 // =============================================================================
 // Global MmPlayer instance (declared extern in transformation_masks.h)
@@ -40,6 +48,7 @@ extern u8 MmForm_IsTransformed(void);
 extern u8 MmForm_IsTransformedAny(void);
 extern u8 MmForm_HasSkeleton(void);
 extern u8 MmForm_IsFDSkinMode(void);
+extern u8 MmForm_IsPikachuActive(void);
 extern u8 MmForm_IsItemAllowed(s32 item);
 extern u8 MmForm_IsSlotAllowed(u8 slot);
 extern MmPlayerTransformation MmForm_GetCurrentForm(void);
@@ -273,14 +282,10 @@ void TransformMasks_FilterB(Input* input) {
         return;
     }
 
-    // Garo skin: B reserved for the attack kit (tap = 3-slash combo, hold = charge spin).
-    if (O2rLoader_HasActiveModel()) {
-        const char* o2rName = O2rLoader_GetForcedName();
-        if (o2rName != NULL && strcmp(o2rName, "garo") == 0) {
-            input->cur.button &= ~BTN_B;
-            input->press.button &= ~BTN_B;
-        }
-    }
+    // Garo skin: B is NOT stripped — Link's normal sword/item flow on B keeps
+    // working 1:1. garo_form.cpp observes Link's slash anim and overrides it
+    // visually with the Garo combo (and throws shuriken knives on the combo
+    // finisher) without taking over the input.
 
     // Gerudo Form: by default every action falls back to OoT vanilla — the only
     // explicit Gerudo override is the dual-scimitar combo on B-press from idle/
@@ -440,12 +445,31 @@ u8 TransformMasks_BlocksLedgeGrab(void) {
 // and choose their own paralyzed-state condition (typically an actionFunc).
 // =============================================================================
 
-// Defined in pikachu_form.cpp (extern "C"). True only during Pikachu's attack/
-// locked-action frames AND when the Gigantamax mode is on.
+// Defined in pikachu_form.cpp (extern "C").
+//   gPikaGigantamaxActive — true only during Pikachu's attack/locked-action frames.
+//   gPikaGigantamaxMode   — true the whole time Gigantamax is on (persistent).
 extern u8 gPikaGigantamaxActive;
+extern u8 gPikaGigantamaxMode;
+extern u8 gPikaThunderActive;
+
+// Tunable reach distances (world units, before the boss adds its own body slack).
+#define BSD_REACH_RANGED 70.0f // FD beam / Pika Thunder — can be farther
+#define BSD_REACH_MELEE  30.0f // FD sword swing / Pika melee — must be near
+
+// SM64 Mario's spin (ACT_TWIRLING) is his boss-room super attack — defined in
+// sm64_mario.c (#included into z_player.c). extern'd here to avoid pulling the
+// whole SM64 header into the masks TU.
+extern u8 Sm64Mario_IsSuperAttacking(void);
 
 u8 BossSuperDamage_IsActive(PlayState* play) {
-    if (gPikaGigantamaxActive) {
+    // SM64 Mario: the spin counts as a super attack (only bosses query this, so
+    // it's implicitly boss-room-gated).
+    if (Sm64Mario_IsSuperAttacking()) {
+        return 1;
+    }
+    // AND the gPika* mirror with the authoritative form-state check so a latched
+    // flag (left over from a previous Pika session) can never fire in normal play.
+    if (MmForm_IsPikachuActive() && gPikaGigantamaxActive) {
         return 1;
     }
     // FD form: only count it as a super attack while the melee weapon is
@@ -459,6 +483,127 @@ u8 BossSuperDamage_IsActive(PlayState* play) {
     return 0;
 }
 
+u8 BossSuperDamage_IsFormActive(PlayState* play) {
+    // Persistent: true the whole time the player is in FD form or Pika Gigantamax
+    // mode, regardless of whether a swing is active this exact frame. For
+    // contact/AT-based boss triggers where the hit is read one frame late.
+    (void)play;
+    // gPikaGigantamaxMode is ANDed with the authoritative form-state check: it's
+    // only a mirror of sPika.gigantamax refreshed while PikachuForm_Update runs, so
+    // it can stay latched at 1 after leaving Pika form (e.g. if Cleanup didn't run).
+    // Without this AND, normal play (boomerang/bow) would be treated as a super
+    // attack and skip the bosses' real phases — breaking the regression.
+    return (Sm64Mario_IsSuperAttacking() || (MmForm_IsPikachuActive() && gPikaGigantamaxMode) ||
+            MmForm_IsFDSkinMode())
+               ? 1
+               : 0;
+}
+
+// True if point p is within `range` of the segment [a,b] (clamped to the ends).
+// Uses squared distances so there's no sqrt dependency.
+static u8 BsdSegmentWithin(Vec3f* p, Vec3f* a, Vec3f* b, f32 range) {
+    f32 abx = b->x - a->x, aby = b->y - a->y, abz = b->z - a->z;
+    f32 apx = p->x - a->x, apy = p->y - a->y, apz = p->z - a->z;
+    f32 abLen2 = abx * abx + aby * aby + abz * abz;
+    f32 t, dx, dy, dz, d2;
+    f32 range2 = range * range;
+
+    if (abLen2 < 0.001f) {
+        d2 = apx * apx + apy * apy + apz * apz; // degenerate segment = a point
+        return (d2 < range2) ? 1 : 0;
+    }
+    t = (apx * abx + apy * aby + apz * abz) / abLen2;
+    if (t < 0.0f) {
+        t = 0.0f;
+    } else if (t > 1.0f) {
+        t = 1.0f;
+    }
+    dx = p->x - (a->x + abx * t);
+    dy = p->y - (a->y + aby * t);
+    dz = p->z - (a->z + abz * t);
+    d2 = dx * dx + dy * dy + dz * dz;
+    return (d2 < range2) ? 1 : 0;
+}
+
+u8 BossSuperDamage_FormAttackReaches(PlayState* play, Vec3f* targetPos, f32 range) {
+    Player* player;
+    s32 k;
+
+    if (play == NULL || targetPos == NULL) {
+        return 0;
+    }
+    player = GET_PLAYER(play);
+    if (player == NULL) {
+        return 0;
+    }
+
+    // Must be in a super form (FD or Pika Gigantamax) for ANY of this to fire, so
+    // normal play / the boomerang regression path is never affected.
+    if (!(MmForm_IsPikachuActive() && gPikaGigantamaxMode) && !MmForm_IsFDSkinMode()) {
+        return 0;
+    }
+
+    // TOUCH: the player's body within `range` of the target — no swing required.
+    // "Touching Barinade" breaks/paralyzes/damages it (per user). Covers Pika and
+    // FD when near a part (the orbiting baris, the lowered body, the core).
+    if (Math_Vec3f_DistXYZ(&player->actor.world.pos, targetPos) < range) {
+        return 1;
+    }
+
+    // FD RANGED: the long sword blade reaching the target while swinging. FD's
+    // blade reaches ~5500 units, so we measure distance from the target to the
+    // whole blade SEGMENT (base→tip), not just the endpoints — a target anywhere
+    // along the swing, near or far, counts. Geometric, so it lands regardless of
+    // whether the boss's bumper accepts FD's toucher dmgFlags.
+    if (MmForm_IsFDSkinMode() && player->meleeWeaponState != 0) {
+        for (k = 0; k < 3; k++) {
+            if (BsdSegmentWithin(targetPos, &player->meleeWeaponInfo[k].base, &player->meleeWeaponInfo[k].tip,
+                                 range)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+f32 BossSuperDamage_FormAttackRange(PlayState* play) {
+    Player* player;
+
+    if (play == NULL) {
+        return 0.0f;
+    }
+    player = GET_PLAYER(play);
+    if (player == NULL) {
+        return 0.0f;
+    }
+
+    // Pikachu Gigantamax: only while an attack action is live. Thunder = ranged.
+    if (MmForm_IsPikachuActive() && gPikaGigantamaxActive) {
+        return gPikaThunderActive ? BSD_REACH_RANGED : BSD_REACH_MELEE;
+    }
+
+    // Fierce Deity: only while swinging. The sword fires its energy beam at full
+    // health (the ranged "thunder"); otherwise it's a melee-range swing.
+    if (MmForm_IsFDSkinMode() && player->meleeWeaponState != 0) {
+        u8 fullHealth = (gSaveContext.health >= gSaveContext.healthCapacity);
+        return fullHealth ? BSD_REACH_RANGED : BSD_REACH_MELEE;
+    }
+    return 0.0f;
+}
+
+// Per-super-hit damage the reworked bosses subtract. Pikachu Gigantamax = the max (8, the game's
+// top sword-attack value); Fierce Deity = its MM Fierce Deity slash (4). MM FD melee is 4 normal /
+// 8 strong (D_8085D09C dmgTransformed fields), but the boss handlers don't distinguish the swing
+// type, so the normal value is used for FD. Falls back to 4 if neither form is active (handlers are
+// form-gated, so this is just a safe default).
+u8 BossSuperDamage_FormDamage(PlayState* play) {
+    (void)play;
+    if (MmForm_IsPikachuActive() && gPikaGigantamaxMode) {
+        return 8;
+    }
+    return 4;
+}
+
 void BossSuperDamage_SpawnVfx(PlayState* play, Actor* boss, Vec3f* limbWorldPos, s16 scale, s16 count) {
     s16 i;
 
@@ -470,13 +615,26 @@ void BossSuperDamage_SpawnVfx(PlayState* play, Actor* boss, Vec3f* limbWorldPos,
     }
 }
 
-// ─── OOT-native lightning sparks (uses gGanonLightningDL from ovl_Boss_Ganon2)
-// This is the same DL used by the Dark Beast Ganon transformation cutscene —
-// a vertical white I4 lightning-bolt sprite (32x160). Always available in oot.otr;
-// no MM asset dependency. Per limb we draw a small burst of bolts with random Y
-// rotation so they radiate outward in XZ.
+// ─── Light-orb glow (OOT gGanonLightOrbModelDL — Dark Beast Ganon transformation)
+//
+// This is the EXACT effect drawn on each of Ganon's limbs as Ganondorf transforms
+// into the giant beast and his body scales up (z_boss_ganon2.c func_80904D88): a
+// soft white/blue light orb billboarded over every limb position (unk_234[15]),
+// with random Z-spin. White PRIM = bright core, light-blue ENV = the glow that
+// "surrounds the limb" — exactly the look requested.
+//
+// Two OOT-native DLs (always in oot.otr, no mm.o2r):
+//   gGanonLightOrbMaterialDL — sets the I8 glow texture + (PRIM-ENV)*TEXEL+ENV
+//                              combiner + CLD (soft additive) render mode. Drawn
+//                              ONCE per frame before the orbs.
+//   gGanonLightOrbModelDL    — a ~14-unit centered quad. Drawn per limb.
+// PRIM/ENV are NOT set by the DLs, so we set them ourselves (white core + blue
+// glow). Both DLs are referenced by their OTR path strings; SOH resolves them via
+// the DL signature check (no manual texture/vertex loading).
 
 #define BSD_SPARK_SLOTS 8
+#define BSD_ORB_MATERIAL_DL "__OTR__overlays/ovl_Boss_Ganon2/gGanonLightOrbMaterialDL"
+#define BSD_ORB_MODEL_DL    "__OTR__overlays/ovl_Boss_Ganon2/gGanonLightOrbModelDL"
 
 typedef struct {
     Actor* actor;
@@ -485,10 +643,6 @@ typedef struct {
 
 static BsdSparkSlot sBsdSparkSlots[BSD_SPARK_SLOTS];
 
-// Resource path for the Ganon transformation lightning DL.
-// Asset path identical to assets/overlays/ovl_Boss_Ganon2/ovl_Boss_Ganon2.h.
-#define BSD_LIGHTNING_DL_PATH "__OTR__overlays/ovl_Boss_Ganon2/gGanonLightningDL"
-
 void BossSuperDamage_StartElectricSparks(Actor* boss, s16 durationFrames) {
     s32 i;
     s32 freeSlot = -1;
@@ -496,6 +650,12 @@ void BossSuperDamage_StartElectricSparks(Actor* boss, s16 durationFrames) {
     if (boss == NULL || durationFrames <= 0) {
         return;
     }
+
+    // Ganon body-spark SFX — the exact sound from the beast transformation this
+    // VFX comes from. Played from the boss on each (re)trigger; the boss's own
+    // invincibility-frame gap between hits throttles it into a continuous crackle.
+    Audio_PlayActorSound2(boss, NA_SE_EN_GANON_BODY_SPARK);
+
     for (i = 0; i < BSD_SPARK_SLOTS; i++) {
         if (sBsdSparkSlots[i].actor == boss) {
             sBsdSparkSlots[i].timer = durationFrames;
@@ -514,7 +674,6 @@ void BossSuperDamage_StartElectricSparks(Actor* boss, s16 durationFrames) {
 void BossSuperDamage_DrawElectricSparks(Actor* boss, PlayState* play, Vec3f* limbsPos, s32 limbCount, f32 scale) {
     s32 slot = -1;
     s32 i;
-    s32 j;
     GraphicsContext* gfxCtx;
     f32 finalScale;
     s32 alpha;
@@ -535,43 +694,45 @@ void BossSuperDamage_DrawElectricSparks(Actor* boss, PlayState* play, Vec3f* lim
         sBsdSparkSlots[slot].actor = NULL;
         return;
     }
-    // Alpha fades over the last 30 frames so the burst trails off cleanly.
-    alpha = (sBsdSparkSlots[slot].timer >= 30) ? 255 : (sBsdSparkSlots[slot].timer * 255 / 30);
+    // Alpha fades over the last 20 frames so the burst trails off cleanly.
+    alpha = (sBsdSparkSlots[slot].timer >= 20) ? 255 : (sBsdSparkSlots[slot].timer * 255 / 20);
     sBsdSparkSlots[slot].timer--;
 
-    // Boss_Ganon2 cutscene uses 0.13 scale on a sprite that's natively ~160 units
-    // tall. We want bolts ~40-80 units long for a boss hit, so scale ~0.025-0.05.
-    // Caller's `scale` parameter (1.0 = typical boss) multiplies this base.
-    finalScale = 0.035f * scale;
+    // gGanonLightOrbModelDL's quad is ~14 units. Big orbs (scale ~6 → ~84 units)
+    // so they overlap into a continuous electric shell over the body rather than
+    // discrete dots. A gentle frame-based pulse makes it "breathe" without the
+    // per-frame jitter/flicker the random version had.
+    {
+        // Math_SinS gives a smooth -1..1 wave; ~0.12 amplitude = subtle pulse.
+        f32 pulse = 1.0f + 0.12f * Math_SinS(play->gameplayFrames * 0x0C00);
+        finalScale = 6.0f * scale * pulse;
+    }
 
     gfxCtx = play->state.gfxCtx;
 
     OPEN_DISPS(gfxCtx);
 
-    gDPPipeSync(POLY_XLU_DISP++);
-    // Match Boss_Ganon2 transformation lightning: pure white primary, alpha-faded.
-    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, (u8)alpha);
+    Gfx_SetupDL_25Xlu(gfxCtx);
 
+    // Set the orb color ONCE (white core + light-blue glow), then run the material
+    // DL ONCE to bind the I8 glow texture + combiner — exactly as func_80904D88.
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, (u8)alpha); // white core
+    gDPSetEnvColor(POLY_XLU_DISP++, 100, 200, 255, 0);               // light-blue glow
+    gSPDisplayList(POLY_XLU_DISP++, (Gfx*)BSD_ORB_MATERIAL_DL);
+
+    // One big orb per limb. STABLE: positions are the exact joint world-pos (no
+    // random offset) and the rotation is a fixed per-orb angle (no per-frame
+    // random) — that's what makes the glow continuous instead of flickering. The
+    // orb translates to the joint, billboards to the camera (ReplaceRotation keeps
+    // the translation), scales, and tilts a fixed amount.
     for (i = 0; i < limbCount; i++) {
-        // 2 bolts per limb, fanned out via random Y rotation.
-        for (j = 0; j < 2; j++) {
-            f32 yawRad = Rand_ZeroFloat(2.0f * M_PI);
-            f32 zTilt = Rand_CenteredFloat(0.6f);
-            f32 px = limbsPos[i].x + Rand_CenteredFloat(15.0f);
-            f32 py = limbsPos[i].y + Rand_CenteredFloat(15.0f);
-            f32 pz = limbsPos[i].z + Rand_CenteredFloat(15.0f);
+        Matrix_Translate(limbsPos[i].x, limbsPos[i].y, limbsPos[i].z, MTXMODE_NEW);
+        Matrix_ReplaceRotation(&play->billboardMtxF);
+        Matrix_Scale(finalScale, finalScale, finalScale, MTXMODE_APPLY);
+        Matrix_RotateZ(i * 0.7f, MTXMODE_APPLY); // fixed per-orb tilt, no flicker
 
-            Matrix_Translate(px, py, pz, MTXMODE_NEW);
-            Matrix_Scale(finalScale, finalScale, finalScale, MTXMODE_APPLY);
-            Matrix_RotateY(yawRad, MTXMODE_APPLY);
-            Matrix_RotateZ(zTilt, MTXMODE_APPLY);
-
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            // The DL is resolved by the SOH GfxWrap layer via its OTR path,
-            // so SEGMENTED_TO_VIRTUAL is a no-op cast here (same as Boss_Ganon2).
-            gSPDisplayList(POLY_XLU_DISP++, (Gfx*)BSD_LIGHTNING_DL_PATH);
-        }
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, (Gfx*)BSD_ORB_MODEL_DL);
     }
 
     CLOSE_DISPS(gfxCtx);

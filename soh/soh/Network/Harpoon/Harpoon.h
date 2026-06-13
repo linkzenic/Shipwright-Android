@@ -58,6 +58,11 @@ typedef struct {
     uint32_t clientId;
     std::string name;
     Color_RGB8 color;
+    // Triforce Thief team assignment ("" = none/spectator, "red", "blue").
+    // Set via TRIFORCE_THIEF.TEAM_ASSIGN broadcast in lobby. Drives the
+    // nametag tint (HarpoonDummyPlayer) and the friendly-fire gate
+    // (Harpoon::HandlePacket_Damage). Empty in other gamemodes.
+    std::string team;
     std::string clientVersion;
     bool online;
     bool self;
@@ -271,7 +276,7 @@ typedef struct {
     bool isAlive;
     bool isReady;
     s16 kills;
-    std::string team;
+    // (Triforce Thief `team` lives near `color` above — single source of truth.)
     // Pre-staged role for the NEXT round (set by host's per-peer Hider/Seeker
     // buttons while in lobby). "hider" / "seeker" / "" (= unset / use seeker
     // priority queue). Consumed and cleared by HostStartRound. Distinct from

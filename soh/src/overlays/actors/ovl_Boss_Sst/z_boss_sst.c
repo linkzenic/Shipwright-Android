@@ -14,6 +14,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -2534,6 +2535,34 @@ void BossSst_HeadSfx(BossSst* this, u16 sfxId) {
 }
 
 void BossSst_HandCollisionCheck(BossSst* this, PlayState* play) {
+    // FD / Pika Gigantamax: hitting EITHER hand stuns Bongo's head directly (→ Stunned →
+    // Vulnerable), so you don't have to damage both hands and bait a charge first — then
+    // the head is open for damage (BossSst_HeadCollisionCheck). Only stuns when the head
+    // is in a stunnable state, so it never interrupts an active damage window or the
+    // intro. Detected by an accepted hand AC hit OR the geometric FD-sword/touch reach.
+    // Gated on IsFormActive → normal play (and the vanilla two-hand route) is untouched.
+    if (BossSuperDamage_IsFormActive(play) && ((s8)sHead->actor.colChkInfo.health > 0) &&
+        (this->colliderJntSph.base.colType != COLTYPE_HARD) && (sHead->actionFunc != BossSst_HeadStunned) &&
+        (sHead->actionFunc != BossSst_HeadVulnerable) && (sHead->actionFunc != BossSst_HeadDamage) &&
+        (sHead->actionFunc != BossSst_HeadLurk) && (sHead->actionFunc != BossSst_HeadIntro) &&
+        ((this->colliderJntSph.base.acFlags & AC_HIT) ||
+         BossSuperDamage_FormAttackReaches(play, &this->actor.world.pos,
+                                           BossSuperDamage_FormAttackRange(play) + 60.0f))) {
+        this->colliderJntSph.base.acFlags &= ~AC_HIT;
+        BossSuperDamage_StartElectricSparks(&sHead->actor, 90); // glow the HEAD (it draws sparks; the
+                                                                // hand draw doesn't → would leak a slot)
+        BossSst_HeadSetupStunned(sHead);
+        if (HAND_STATE(sHands[RIGHT]) == HAND_FROZEN) {
+            BossSst_IceShatter(sHands[RIGHT]);
+        } else if (HAND_STATE(sHands[LEFT]) == HAND_FROZEN) {
+            BossSst_IceShatter(sHands[LEFT]);
+        }
+        BossSst_HandSetupStunned(sHands[RIGHT]);
+        BossSst_HandSetupStunned(sHands[LEFT]);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_SHADEST_DAMAGE_HAND);
+        return;
+    }
+
     if ((this->colliderJntSph.base.acFlags & AC_HIT) && (this->colliderJntSph.base.colType != COLTYPE_HARD)) {
         s32 bothHands = true;
 
@@ -2567,30 +2596,54 @@ void BossSst_HandCollisionCheck(BossSst* this, PlayState* play) {
 }
 
 void BossSst_HeadCollisionCheck(BossSst* this, PlayState* play) {
+    // FD / Pika Gigantamax: paralyze-or-damage on the head/eye, bypassing the normal
+    // requirement to stun BOTH hands first. "Fightable" = alive and not in a pre-fight /
+    // recovery / death state, so we never stun during the intro/lurk or re-kill mid-death.
+    // Detected geometrically (FormAttackReaches reaches the floating head) OR by an
+    // accepted eye AC hit while in form — both bypass the damage table, which FD's
+    // sword/beam and Pika's electric don't reliably populate. Vulnerable/Damage → damage
+    // (mash to kill); any other fightable state → stun the head + both hands (paralyze),
+    // which leads it into the Vulnerable window. Gated on IsFormActive → normal play
+    // (and the lens/hand-stun route) is untouched.
+    // HeadDamage (the hit-reaction anim) is excluded so it acts as a per-hit cooldown:
+    // a hit drops the head into HeadDamage, which ignores further hits until it returns
+    // to HeadVulnerable — that paces the mashing instead of melting -4 every frame.
+    u8 headFightable = ((s8)this->actor.colChkInfo.health > 0) && (this->actionFunc != BossSst_HeadLurk) &&
+                       (this->actionFunc != BossSst_HeadIntro) && (this->actionFunc != BossSst_HeadRecover) &&
+                       (this->actionFunc != BossSst_HeadUnfreezeHand) && (this->actionFunc != BossSst_HeadDamage);
+    if (BossSuperDamage_IsFormActive(play) && headFightable &&
+        ((this->colliderCyl.base.acFlags & AC_HIT) ||
+         BossSuperDamage_FormAttackReaches(play, &this->actor.world.pos,
+                                           BossSuperDamage_FormAttackRange(play) + 60.0f))) {
+        this->colliderCyl.base.acFlags &= ~AC_HIT;
+        BossSuperDamage_StartElectricSparks(&this->actor, 90);
+        if (this->actionFunc == BossSst_HeadVulnerable) {
+            this->actor.colChkInfo.health -= BossSuperDamage_FormDamage(play);
+            if ((s8)this->actor.colChkInfo.health <= 0) {
+                this->actor.colChkInfo.health = 0;
+                Enemy_StartFinishingBlow(play, &this->actor);
+                BossSst_HeadSetupDeath(this, play);
+                GameInteractor_ExecuteOnBossDefeat(&this->actor);
+            } else {
+                BossSst_HeadSetupDamage(this);
+            }
+            BossSst_HandSetupDamage(sHands[LEFT]);
+            BossSst_HandSetupDamage(sHands[RIGHT]);
+        } else {
+            BossSst_HeadSetupStunned(this);
+            if (HAND_STATE(sHands[RIGHT]) == HAND_FROZEN) {
+                BossSst_IceShatter(sHands[RIGHT]);
+            } else if (HAND_STATE(sHands[LEFT]) == HAND_FROZEN) {
+                BossSst_IceShatter(sHands[LEFT]);
+            }
+            BossSst_HandSetupStunned(sHands[RIGHT]);
+            BossSst_HandSetupStunned(sHands[LEFT]);
+        }
+        return;
+    }
+
     if (this->colliderCyl.base.acFlags & AC_HIT) {
         this->colliderCyl.base.acFlags &= ~AC_HIT;
-        {
-            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-            u8 isGigaHit = this->colliderCyl.info.acHitInfo &&
-                           (this->colliderCyl.info.acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
-            if (isGigaHit) {
-                s32 gigaDmg = CollisionCheck_GetSwordDamage(this->colliderCyl.info.acHitInfo->toucher.dmgFlags, play);
-                if (gigaDmg < 4)
-                    gigaDmg = 4;
-                this->actor.colChkInfo.health -= gigaDmg;
-                if ((s8)this->actor.colChkInfo.health <= 0) {
-                    this->actor.colChkInfo.health = 0;
-                    Enemy_StartFinishingBlow(play, &this->actor);
-                    BossSst_HeadSetupDeath(this, play);
-                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                } else {
-                    BossSst_HeadSetupDamage(this);
-                }
-                BossSst_HandSetupDamage(sHands[LEFT]);
-                BossSst_HandSetupDamage(sHands[RIGHT]);
-                return;
-            }
-        }
         if ((this->actor.colChkInfo.damageEffect != 0) || (this->actor.colChkInfo.damage != 0)) {
             if (this->actionFunc == BossSst_HeadVulnerable) {
                 if (Actor_ApplyDamage(&this->actor) == 0) {
@@ -2979,6 +3032,20 @@ void BossSst_DrawHead(Actor* thisx, PlayState* play) {
 
     SkinMatrix_Vec3fMtxFMultXYZ(&play->viewProjectionMtxF, &this->actor.focus.pos, &this->center);
     BossSst_DrawEffect(&this->actor, play);
+
+    // FD / Pika Gigantamax electric glow on the head. The 11 JntSph collider spheres were
+    // refreshed during the skeleton draw (Collider_UpdateSpheres in BossSst_PostHeadDraw)
+    // and blanket the head. No-op when the spark timer is 0 (not recently hit).
+    {
+        Vec3f limbs[11];
+        s32 k;
+        for (k = 0; k < 11; k++) {
+            limbs[k].x = this->colliderJntSph.elements[k].dim.worldSphere.center.x;
+            limbs[k].y = this->colliderJntSph.elements[k].dim.worldSphere.center.y;
+            limbs[k].z = this->colliderJntSph.elements[k].dim.worldSphere.center.z;
+        }
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 11, 1.4f);
+    }
 }
 
 void BossSst_SpawnHeadShadow(BossSst* this) {

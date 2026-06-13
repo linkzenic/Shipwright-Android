@@ -14,6 +14,14 @@
 #ifndef MM_FORM_COMBAT_C
 #define MM_FORM_COMBAT_C
 
+// This file is meant to be #included from mm_player_form.cpp (it relies on
+// the static MmFormState gFormState that lives there). If VS picks it up as
+// a standalone compilation unit (which the build system does because the
+// extension is .c), compile to nothing so the build doesn't fail on
+// gFormState being undeclared. The include from mm_player_form.cpp
+// #defines MMFORM_COMBAT_AS_INCLUDE right before the #include.
+#ifdef MMFORM_COMBAT_AS_INCLUDE
+
 #include "z64.h"
 #include "functions.h"
 #include "variables.h"
@@ -355,17 +363,45 @@ static MmFormWallHitResult MmForm_CheckWallHit(Player* player, PlayState* play, 
         // Dyna-actor exception (MM line 10565-10574): if the wall belongs to a
         // dyna actor that our punch quad already hit, suppress the recoil so
         // the actor's AC handler can break it (Bg_Hidan_Dalm totem, etc.).
+        //
+        // Candidate-tracking extension: the wall raycast extends 10 units past
+        // the punch tip, so a breakable DynaPoly (Bg_Bombwall etc.) is detected
+        // BEFORE the punch quad has had a chance to AT_HIT it — especially when
+        // Goron is closing distance via root-motion (the AT_HIT visible here is
+        // from last frame's collision pass, but Goron may have only entered
+        // quad range THIS frame). Without grace, recoil fires before any
+        // damage can land → inconsistent breakable destruction. So we hold the
+        // dyna as a pending candidate and give it a few frames for the AT-AC
+        // exchange to register before bouncing.
         if (bgId != BGCHECK_SCENE) {
             DynaPolyActor* dyna = DynaPoly_GetActor(&play->colCtx, bgId);
             if (dyna != NULL) {
+                // Already AT_HIT'd this frame? Permanent skip + clear candidate.
                 if ((player->meleeWeaponQuads[0].base.atFlags & AT_HIT) &&
                     (&dyna->actor == player->meleeWeaponQuads[0].base.at)) {
+                    gFormState.punchWallPendingDyna = NULL;
                     return MMFORM_WALL_HIT_NONE;
                 }
                 if ((player->meleeWeaponQuads[1].base.atFlags & AT_HIT) &&
                     (&dyna->actor == player->meleeWeaponQuads[1].base.at)) {
+                    gFormState.punchWallPendingDyna = NULL;
                     return MMFORM_WALL_HIT_NONE;
                 }
+
+                // No AT_HIT yet — defer recoil. First sighting of this dyna or
+                // a different dyna than previously tracked: (re)start the
+                // 4-frame grace window. Same dyna already pending: tick down.
+                if (gFormState.punchWallPendingDyna != &dyna->actor) {
+                    gFormState.punchWallPendingDyna = &dyna->actor;
+                    gFormState.punchWallPendingFrames = 4;
+                    return MMFORM_WALL_HIT_NONE;
+                }
+                if (gFormState.punchWallPendingFrames > 0) {
+                    gFormState.punchWallPendingFrames--;
+                    return MMFORM_WALL_HIT_NONE;
+                }
+                // Grace expired — fall through to recoil.
+                gFormState.punchWallPendingDyna = NULL;
             }
         }
 
@@ -392,5 +428,7 @@ static MmFormWallHitResult MmForm_CheckWallHit(Player* player, PlayState* play, 
     player->meleeWeaponQuads[1].base.atFlags &= ~AT_ON;
     return MMFORM_WALL_HIT_ZORA;
 }
+
+#endif // MMFORM_COMBAT_AS_INCLUDE
 
 #endif // MM_FORM_COMBAT_C

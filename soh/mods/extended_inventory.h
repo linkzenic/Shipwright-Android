@@ -129,10 +129,23 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language);
 void* ExtInv_GetItemIcon(uint16_t itemId);
 
 /**
+ * Returns the SM64 cap icon directly (decoupled from OOT spells).
+ * @param cap - 0 = Vanish, 1 = Metal, 2 = Wing
+ * @return Pointer to the cap icon texture, or NULL
+ */
+void* ExtInv_GetCapIcon(uint8_t cap);
+
+/**
  * @param itemId - Item ID
  * @return Inventory slot for this item, or 0xFF if not found
  */
 uint8_t ExtInv_GetItemSlot(uint16_t itemId);
+
+/**
+ * @param itemId - MM mask item ID (ITEM_MM_MASK_*)
+ * @return 1 if the player owns this MM mask (extended inventory page 3)
+ */
+int32_t ExtInv_HasMmMask(uint16_t itemId);
 extern const uint8_t gPage2Items[24];
 #define AGE_REQ_ADULT LINK_AGE_ADULT
 #define AGE_REQ_CHILD LINK_AGE_CHILD

@@ -244,6 +244,18 @@ typedef struct ShipSaveContextData {
     // ShipRandomizerSaveContextData
     u16 randomizerInf[(RAND_INF_MAX + 15) / 16];
     u8 lanternFireType; // Lantern fire: 0=none, 1=regular, 2=blue, 3=poe, 4=green
+    u8 lanternCapturedTypes; // Bitfield of captured fire types: bit N set = LanternFireType N ever captured
+    // Twilight Upgrade — a single TP-inspired upgrade that unlocks 3 mode toggles:
+    //   bit 0 (1): Clawshot mode  — A toggles hookshot/longshot direction (pull target → Link), chain-grapple
+    //   bit 1 (2): Bomb Arrows    — unlocks bomb arrows in the arrow wheel regardless of auto-grant CVar
+    //   bit 2 (4): Gale Boomerang — A toggles multi-target boomerang routing + B-boost-to-boomerang in flight
+    // For now this is granted via Inventory hook; per-item logic lives in their respective mod files.
+    u8 twilightUpgrade;
+    // Currently-selected mode for each upgrade item (1 = upgraded mode active, 0 = vanilla).
+    // Toggled via A in kaleido (same pattern as the Lantern selector). The toggles only
+    // appear in the kaleido selector when the corresponding twilightUpgrade bit is set.
+    u8 clawshotModeActive;       // 0 = Hookshot/Longshot, 1 = Clawshot (pull target → Link)
+    u8 galeBoomerangModeActive;  // 0 = Boomerang, 1 = Gale Boomerang (multi-target + B-boost)
     u8 extEquipSword;  // Currently equipped ext sword (0=none, 1-3)
     u8 extEquipShield; // Currently equipped ext shield (0=none, 1-3)
     u8 extEquipTunic;  // Currently equipped ext tunic (0=none, 1-3)

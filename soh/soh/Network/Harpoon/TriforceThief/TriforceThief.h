@@ -75,13 +75,31 @@ struct LocalState {
     s32      drainTickCounter       = 0;   // legacy unused; kept for compat
     bool     roundEnded             = false;
 
-    // Descending timer (frame-precise, ticks 1 per game tick at 20 fps).
-    // Replaces the rupee-as-counter. `gSaveContext.ship.stats.playTimer`
-    // mirrors this each frame so Interface_DrawTotalGameplayTimer (the
-    // same PropHunt-style digit overlay) renders the countdown. Persists
-    // across drops; only reset on round start (HostConfirmMap /
-    // HandleMapConfirmed) and on the round-end broadcast.
+    // Working value of the CURRENT carrier's team timer. Drained by the
+    // wall-clock std::chrono drain block every frame while someone is
+    // carrying. On pickup we snapshot the appropriate team's frozen
+    // value into this; on drop we save it back. When carrierClientId
+    // == 0 this is meaningless (the team-scoped stores below hold the
+    // truth).
     s32      carrierTimerFrames     = 0;
+
+    // Per-team frozen storage. Snapshotted on drop / round-start, and
+    // reloaded into `carrierTimerFrames` on pickup based on which team
+    // the picker is on. The HUD pin reads BOTH values every frame so
+    // each team's MM:SS digits stay correct on screen regardless of
+    // who's actively draining.
+    s32      redTimerFrames         = 0;
+    s32      blueTimerFrames        = 0;
+
+    // Local player's team for this lobby session ("" = unassigned,
+    // "red", "blue"). Set via UI button in the Network/Harpoon tab,
+    // persisted to a CVar, and broadcast to peers via TEAM_ASSIGN.
+    std::string team;
+
+    // Current carrier's team, cached on TRIFORCE_PICKUP / TRIFORCE_DROP
+    // so the per-frame drain doesn't need to look up the carrier in the
+    // clients map. "" when no one carries (carrierClientId == 0).
+    std::string currentCarrierTeam;
 
     // Last "Hurry! N seconds left!" threshold that has been fired this
     // round. Prevents the threshold from triggering more than once when
@@ -96,9 +114,9 @@ struct LocalState {
     s32      lastSyncSecond         = -1;
 
     // Wall-clock timestamp (ms) of the host's last STATE_SYNC broadcast.
-    // The host emits an authoritative {carrierClientId, timerSeconds}
-    // packet once per second so peers can converge on conflicting
-    // pickup races or timer drift. 0 = no broadcast yet this round.
+    // The host emits an authoritative {carrierClientId, red, blue} packet
+    // once per second so peers can converge on conflicting pickup races
+    // or timer drift. 0 = no broadcast yet this round.
     s64      lastHostSyncMs         = 0;
 
     // Slow-mo accumulator for the final 5 seconds. While the carrier's
@@ -221,11 +239,18 @@ constexpr const char* kEvtTimerWarning     = "TRIFORCE_THIEF.TIMER_WARNING";
 constexpr const char* kEvtCutsceneBegin    = "TRIFORCE_THIEF.CUTSCENE_BEGIN";
 constexpr const char* kEvtRoundResult      = "TRIFORCE_THIEF.ROUND_RESULT";
 // Host-only 1 Hz authoritative state sync. The host broadcasts its view of
-// {carrierClientId, timerSeconds} every second so peers can resolve any
-// conflict that crept in through race conditions (e.g. two pickup events
-// at nearly the same time, or local timer drift). Carrier ID snaps to the
-// host's value unconditionally; timer applies monotonically (down only).
+// {carrierClientId, redTimerFrames, blueTimerFrames} every second so peers
+// can resolve any conflict that crept in through race conditions (e.g. two
+// pickup events at nearly the same time, or local timer drift). All fields
+// snap to the host's value unconditionally — the host is the tie-breaker.
 constexpr const char* kEvtStateSync        = "TRIFORCE_THIEF.STATE_SYNC";
+
+// Team assignment broadcast — fires when a player clicks Join Red / Join
+// Blue in the Harpoon menu. Mirrors PropHunt's RoleAssign event pattern.
+// Carries { targetClientId, team } where team is "red" or "blue". The
+// peer handler updates `clients[targetClientId].team` AND .color (team
+// drives the nametag tint and the friendly-fire gate).
+constexpr const char* kEvtTeamAssign       = "TRIFORCE_THIEF.TEAM_ASSIGN";
 
 // ---------------------------------------------------------------------------
 // Lifecycle
@@ -291,15 +316,33 @@ nlohmann::json BuildTriforcePickupPayload(u32 carrierClientId);
 nlohmann::json BuildTriforceDropPayload(u32 dropperClientId,
                                          f32 startX, f32 startY, f32 startZ,
                                          f32 velX,   f32 velY,   f32 velZ);
-nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex);
+nlohmann::json BuildRoundResultPayload(u32 winnerClientId, s32 roundIndex,
+                                       const std::string& winnerTeam = "");
+
+// Team color helper. Returns the canonical RGB tint we use everywhere
+// (nametag text, Triforce env color, menu badge). Unknown team string
+// returns vanilla gold so the Triforce on the ground stays gold per spec.
+struct TeamColor { u8 r, g, b; };
+TeamColor TeamRGB(const std::string& team);
+
+// Set the LOCAL player's team. Persists to CVAR_GENERAL("TriforceThief.Team")
+// and broadcasts a TEAM_ASSIGN event so peers update their view + nametag.
+void SetLocalTeam(const std::string& team);
 nlohmann::json BuildRoundConfigPayload(s32 winSeconds);
 nlohmann::json BuildCarrierTimerSyncPayload(s32 rupeesRemaining);
 // Host-only 1 Hz authoritative state broadcast. Carries both the current
-// carrierClientId and the timer frames-remaining (frames, not seconds —
-// frames give sub-second precision so peers can snap exactly to the host's
-// value, eliminating the residual ~0.8 s offset that a whole-second floor
-// would leave). Peers apply both fields unconditionally to converge.
-nlohmann::json BuildStateSyncPayload(u32 carrierClientId, s32 timerFrames);
+// carrierClientId and BOTH teams' frame-precise timers. Peers apply all
+// three fields unconditionally to converge on the host's view.
+nlohmann::json BuildStateSyncPayload(u32 carrierClientId,
+                                     s32 redTimerFrames,
+                                     s32 blueTimerFrames);
+
+// Team assignment broadcast. Sent locally when a player picks Red/Blue
+// in the menu; relayed by the server to every other client. Receiver
+// updates clients[targetClientId].team + .color so nametag tint + the
+// friendly-fire gate converge across the room.
+nlohmann::json BuildTeamAssignPayload(u32 targetClientId,
+                                      const std::string& team);
 // Per-second warning broadcast — fires once when the carrier's countdown
 // crosses 10/5/4/3/2/1 seconds remaining. Peers' HandleEvent dispatches
 // it to a Notification::Emit so everyone sees the alert at the same time.

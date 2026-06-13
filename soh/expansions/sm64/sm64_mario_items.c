@@ -25,6 +25,7 @@
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
 #include "overlays/actors/ovl_En_Partner/z_en_partner.h"
 #include "objects/object_link_child/object_link_child.h"
+#include "objects/gameplay_keep/gameplay_keep.h" // gEffFire1DL (fireball flame billboard)
 
 // Forward decls — these are defined in z_player.c (Player_RequestQuake) and
 // in z_player.c too (spawn_boomerang_ivan) but never declared in any public
@@ -403,96 +404,838 @@ static void MarioItem_UseBeans(PlayState* play, Player* player, u8 started) {
     }
 }
 
-// Spell magic cost (per cast). 12 magic = half a normal magic bar.
-static u8 sMarioSpellCost = 12;
-
-// Cap durations in libsm64 ticks (30 fps). 600 ticks = 20 seconds = the
-// vanilla SM64 cap timer; matches the feel of grabbing a Wing/Metal/Vanish
-// Cap powerup box.
-#define SM64_CAP_TIME_FRAMES 600
-
-// All three OOT spells map to SM64 caps via libsm64's interact_cap API:
-//   Din's Fire     → Vanish Cap   (Mario translucent, phases through cage walls)
-//   Nayru's Love   → Metal Cap    (invincible, sinks in water, metallic SFX)
-//   Farore's Wind  → Wing Cap     (triple-jump → flap to fly)
-// Single press = one cast = ~20 seconds of cap. libsm64's internal timer
-// handles expiry, music, and visual transitions. No per-frame Player field
-// mutation needed.
+// SPELL OVERWRITES REMOVED.
+//
+// Previously the three OOT spells were overwritten to map onto SM64 caps
+// (Din's Fire → Vanish, Nayru's Love → Metal, Farore's Wind → Wing). With the
+// "Modos Rotos" game-mode rework, caps are now triggered directly from the
+// D-Pad while Mario mode is active — see Sm64Mario_HandleCapDpad below
+// (D-Down = Wing, D-Left = Metal, D-Right = Vanish, D-Up = Fire Flower TODO).
+//
+// This function is kept as a no-op so the MarioItem_Use dispatcher still has a
+// valid target for spell items, but it no longer consumes magic or applies any
+// cap. Spells fall through to doing nothing in Mario mode.
 static void MarioItem_UseSpell(PlayState* play, Player* player, u8 started, u8 spellType) {
-    if (started != 1) return;
-    // No cooldown gating for spells — user explicitly wants override-on-press
-    // every time. The patched libsm64 interact_cap clears any previous cap
-    // type before applying the new one, so re-cast cleanly transitions
-    // Vanish → Metal → Wing → etc. without timer wait.
+    (void)play;
+    (void)player;
+    (void)started;
+    (void)spellType;
+    // Intentionally empty: spell→cap overwrites were removed in favor of the
+    // D-Pad cap controls. See Sm64Mario_HandleCapDpad.
+}
 
-    // DIRECT magic deduction — bypassing Magic_RequestChange. The vanilla
-    // API runs through a state machine (IDLE → CONSUME_SETUP → CONSUME →
-    // METER_FLASH_1 → RESET → IDLE) that takes ~1+ second to settle.
-    // Until it returns to IDLE, RequestChange returns false and blocks new
-    // casts — which the user observed as "can't re-cast until I reload the
-    // scene". Log evidence: `Magic_RequestChange failed (state=3 ...)` was
-    // returned for every press after the first cast.
-    //
-    // Direct deduction snaps the magic value, no flash/drain animation.
-    // Matches the user's request: "solo cobra magia cómo las elemental
-    // arrows por ejemplo" — single up-front charge, instant re-cast.
-    if (gSaveContext.magic < sMarioSpellCost) {
+// =============================================================================
+// Mario-mode power-up timer / cooldown system.
+//
+// Four D-pad power-ups, each with a USE timer (activeDur) and a TIMEOUT
+// (cooldown). All durations are in OOT frames (the game runs at 60 fps). The
+// cooldown length scales with how long the cap was ACTUALLY used:
+//
+//     cooldown = (framesUsed / activeDur) * maxCooldown
+//
+// so a half-used Metal Cap (30s of its 60s) cools down for half of 3:00 = 1:30.
+// Used to full → full cooldown; switched on then immediately off → 0 cooldown.
+//
+// THIS module is the source of truth: libsm64's own capTimer is driven to its
+// max on activate, and the special-cap flags are cleared via sm64_set_mario_state
+// on deactivate, so this timer — not libsm64 — decides when a cap ends.
+// Everything advances only while Mario mode is genuinely active (Sm64MarioCaps_Tick
+// runs from the normal path of Sm64Mario_HandleItems), so the timers FREEZE
+// during loading suspends, cutscenes, and while Mario mode is toggled off, and
+// resume where they left off — matching the "freeze, don't burn real time" rule.
+//
+// Only ONE cap is ACTIVE at a time. Pressing the active cap again toggles it
+// off; pressing a different cap switches (old → proportional cooldown, new →
+// active if READY). Pressing a recharging cap is rejected. Mario-mode-end and
+// scene-change route through Sm64MarioCaps_OnSuspend → the active cap drops to
+// its proportional cooldown (state persists, frozen, until Mario mode resumes).
+// =============================================================================
+
+// Slot / panel order (top→bottom in the corner HUD): Wing, Metal, Vanish, Fire.
+#define SM64_CAP_SLOT_WING   0
+#define SM64_CAP_SLOT_METAL  1
+#define SM64_CAP_SLOT_VANISH 2
+#define SM64_CAP_SLOT_FIRE   3
+#define SM64_CAP_SLOT_COUNT  4
+
+typedef struct {
+    u16         btn;         // D-pad bind
+    u32         capFlag;     // libsm64 cap flag; 0 = stub (Fire Flower — timer only, no effect yet)
+    s32         activeDur;   // frames of use at full duration (60 fps)
+    s32         maxCooldown; // frames of cooldown after full use (60 fps)
+    s32         sfx;
+    const char* name;
+} Sm64CapDef;
+
+// Balance (60 fps): Wing 30s/30s, Metal 60s/180s, Vanish 30s/15s, Fire 60s/90s.
+// Ordered to match SM64_CAP_SLOT_* above (index == slot).
+static const Sm64CapDef kCapDefs[SM64_CAP_SLOT_COUNT] = {
+    { BTN_DDOWN,  SM64_MARIO_WING_CAP,   30 * 60,  30 * 60,  NA_SE_PL_MAGIC_WIND_NORMAL, "Wing" },
+    { BTN_DLEFT,  SM64_MARIO_METAL_CAP,  60 * 60,  180 * 60, NA_SE_PL_MAGIC_SOUL_NORMAL, "Metal" },
+    { BTN_DRIGHT, SM64_MARIO_VANISH_CAP, 30 * 60,  15 * 60,  NA_SE_PL_MAGIC_FIRE,        "Vanish" },
+    { BTN_DUP,    0,                     60 * 60,  90 * 60,  NA_SE_PL_MAGIC_FIRE,        "Fire" },
+};
+
+typedef struct {
+    u8  phase;       // SM64_CAP_PHASE_*
+    s32 elapsed;     // frames elapsed in the current phase
+    s32 cooldownDur; // proportional cooldown (frames) computed when COOLDOWN entered
+} Sm64CapState;
+
+static Sm64CapState sCapStates[SM64_CAP_SLOT_COUNT];
+static s32          sActiveCap = -1; // index of the ACTIVE cap, or -1
+static u8           sCapStatesInited = 0;
+
+static void Sm64Caps_EnsureInit(void) {
+    if (sCapStatesInited) return;
+    for (s32 i = 0; i < SM64_CAP_SLOT_COUNT; i++) {
+        sCapStates[i].phase = SM64_CAP_PHASE_READY;
+        sCapStates[i].elapsed = 0;
+        sCapStates[i].cooldownDur = 0;
+    }
+    sActiveCap = -1;
+    sCapStatesInited = 1;
+}
+
+// Clear the special-cap flags in libsm64 and restore Mario's normal red cap, so
+// the special-cap effect ends immediately WITHOUT the cap-on SFX/anim that a
+// re-call to interact_cap would play. No-op if the Mario instance is gone (a
+// scene change already deleted it; the recreated Mario starts cap-less).
+static void Sm64Caps_ClearLibsm64Cap(void) {
+    if (sSm64MarioId < 0 || !p_sm64_set_mario_state) return;
+    u32 f = sSm64OutState.flags;
+    f &= ~(SM64_MARIO_VANISH_CAP | SM64_MARIO_METAL_CAP | SM64_MARIO_WING_CAP);
+    f |= SM64_MARIO_NORMAL_CAP | SM64_MARIO_CAP_ON_HEAD;
+    p_sm64_set_mario_state(sSm64MarioId, f);
+}
+
+// Move the active cap into its proportional cooldown. clearLib removes the
+// libsm64 cap effect (skip it when the Mario instance is being torn down).
+static void Sm64Caps_DeactivateActive(u8 clearLib) {
+    if (sActiveCap < 0) return;
+    s32 idx = sActiveCap;
+    Sm64CapState* s = &sCapStates[idx];
+    const Sm64CapDef* d = &kCapDefs[idx];
+
+    s32 used = s->elapsed;
+    if (used > d->activeDur) used = d->activeDur;
+    s32 cd = (s32)(((f32)used / (f32)d->activeDur) * (f32)d->maxCooldown);
+
+    if (clearLib && d->capFlag != 0) {
+        Sm64Caps_ClearLibsm64Cap();
+    }
+
+    // Stop the SM64 cap jingle. interact_cap(playMusic=1) plays it on
+    // SEQ_PLAYER_LEVEL and tracks it as the current background music; because
+    // we end the cap ourselves (set_mario_state) instead of letting libsm64's
+    // capTimer hit 0, libsm64 never runs stop_cap_music — so without this the
+    // jingle loops forever after the power-up ends / is disabled / on scene
+    // change. Mirrors stop_cap_music: stop the current background seq. Runs on
+    // every deactivation path (auto-expire, toggle, switch, suspend).
+    if ((d->capFlag != 0 || idx == SM64_CAP_SLOT_FIRE) && p_sm64_stop_background_music &&
+        p_sm64_get_current_background_music) {
+        uint16_t cur = p_sm64_get_current_background_music();
+        if (cur != 0) {
+            p_sm64_stop_background_music(cur);
+        }
+    }
+
+    s->elapsed = 0;
+    if (cd <= 0) {
+        s->phase = SM64_CAP_PHASE_READY;
+        s->cooldownDur = 0;
+    } else {
+        s->phase = SM64_CAP_PHASE_COOLDOWN;
+        s->cooldownDur = cd;
+    }
+    sActiveCap = -1;
+}
+
+static void Sm64Caps_Activate(s32 idx) {
+    const Sm64CapDef* d = &kCapDefs[idx];
+    Sm64CapState* s = &sCapStates[idx];
+
+    s->phase = SM64_CAP_PHASE_ACTIVE;
+    s->elapsed = 0;
+    sActiveCap = idx;
+
+    if (d->capFlag != 0 && p_sm64_mario_interact_cap && sSm64MarioId >= 0) {
+        // Drive libsm64's capTimer to its uint16 max so it never auto-expires
+        // first — this module removes the cap when the use timer ends. The
+        // interact_cap call clears any previous special cap and plays the
+        // cap-on anim/SFX itself.
+        p_sm64_mario_interact_cap(sSm64MarioId, d->capFlag, 0xFFFF, 1);
+        // Cap-on pose, grounded-only (don't snap a mid-air Mario to a stand).
+        if (p_sm64_set_mario_action && !(sSm64OutState.action & SM64_ACT_FLAG_AIR)) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_PUTTING_ON_CAP);
+        }
+    } else if (idx == SM64_CAP_SLOT_FIRE && sSm64MarioId >= 0) {
+        // Fire cap has no libsm64 cap flag, so interact_cap (and its jingle)
+        // never runs — play the SAME POWERUP cap music the Wing/Vanish caps use
+        // (SEQUENCE_ARGS(4, SEQ_EVENT_POWERUP) = 0x040E on SEQ_PLAYER_LEVEL=0)
+        // and do the cap-on pose so it feels like a real cap.
+        if (p_sm64_play_music) {
+            p_sm64_play_music(0, 0x040E, 0);
+        }
+        if (p_sm64_set_mario_action && !(sSm64OutState.action & SM64_ACT_FLAG_AIR)) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_PUTTING_ON_CAP);
+        }
+    }
+    Sfx_PlaySfxCentered(d->sfx);
+    lusprintf(__FILE__, __LINE__, 2, "[SM64Caps] activate %s (flag 0x%X)", d->name, d->capFlag);
+}
+
+// Handle a D-pad press for slot idx.
+static void Sm64Caps_Press(s32 idx) {
+    Sm64Caps_EnsureInit();
+    Sm64CapState* s = &sCapStates[idx];
+
+    if (s->phase == SM64_CAP_PHASE_ACTIVE) {
+        // Toggle off → proportional cooldown.
+        Sm64Caps_DeactivateActive(1);
+        return;
+    }
+    if (s->phase == SM64_CAP_PHASE_COOLDOWN) {
+        // Recharging — reject (matches the design's disabled slot).
         Sfx_PlaySfxCentered(NA_SE_SY_ERROR);
-        lusprintf(__FILE__, __LINE__, 2,
-            "[SM64Items] Spell press: BLOCKED — not enough magic (have=%d need=%d)",
-            gSaveContext.magic, sMarioSpellCost);
         return;
     }
-    gSaveContext.magic -= sMarioSpellCost;
-    // Force-reset the state machine so any lingering flash/reset cycle
-    // from a previous cast doesn't leak. Without this, meter visuals can
-    // lock in odd states.
-    gSaveContext.magicState = MAGIC_STATE_IDLE;
+    // READY → switch the currently-active cap into cooldown, then activate this.
+    if (sActiveCap >= 0 && sActiveCap != idx) {
+        Sm64Caps_DeactivateActive(1);
+    }
+    Sm64Caps_Activate(idx);
+}
 
-    if (!p_sm64_mario_interact_cap || sSm64MarioId < 0) {
-        // libsm64 export missing or Mario not yet created — magic was
-        // consumed but cap can't activate. Silent fallback: spell is a no-op
-        // for this cast.
-        sMarioItemTimer = 10;
+// Per-frame tick — advances the active use timer and every cooling slot.
+void Sm64MarioCaps_Tick(void) {
+    Sm64Caps_EnsureInit();
+    for (s32 i = 0; i < SM64_CAP_SLOT_COUNT; i++) {
+        Sm64CapState* s = &sCapStates[i];
+        const Sm64CapDef* d = &kCapDefs[i];
+        if (s->phase == SM64_CAP_PHASE_ACTIVE && i == sActiveCap) {
+            s->elapsed++;
+            if (s->elapsed >= d->activeDur) {
+                // Full use → full cooldown (DeactivateActive clamps used = activeDur).
+                Sm64Caps_DeactivateActive(1);
+            }
+        } else if (s->phase == SM64_CAP_PHASE_COOLDOWN) {
+            s->elapsed++;
+            if (s->elapsed >= s->cooldownDur) {
+                s->phase = SM64_CAP_PHASE_READY;
+                s->elapsed = 0;
+                s->cooldownDur = 0;
+            }
+        }
+    }
+}
+
+// Mario-mode end / scene change: drop the active cap to its proportional
+// cooldown. Does NOT clear the persistent per-cap timer state (it stays frozen
+// until Mario mode resumes). clearLib=0 — the Mario instance is being deleted.
+void Sm64MarioCaps_OnSuspend(void) {
+    Sm64Caps_EnsureInit();
+    Sm64Caps_DeactivateActive(0);
+    Sm64Mario_KillAllFireballs(); // don't leave fire colliders/balls frozen mid-flight
+    Sm64Cappy_Kill();             // recall the thrown cap on detransform/scene change
+}
+
+// --- HUD read accessors -----------------------------------------------------
+
+u8 Sm64MarioCaps_GetPhase(s32 idx) {
+    if (idx < 0 || idx >= SM64_CAP_SLOT_COUNT) return SM64_CAP_PHASE_READY;
+    Sm64Caps_EnsureInit();
+    return sCapStates[idx].phase;
+}
+
+// Charge 0..1: ACTIVE drains 1→0, COOLDOWN fills 0→1, READY = 1.
+f32 Sm64MarioCaps_GetCharge(s32 idx) {
+    if (idx < 0 || idx >= SM64_CAP_SLOT_COUNT) return 1.0f;
+    Sm64Caps_EnsureInit();
+    Sm64CapState* s = &sCapStates[idx];
+    const Sm64CapDef* d = &kCapDefs[idx];
+    if (s->phase == SM64_CAP_PHASE_ACTIVE) {
+        f32 c = 1.0f - (f32)s->elapsed / (f32)d->activeDur;
+        return c < 0.0f ? 0.0f : c;
+    }
+    if (s->phase == SM64_CAP_PHASE_COOLDOWN) {
+        if (s->cooldownDur <= 0) return 1.0f;
+        f32 c = (f32)s->elapsed / (f32)s->cooldownDur;
+        return c > 1.0f ? 1.0f : c;
+    }
+    return 1.0f;
+}
+
+// Whole seconds remaining in the ACTIVE or COOLDOWN phase (0 when READY).
+s32 Sm64MarioCaps_GetRemainingSeconds(s32 idx) {
+    if (idx < 0 || idx >= SM64_CAP_SLOT_COUNT) return 0;
+    Sm64Caps_EnsureInit();
+    Sm64CapState* s = &sCapStates[idx];
+    const Sm64CapDef* d = &kCapDefs[idx];
+    s32 rem;
+    if (s->phase == SM64_CAP_PHASE_ACTIVE) {
+        rem = d->activeDur - s->elapsed;
+    } else if (s->phase == SM64_CAP_PHASE_COOLDOWN) {
+        rem = s->cooldownDur - s->elapsed;
+    } else {
+        return 0;
+    }
+    if (rem < 0) rem = 0;
+    return (rem + 59) / 60; // ceil to whole seconds
+}
+
+s32 Sm64MarioCaps_GetActiveIndex(void) {
+    Sm64Caps_EnsureInit();
+    return sActiveCap;
+}
+
+// True while the Fire cap (slot 3, D-Up) is the active cap. Fire has no libsm64
+// cap flag (capFlag=0) — it's a pure OOT-side cap (classic recolor + B-fireball),
+// so the renderer and the fire handler query this instead of sSm64OutState.flags.
+u8 Sm64MarioCaps_IsFireActive(void) {
+    Sm64Caps_EnsureInit();
+    return (sActiveCap == SM64_CAP_SLOT_FIRE);
+}
+
+// =============================================================================
+// Fire Flower fireballs — classic SMB-style bouncing projectiles. Thrown forward
+// on a B press while the Fire cap is active; each ball arcs with gravity, bounces
+// off floors a few times, and carries a fire AT collider (DMG_FIRE → lights
+// torches, burns cobwebs, hurts enemies). A flame VFX rides the ball. Self-
+// contained fixed pool; updated every frame (Sm64Mario_UpdateFireballs) so balls
+// already in flight finish even after the cap toggles off. B is NOT suppressed at
+// the input level any more — Mario still punches; the fireball is an extra.
+// =============================================================================
+#define MARIO_FB_MAX        6
+#define MARIO_FB_GRAVITY    1.5f   // per-frame downward accel (Triforce-drop feel)
+#define MARIO_FB_FWD_SPEED  10.0f  // forward launch speed
+#define MARIO_FB_UP_SPEED   7.0f   // initial upward kick (gives the first arc)
+#define MARIO_FB_BOUNCE     0.78f  // Y restitution on floor hit — bouncy, keeps popping
+#define MARIO_FB_HFRICTION  0.98f  // horizontal speed kept per bounce (ice-slide → travels far)
+#define MARIO_FB_LIFE       150    // max frames alive (long enough for several bounces)
+#define MARIO_FB_MAX_BOUNCE 8      // despawn after this many floor bounces
+
+typedef struct {
+    u8                active;
+    u8                colInited;
+    s16               life;
+    u8                bounces;
+    s16               fxScroll;   // flame texture-scroll / flicker phase
+    Vec3f             pos;
+    Vec3f             vel;
+    ColliderCylinder  col;
+} MarioFireball;
+
+static MarioFireball sMarioFireballs[MARIO_FB_MAX];
+static s16           sMarioFireballCooldown = 0;
+
+// Fire AT collider — models sFireRodProjColInit (item_rod_fire.h): player-owned
+// AT, fire hit effect (0x01), DMG_FIRE so torches/cobwebs/enemies all react.
+static ColliderCylinderInit sMarioFireballColInit = {
+    { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE, OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
+    { ELEMTYPE_UNK2, { DMG_FIRE, 0x01, 8 }, { 0, 0, 0 }, TOUCH_ON | TOUCH_SFX_NORMAL, BUMP_NONE, OCELEM_NONE },
+    { 13, 22, -4, { 0, 0, 0 } }
+};
+
+static void Sm64Fireball_Kill(PlayState* play, MarioFireball* fb) {
+    fb->active = 0;
+    if (fb->colInited) {
+        Collider_DestroyCylinder(play, &fb->col);
+        fb->colInited = 0;
+    }
+}
+
+// Free all in-flight fireballs and their colliders. Called on detransform /
+// scene change / suspend so colliders never leak and the pool can't get stuck
+// full of frozen balls when Mario mode flips off mid-throw. Uses gPlayState
+// since the suspend hook carries no PlayState.
+void Sm64Mario_KillAllFireballs(void) {
+    s32 i;
+    if (gPlayState == NULL)
         return;
+    for (i = 0; i < MARIO_FB_MAX; i++) {
+        if (sMarioFireballs[i].active || sMarioFireballs[i].colInited) {
+            Sm64Fireball_Kill(gPlayState, &sMarioFireballs[i]);
+        }
+    }
+}
+
+// Fire Flower: launch a bouncing fireball on a fresh B press (Fire cap active).
+// Consumes the B press so the proximity grab / item handler don't fire on it,
+// but the punch still happens because Mario's punch reads in->cur (not press).
+void Sm64Mario_FireballOnBPress(PlayState* play, Player* player) {
+    Input* in;
+    MarioFireball* fb;
+    s16 yaw;
+    s32 i;
+
+    if (play == NULL || player == NULL)
+        return;
+    if (sMarioFireballCooldown > 0)
+        sMarioFireballCooldown--;
+    in = &play->state.input[0];
+    if (sMarioFireballCooldown > 0)
+        return;
+    if (!CHECK_BTN_ALL(in->press.button, BTN_B))
+        return;
+    in->press.button &= ~BTN_B; // consume so grab doesn't also fire (punch uses cur)
+
+    // First free slot.
+    fb = NULL;
+    for (i = 0; i < MARIO_FB_MAX; i++) {
+        if (!sMarioFireballs[i].active) {
+            fb = &sMarioFireballs[i];
+            break;
+        }
+    }
+    if (fb == NULL)
+        return; // pool full — drop this shot
+
+    yaw = player->actor.shape.rot.y;
+    if (!fb->colInited) {
+        Collider_InitCylinder(play, &fb->col);
+        Collider_SetCylinder(play, &fb->col, &player->actor, &sMarioFireballColInit);
+        fb->colInited = 1;
+    }
+    fb->active = 1;
+    fb->life = MARIO_FB_LIFE;
+    fb->bounces = 0;
+    fb->fxScroll = 0;
+    fb->pos.x = player->actor.world.pos.x + Math_SinS(yaw) * 18.0f;
+    fb->pos.y = player->actor.world.pos.y + 16.0f;
+    fb->pos.z = player->actor.world.pos.z + Math_CosS(yaw) * 18.0f;
+    fb->vel.x = Math_SinS(yaw) * MARIO_FB_FWD_SPEED;
+    fb->vel.y = MARIO_FB_UP_SPEED;
+    fb->vel.z = Math_CosS(yaw) * MARIO_FB_FWD_SPEED;
+
+    sMarioFireballCooldown = 8; // min gap between shots
+    Sfx_PlaySfxCentered(NA_SE_PL_MAGIC_FIRE);
+}
+
+// Advance every in-flight fireball one frame: gravity, integrate, floor bounce,
+// fire collider, life/hit despawn. Called unconditionally each normal frame from
+// Sm64Mario_Update so balls finish even after the Fire cap ends. The flame VFX is
+// NOT an actor-attached particle (those follow Mario's yaw) — it's drawn directly
+// at the ball in Sm64Mario_DrawFireballs so it reads as ONE moving fireball.
+//
+// Bounce physics mirror the Triforce drop (TriforceThief.cpp StepDropPhysics):
+// gravity per frame, then a floor raycast shot from ABOVE max(prevY,newY) so a
+// fast fall can't tunnel through the floor and fall forever; on contact the Y
+// velocity reverses (restitution) while horizontal speed barely decays (ice-
+// slide) so it keeps bouncing forward like a classic SMB fireball.
+void Sm64Mario_UpdateFireballs(PlayState* play) {
+    s32 i;
+
+    if (play == NULL)
+        return;
+
+    for (i = 0; i < MARIO_FB_MAX; i++) {
+        MarioFireball* fb = &sMarioFireballs[i];
+        CollisionPoly* poly;
+        f32 floorY;
+        f32 prevY;
+        f32 queryTop;
+        Vec3f queryPos;
+
+        if (!fb->active)
+            continue;
+
+        fb->fxScroll++;
+
+        // Hit registered by last frame's CollisionCheck_AT pass — burst + die.
+        if (fb->colInited && (fb->col.base.atFlags & AT_HIT)) {
+            Vec3f zero = { 0.0f, 0.0f, 0.0f };
+            fb->col.base.atFlags &= ~AT_HIT;
+            EffectSsBomb2_SpawnLayered(play, &fb->pos, &zero, &zero, 10, 5);
+            Sm64Fireball_Kill(play, fb);
+            continue;
+        }
+
+        // Gravity + integrate.
+        prevY = fb->pos.y;
+        fb->vel.y -= MARIO_FB_GRAVITY;
+        fb->pos.x += fb->vel.x;
+        fb->pos.y += fb->vel.y;
+        fb->pos.z += fb->vel.z;
+
+        // Floor bounce — raycast DOWN from above the swept span so a fast fall
+        // can't start the ray below the floor (which returns BGCHECK_Y_MIN and
+        // tunnels the ball through the world).
+        queryTop = (prevY > fb->pos.y) ? prevY : fb->pos.y;
+        queryPos.x = fb->pos.x;
+        queryPos.y = queryTop + 20.0f;
+        queryPos.z = fb->pos.z;
+        poly = NULL;
+        floorY = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &queryPos);
+        if (poly != NULL && floorY > BGCHECK_Y_MIN && fb->pos.y <= floorY + 3.0f) {
+            fb->pos.y = floorY + 3.0f;
+            if (fb->vel.y < 0.0f) {
+                fb->vel.y = -fb->vel.y * MARIO_FB_BOUNCE;
+            }
+            fb->vel.x *= MARIO_FB_HFRICTION;
+            fb->vel.z *= MARIO_FB_HFRICTION;
+            fb->bounces++;
+            Sfx_PlaySfxCentered(NA_SE_EV_FLAME_IGNITION);
+            if (fb->bounces > MARIO_FB_MAX_BOUNCE) {
+                Sm64Fireball_Kill(play, fb);
+                continue;
+            }
+        }
+
+        // Arm the fire AT collider at the ball this frame.
+        if (fb->colInited) {
+            fb->col.dim.pos.x = (s16)fb->pos.x;
+            fb->col.dim.pos.y = (s16)fb->pos.y;
+            fb->col.dim.pos.z = (s16)fb->pos.z;
+            fb->col.base.atFlags |= AT_ON;
+            CollisionCheck_SetAT(play, &play->colChkCtx, &fb->col.base);
+        }
+
+        if (--fb->life <= 0) {
+            Sm64Fireball_Kill(play, fb);
+        }
+    }
+}
+
+// Draw one cohesive flame billboard per in-flight fireball, camera-facing, at the
+// ball's absolute world position. Modeled on EffectSsEnFire_Draw (z_eff_ss_en_fire
+// .c) but free-standing (no actor → never follows Mario's facing) so the fire
+// tracks the ball's independent trajectory. Called from Sm64Mario_Draw.
+void Sm64Mario_DrawFireballs(PlayState* play) {
+    GraphicsContext* gfxCtx;
+    s16 camYaw;
+    s32 i;
+
+    if (play == NULL)
+        return;
+    gfxCtx = play->state.gfxCtx;
+    camYaw = Camera_GetCamDirYaw(GET_ACTIVE_CAM(play)) + 0x8000;
+
+    OPEN_DISPS(gfxCtx);
+    Gfx_SetupDL_25Xlu(gfxCtx);
+
+    for (i = 0; i < MARIO_FB_MAX; i++) {
+        MarioFireball* fb = &sMarioFireballs[i];
+        f32 scale;
+
+        if (!fb->active)
+            continue;
+
+        Matrix_Translate(fb->pos.x, fb->pos.y + 5.0f, fb->pos.z, MTXMODE_NEW);
+        Matrix_RotateY(camYaw * (M_PI / 0x8000), MTXMODE_APPLY);
+        // Steady fireball size with a small flame flicker (always positive).
+        scale = 0.0058f + Math_SinS(fb->fxScroll * 0x1500) * 0.0009f;
+        Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 40, 0, 0);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 220, 0, 255);
+        gSPSegment(POLY_XLU_DISP++, 0x08,
+                   Gfx_TwoTexScrollEx(gfxCtx, 0, 0, 0, 0x20, 0x40, 1, 0, (fb->fxScroll * -0x14) & 0x1FF, 0x20,
+                                      0x80, 0, 0, 0, -0x14));
+        gSPDisplayList(POLY_XLU_DISP++, gEffFire1DL);
     }
 
-    u32 capFlag = 0;
-    s32 sfx = 0;
-    switch (spellType) {
-        case 1: // Din's Fire → Vanish Cap
-            capFlag = SM64_MARIO_VANISH_CAP;
-            sfx = NA_SE_PL_MAGIC_FIRE;
+    CLOSE_DISPS(gfxCtx);
+}
+
+// D-pad cap controls — read the press, consume it (so the Ivan-style item
+// handler doesn't also fire on the same button), and run the timer state
+// machine. Called from the normal path of Sm64Mario_HandleItems.
+static void Sm64Mario_HandleCapDpad(PlayState* play) {
+    if (play == NULL) return;
+    Input* in = &play->state.input[0];
+
+    for (s32 i = 0; i < SM64_CAP_SLOT_COUNT; i++) {
+        if (!CHECK_BTN_ALL(in->press.button, kCapDefs[i].btn)) continue;
+        // Consume the press/cur so the partner-item D-Pad handler skips it.
+        in->press.button &= ~kCapDefs[i].btn;
+        in->cur.button   &= ~kCapDefs[i].btn;
+        Sm64Caps_Press(i);
+        break;
+    }
+}
+
+// =============================================================================
+// Cappy — the thrown cap (Odyssey moveset). C-Left flings it; the throw VARIANT
+// depends on input at the press:
+//   • grounded, neutral          → FORWARD throw (flies out, hovers, returns)
+//   • grounded, stick up          → UP throw (arcs up — vertical cap-jump setup)
+//   • grounded, stick spun        → SPIN throw (orbits Mario, wide hit)
+//   • airborne                    → DIVE throw (fast down-forward)
+// Forward/Up/Dive home onto the nearest enemy in range. A boomerang-type AT
+// collider stuns enemies the whole flight. While the cap hovers (or rises), if
+// Mario falls onto it the host fires ACT_CAP_BOUNCE for the Odyssey jump boost.
+// One cap at a time. Visual is a camera-facing spinning disc placeholder (the
+// real tiara mesh from omm_tiara_geo.bin replaces it once integrated).
+// =============================================================================
+#define CAPPY_OUT_SPEED    12.0f   // short throw → the cap hovers close & reachable
+#define CAPPY_OUT_FRAMES   12      // ≈ 144 units forward, a quick jump away
+#define CAPPY_HOVER_FRAMES 60      // long hover so the cap-jump window is reliable
+#define CAPPY_RETURN_SPEED 30.0f
+#define CAPPY_CATCH_DIST   26.0f
+#define CAPPY_BOUNCE_XZ    46.0f   // generous landing radius for the cap-bounce
+#define CAPPY_HOMING_RANGE 220.0f  // only nudge toward CLOSE enemies (keeps it reachable)
+#define CAPPY_ORBIT_FRAMES 30
+#define CAPPY_ORBIT_RADIUS 78.0f
+
+enum { CAPPY_OUT = 0, CAPPY_HOVER, CAPPY_RETURN, CAPPY_ORBIT };
+
+typedef struct {
+    u8                active;
+    u8                phase;
+    u8                mode;       // SM64_CAPPY_*
+    u8                colInited;
+    u8                homing;
+    u8                bounced;    // cap-jump fired this throw (one-shot)
+    s16               timer;
+    s16               fxScroll;
+    s16               yaw;
+    s16               orbitAng;
+    Vec3f             pos;
+    Vec3f             vel;
+    Actor*            target;     // homing target (nearest enemy), or NULL
+    ColliderCylinder  col;
+} Cappy;
+
+static Cappy sCappy;
+
+// Boomerang-type AT (stuns enemies like a thrown object), no fire.
+static ColliderCylinderInit sCappyColInit = {
+    { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE, OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
+    { ELEMTYPE_UNK2, { DMG_BOOMERANG, 0x00, 0x08 }, { 0, 0, 0 }, TOUCH_ON | TOUCH_SFX_NORMAL, BUMP_NONE, OCELEM_NONE },
+    { 18, 28, -12, { 0, 0, 0 } }
+};
+
+// Mario's red cap — extracted from the SM64 decomp (libsm64 model.inc.c) by
+// apps/sm64_model_extract.py into mario_cap_model.c and #included here (rides this
+// TU, no VS project change). Flat-lit (red dome + brown brim, no texture): the
+// render sets the red light + a shade combiner; mario_cap_unused_base_dl draws it.
+#include "expansions/sm64/mario_cap_model.c"
+
+void Sm64Cappy_Kill(void) {
+    if (sCappy.colInited && gPlayState != NULL) {
+        Collider_DestroyCylinder(gPlayState, &sCappy.col);
+        sCappy.colInited = 0;
+    }
+    // Cap caught → put it back on Mario's head.
+    if (sCappy.active && sSm64MarioId >= 0 && p_sm64_set_mario_state) {
+        u32 f = sSm64OutState.flags | SM64_MARIO_NORMAL_CAP | SM64_MARIO_CAP_ON_HEAD;
+        p_sm64_set_mario_state(sSm64MarioId, f);
+    }
+    sCappy.active = 0;
+    sCappy.target = NULL;
+}
+
+// Nearest living enemy within homing range (XZ distance from `from`).
+static Actor* Sm64Cappy_FindTarget(PlayState* play, Vec3f* from) {
+    Actor* a = play->actorCtx.actorLists[ACTORCAT_ENEMY].head;
+    Actor* best = NULL;
+    f32 bestD = CAPPY_HOMING_RANGE;
+    while (a != NULL) {
+        if (a->update != NULL) {
+            f32 dx = a->world.pos.x - from->x;
+            f32 dz = a->world.pos.z - from->z;
+            f32 d = sqrtf(dx * dx + dz * dz);
+            if (d < bestD) {
+                bestD = d;
+                best = a;
+            }
+        }
+        a = a->next;
+    }
+    return best;
+}
+
+// Cap-jump: when Mario's body CROSSES the hovering cap — in ANY state (jump,
+// dive, roll, freefall, even running into it) — force ACT_CAP_BOUNCE for the
+// double-jump-height launch + flip. Pure 3D-overlap test (no velocity/air gate):
+// set_mario_action overrides whatever he was doing. One-shot per throw, with a
+// few frames of arm delay so the throw itself doesn't insta-bounce. Returns 1 if
+// it fired (caller sends the cap home).
+static u8 Sm64Cappy_TryBounce(PlayState* play, Vec3f* mpos, Player* player) {
+    f32 dx, dy, dz;
+    (void)player;
+    if (sCappy.bounced || sCappy.fxScroll < 5) return 0;
+    dx = mpos->x - sCappy.pos.x;
+    dy = mpos->y - sCappy.pos.y;
+    dz = mpos->z - sCappy.pos.z;
+    if ((dx * dx + dz * dz) < (CAPPY_BOUNCE_XZ * CAPPY_BOUNCE_XZ) && dy > -54.0f && dy < 66.0f) {
+        if (p_sm64_set_mario_action && sSm64MarioId >= 0) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_CAP_BOUNCE);
+        }
+        Sfx_PlaySfxCentered(NA_SE_EV_BOMB_BOUND);
+        sCappy.bounced = 1;
+        sCappy.phase = CAPPY_RETURN;
+        return 1;
+    }
+    return 0;
+}
+
+void Sm64Cappy_Throw(PlayState* play, s32 mode, u8 homing) {
+    Player* player;
+    s16 yaw;
+    f32 fwd = CAPPY_OUT_SPEED;
+    if (play == NULL) return;
+    player = GET_PLAYER(play);
+
+    if (!sCappy.colInited) {
+        Collider_InitCylinder(play, &sCappy.col);
+        Collider_SetCylinder(play, &sCappy.col, &player->actor, &sCappyColInit);
+        sCappy.colInited = 1;
+    }
+    sCappy.active = 1;
+    sCappy.mode = (u8)mode;
+    sCappy.homing = homing;
+    sCappy.bounced = 0;
+    sCappy.fxScroll = 0;
+    yaw = player->actor.shape.rot.y;
+    sCappy.yaw = yaw;
+    sCappy.target = homing ? Sm64Cappy_FindTarget(play, &player->actor.world.pos) : NULL;
+    sCappy.pos.x = player->actor.world.pos.x + Math_SinS(yaw) * 18.0f;
+    sCappy.pos.y = player->actor.world.pos.y + 24.0f;
+    sCappy.pos.z = player->actor.world.pos.z + Math_CosS(yaw) * 18.0f;
+
+    switch (mode) {
+        case SM64_CAPPY_DIVE:
+            sCappy.vel.x = Math_SinS(yaw) * fwd * 1.3f;
+            sCappy.vel.z = Math_CosS(yaw) * fwd * 1.3f;
+            sCappy.vel.y = -fwd * 0.5f;
+            sCappy.phase = CAPPY_OUT;
+            sCappy.timer = CAPPY_OUT_FRAMES;
             break;
-        case 2: // Nayru's Love → Metal Cap
-            capFlag = SM64_MARIO_METAL_CAP;
-            sfx = NA_SE_PL_MAGIC_SOUL_NORMAL;
+        case SM64_CAPPY_SPIN:
+            sCappy.orbitAng = yaw;
+            sCappy.vel.x = sCappy.vel.y = sCappy.vel.z = 0.0f;
+            sCappy.phase = CAPPY_ORBIT;
+            sCappy.timer = CAPPY_ORBIT_FRAMES;
             break;
-        case 3: // Farore's Wind → Wing Cap
-            capFlag = SM64_MARIO_WING_CAP;
-            sfx = NA_SE_PL_MAGIC_WIND_NORMAL;
+        default: // SM64_CAPPY_FWD
+            sCappy.vel.x = Math_SinS(yaw) * fwd;
+            sCappy.vel.z = Math_CosS(yaw) * fwd;
+            sCappy.vel.y = 0.0f;
+            sCappy.phase = CAPPY_OUT;
+            sCappy.timer = CAPPY_OUT_FRAMES;
             break;
-        default:
-            return;
+    }
+    Sfx_PlaySfxCentered(NA_SE_IT_SWORD_SWING);
+}
+
+void Sm64Cappy_Update(PlayState* play) {
+    Player* player;
+    Vec3f mpos;
+    f32 dx, dy, dz, dist;
+
+    if (play == NULL || !sCappy.active) return;
+    player = GET_PLAYER(play);
+    mpos = player->actor.world.pos;
+    sCappy.fxScroll++;
+
+    // Mario goes cap-less while the cap is in flight — clear CAP_ON_HEAD every
+    // frame so libsm64 renders the bare-head model (restored on catch in _Kill).
+    if (sSm64MarioId >= 0 && p_sm64_set_mario_state) {
+        u32 f = sSm64OutState.flags & ~SM64_MARIO_CAP_ON_HEAD;
+        p_sm64_set_mario_state(sSm64MarioId, f);
     }
 
-    // Snapshot flags BEFORE the call so we can diagnose whether libsm64's
-    // patched interact_cap actually clears + applies the new cap. If the
-    // post-call flags don't have only the new bit, the libsm64 rebuild
-    // didn't take or there's another path overriding.
-    u32 flagsBefore = sSm64OutState.flags;
-    p_sm64_mario_interact_cap(sSm64MarioId, capFlag, SM64_CAP_TIME_FRAMES, 1);
-    Sfx_PlaySfxCentered(sfx);
-    sMarioUsedSpell = spellType;
-    // No cooldown — user wants immediate re-cast / override on every press.
+    switch (sCappy.phase) {
+        case CAPPY_OUT:
+            if (sCappy.mode == SM64_CAPPY_DIVE) sCappy.vel.y -= 1.2f;
+            // Homing: GENTLE nudge toward a close enemy — never enough to fling the
+            // cap far (so it still hovers near where you threw it, for the cap-jump).
+            if (sCappy.homing && sCappy.target != NULL && sCappy.target->update != NULL) {
+                f32 tx = sCappy.target->world.pos.x - sCappy.pos.x;
+                f32 ty = (sCappy.target->world.pos.y + 20.0f) - sCappy.pos.y;
+                f32 tz = sCappy.target->world.pos.z - sCappy.pos.z;
+                f32 td = sqrtf(tx * tx + ty * ty + tz * tz);
+                if (td > 1.0f) {
+                    f32 spd = sqrtf(sCappy.vel.x * sCappy.vel.x + sCappy.vel.y * sCappy.vel.y +
+                                    sCappy.vel.z * sCappy.vel.z);
+                    if (spd < 10.0f) spd = 10.0f;
+                    sCappy.vel.x += ((tx / td) * spd - sCappy.vel.x) * 0.12f;
+                    sCappy.vel.y += ((ty / td) * spd - sCappy.vel.y) * 0.12f;
+                    sCappy.vel.z += ((tz / td) * spd - sCappy.vel.z) * 0.12f;
+                }
+            }
+            sCappy.pos.x += sCappy.vel.x;
+            sCappy.pos.y += sCappy.vel.y;
+            sCappy.pos.z += sCappy.vel.z;
+            if (Sm64Cappy_TryBounce(play, &mpos, player)) break;
+            if (--sCappy.timer <= 0) {
+                sCappy.phase = CAPPY_HOVER;
+                sCappy.timer = CAPPY_HOVER_FRAMES;
+            }
+            break;
+        case CAPPY_HOVER:
+            sCappy.vel.x *= 0.85f;
+            sCappy.vel.y *= 0.6f;
+            sCappy.vel.z *= 0.85f;
+            sCappy.pos.x += sCappy.vel.x;
+            sCappy.pos.y += sCappy.vel.y;
+            sCappy.pos.z += sCappy.vel.z;
+            if (Sm64Cappy_TryBounce(play, &mpos, player)) break;
+            if (--sCappy.timer <= 0) {
+                sCappy.phase = CAPPY_RETURN;
+            }
+            break;
+        case CAPPY_ORBIT:
+            sCappy.orbitAng += 0x1500;
+            sCappy.pos.x = mpos.x + Math_SinS(sCappy.orbitAng) * CAPPY_ORBIT_RADIUS;
+            sCappy.pos.y = mpos.y + 26.0f;
+            sCappy.pos.z = mpos.z + Math_CosS(sCappy.orbitAng) * CAPPY_ORBIT_RADIUS;
+            if (--sCappy.timer <= 0) {
+                sCappy.phase = CAPPY_RETURN;
+            }
+            break;
+        case CAPPY_RETURN:
+            dx = mpos.x - sCappy.pos.x;
+            dy = (mpos.y + 24.0f) - sCappy.pos.y;
+            dz = mpos.z - sCappy.pos.z;
+            dist = sqrtf(dx * dx + dy * dy + dz * dz);
+            if (dist < CAPPY_CATCH_DIST) {
+                Sm64Cappy_Kill();
+                return;
+            }
+            sCappy.pos.x += (dx / dist) * CAPPY_RETURN_SPEED;
+            sCappy.pos.y += (dy / dist) * CAPPY_RETURN_SPEED;
+            sCappy.pos.z += (dz / dist) * CAPPY_RETURN_SPEED;
+            break;
+    }
 
-    lusprintf(__FILE__, __LINE__, 2,
-        "[SM64Items] Cap cast: type=%u capFlag=0x%X flagsBefore=0x%08X (V=%d M=%d W=%d) magic=%d→%d",
-        spellType, capFlag, flagsBefore,
-        (flagsBefore & SM64_MARIO_VANISH_CAP) ? 1 : 0,
-        (flagsBefore & SM64_MARIO_METAL_CAP) ? 1 : 0,
-        (flagsBefore & SM64_MARIO_WING_CAP) ? 1 : 0,
-        gSaveContext.magic + sMarioSpellCost, gSaveContext.magic);
+    // Arm the stun collider at the cap each frame.
+    if (sCappy.colInited) {
+        sCappy.col.dim.pos.x = (s16)sCappy.pos.x;
+        sCappy.col.dim.pos.y = (s16)sCappy.pos.y;
+        sCappy.col.dim.pos.z = (s16)sCappy.pos.z;
+        sCappy.col.base.atFlags |= AT_ON;
+        CollisionCheck_SetAT(play, &play->colChkCtx, &sCappy.col.base);
+    }
+}
+
+// Billboard placeholder for the cap (camera-facing white/gold disc). The real
+// tiara mesh (converted from omm_tiara_geo.bin) replaces this once integrated.
+void Sm64Cappy_Draw(PlayState* play) {
+    GraphicsContext* gfxCtx;
+    f32 spin;
+
+    if (play == NULL || !sCappy.active) return;
+    gfxCtx = play->state.gfxCtx;
+    spin = sCappy.fxScroll * 0x800; // spins about its own axis as it flies
+
+    // Mario's cap base is ~302 units; ~0.09 → a ~27-unit cap. Centered in X; Y
+    // spans 0..144 and Z ~12, so recenter (0,-72,-12) to spin about its middle.
+    OPEN_DISPS(gfxCtx);
+    Matrix_Translate(sCappy.pos.x, sCappy.pos.y + 4.0f, sCappy.pos.z, MTXMODE_NEW);
+    Matrix_RotateY(spin * (M_PI / 0x8000), MTXMODE_APPLY);
+    Matrix_Scale(0.09f, 0.09f, 0.09f, MTXMODE_APPLY); // tune to taste
+    Matrix_Translate(0.0f, -72.0f, -12.0f, MTXMODE_APPLY); // recenter
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    Gfx_SetupDL_25Opa(gfxCtx);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_SHADE, G_CC_SHADE);  // lit vertex shade, no texture
+    gSPSetGeometryMode(POLY_OPA_DISP++, G_LIGHTING);
+    gSPSetLights1(POLY_OPA_DISP++, mario_red_lights_group);      // red for the cap dome
+    gSPDisplayList(POLY_OPA_DISP++, mario_cap_unused_base_dl);   // top (red) + brim (brown)
+    CLOSE_DISPS(gfxCtx);
 }
 
 // =============================================================================
@@ -570,6 +1313,15 @@ void Sm64Mario_HandleItems(PlayState* play, Player* player) {
         sMarioItemTimer = 10;
         return;
     }
+
+    // Advance the power-up use/cooldown timers. This is on the normal (non-
+    // cutscene) path so the timers freeze during cutscenes, loading suspends,
+    // and while Mario mode is off — they only burn time while actually playing.
+    Sm64MarioCaps_Tick();
+
+    // Mario mode: D-Pad selects SM64 caps. Runs before the partner-item loop
+    // and consumes the D-Pad press so items bound to the D-Pad don't also fire.
+    Sm64Mario_HandleCapDpad(play);
 
     static u16 sMarioPartnerButtons[7] = {
         BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT, BTN_DUP, BTN_DDOWN, BTN_DLEFT, BTN_DRIGHT

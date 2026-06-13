@@ -49,6 +49,7 @@
 #include "item_whip.c"
 #include "item_ballchain.c"
 #include "item_bombarrows.c"
+#include "twilight_upgrade.c"
 #include "item_gustjar.c"
 #include "item_beetle.c"
 #include "item_dominionrod.c"

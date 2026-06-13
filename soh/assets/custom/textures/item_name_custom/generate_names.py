@@ -55,6 +55,10 @@ ALL_ITEMS = [
     ("gSpiritBreastplateNameTex", "Spirit Breastplate"),
     ("gKiteShieldNameTex", "Kite Shield"),
     ("gMagicArmorNameTex", "Magic Armor"),
+    # Twilight Upgrade mode-toggle names (shown when Clawshot/Gale modes are active
+    # via the A-button toggle on hookshot/longshot or boomerang).
+    ("gClawshotNameTex", "Clawshot"),
+    ("gGaleBoomerangNameTex", "Gale Boomerang"),
 ]
 
 

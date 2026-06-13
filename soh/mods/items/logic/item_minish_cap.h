@@ -39,6 +39,21 @@ s32 MinishCap_IsPodSoilUnlocked(s32 idx);
 // Count total unlocked pod soils
 s32 MinishCap_GetUnlockedCount(void);
 
+// ── Tiny mode (Minish-size toggle, used away from pod soils) ─────────────────
+// True while the toggle is on (including the shrink/grow transition frames)
+s32 MinishTiny_IsActive(void);
+// Movement speed multiplier for the player (0.2f while tiny, 1.0f otherwise)
+f32 MinishTiny_GetSpeedFactor(void);
+// Per-frame upkeep: scene-load auto-reset, scale guard, transition animation.
+// Called unconditionally from CustomItems_Update (runs even when cap unequipped).
+void MinishTiny_Update(Player* p, PlayState* play);
+// True when the player should pass through a crawlspace hole wall poly this
+// frame (caller skips the wall bgcheck flag). Called from Player_ProcessSceneCollision.
+s32 MinishTiny_CrawlspacePassthrough(Player* p, PlayState* play);
+// Pulls the rendered main-camera eye/at toward tiny Link proportionally to his
+// scale. Called from Camera_Update just before the view is applied.
+void MinishTiny_AdjustCameraView(Camera* camera, Vec3f* eye, Vec3f* at);
+
 #ifdef __cplusplus
 }
 #endif

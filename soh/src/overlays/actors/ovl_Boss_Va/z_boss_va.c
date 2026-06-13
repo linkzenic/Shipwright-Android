@@ -18,6 +18,11 @@
 #include "soh/frame_interpolation.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "mods/transformation_masks/boss_super_damage.h"
+
+// Persistent Pikachu Thunder flag (defined in pikachu_form.cpp). Used to give the
+// ranged-attack reach to the Barinade super-break detector.
+extern u8 gPikaThunderActive;
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -389,6 +394,15 @@ static u8 sKillBari = 0;
 static u8 sBodyBari[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static s16 sCsCamera = 0;
 
+// FD / Pika Gigantamax "super break": set to the current gameplayFrame when the
+// player's attack contacts ANY Barinade damage collider (the electric the Bari use
+// to hurt Link). While this is the current/previous frame, every part — supports,
+// Bari, body — breaks/stuns at once. Lets one attack near Barinade clear a phase
+// without aiming at the boomerang-only AC colliders.
+static s32 sBariSuperBreakFrame = -100;
+#define BARI_SUPER_BREAK_ACTIVE(play) (((play)->gameplayFrames - sBariSuperBreakFrame) >= 0 && \
+                                       ((play)->gameplayFrames - sBariSuperBreakFrame) <= 2)
+
 static BossVaEffect sVaEffects[400];
 static u8 sBodyState;
 static u8 sFightPhase;
@@ -585,6 +599,41 @@ void BossVa_KillBari(BossVa* this, PlayState* play) {
 
     sFightPhase++;
     BossVa_SetupBariDeath(this);
+}
+
+// FD / Pika Gigantamax: flag a global "super break" if the player's attack reaches
+// `pos` (a boss part's world position). Uses the geometric FormAttackReaches (FD
+// sword blade + body touch) so it never relies on the boomerang-only AC bumpers.
+// Reach scales with the attack type (beam/Thunder far, sword near). No-op outside
+// FD/Pika attack frames, so vanilla/boomerang is safe. When ANY part flags this,
+// every part (supports, Bari, body) breaks within the next 2 frames — so a single
+// attack that reaches any one part clears them all at once.
+static void BossVa_FlagSuperBreakAt(PlayState* play, Vec3f* pos) {
+    Player* player = GET_PLAYER(play);
+    Vec3f flat;
+    f32 reach;
+
+    // Gate on simply BEING in FD/Pika form (persistent — not on a single swing
+    // frame, which the one-frame-late detection kept missing). Ranged attacks
+    // (FD's beam at full health, Pika's Thunder) reach farther than a melee swing.
+    if (player == NULL || !BossSuperDamage_IsFormActive(play)) {
+        return;
+    }
+    if (gPikaThunderActive || (gSaveContext.health >= gSaveContext.healthCapacity)) {
+        reach = 70.0f;
+    } else {
+        reach = 30.0f;
+    }
+
+    // Barinade's parts hang HIGH, but FD's sword/thunder collider sits at the
+    // player's level (it sometimes "stays too low"). Project the part down to the
+    // sword's height so the horizontal swing reaches it in XZ — effectively raising
+    // the attack collider to the part's height. (Vertical gap ignored.)
+    flat = *pos;
+    flat.y = player->actor.world.pos.y + 40.0f;
+    if (BossSuperDamage_FormAttackReaches(play, &flat, reach + 100.0f)) {
+        sBariSuperBreakFrame = play->gameplayFrames;
+    }
 }
 
 void BossVa_Init(Actor* thisx, PlayState* play2) {
@@ -1378,6 +1427,58 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
 
     this->unk_1B0 = (this->unk_1B0 + (s16)((sFightPhase - PHASE_4 + 1) * 1000.0f)) + 0xCE4;
     this->bodyGlow = (s16)(Math_SinS(this->unk_1B0) * 50.0f) + 150;
+
+    // FD / Pika Gigantamax: paralyze-or-damage on the core, triggered by EITHER an
+    // accepted AC hit (Pika electric / FD beam) OR the geometric FD-sword reach
+    // detector (FD's melee dmgFlags don't match the core bumper). Gated on form so
+    // the vanilla boomerang path is untouched. CLOSED core (timer < 0, normally
+    // deflects) → force open + FAINT (stun). OPEN core (timer >= 0) → damage and
+    // keep open so mashing kills it. invincibilityTimer = per-hit cooldown.
+    if (BossSuperDamage_IsFormActive(play)) {
+        u8 acHit;
+        // Widen the body bumper (vanilla = boomerang-only 0x10) so FD's remote sword
+        // beam (ACTOR_EN_M_THUNDER, dmgFlags 0x02000000) lands an AC_HIT on the core.
+        this->colliderBody.info.bumper.dmgFlags = 0xFFFFFFFF;
+        acHit = (this->colliderBody.base.acFlags & AC_HIT) != 0;
+        // The phase-4 body is itself a damage collider (colliderBody hurts Link) and
+        // swims at the player's level, so the FD sword / touch reaches it directly.
+        BossVa_FlagSuperBreakAt(play, &this->actor.world.pos);
+        if (acHit || BARI_SUPER_BREAK_ACTIVE(play)) {
+            this->colliderBody.base.acFlags &= ~AC_HIT;
+            BossSuperDamage_StartElectricSparks(&this->actor, 90);
+            this->skelAnime.curFrame = 0.0f;
+            if ((this->timer >= 0) && (this->invincibilityTimer == 0)) {
+                this->invincibilityTimer = 8;
+                this->actor.world.rot.y = this->actor.yawTowardsPlayer;
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_DAMAGE);
+                Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 12);
+                sPhase4HP -= BossSuperDamage_FormDamage(play);
+                if (sPhase4HP <= 0) {
+                    sFightPhase++;
+                    sPhase4HP += 3;
+                    if (sFightPhase >= PHASE_DEATH) {
+                        BossVa_SetupBodyDeath(this, play);
+                        Enemy_StartFinishingBlow(play, &this->actor);
+                        GameInteractor_ExecuteOnBossDefeat(&this->actor);
+                        return;
+                    }
+                }
+                // Keep the core open + stalled so the next mash hit lands too.
+                this->vaBodySpinRate = 0;
+                this->actor.speedXZ = 0.0f;
+                this->timer = (s16)Rand_CenteredFloat(40.0f) + 160;
+            } else if (this->timer < 0) {
+                // Closed core → stun it open (FAINT).
+                this->timer = (s16)Rand_CenteredFloat(40.0f) + 160;
+                this->vaBodySpinRate = 0;
+                this->actor.speedXZ = 0.0f;
+                Actor_SetColorFilter(&this->actor, 0, 125, 0, 255);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_FAINT);
+            }
+            return;
+        }
+    }
+
     if (this->colliderBody.base.atFlags & AT_HIT) {
         this->colliderBody.base.atFlags &= ~AT_HIT;
         if (this->colliderBody.base.at == &player->actor) {
@@ -1392,26 +1493,7 @@ void BossVa_BodyPhase4(BossVa* this, PlayState* play) {
 
     if (this->colliderBody.base.acFlags & AC_HIT) {
         this->colliderBody.base.acFlags &= ~AC_HIT;
-        {
-            // Gigantamax Pikachu: DMG_UNBLOCKABLE bypasses all boss state requirements
-            u8 isGigaHit = this->colliderBody.info.acHitInfo &&
-                           (this->colliderBody.info.acHitInfo->toucher.dmgFlags & DMG_UNBLOCKABLE);
-            if (isGigaHit) {
-                sPhase4HP -= 4;
-                if (sPhase4HP <= 0) {
-                    sFightPhase = PHASE_DEATH;
-                    BossVa_SetupBodyDeath(this, play);
-                    Enemy_StartFinishingBlow(play, &this->actor);
-                    GameInteractor_ExecuteOnBossDefeat(&this->actor);
-                    return;
-                }
-                this->invincibilityTimer = 8;
-                this->actor.world.rot.y = this->actor.yawTowardsPlayer;
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_DAMAGE);
-                Actor_SetColorFilter(&this->actor, 0x4000, 255, 0, 12);
-                return;
-            }
-        }
+
         this->skelAnime.curFrame = 0.0f;
         if (this->timer >= 0) {
             if (this->invincibilityTimer == 0) {
@@ -1784,6 +1866,24 @@ void BossVa_SupportAttached(BossVa* this, PlayState* play) {
     BossVa_AttachToBody(this);
     if (Rand_ZeroOne() < 0.1f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_BALINADE_BL_SPARK - SFX_FLAG);
+    }
+
+    // FD / Pika Gigantamax: flag the global super-break when the player's attack
+    // reaches THIS support's arm tip (FD's direct sword) OR FD's remote sword beam
+    // (ACTOR_EN_M_THUNDER) lands on it — we widen the boomerang-only bumper to accept
+    // the beam. Then cut on the global flag, so reaching any one support (or any Bari)
+    // severs them all at once. Gated on form so the vanilla boomerang cut is untouched.
+    if (BossSuperDamage_IsFormActive(play)) {
+        this->colliderSph.elements[0].info.bumper.dmgFlags = 0xFFFFFFFF;
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderSph.base);
+        if (this->colliderSph.base.acFlags & AC_HIT) {
+            sBariSuperBreakFrame = play->gameplayFrames;
+        }
+    }
+    BossVa_FlagSuperBreakAt(play, &this->armTip);
+    if (BARI_SUPER_BREAK_ACTIVE(play)) {
+        BossVa_SetupSupportCut(this, play);
+        return;
     }
 
     if (this->colliderSph.base.acFlags & AC_HIT) {
@@ -2578,6 +2678,20 @@ void BossVa_BariPhase3Attack(BossVa* this, PlayState* play) {
     s16 sp52;
     s32 pad;
 
+    // FD / Pika Gigantamax: same as the upper Bari — blade/touch reach OR the remote
+    // FD sword beam (ACTOR_EN_M_THUNDER) landing an AC_HIT on the colliderSph flags
+    // the global break that pops them all.
+    BossVa_FlagSuperBreakAt(play, &this->actor.world.pos);
+    if (BossSuperDamage_IsFormActive(play) && (this->colliderSph.base.acFlags & AC_HIT)) {
+        sBariSuperBreakFrame = play->gameplayFrames;
+    }
+    if (BARI_SUPER_BREAK_ACTIVE(play)) {
+        this->colliderSph.base.acFlags &= ~AC_HIT;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BODY_SPARK);
+        BossVa_KillBari(this, play);
+        return;
+    }
+
     this->unk_1A4 += Rand_ZeroOne() * 0.5f;
     sp52 = this->timer2 & 0x1FF;
 
@@ -2666,6 +2780,24 @@ void BossVa_BariPhase2Attack(BossVa* this, PlayState* play) {
     s16 sp50;
     f32 sp4C;
     s32 pad;
+
+    // FD / Pika Gigantamax: flag a global "super break" so EVERY part — supports,
+    // Bari, body — pops at once. Two ways to trigger, both gated on FD/Pika form so
+    // the vanilla boomerang path is untouched:
+    //   1. The blade/touch reaches the Bari (BossVa_FlagSuperBreakAt).
+    //   2. FD's REMOTE sword beam (ACTOR_EN_M_THUNDER, dmgFlags 0x02000000) hits the
+    //      Bari's colliderSph — its 0xFFCFFFFF bumper accepts the beam, so it lands an
+    //      AC_HIT the blade-segment detector can't see. (The beam is the FD "thunder".)
+    BossVa_FlagSuperBreakAt(play, &this->actor.world.pos);
+    if (BossSuperDamage_IsFormActive(play) && (this->colliderSph.base.acFlags & AC_HIT)) {
+        sBariSuperBreakFrame = play->gameplayFrames;
+    }
+    if (BARI_SUPER_BREAK_ACTIVE(play)) {
+        this->colliderSph.base.acFlags &= ~AC_HIT;
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GANON_BODY_SPARK);
+        BossVa_KillBari(this, play);
+        return;
+    }
 
     this->unk_1A4 += Rand_ZeroOne() * 0.5f;
     sp52 = this->timer2 & 0x1FF;
@@ -3320,6 +3452,23 @@ void BossVa_Draw(Actor* thisx, PlayState* play) {
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
+
+    // FD / Pika Gigantamax electric glow on the body core. Barinade's body is a
+    // single roundish core (~55-unit radius), so we wrap it in a small cluster of
+    // orbs centered on the actor. No-op when the spark timer is 0 (not recently hit).
+    if (this->actor.params == BOSSVA_BODY) {
+        Vec3f c = this->actor.world.pos;
+        Vec3f limbs[7];
+        c.y += 30.0f;
+        limbs[0] = c;
+        limbs[1] = c; limbs[1].x += 38.0f;
+        limbs[2] = c; limbs[2].x -= 38.0f;
+        limbs[3] = c; limbs[3].z += 38.0f;
+        limbs[4] = c; limbs[4].z -= 38.0f;
+        limbs[5] = c; limbs[5].y += 38.0f;
+        limbs[6] = c; limbs[6].y -= 38.0f;
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 7, 1.1f);
+    }
 }
 
 static s32 sUnkValue = 0x009B0000; // Unreferenced? Possibly a color

@@ -23,6 +23,11 @@
 #include <time.h>
 #include <assert.h>
 
+// SM64 Mario: snapshot actor OC colliders into libsm64's surface set. Defined in
+// expansions/sm64/sm64_mario_surfaces.c (#included into z_player.c), so it has
+// external linkage and is callable here. Must run AFTER Actor_UpdateAll.
+extern void Sm64Surfaces_RefreshActorColliders(PlayState* play);
+
 TransitionUnk sTrnsnUnk;
 s32 gTrnsnUnkState;
 VisMono gPlayVisMono;
@@ -1220,6 +1225,15 @@ void Play_Update(PlayState* play) {
 
                     if (!play->unk_11DE9) {
                         Actor_UpdateAll(play, &play->actorCtx);
+                    }
+
+                    // SM64 Mario: now that Actor_UpdateAll has run, the OC
+                    // collider list is fully populated (props/doors register
+                    // after the player). Snapshot it so Mario stops phasing
+                    // through signs/torches/gates. (libsm64 only knows static +
+                    // dynapoly collision otherwise.)
+                    if (CVarGetInteger("gSm64Mario", 0)) {
+                        Sm64Surfaces_RefreshActorColliders(play);
                     }
 
                     PLAY_LOG(3643);

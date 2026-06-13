@@ -16,6 +16,7 @@
 #include "helpers/fx_helper.h"
 #include "helpers/camera_helper.h"
 #include "logic/item_postman_hat.h"
+#include "overlays/actors/ovl_En_Boom/z_en_boom.h" // EnBoom struct for Gale Boomerang multi-target override
 
 // Forward declarations for items included after this file in unity build
 extern void Handle_Pending3(Player* p, PlayState* play);
@@ -272,6 +273,13 @@ static void CustomItems_CleanupUnequipped(Player* p, PlayState* play) {
 }
 
 void CustomItems_Update(Player* p, PlayState* play) {
+    // Minish tiny-mode upkeep runs ALWAYS (scene-load auto-reset, per-frame scale
+    // guard, shrink/grow animation) — even while blocked or with the cap unequipped
+    {
+        extern void MinishTiny_Update(Player* p, PlayState* play);
+        MinishTiny_Update(p, play);
+    }
+
     // Lantern passive systems run ALWAYS (even when other items block, even when unequipped)
     {
         extern void Lantern_UpdateFlames(PlayState * play);
@@ -284,14 +292,218 @@ void CustomItems_Update(Player* p, PlayState* play) {
 
     // Bomb-arrows auto-grant: when CVar is on, hand the player ITEM_BOMB_ARROWS
     // the moment any bomb bag is owned. Idempotent — only writes when needed.
-    if (CVarGetInteger("gMods.BombArrows.AutoGrantOnBag", 0)) {
-        if (CUR_UPG_VALUE(UPG_BOMB_BAG) > 0 && INV_CONTENT(ITEM_BOMB_ARROWS) == ITEM_NONE) {
+    // ALSO grants automatically when the Twilight Upgrade has been obtained
+    // (bomb arrows is one of its three unlocks).
+    {
+        extern u8 TwilightUpgrade_HasBombArrows(void);
+        u8 autoGrant = CVarGetInteger("gMods.BombArrows.AutoGrantOnBag", 0) != 0;
+        u8 twilightGrant = TwilightUpgrade_HasBombArrows();
+        if ((autoGrant || twilightGrant) && CUR_UPG_VALUE(UPG_BOMB_BAG) > 0 &&
+            INV_CONTENT(ITEM_BOMB_ARROWS) == ITEM_NONE) {
             INV_CONTENT(ITEM_BOMB_ARROWS) = ITEM_BOMB_ARROWS;
         }
     }
 
     // Postman Hat: unlock-on-visit + Mail Dash state machine always run.
     Handle_PostmanHat(p, play);
+
+    // Twilight Upgrade — L-tap toggle for the Clawshot mode. Press L while
+    // the hookshot or longshot is the held item to flip clawshotModeActive.
+    //
+    // Detection is INTENTIONALLY broad: heldItemAction can transiently leave
+    // PLAYER_IA_HOOKSHOT/LONGSHOT during the aim/fire/grapple state machine
+    // (the chain actor takes over part of the action). To make the toggle
+    // reliable mid-aim, we ALSO accept the case where the player still has
+    // hookshot/longshot equipped on any C-slot AND the held item id matches —
+    // catches every frame the player is wielding it, including aim.
+    // (Boomerang's gale mode does NOT use a persistent toggle — see the
+    //  multi-target block below, which interprets L during aim as "add
+    //  the current focus actor to the route".)
+    {
+        extern u8 TwilightUpgrade_HasClawshot(void);
+        extern u8 TwilightUpgrade_IsClawshotActive(void);
+        extern void TwilightUpgrade_SetClawshotActive(u8 active);
+        if (TwilightUpgrade_HasClawshot() &&
+            CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L)) {
+            s8 act = p->heldItemAction;
+            s16 itemId = p->heldItemId;
+            u8 wielding = (act == PLAYER_IA_HOOKSHOT || act == PLAYER_IA_LONGSHOT) ||
+                          (itemId == ITEM_HOOKSHOT || itemId == ITEM_LONGSHOT);
+            if (!wielding) {
+                // Final fallback — hookshot/longshot equipped on any C-button.
+                for (s32 i = 1; i <= 7; i++) {
+                    u8 it = gSaveContext.equips.buttonItems[i];
+                    if (it == ITEM_HOOKSHOT || it == ITEM_LONGSHOT) {
+                        // Only fire when actually first-person aiming or
+                        // Z-target so we don't toggle from a stray L press
+                        // while the player is, say, just standing around.
+                        if ((p->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) ||
+                            (p->focusActor != NULL)) {
+                            wielding = 1;
+                        }
+                        break;
+                    }
+                }
+            }
+            if (wielding) {
+                u8 newMode = TwilightUpgrade_IsClawshotActive() ? 0 : 1;
+                TwilightUpgrade_SetClawshotActive(newMode);
+                // Distinct sound per mode so the player gets audible
+                // confirmation of WHICH direction the toggle went.
+                Audio_PlaySoundGeneral(newMode ? NA_SE_SY_GET_ITEM : NA_SE_SY_DECIDE,
+                                       &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                // Swallow L so the gust-jar / shield / boomerang multi-target
+                // block below doesn't also consume the same press.
+                play->state.input[0].cur.button &= ~BTN_L;
+                play->state.input[0].press.button &= ~BTN_L;
+            }
+        }
+    }
+
+    // Gale Boomerang — multi-target route tracking.
+    // Gated on IsGaleBoomerangActive() (the persistent A-toggle in kaleido),
+    // not just the upgrade bit. When the player toggles the mode OFF in
+    // kaleido, the boomerang behaves vanilla even if they own the upgrade.
+    // L tap during aim adds the focusActor to the route (up to 4 points,
+    // 500 units max between consecutive points).
+    {
+        extern u8 TwilightUpgrade_IsGaleBoomerangActive(void);
+        u8 galeActive = TwilightUpgrade_IsGaleBoomerangActive();
+        u8 isUsingBoomerang = (p->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG) != 0;
+        u8 isThrown = (p->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) != 0;
+
+        if (!galeActive || !isUsingBoomerang) {
+            // Reset route when not using boomerang or upgrade isn't owned.
+            gCustomItemState.galeBoomerangTargetCount = 0;
+            gCustomItemState.galeBoomerangCurrentTargetIdx = 0;
+            gCustomItemState.galeBoomerangLockHeld = 0;
+            for (u8 i = 0; i < 4; i++) {
+                gCustomItemState.galeBoomerangTargets[i] = NULL;
+            }
+        } else if (!isThrown) {
+            // Aim phase — L press adds the focusActor (Z-target) to the route.
+            // Debounced so a held L doesn't spam-add.
+            u8 lHeld = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_L) != 0;
+            u8 lJustPressed = CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L) != 0;
+
+            // Audible feedback when L is tapped during aim but the player
+            // isn't Z-targeting — silent failures were confusing.
+            if (lJustPressed && !gCustomItemState.galeBoomerangLockHeld &&
+                (p->focusActor == NULL || p->focusActor->update == NULL)) {
+                Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultReverb);
+                gCustomItemState.galeBoomerangLockHeld = 1; // debounce
+            }
+
+            if (lJustPressed && !gCustomItemState.galeBoomerangLockHeld &&
+                gCustomItemState.galeBoomerangTargetCount < 4 && p->focusActor != NULL &&
+                p->focusActor->update != NULL) {
+                gCustomItemState.galeBoomerangLockHeld = 1;
+
+                // Reject if already in the route.
+                u8 already = 0;
+                for (u8 i = 0; i < gCustomItemState.galeBoomerangTargetCount; i++) {
+                    if (gCustomItemState.galeBoomerangTargets[i] == p->focusActor) {
+                        already = 1;
+                        break;
+                    }
+                }
+
+                if (!already) {
+                    // Distance constraint: new target must be within 500
+                    // units of the previous target (or of Link for the
+                    // first slot). Z-target lock-on range.
+                    Vec3f* prevPos;
+                    if (gCustomItemState.galeBoomerangTargetCount == 0) {
+                        prevPos = &p->actor.world.pos;
+                    } else {
+                        prevPos = &gCustomItemState
+                                       .galeBoomerangTargets[gCustomItemState.galeBoomerangTargetCount - 1]
+                                       ->world.pos;
+                    }
+                    f32 dx = p->focusActor->world.pos.x - prevPos->x;
+                    f32 dy = p->focusActor->world.pos.y - prevPos->y;
+                    f32 dz = p->focusActor->world.pos.z - prevPos->z;
+                    f32 distSq = dx * dx + dy * dy + dz * dz;
+                    if (distSq <= (500.0f * 500.0f)) {
+                        gCustomItemState
+                            .galeBoomerangTargets[gCustomItemState.galeBoomerangTargetCount++] =
+                            p->focusActor;
+                        Audio_PlaySoundGeneral(NA_SE_SY_LOCK_ON_HUMAN, &p->actor.world.pos, 4,
+                                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                               &gSfxDefaultReverb);
+                    } else {
+                        // Out of chain range — error chirp so the user knows
+                        // the press registered but the target was rejected.
+                        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &p->actor.world.pos, 4,
+                                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                                               &gSfxDefaultReverb);
+                    }
+                }
+            } else if (!lHeld) {
+                gCustomItemState.galeBoomerangLockHeld = 0;
+            }
+        } else if (isThrown && p->boomerangActor != NULL && p->boomerangActor->update != NULL &&
+                   gCustomItemState.galeBoomerangTargetCount > 0) {
+            // Flight phase — override En_Boom's moveTo to walk through the route.
+            u8 idx = gCustomItemState.galeBoomerangCurrentTargetIdx;
+            if (idx < gCustomItemState.galeBoomerangTargetCount) {
+                Actor* cur = gCustomItemState.galeBoomerangTargets[idx];
+                if (cur == NULL || cur->update == NULL) {
+                    // Target died/despawned — skip to next.
+                    gCustomItemState.galeBoomerangCurrentTargetIdx++;
+                } else {
+                    EnBoom* boom = (EnBoom*)p->boomerangActor;
+                    boom->moveTo = cur;
+
+                    // Advance when boomerang is within 80 units of the current target.
+                    f32 dx = cur->world.pos.x - p->boomerangActor->world.pos.x;
+                    f32 dy = cur->world.pos.y - p->boomerangActor->world.pos.y;
+                    f32 dz = cur->world.pos.z - p->boomerangActor->world.pos.z;
+                    if ((dx * dx + dy * dy + dz * dz) < (80.0f * 80.0f)) {
+                        gCustomItemState.galeBoomerangCurrentTargetIdx++;
+                    }
+                }
+            } else {
+                // All targets visited — release moveTo so vanilla return logic
+                // (returnTimer countdown) brings the boomerang back to Link.
+                EnBoom* boom = (EnBoom*)p->boomerangActor;
+                boom->moveTo = NULL;
+            }
+        }
+    }
+
+    // Gale Boomerang — B-boost-to-boomerang (TP clawshot-jump style).
+    // When the player has the Gale Boomerang mode active AND a boomerang is in
+    // flight AND Z-targeting is engaged, pressing B launches Link toward the
+    // boomerang's current position with a small upward arc. Lets the player
+    // chain mobility off thrown boomerangs.
+    {
+        extern u8 TwilightUpgrade_IsGaleBoomerangActive(void);
+        if (TwilightUpgrade_IsGaleBoomerangActive() &&
+            (p->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) &&
+            p->boomerangActor != NULL && p->boomerangActor->update != NULL &&
+            Player_IsZTargeting(p) && CHECK_BTN_ALL(play->state.input[0].press.button, BTN_B)) {
+            // Vector from Link to boomerang
+            f32 dx = p->boomerangActor->world.pos.x - p->actor.world.pos.x;
+            f32 dy = p->boomerangActor->world.pos.y - p->actor.world.pos.y;
+            f32 dz = p->boomerangActor->world.pos.z - p->actor.world.pos.z;
+            f32 dist = sqrtf(dx * dx + dy * dy + dz * dz);
+            if (dist > 1.0f) {
+                f32 speed = 18.0f; // horizontal launch speed
+                f32 invNorm = speed / dist;
+                p->actor.velocity.x = dx * invNorm;
+                p->actor.velocity.z = dz * invNorm;
+                p->actor.velocity.y = 8.0f; // upward kick, gravity pulls Link in arc
+                // Disable ground flag briefly so velocity actually takes effect.
+                p->actor.bgCheckFlags &= ~1;
+                Audio_PlaySoundGeneral(NA_SE_PL_SKIP, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+        }
+    }
 
     if (gCustomItemState.demiseDestructionActive) {
         Handle_DemiseDestruction(p, play);
@@ -626,7 +838,8 @@ void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {
         flags |= CI_FLAG_ZONAI_PERMAFROST;
     if (s->lanternEquipped || s->lanternSwinging)
         flags |= CI_FLAG_LANTERN;
-    if (s->minishCapShrinking || s->minishCapGrowing || s->minishCapWarpMode)
+    if (s->minishCapShrinking || s->minishCapGrowing || s->minishCapWarpMode || s->minishTinyActive ||
+        s->minishTinyAnim)
         flags |= CI_FLAG_MINISH_CAP;
     if (s->postmanHatDashing || s->postmanHatArriving)
         flags |= CI_FLAG_POSTMAN_HAT;

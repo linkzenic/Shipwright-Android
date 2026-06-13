@@ -87,7 +87,10 @@ SohMenu::SohMenu(const std::string& consoleVariable, const std::string& name)
 void SohMenu::AddMenuElements() {
     AddMenuSettings();
     AddMenuEnhancements();
-    AddMenuSw97();
+    // "Skijer's NEI" — dedicated top-level menu (SohMenuNEI.cpp). Replaces the
+    // old Settings sidebar + the removed AddMenuSw97 (whose SW97 widgets now live
+    // in the NEI Spells tab).
+    AddMenuNEI();
     AddMenuRandomizer();
     AddMenuNetwork();
     AddMenuDevTools();

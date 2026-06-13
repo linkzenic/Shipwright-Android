@@ -23,4 +23,17 @@
 #define baFirstPerson gCustomItemState.bombArrowFirstPersonActive
 #define baButtonMask gCustomItemState.bombArrowButtonMask
 
+// Cycle integration — called from ArrowCycle.cpp when the in-aim R/L cycle
+// swaps in/out of bomb arrows. These set up / tear down the file-static state
+// (charge timer, anim phase, etc.) without going through the normal C-press
+// equip path so the aim stays continuous from the player's perspective.
+#ifdef __cplusplus
+extern "C" {
+#endif
+void BombArrows_EnterFromCycle(Player* p, PlayState* play);
+void BombArrows_ExitFromCycle(Player* p, PlayState* play);
+#ifdef __cplusplus
+}
+#endif
+
 #endif // ITEM_BOMBARROWS_H

@@ -503,6 +503,44 @@ static const ALIGN_ASSET(2) char gRocsFeatherItemNameFRATex[] = dgRocsFeatherIte
 #define dgEmptyTexture "__OTR__textures/virtual/gEmptyTexture"
 static const ALIGN_ASSET(2) char gEmptyTexture[] = dgEmptyTexture;
 
+// Pikachu mode icons (from custom/textures/pikachu/ in soh.o2r — move + status chips).
+// Source PNGs live in soh/assets/custom/textures/pikachu/gPikaIcon*Tex.rgba32.png;
+// repack soh.o2r after adding/changing them.
+#define dgPikaIconBurnedTex "__OTR__textures/pikachu/gPikaIconBurnedTex"
+static const ALIGN_ASSET(2) char gPikaIconBurnedTex[] = dgPikaIconBurnedTex;
+#define dgPikaIconColorlessTex "__OTR__textures/pikachu/gPikaIconColorlessTex"
+static const ALIGN_ASSET(2) char gPikaIconColorlessTex[] = dgPikaIconColorlessTex;
+#define dgPikaIconCursedTex "__OTR__textures/pikachu/gPikaIconCursedTex"
+static const ALIGN_ASSET(2) char gPikaIconCursedTex[] = dgPikaIconCursedTex;
+#define dgPikaIconDarknessTex "__OTR__textures/pikachu/gPikaIconDarknessTex"
+static const ALIGN_ASSET(2) char gPikaIconDarknessTex[] = dgPikaIconDarknessTex;
+#define dgPikaIconDragonTex "__OTR__textures/pikachu/gPikaIconDragonTex"
+static const ALIGN_ASSET(2) char gPikaIconDragonTex[] = dgPikaIconDragonTex;
+#define dgPikaIconFairyTex "__OTR__textures/pikachu/gPikaIconFairyTex"
+static const ALIGN_ASSET(2) char gPikaIconFairyTex[] = dgPikaIconFairyTex;
+#define dgPikaIconFightingTex "__OTR__textures/pikachu/gPikaIconFightingTex"
+static const ALIGN_ASSET(2) char gPikaIconFightingTex[] = dgPikaIconFightingTex;
+#define dgPikaIconFireTex "__OTR__textures/pikachu/gPikaIconFireTex"
+static const ALIGN_ASSET(2) char gPikaIconFireTex[] = dgPikaIconFireTex;
+#define dgPikaIconFreezeTex "__OTR__textures/pikachu/gPikaIconFreezeTex"
+static const ALIGN_ASSET(2) char gPikaIconFreezeTex[] = dgPikaIconFreezeTex;
+#define dgPikaIconGrassTex "__OTR__textures/pikachu/gPikaIconGrassTex"
+static const ALIGN_ASSET(2) char gPikaIconGrassTex[] = dgPikaIconGrassTex;
+#define dgPikaIconLightningTex "__OTR__textures/pikachu/gPikaIconLightningTex"
+static const ALIGN_ASSET(2) char gPikaIconLightningTex[] = dgPikaIconLightningTex;
+#define dgPikaIconMetalTex "__OTR__textures/pikachu/gPikaIconMetalTex"
+static const ALIGN_ASSET(2) char gPikaIconMetalTex[] = dgPikaIconMetalTex;
+#define dgPikaIconParalyzedTex "__OTR__textures/pikachu/gPikaIconParalyzedTex"
+static const ALIGN_ASSET(2) char gPikaIconParalyzedTex[] = dgPikaIconParalyzedTex;
+#define dgPikaIconPikachuTex "__OTR__textures/pikachu/gPikaIconPikachuTex"
+static const ALIGN_ASSET(2) char gPikaIconPikachuTex[] = dgPikaIconPikachuTex;
+#define dgPikaIconPsychicTex "__OTR__textures/pikachu/gPikaIconPsychicTex"
+static const ALIGN_ASSET(2) char gPikaIconPsychicTex[] = dgPikaIconPsychicTex;
+#define dgPikaIconSleepTex "__OTR__textures/pikachu/gPikaIconSleepTex"
+static const ALIGN_ASSET(2) char gPikaIconSleepTex[] = dgPikaIconSleepTex;
+#define dgPikaIconWaterTex "__OTR__textures/pikachu/gPikaIconWaterTex"
+static const ALIGN_ASSET(2) char gPikaIconWaterTex[] = dgPikaIconWaterTex;
+
 // Custom item icons (from icon_item_custom/ in soh.o2r)
 #define dgItemIconRocsFeatherTex "__OTR__textures/icon_item_custom/gItemIconRocsFeatherTex"
 static const ALIGN_ASSET(2) char gItemIconRocsFeatherTex[] = dgItemIconRocsFeatherTex;
@@ -533,6 +571,16 @@ static const ALIGN_ASSET(2) char gItemIconMogmaMittsTex[] = dgItemIconMogmaMitts
 
 #define dgItemIconGustJarTex "__OTR__textures/icon_item_custom/gItemIconGustJarTex"
 static const ALIGN_ASSET(2) char gItemIconGustJarTex[] = dgItemIconGustJarTex;
+
+// Twilight Upgrade mode-variant icons. Placeholder PNGs (copies of gust jar)
+// live at soh/assets/custom/textures/icon_item_custom/ — replace with proper
+// art when ready. Used by ExtInv_GetItemIcon when the corresponding mode is
+// active so kaleido + C-button HUD swap to the upgraded look.
+#define dgItemIconClawshotTex "__OTR__textures/icon_item_custom/gItemIconClawshotTex"
+static const ALIGN_ASSET(2) char gItemIconClawshotTex[] = dgItemIconClawshotTex;
+
+#define dgItemIconGaleBoomerangTex "__OTR__textures/icon_item_custom/gItemIconGaleBoomerangTex"
+static const ALIGN_ASSET(2) char gItemIconGaleBoomerangTex[] = dgItemIconGaleBoomerangTex;
 
 #define dgItemIconBallAndChainTex "__OTR__textures/icon_item_custom/gItemIconBallAndChainTex"
 static const ALIGN_ASSET(2) char gItemIconBallAndChainTex[] = dgItemIconBallAndChainTex;
@@ -606,6 +654,8 @@ static const ALIGN_ASSET(2) char gItemIconVanishCapTex[] = dgItemIconVanishCapTe
 static const ALIGN_ASSET(2) char gItemIconMetalCapTex[] = dgItemIconMetalCapTex;
 #define dgItemIconWingCapTex "__OTR__textures/icon_item_custom/gItemIconWingCapTex"
 static const ALIGN_ASSET(2) char gItemIconWingCapTex[] = dgItemIconWingCapTex;
+#define dgItemIconFireFlowerTex "__OTR__textures/icon_item_custom/gItemIconFireFlowerTex"
+static const ALIGN_ASSET(2) char gItemIconFireFlowerTex[] = dgItemIconFireFlowerTex;
 
 #define dgItemIconLanternTex "__OTR__textures/icon_item_custom/gItemIconLanternTex"
 static const ALIGN_ASSET(2) char gItemIconLanternTex[] = dgItemIconLanternTex;
@@ -657,6 +707,20 @@ static const ALIGN_ASSET(2) char gMogmaMittsNameTex[] = dgMogmaMittsNameTex;
 
 #define dgGustJarNameTex "__OTR__textures/item_name_custom/gGustJarNameTex"
 static const ALIGN_ASSET(2) char gGustJarNameTex[] = dgGustJarNameTex;
+
+// Twilight Upgrade mode-variant item names. The name swap in
+// z_kaleido_scope_PAL.c:2193 references these as raw string literals — the
+// soh_assets.h declarations exist so the build-side asset scanner finds the
+// matching PNG files in soh/assets/custom/textures/item_name_custom/.
+// Placeholder PNGs (copies of bomb arrows name) until proper art lands.
+// Without these entries + their PNGs, the kaleido crashes when the player
+// selects clawshot/gale mode then opens the pause menu (the name swap
+// memcpys the OTR path into nameSegment which then fails to resolve).
+#define dgClawshotNameTex "__OTR__textures/item_name_custom/gClawshotNameTex"
+static const ALIGN_ASSET(2) char gClawshotNameTex[] = dgClawshotNameTex;
+
+#define dgGaleBoomerangNameTex "__OTR__textures/item_name_custom/gGaleBoomerangNameTex"
+static const ALIGN_ASSET(2) char gGaleBoomerangNameTex[] = dgGaleBoomerangNameTex;
 
 #define dgBallAndChainNameTex "__OTR__textures/item_name_custom/gBallAndChainNameTex"
 static const ALIGN_ASSET(2) char gBallAndChainNameTex[] = dgBallAndChainNameTex;

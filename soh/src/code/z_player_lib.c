@@ -880,6 +880,7 @@ s32 Player_GetStrength(void) {
     // inventory ownership checks, not here. Also covers Child Link transforms
     // (the original Child age cap below doesn't apply when transformed).
     if (TransformMasks_IsTransformed()) {
+        extern s32 MmForm_GetCurrentForm(void);
         switch (MmForm_GetCurrentForm()) {
             case 0 /* MM_PLAYER_FORM_FIERCE_DEITY */:
                 return PLAYER_STR_GOLD_G;
@@ -951,6 +952,12 @@ s32 Player_HoldsBow(Player* this) {
         case PLAYER_IA_BOW_FIRE:
         case PLAYER_IA_BOW_ICE:
         case PLAYER_IA_BOW_LIGHT:
+        // SW97 elemental arrows (dark, soul, wind) also use the bow model.
+        // Without these cases, Player_SetModels falls back to the slingshot
+        // rendering path for these 3 arrow types and the bow disappears.
+        case PLAYER_IA_BOW_0C:
+        case PLAYER_IA_BOW_0D:
+        case PLAYER_IA_BOW_0E:
             return true;
         default:
             return false;
@@ -1348,6 +1355,15 @@ Vec3f D_80126070 = { 0.0f, -300.0f, 0.0f };
 void func_8008F87C(PlayState* play, Player* this, SkelAnime* skelAnime, Vec3f* pos, Vec3s* rot, s32 thighLimbIndex,
                    s32 shinLimbIndex, s32 footLimbIndex) {
     Vec3f spA4;
+    // Minish tiny mode: the foot-planting IK raycasts the floor in WORLD space
+    // and bends the leg toward it using an unscaled leg-length constant. At ~0.001
+    // scale the foot sits far "below" the expected plant point every frame, so the
+    // IK computes huge bend angles and folds the legs up into the waist. Skip it
+    // while tiny — the legs just play their normal (scaled) animation instead.
+    extern s32 MinishTiny_IsActive(void);
+    if (MinishTiny_IsActive()) {
+        return;
+    }
     Vec3f sp98;
     Vec3f footprintPos;
     CollisionPoly* sp88;
@@ -2429,6 +2445,45 @@ s32 Player_OverrideLimbDrawPause(PlayState* play, s32 limbIndex, Gfx** dList, Ve
 
     dLists = &sPlayerDListGroups[type][gSaveContext.linkAge];
     *dList = dLists[dListOffset];
+
+    // PakLoader override for the pause-menu equipment subscreen draw. The
+    // gameplay path (Player_OverrideLimbDrawGameplayDefault) already consults
+    // PakLoader_GetEquipDL — without this mirror here, slot mixes and the main
+    // Equipment Pack show up in-world but the kaleido preview keeps rendering
+    // vanilla. The preview reflects the sword/shield selected in the equip
+    // subscreen rather than the player's battle state, so we patch ONLY the
+    // field GetEquipDL actually consults for this limb and restore after.
+    if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
+                                       limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
+        Player* localPlayer = GET_PLAYER(play);
+        s32 savedLeft = localPlayer->leftHandType;
+        s32 savedRight = localPlayer->rightHandType;
+        s32 savedSheath = localPlayer->sheathType;
+        s32 savedShield = localPlayer->currentShield;
+        if (limbIndex == PLAYER_LIMB_L_HAND) {
+            localPlayer->leftHandType = type;
+        } else if (limbIndex == PLAYER_LIMB_R_HAND) {
+            localPlayer->rightHandType = type;
+            localPlayer->currentShield = playerSwordAndShield[1];
+        } else if (limbIndex == PLAYER_LIMB_SHEATH) {
+            localPlayer->sheathType = type;
+            localPlayer->currentShield = playerSwordAndShield[1];
+        }
+
+        Gfx* pakDL = PakLoader_GetEquipDL(localPlayer, limbIndex);
+
+        localPlayer->leftHandType = savedLeft;
+        localPlayer->rightHandType = savedRight;
+        localPlayer->sheathType = savedSheath;
+        localPlayer->currentShield = savedShield;
+
+        if (pakDL == PAK_DL_STUB) {
+            *dList = NULL;
+        } else if (pakDL != NULL) {
+            *dList = pakDL;
+        }
+        // pakDL == NULL → keep the vanilla *dList we wrote above
+    }
 
     return 0;
 }

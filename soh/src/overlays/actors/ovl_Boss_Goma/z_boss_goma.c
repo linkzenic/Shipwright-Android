@@ -1841,7 +1841,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
             if (this->actionFunc == BossGoma_FloorStunned) {
                 // Already paralyzed → damage. Mirror the original FloorStunned
                 // damage path (sibuki burst, dam1 sfx, FloorDamaged transition).
-                s32 dmg = 4;
+                s32 dmg = BossSuperDamage_FormDamage(play);
                 if ((s32)this->actor.colChkInfo.health > dmg) {
                     this->actor.colChkInfo.health -= dmg;
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM1);
@@ -2131,6 +2131,24 @@ s32 BossGoma_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f
     return doNotDrawLimb;
 }
 
+// Joint positions sampled during PostLimbDraw, used by the FD/Pika electric
+// sparks VFX so the lightning bolts emerge from real limb junctions. Static
+// because there is only one Gohma alive at a time. Order doesn't matter — we
+// just feed the populated subset into BossSuperDamage_DrawElectricSparks.
+#define BSG_SPARK_LIMB_COUNT 16
+static const s32 sBossGomaSparkLimbIds[BSG_SPARK_LIMB_COUNT] = {
+    BOSSGOMA_LIMB_BODY,           BOSSGOMA_LIMB_BODY_SHELL,
+    BOSSGOMA_LIMB_EYE,            BOSSGOMA_LIMB_MANDIBLES_BODY,
+    BOSSGOMA_LIMB_TAIL1,          BOSSGOMA_LIMB_TAIL2,
+    BOSSGOMA_LIMB_TAIL3,          BOSSGOMA_LIMB_TAIL4,
+    BOSSGOMA_LIMB_R_THIGH,        BOSSGOMA_LIMB_R_KNEE,
+    BOSSGOMA_LIMB_R_FEET,
+    BOSSGOMA_LIMB_L_THIGH,        BOSSGOMA_LIMB_L_KNEE,
+    BOSSGOMA_LIMB_L_FEET,
+    BOSSGOMA_LIMB_L_ANTENNA_BODY, BOSSGOMA_LIMB_R_ANTENNA_BODY,
+};
+static Vec3f sBossGomaSparkPos[BSG_SPARK_LIMB_COUNT];
+
 void BossGoma_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
     static Vec3f tailZero = { 0.0f, 0.0f, 0.0f };
     static Vec3f clawBackLocalPos = { 0.0f, 0.0f, 0.0f };
@@ -2142,6 +2160,7 @@ void BossGoma_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* r
     BossGoma* this = (BossGoma*)thisx;
     s32 pad;
     MtxF mtx;
+    s32 sparkSlot;
 
     if (limbIndex == BOSSGOMA_LIMB_TAIL4) { // tail end/last part
         Matrix_MultVec3f(&tailZero, &this->lastTailLimbWorldPos);
@@ -2153,6 +2172,15 @@ void BossGoma_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* r
         Matrix_MultVec3f(&clawBackLocalPos, &this->rightHandBackLimbWorldPos);
     } else if (limbIndex == BOSSGOMA_LIMB_L_FEET_BACK) {
         Matrix_MultVec3f(&clawBackLocalPos, &this->leftHandBackLimbWorldPos);
+    }
+
+    // FD/Pika sparks: snapshot this limb's world position if it's one of the
+    // ~16 spark anchors. Linear scan is fine — table is tiny and cache-hot.
+    for (sparkSlot = 0; sparkSlot < BSG_SPARK_LIMB_COUNT; sparkSlot++) {
+        if (sBossGomaSparkLimbIds[sparkSlot] == limbIndex) {
+            Matrix_MultVec3f(&zero, &sBossGomaSparkPos[sparkSlot]);
+            break;
+        }
     }
 
     if (this->visualState == VISUALSTATE_DEFEATED) {
@@ -2230,21 +2258,12 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
 
     CLOSE_DISPS(play->state.gfxCtx);
 
-    // MM-style electric sparks (FD / Pika Gigantamax hit reaction). Anchored on
-    // Gohma's six pre-cached limb world positions: eye, body, tail tip + start,
-    // both claws. Each anchor renders 2 random spike billboards. No-op when the
-    // spark timer is 0 (boss not recently hit).
-    {
-        Vec3f limbs[6];
-        limbs[0] = this->actor.focus.pos;             // eye / head
-        limbs[1] = this->actor.world.pos;             // body center
-        limbs[1].y += 25.0f;                          // raise to torso height
-        limbs[2] = this->lastTailLimbWorldPos;        // tail tip
-        limbs[3] = this->firstTailLimbWorldPos;       // tail start
-        limbs[4] = this->rightHandBackLimbWorldPos;   // right claw
-        limbs[5] = this->leftHandBackLimbWorldPos;    // left claw
-        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 6, 1.0f);
-    }
+    // FD / Pika Gigantamax lightning sparks. The 16-entry sBossGomaSparkPos
+    // array was populated during the just-finished SkelAnime_DrawSkeletonOpa
+    // pass — body, eye, mandibles, four tail segments, both legs (thigh/knee/
+    // feet), and both antennae. Two bolts per joint emerge at random Y rotation,
+    // mirroring MM's pattern of anchoring at limb connections.
+    BossSuperDamage_DrawElectricSparks(&this->actor, play, sBossGomaSparkPos, BSG_SPARK_LIMB_COUNT, 1.0f);
 }
 
 void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i) {

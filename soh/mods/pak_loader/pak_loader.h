@@ -97,6 +97,17 @@ s32 PakLoader_GetModelCount(void);
 const char* PakLoader_GetModelName(s32 index);
 
 /**
+ * Get the display LABEL of a model (display name prefixed with a category tag
+ * so a user can distinguish between same-named .pak / .zobj / .o2r entries).
+ * Prefixes: "[PAK] ", "[ZOBJ] ", "[O2R] ".
+ *
+ * Returns a pointer into a small internal rotating buffer — safe to use in a
+ * printf-style call that interleaves two model labels, but NOT thread-safe and
+ * NOT persistent across many calls. Copy if you need to keep it.
+ */
+const char* PakLoader_GetModelLabel(s32 index);
+
+/**
  * Check if a model has an adult or child zobj.
  * @param index Model index
  * @return 1 if the model has that age's zobj ready

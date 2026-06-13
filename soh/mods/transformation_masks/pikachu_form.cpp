@@ -18,6 +18,9 @@
 
 #include <string.h>
 #include <math.h>
+#include <cstdio>
+#include <vector>
+#include <string>
 
 #include "z64.h"
 #include "macros.h"
@@ -27,6 +30,13 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 
 #include <libultraship/bridge.h>
+#include <libultraship/libultraship.h> // Ship::Context::LocateFileAcrossAppDirs (anim .bin loader)
+// OPEN_DISPS/CLOSE_DISPS declare FrameInterpolation_Record* INSIDE the macro
+// without extern "C"; in a plain C++ (non-extern-"C") function that produces a
+// mangled unresolved symbol. This header pre-declares them with proper guards
+// so the macros inherit C linkage anywhere in this file.
+#include "soh/frame_interpolation.h"
+#include "assets/soh_assets.h" // gPikaIcon*Tex (HUD-over-OOT button icon overrides)
 
 // ── SSBB System includes (compiled as C, need extern "C" wrapper) ────────────
 extern "C" {
@@ -62,8 +72,9 @@ static struct {
 } sPikaSfxState;
 
 static void PikaSfx_Play(PikaSfxId id) {
-    if (id >= PIKA_SFX_COUNT)
+    if (id >= PIKA_SFX_COUNT) {
         return;
+    }
     sPikaSfxState.data = sPikaSfxTable[id].data;
     sPikaSfxState.len = sPikaSfxTable[id].len;
     sPikaSfxState.pos = 0;
@@ -75,8 +86,37 @@ static void PikaSfx_Play(PikaSfxId id) {
 // Resamples 22050Hz → 32000Hz (OOT output rate)
 static u8 sPikaSfxGiant = 0; // Set by Update, read by MixInto (avoids forward ref to sPika)
 
-// Global flag: when set, bosses should accept damage regardless of state
+// Global flag: when set, bosses should accept damage regardless of state.
+// "Active" = only during an attack/locked action; "Mode" = persistent (true the
+// whole time gigantamax is on, even when idle) — used for contact-based boss
+// triggers where the one-frame-late AC/AT detection would miss the attack window.
 extern "C" u8 gPikaGigantamaxActive = 0;
+extern "C" u8 gPikaGigantamaxMode = 0;
+extern "C" u8 gPikaThunderActive = 0; // ranged Thunder attack active (longer boss reach range)
+
+// ── Broken-Mode Pikachu HUD state (read by pikachu_hud.cpp) ──────────────────
+// Status chip: 0=none (pokeball), 1=paralyzed (electric hit), 2=burned (fire),
+// 3=freeze (ice), 4=sleep (voluntary D-Left sleep).
+extern "C" u8 gPikaStatus = 0;
+extern "C" s16 gPikaStatusTimer = 0;
+extern "C" u8 gPikaInWater = 0; // HUD swaps the A icon fighting→water (fast swim)
+
+// Move handlers defined later in this file (dispatched directly by the bind table).
+extern "C" u8 PikaItem_RocsCape(PlayState* play, Player* player, s32 item);
+extern "C" u8 PikaItem_QuickAtk(PlayState* play, Player* player, s32 item);
+extern "C" u8 MmForm_IsPikachuActive(void);          // mm_player_form.cpp
+extern "C" uint8_t ResourceMgr_FileExists(const char* resName); // soh/ResourceManagerHelpers.cpp
+
+// ── TWO Pikachu systems ──────────────────────────────────────────────────────
+// System 1 — Pokeball ITEM (extended inventory): classic transform, C-buttons
+//            keep dispatching ITEMS, vanilla OOT UI, original gigantamax
+//            (8 MP + drain). Everything as it always was.
+// System 2 — Pikachu MODE (Broken Modes selector, gPikachuMode CVar, "secret"):
+//            the reworked bind moveset (C/D-pad moves), Pokemon-style UI mix,
+//            48-MP manual gigantamax, 3D swim, status chip.
+static inline u8 Pika_IsBrokenMode(void) {
+    return CVarGetInteger("gPikachuMode", 0) != 0;
+}
 
 extern "C" void PikaSfx_MixInto(s16* outBuf, u32 numSamples) {
     if (!sPikaSfxState.playing || !sPikaSfxState.data)
@@ -211,6 +251,17 @@ typedef struct {
     u8 hasGroundJumped; // 1 = already used ground jump, reset on landing
     u8 hasAirJumped;    // 1 = already used air jump, reset on landing
 
+    // ── Broken-Mode Pikachu rework (direct move binds, gPikaBind.*) ──
+    u8 grassDashActive; // C-Down: grass dash (fast ground charge + wind cone)
+    u8 ironPending;     // D-Down: iron tail (metal chrome body, fully invulnerable)
+    u8 darkPending;     // D-Right: dark move (summon + throw a free bomb)
+    u8 sleepState;      // D-Left: 0=off 1=falling asleep 2=sleeping 3=waking
+    s32 sleepTimer;
+    u8 dragonCharging; // D-Up with <48 MP: up-taunt charge that grants 48 MP
+    u8 swim3d;         // in-water 3D zora-style swim active (A/R held)
+    s16 swimPitch;     // MM convention: positive pitch dives (vy = -sin(pitch)*spd)
+    f32 swimSpeed;
+
     u8 initialized;
 } PikachuSSBBState;
 
@@ -230,16 +281,69 @@ static ColliderCylinderInit sAtCylInit = {
     { 20, 30, 0, { 0, 0, 0 } },
 };
 
+// ── Broken-Mode UI bridge (read by z_parameter.c / pikachu_hud.cpp) ─────────
+// Active = the SECRET mode is on AND the Pikachu form is the current form.
+extern "C" u8 PikaMode_IsActive(void) {
+    return (Pika_IsBrokenMode() && MmForm_IsPikachuActive()) ? 1 : 0;
+}
+
+// HUD style: 0 = Pokemon-type icons drawn over the vanilla OOT buttons
+// (B/C/D-pad keep their frames; A keeps OOT's dynamic do-action so you always
+// know if A is fight/speak/open/...). 1 = the corner-cluster Pikachu HUD.
+extern "C" s32 PikaMode_HudStyle(void) {
+    return CVarGetInteger("gPikaHud.Style", 0);
+}
+
+// Per-button icon override for Interface_Draw (overlay style). Button indices
+// follow gSaveContext.equips.buttonItems: 0=B, 1=C-Left, 2=C-Down, 3=C-Right,
+// 4=D-Up, 5=D-Down, 6=D-Left, 7=D-Right. Falls back to the original icon when
+// the mode is off or the pikachu icons aren't in soh.o2r yet (repack pending).
+extern "C" void* PikaMode_ButtonIcon(s32 button, void* orig) {
+    static s8 sIconsPresent = -1;
+    if (!PikaMode_IsActive()) {
+        return orig;
+    }
+    if (sIconsPresent < 0) {
+        sIconsPresent = ResourceMgr_FileExists(dgPikaIconLightningTex) ? 1 : 0;
+    }
+    if (!sIconsPresent) {
+        return orig;
+    }
+    switch (button) {
+        case 0: // B = electric moves
+            return (void*)gPikaIconLightningTex;
+        case 1: // C-Left = jump (flying)
+            return (void*)gPikaIconColorlessTex;
+        case 2: // C-Down = grass dash
+            return (void*)gPikaIconGrassTex;
+        case 3: // C-Right = quick attack
+            return (void*)gPikaIconLightningTex;
+        case 4: // D-Up = gigantamax (ready/on) or dragon charge
+            return (void*)((sPika.gigantamax || gSaveContext.magic >= MAGIC_NORMAL_METER) ? gPikaIconPikachuTex
+                                                                                          : gPikaIconDragonTex);
+        case 5: // D-Down = iron tail
+            return (void*)gPikaIconMetalTex;
+        case 6: // D-Left = sleep (psychic)
+            return (void*)gPikaIconPsychicTex;
+        case 7: // D-Right = dark bomb
+            return (void*)gPikaIconDarknessTex;
+        default:
+            return orig;
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 static void Pika_SetAction(SSBBActionId action) {
     const SSBBActionDef* def = SSBBAction_Get(action);
-    if (!def)
+    if (!def) {
         return;
+    }
 
     const struct SSBBAnim* anim = SSBBAction_GetAnim(action);
-    if (!anim)
+    if (!anim) {
         return;
+    }
 
     sPika.currentAction = action;
     sPika.actionFrame = 0;
@@ -318,10 +422,12 @@ static void Pika_SetAction(SSBBActionId action) {
 
 static u8 Pika_ActionFinished(void) {
     const SSBBActionDef* def = SSBBAction_Get(sPika.currentAction);
-    if (!def)
+    if (!def) {
         return 1;
-    if (def->flags & SSBB_ACT_FLAG_LOOP)
+    }
+    if (def->flags & SSBB_ACT_FLAG_LOOP) {
         return 0;
+    }
     // Scale actionFrame threshold by playSpeed so faster anims finish sooner
     f32 spd = sPika.charInst.playSpeed;
     if (spd < 1.0f)
@@ -332,8 +438,9 @@ static u8 Pika_ActionFinished(void) {
 
 static u8 Pika_CanCancel(void) {
     const SSBBActionDef* def = SSBBAction_Get(sPika.currentAction);
-    if (!def)
+    if (!def) {
         return 1;
+    }
     if (def->cancelFrame == 0)
         return Pika_ActionFinished();
     f32 spd = sPika.charInst.playSpeed;
@@ -361,8 +468,109 @@ extern "C" u8 PikachuForm_IsEnabled(void) {
     return 1; // Always enabled — use Pokeball to transform
 }
 
+// ── Pikachu animation binary (NEI) ───────────────────────────────────────────
+// The 322 SSBBAnim float tables used to be compiled in (~82 MB of *_ssbb.c).
+// They now ship as NEI/pikachu_anims.bin (little-endian, so one file is portable
+// across Win/Mac/Linux and x64/ARM) and are loaded once here. The SSBBAnim
+// headers point directly into the loaded buffer — no decompression, no copy.
+// Binary format is defined in apps/ssbb_anim_bin.py.
+static std::vector<u8> sPikaAnimBlob;                 // owns the .bin bytes for the run
+static std::vector<struct SSBBAnim> sPikaAnimHeaders; // 322 headers pointing into the blob
+static u8 sPikaAnimsLoaded = 0;
+
+// Little-endian field readers (memcpy avoids alignment / strict-aliasing issues).
+static inline u32 PikaBin_Rd32(const u8* p) {
+    u32 v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+static inline u16 PikaBin_Rd16(const u8* p) {
+    u16 v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+static inline f32 PikaBin_RdF(const u8* p) {
+    f32 v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+
+static u8 PikaAnims_EnsureLoaded(void) {
+    if (sPikaAnimsLoaded) {
+        return 1;
+    }
+
+    // Same convention as the other NEI assets (nei/sm64.z64, nei/garo.o2r, …):
+    // a "nei/" folder next to soh.exe. Lower-case for Linux/macOS case-sensitivity.
+    std::string path = Ship::Context::LocateFileAcrossAppDirs("nei/pikachu_anims.bin");
+    if (path.empty()) {
+        path = "nei/pikachu_anims.bin"; // fallback: current working directory
+    }
+
+    FILE* fp = fopen(path.c_str(), "rb"); // "rb" required on Windows (no CRLF translation)
+    if (fp == NULL) {
+        return 0;
+    }
+    fseek(fp, 0, SEEK_END);
+    long fileSize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    if (fileSize < 32) { // smaller than the header => invalid
+        fclose(fp);
+        return 0;
+    }
+    sPikaAnimBlob.resize((size_t)fileSize);
+    size_t got = fread(sPikaAnimBlob.data(), 1, (size_t)fileSize, fp);
+    fclose(fp);
+    if (got != (size_t)fileSize) {
+        sPikaAnimBlob.clear();
+        return 0;
+    }
+
+    const u8* b = sPikaAnimBlob.data();
+    if (memcmp(b, "NEIPKANM", 8) != 0) {
+        sPikaAnimBlob.clear();
+        return 0;
+    }
+    u32 version = PikaBin_Rd32(b + 8);
+    u32 count = PikaBin_Rd32(b + 12);
+    u32 entriesOff = PikaBin_Rd32(b + 16);
+    u32 namesOff = PikaBin_Rd32(b + 20);
+    u32 framesOff = PikaBin_Rd32(b + 24);
+    if (version != 1 || count != PIKA_ANIM_MAX) {
+        sPikaAnimBlob.clear();
+        return 0;
+    }
+
+    sPikaAnimHeaders.resize(count);
+    for (u32 i = 0; i < count; i++) {
+        const u8* e = b + entriesOff + (size_t)i * 20; // entry stride = 20 bytes
+        u32 nameOff = PikaBin_Rd32(e + 0);
+        u16 numFrames = PikaBin_Rd16(e + 4);
+        u16 numBones = PikaBin_Rd16(e + 6);
+        f32 frameRate = PikaBin_RdF(e + 8);
+        u32 framesByte = PikaBin_Rd32(e + 12);
+
+        struct SSBBAnim* a = &sPikaAnimHeaders[i];
+        a->name = (const char*)(b + namesOff + nameOff);
+        a->numFrames = numFrames;
+        a->numBones = numBones;
+        a->frameRate = frameRate;
+        a->frames = (const SSBBBoneFrame*)(b + framesOff + framesByte);
+        pikachu_ssbb_all_anims[i] = a; // fill the master table consumed by SSBBAction_GetAnim
+    }
+    sPikaAnimsLoaded = 1;
+    return 1;
+}
+
 extern "C" u8 PikachuForm_LoadSkeleton(PlayState* play) {
     memset(&sPika, 0, sizeof(sPika));
+
+    // The 322 SSBB animations live in nei/pikachu_anims.bin (no longer compiled in).
+    // Load them once and fill pikachu_ssbb_all_anims[]; without the binary Pikachu
+    // cannot animate, so the transform is unavailable (drop the .bin in the nei folder).
+    if (!PikaAnims_EnsureLoaded()) {
+        return 0;
+    }
 
     // Register SSBB character if not done
     if (!sPikaRegistered) {
@@ -409,6 +617,11 @@ extern "C" void PikachuForm_Cleanup(void) {
     }
     sPika.initialized = 0;
     sPika.colliderReady = 0;
+    // Clear the boss super-damage flags so they don't stay latched after leaving
+    // Pikachu form (BossSuperDamage_IsFormActive reads gPikaGigantamaxMode).
+    gPikaGigantamaxActive = 0;
+    gPikaGigantamaxMode = 0;
+    gPikaThunderActive = 0;
 }
 
 // ── Update ──────────────────────────────────────────────────────────────────
@@ -460,6 +673,8 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     if (sPika.giantCooldown > 0)
         sPika.giantCooldown--;
     sPikaSfxGiant = sPika.gigantamax;
+    gPikaGigantamaxMode = sPika.gigantamax;   // persistent (true any time gigantamax is on)
+    gPikaThunderActive = sPika.thunderActive; // ranged Thunder attack live (for boss reach range)
     {
         const SSBBActionDef* gDef = SSBBAction_Get(sPika.currentAction);
         u8 isInAction = gDef && (gDef->flags & (SSBB_ACT_FLAG_ATTACK | SSBB_ACT_FLAG_LOCKED));
@@ -480,17 +695,20 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
                   (int)Pika_IsAttacking(), (int)sPika.currentAction);
 
     // ── Gigantamax state ──
+    // System 2 (mode): flat 48 MP on activation, manual on/off, NO drain.
+    // System 1 (pokeball): original behavior — 8 MP + 1 MP per 30 frames drain.
     if (sPika.gigantamax) {
         Math_SmoothStepToF(&sPika.giantScale, 6.0f, 0.3f, 0.5f, 0.01f);
-        // MP drain: 1 MP every 30 frames
-        if (++sPika.giantMpDrain >= 30) {
-            sPika.giantMpDrain = 0;
-            if (gSaveContext.magic > 0) {
-                gSaveContext.magic--;
-            } else {
-                sPika.gigantamax = 0;
-                sPika.giantTextTimer = 90;
-                sPika.giantTextType = 1;
+        if (!Pika_IsBrokenMode()) {
+            if (++sPika.giantMpDrain >= 30) {
+                sPika.giantMpDrain = 0;
+                if (gSaveContext.magic > 0) {
+                    gSaveContext.magic--;
+                } else {
+                    sPika.gigantamax = 0;
+                    sPika.giantTextTimer = 90;
+                    sPika.giantTextType = 1;
+                }
             }
         }
     } else if (sPika.giantScale > 1.01f) {
@@ -501,8 +719,119 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     if (sPika.giantTextTimer > 0)
         sPika.giantTextTimer--;
 
-    // ── C-button item dispatch (bypass OOT's blocked Player_ProcessItemButtons) ──
-    if (!Pika_IsAttacking()) {
+    // ── Status chip timer (HUD): combat statuses fade out; sleep is managed by the sleep chain ──
+    if (gPikaStatusTimer > 0) {
+        gPikaStatusTimer--;
+        if (gPikaStatusTimer == 0 && gPikaStatus != 4) {
+            gPikaStatus = 0;
+        }
+    }
+    // ── Mode 2: force-unequip C and D-pad items every frame ──
+    // Those buttons are MOVES in the secret mode; an item equipped there can
+    // still fire through OOT's native item processing mid-ability and softlock.
+    // Non-destructive: MmForm_SaveAndRestrictEquips backed up the pre-transform
+    // equips and MmForm_Reset restores them when the form ends. ([0] = B stays.)
+    if (Pika_IsBrokenMode()) {
+        for (s32 bi = 1; bi <= 7; bi++) {
+            gSaveContext.equips.buttonItems[bi] = ITEM_NONE;
+        }
+    }
+
+    // Iron Tail: full invulnerability while its hammer-slam chain is active.
+    if (sPika.ironPending) {
+        if (!sPika.hammerPending) {
+            sPika.ironPending = 0; // chain finished or was interrupted
+        } else {
+            player->invincibilityTimer = -2; // no visual blink
+            player->actor.colChkInfo.damage = 0;
+            player->stateFlags1 &= ~PLAYER_STATE1_DAMAGED;
+        }
+    }
+
+    // ── Broken-Mode move binds (SYSTEM 2 only) ──
+    // C-Left = Jump, C-Right = Quick Attack, C-Down = Grass dash; D-pad: Up =
+    // Gigantamax/Charge, Down = Iron Tail, Right = Dark bomb, Left = Sleep.
+    // Rebindable via gPikaBind.* (Skijer's NEI → Controls). Physical X/Y/RB are
+    // expected to be mapped to C-Left/C-Right/C-Down in the input editor.
+    // System 1 (pokeball) instead keeps the ORIGINAL C-button ITEM dispatch
+    // below — items on C, exactly as before the mode existed.
+    if (Pika_IsBrokenMode()) {
+        u16 movePressed = play->state.input[0].press.button;
+        if (player->stateFlags1 & blockMask) {
+            movePressed = 0;
+        }
+        u16 bindJump = (u16)CVarGetInteger("gPikaBind.Jump", BTN_CLEFT);
+        u16 bindQuick = (u16)CVarGetInteger("gPikaBind.QuickAttack", BTN_CRIGHT);
+        u16 bindGrass = (u16)CVarGetInteger("gPikaBind.Grass", BTN_CDOWN);
+        u16 bindGmax = (u16)CVarGetInteger("gPikaBind.Gmax", BTN_DUP);
+        u16 bindIron = (u16)CVarGetInteger("gPikaBind.Iron", BTN_DDOWN);
+        u16 bindDark = (u16)CVarGetInteger("gPikaBind.Dark", BTN_DRIGHT);
+        u16 bindSleep = (u16)CVarGetInteger("gPikaBind.Sleep", BTN_DLEFT);
+        u8 canStart = (!Pika_IsAttacking() || Pika_CanCancel()) && !sPika.grassDashActive && !sPika.ironPending &&
+                      !sPika.darkPending && !sPika.sleepState && !sPika.dragonCharging &&
+                      !(player->stateFlags1 & PLAYER_STATE1_IN_WATER);
+
+        if (movePressed && canStart) {
+            if (CHECK_BTN_ALL(movePressed, bindJump)) {
+                // Jump — current Roc's Feather behavior (ground + air double jump).
+                PikaItem_RocsCape(play, player, 0);
+                goto advance_anim;
+            }
+            if (CHECK_BTN_ALL(movePressed, bindQuick)) {
+                // Quick Attack — current boomerang behavior (2-phase zip dash).
+                PikaItem_QuickAtk(play, player, 0);
+                player->actor.shape.rot.y = player->actor.world.rot.y;
+                player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+                goto advance_anim;
+            }
+            if (CHECK_BTN_ALL(movePressed, bindGrass) && onGround) {
+                // Grass dash — fast forward ground charge with a wind cone. No magic.
+                sPika.grassDashActive = 1;
+                Pika_SetAction(SSBB_ACT_SPECIAL_S);
+                player->actor.shape.rot.y = player->actor.world.rot.y;
+                goto advance_anim;
+            }
+            if (CHECK_BTN_ALL(movePressed, bindIron)) {
+                // Iron Tail — drives the existing hammer slam chain (JumpB windup
+                // → EscapeAir slam: quake + hammer-grade collider), plus full
+                // invulnerability for every active frame.
+                sPika.ironPending = 1;
+                sPika.hammerPending = 1;
+                Pika_SetAction(SSBB_ACT_JUMP_B);
+                player->actor.shape.rot.y = player->actor.world.rot.y;
+                goto advance_anim;
+            }
+            if (CHECK_BTN_ALL(movePressed, bindDark)) {
+                // Dark move — summon a bomb out of nowhere and hurl it (no ammo cost).
+                sPika.darkPending = 1;
+                Pika_SetAction(SSBB_ACT_SMASH_THROW_F);
+                player->actor.shape.rot.y = player->actor.world.rot.y;
+                goto advance_anim;
+            }
+            if (CHECK_BTN_ALL(movePressed, bindSleep) && onGround && speed < 1.0f) {
+                // Voluntary sleep — heal hearts while defenseless (interrupted by hits).
+                sPika.sleepState = 1;
+                sPika.sleepTimer = 0;
+                Pika_SetAction(SSBB_ACT_FURA_SLEEP_START);
+                goto advance_anim;
+            }
+            if (CHECK_BTN_ALL(movePressed, bindGmax)) {
+                if (sPika.gigantamax || gSaveContext.magic >= MAGIC_NORMAL_METER) {
+                    // Toggle Gigantamax (on costs 48 MP inside the handler; off is free).
+                    PikaItem_Gigantamax(play, player, 0);
+                    goto advance_anim;
+                }
+                if (onGround) {
+                    // Dragon charge — Smash up-taunt; grants 48 MP when it finishes.
+                    sPika.dragonCharging = 1;
+                    Pika_SetAction(SSBB_ACT_APPEAL_HI);
+                    goto advance_anim;
+                }
+            }
+        }
+    } else if (!Pika_IsAttacking()) {
+        // ── SYSTEM 1 (pokeball): original C-button item dispatch ──
+        // (bypasses OOT's blocked Player_ProcessItemButtons — unchanged behavior)
         static const u16 cBtns[] = { BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT };
         u16 pressed = play->state.input[0].press.button;
         for (s32 ci = 0; ci < 3; ci++) {
@@ -613,16 +942,65 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
     sPika.inDamage = 0;
 
     // ── Swimming — HIGHEST PRIORITY after damage ──
-    // Pikachu is small: lower his position 5 units so water detection keeps him submerged
+    // Zora-style 3D water movement (MM swim kernel): hold A = fast swim (the HUD
+    // swaps the A icon fighting→water), hold R = regular swim. Stick Y pitches
+    // (up = dive, MM convention), stick X turns. Idle floats on OOT's vanilla
+    // surface-swim so surfacing/wading still behave.
     if (player->stateFlags1 & PLAYER_STATE1_IN_WATER) {
-        player->actor.world.pos.y -= 2.2f;
-        player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
-        if (speed > 1.0f) {
-            if (sPika.currentAction != SSBB_ACT_SWIM_F)
-                Pika_SetAction(SSBB_ACT_SWIM_F);
+        u16 curBtn = play->state.input[0].cur.button;
+        // 3D zora swim is a SYSTEM 2 feature; system 1 (pokeball) keeps the
+        // original surface-swim behavior below.
+        u8 swimMode = Pika_IsBrokenMode();
+        u8 fastSwim = swimMode && CHECK_BTN_ALL(curBtn, BTN_A);
+        u8 zoraSwim = swimMode && !fastSwim && CHECK_BTN_ALL(curBtn, BTN_R);
+
+        gPikaInWater = 1;
+        sPika.grassDashActive = 0;
+        sPika.ironPending = 0;
+        sPika.darkPending = 0;
+        sPika.sleepState = 0;
+        sPika.dragonCharging = 0;
+
+        if (fastSwim || zoraSwim) {
+            // 3-dimensional velocity (lifted from the MM Zora swim port):
+            //   linearVelocity = cos(pitch) * speed   (horizontal, along yaw)
+            //   velocity.y     = -sin(pitch) * speed  (vertical; negative pitch = up)
+            f32 sx = play->state.input[0].rel.stick_x;
+            f32 sy = play->state.input[0].rel.stick_y;
+            s16 pitchTarget = (s16)(sy * 0xC8);
+            Math_SmoothStepToS(&sPika.swimPitch, pitchTarget, 4, 0x400, 0x40);
+            player->actor.world.rot.y += (s16)(-sx * 60.0f);
+            player->actor.shape.rot.y = player->actor.world.rot.y;
+            player->yaw = player->actor.world.rot.y;
+
+            f32 targetSpd = fastSwim ? 9.0f : 4.5f;
+            Math_AsymStepToF(&sPika.swimSpeed, targetSpd, 0.6f, 0.4f);
+            player->linearVelocity = Math_CosS(sPika.swimPitch) * sPika.swimSpeed;
+            player->actor.velocity.y = -Math_SinS(sPika.swimPitch) * sPika.swimSpeed;
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            sPika.swim3d = 1;
+
+            // Fast swim = forward-air drill (torpedo spin); regular = swim stroke.
+            SSBBActionId wantSwim = fastSwim ? SSBB_ACT_ATTACK_FAIR : SSBB_ACT_SWIM_F;
+            if (sPika.currentAction != wantSwim || Pika_ActionFinished()) {
+                Pika_SetAction(wantSwim);
+            }
         } else {
-            if (sPika.currentAction != SSBB_ACT_SWIM)
-                Pika_SetAction(SSBB_ACT_SWIM);
+            if (sPika.swim3d) {
+                sPika.swim3d = 0;
+                sPika.swimSpeed = 0.0f;
+                sPika.swimPitch = 0;
+            }
+            // Pikachu is small: lower his position so water detection keeps him submerged
+            player->actor.world.pos.y -= 2.2f;
+            player->stateFlags3 &= ~PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            if (speed > 1.0f) {
+                if (sPika.currentAction != SSBB_ACT_SWIM_F)
+                    Pika_SetAction(SSBB_ACT_SWIM_F);
+            } else {
+                if (sPika.currentAction != SSBB_ACT_SWIM)
+                    Pika_SetAction(SSBB_ACT_SWIM);
+            }
         }
         sPika.hasGroundJumped = 0;
         sPika.hasAirJumped = 0;
@@ -630,6 +1008,12 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
         sPika.hammerPending = 0;
         sPika.smashCharging = 0;
         goto advance_anim;
+    }
+    gPikaInWater = 0;
+    if (sPika.swim3d) {
+        sPika.swim3d = 0;
+        sPika.swimSpeed = 0.0f;
+        sPika.swimPitch = 0;
     }
 
     // ── FuraFura stun (shield break or Deku Nut) — ~5 seconds (300 frames) ──
@@ -1048,6 +1432,161 @@ extern "C" void PikachuForm_Update(Player* player, PlayState* play) {
             Pika_SetAction(onGround ? SSBB_ACT_WAIT1 : SSBB_ACT_FALL);
         }
         goto advance_anim;
+    }
+
+    // ── Grass dash chain (C-Down) — fast forward ground charge with a wind cone ──
+    // Goron-roll style steering (camera-relative yaw), Skull Bash charge anim,
+    // low wind-arrow-type damage. No magic cost. Ends on release / wall / air.
+    if (sPika.grassDashActive) {
+        u16 grassCur = play->state.input[0].cur.button;
+        u16 bindGrassHeld = (u16)CVarGetInteger("gPikaBind.Grass", BTN_CDOWN);
+        if (sPika.currentAction != SSBB_ACT_SPECIAL_S || !CHECK_BTN_ALL(grassCur, bindGrassHeld) || !onGround) {
+            sPika.grassDashActive = 0;
+            if (sPika.currentAction == SSBB_ACT_SPECIAL_S) {
+                Pika_SetAction(SSBB_ACT_SPECIAL_S_END);
+            }
+        } else {
+            f32 gsx = play->state.input[0].rel.stick_x;
+            f32 gsy = play->state.input[0].rel.stick_y;
+            f32 gmag = sqrtf(gsx * gsx + gsy * gsy);
+            if (gmag > 12.0f) {
+                s16 steerTarget = Math_Atan2S(gsy, -gsx) + Camera_GetInputDirYaw(GET_ACTIVE_CAM(play));
+                Math_SmoothStepToS(&player->actor.world.rot.y, steerTarget, 4, 0x800, 0x80);
+            }
+            player->actor.shape.rot.y = player->actor.world.rot.y;
+            player->yaw = player->actor.world.rot.y;
+            player->linearVelocity = 16.0f;
+            player->actor.speedXZ = 16.0f;
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+
+            if (sPika.colliderReady) {
+                f32 gyaw = (f32)player->actor.world.rot.y * (M_PI / 0x8000);
+                sPika.atCyl.dim.radius = 24;
+                sPika.atCyl.dim.height = 30;
+                sPika.atCyl.info.toucher.dmgFlags = DMG_ARROW_NORMAL; // wind-arrow-class ranged damage
+                sPika.atCyl.info.toucher.damage = 2;                  // low damage by design
+                sPika.atCyl.info.toucher.effect = 0x00;
+                sPika.atCyl.info.toucherFlags = TOUCH_ON | TOUCH_SFX_NONE;
+                sPika.atCyl.base.atFlags = AT_ON | AT_TYPE_PLAYER;
+                sPika.atCyl.base.actor = &player->actor;
+                Collider_UpdateCylinder(&player->actor, &sPika.atCyl);
+                sPika.atCyl.dim.pos.x += (s16)(sinf(gyaw) * 20.0f);
+                sPika.atCyl.dim.pos.z += (s16)(cosf(gyaw) * 20.0f);
+                CollisionCheck_SetAT(play, &play->colChkCtx, &sPika.atCyl.base);
+            }
+            if (Pika_ActionFinished()) {
+                Pika_SetAction(SSBB_ACT_SPECIAL_S); // loop the charge anim while held
+            }
+            goto advance_anim;
+        }
+    }
+
+    // (Iron Tail rides the hammer chain above — JumpB → EscapeAir with quake;
+    // its invulnerability is applied near the top of Update while ironPending.)
+
+    // ── Dark move chain (D-Right) — summon a bomb from nowhere and hurl it ──
+    // Spawns a real EN_BOM with throw velocity. Deliberately NO ammo cost.
+    if (sPika.darkPending) {
+        if (sPika.currentAction != SSBB_ACT_SMASH_THROW_F) {
+            sPika.darkPending = 0;
+        } else {
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            player->actor.velocity.x = 0;
+            player->actor.velocity.z = 0;
+            player->linearVelocity = 0;
+            player->actor.speedXZ = 0;
+
+            if (sPika.actionFrame == 5) {
+                f32 dyaw = (f32)player->actor.world.rot.y * (M_PI / 0x8000);
+                Vec3f dpos = { player->actor.world.pos.x + sinf(dyaw) * 25.0f, player->actor.world.pos.y + 40.0f,
+                               player->actor.world.pos.z + cosf(dyaw) * 25.0f };
+                Actor* dbomb = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_BOM, dpos.x, dpos.y, dpos.z, 0,
+                                           player->actor.shape.rot.y, 0, 0);
+                if (dbomb != NULL) {
+                    dbomb->world.rot.y = player->actor.shape.rot.y;
+                    dbomb->speedXZ = 12.0f;
+                    dbomb->velocity.y = 8.0f;
+                    dbomb->gravity = -1.5f;
+                }
+                Audio_PlayActorSound2(&player->actor, NA_SE_IT_BOMB_IGNIT);
+            }
+            if (Pika_ActionFinished()) {
+                sPika.darkPending = 0;
+                Pika_SetAction(SSBB_ACT_WAIT1);
+            }
+            goto advance_anim;
+        }
+    }
+
+    // ── Sleep chain (D-Left) — heal hearts while asleep; any hit interrupts ──
+    // (The damage branch above changes the action, which lands in the !inSleepAnim
+    // reset here.) Hearts only — magic untouched. Bubbles sell the snooze.
+    if (sPika.sleepState) {
+        u8 inSleepAnim =
+            (sPika.currentAction == SSBB_ACT_FURA_SLEEP_START || sPika.currentAction == SSBB_ACT_FURA_SLEEP_LOOP ||
+             sPika.currentAction == SSBB_ACT_FURA_SLEEP_END);
+        if (!inSleepAnim) {
+            sPika.sleepState = 0;
+            if (gPikaStatus == 4) {
+                gPikaStatus = 0;
+            }
+        } else {
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            player->actor.velocity.x = 0;
+            player->actor.velocity.z = 0;
+            player->linearVelocity = 0;
+            player->actor.speedXZ = 0;
+            gPikaStatus = 4; // sleep chip on the HUD
+
+            // Small sleep bubbles above the head while in the loop.
+            if (sPika.sleepState == 2 && (play->gameplayFrames % 12) == 0) {
+                Vec3f bpos = player->actor.world.pos;
+                bpos.y += 22.0f;
+                EffectSsBubble_Spawn(play, &bpos, 0.0f, 5.0f, 5.0f, 0.10f);
+            }
+
+            if (sPika.sleepState == 1 && Pika_ActionFinished()) {
+                sPika.sleepState = 2;
+                Pika_SetAction(SSBB_ACT_FURA_SLEEP_LOOP);
+            } else if (sPika.sleepState == 2) {
+                sPika.sleepTimer++;
+                if ((sPika.sleepTimer % 16) == 0) {
+                    Health_ChangeBy(play, 16); // one heart per tick — hearts only
+                }
+                if (Pika_ActionFinished()) {
+                    Pika_SetAction(SSBB_ACT_FURA_SLEEP_LOOP);
+                }
+                if (gSaveContext.health >= gSaveContext.healthCapacity && sPika.sleepTimer > 60) {
+                    sPika.sleepState = 3;
+                    Pika_SetAction(SSBB_ACT_FURA_SLEEP_END);
+                }
+            } else if (sPika.sleepState == 3 && Pika_ActionFinished()) {
+                sPika.sleepState = 0;
+                gPikaStatus = 0;
+                Pika_SetAction(SSBB_ACT_WAIT1);
+            }
+            goto advance_anim;
+        }
+    }
+
+    // ── Dragon charge chain (D-Up with <48 MP) — up-taunt grants a full meter ──
+    if (sPika.dragonCharging) {
+        if (sPika.currentAction != SSBB_ACT_APPEAL_HI) {
+            sPika.dragonCharging = 0;
+        } else {
+            player->stateFlags3 |= PLAYER_STATE3_PAUSE_ACTION_FUNC;
+            player->actor.velocity.x = 0;
+            player->actor.velocity.z = 0;
+            player->linearVelocity = 0;
+            player->actor.speedXZ = 0;
+            if (Pika_ActionFinished()) {
+                sPika.dragonCharging = 0;
+                Magic_RequestChange(play, MAGIC_NORMAL_METER, MAGIC_ADD); // +48
+                Audio_PlayActorSound2(&player->actor, NA_SE_SY_CORRECT_CHIME);
+                Pika_SetAction(SSBB_ACT_WAIT1);
+            }
+            goto advance_anim;
+        }
     }
 
     // ── Forward Smash charge chain: AttackS4Hold (loop while A held) → AttackS4S (release) ──
@@ -2698,6 +3237,73 @@ advance_anim:
 
 // ── Draw ────────────────────────────────────────────────────────────────────
 
+// ── Grass dash wind cone (Pegasus-boots cone, grass-green palette) ───────────
+// Same 9-vert cone as equip_pegasus.c: tip at the front (Y=0), 8-vert base ring
+// behind (Y=8000, r=4000). Texture loaded at RUNTIME (a raw pointer inside a
+// static DL would be treated as an OTR path by SoH and crash), and segment 0x08
+// re-set every frame for the animated scroll.
+extern "C" char sWindEffTexture[]; // I8 64x64 wind texture (z_magic_wind.inc.c)
+
+static Vtx sPikaGrassConeVtx[] = {
+    VTX(0, 0, 0, 512, 2048, 0xFF, 0xFF, 0xFF, 0xFF), // 0: tip (front)
+    VTX(4000, 8000, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x00),    VTX(2828, 8000, 2828, 256, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(0, 8000, 4000, 512, 0, 0xFF, 0xFF, 0xFF, 0x00),  VTX(-2828, 8000, 2828, 768, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(-4000, 8000, 0, 1024, 0, 0xFF, 0xFF, 0xFF, 0x00), VTX(-2828, 8000, -2828, 1280, 0, 0xFF, 0xFF, 0xFF, 0x00),
+    VTX(0, 8000, -4000, 1536, 0, 0xFF, 0xFF, 0xFF, 0x00), VTX(2828, 8000, -2828, 1792, 0, 0xFF, 0xFF, 0xFF, 0x00),
+};
+
+static Gfx sPikaGrassConeGeo[] = {
+    gsDPSetCombineLERP(TEXEL1, PRIMITIVE, PRIM_LOD_FRAC, TEXEL0, TEXEL1, TEXEL0, PRIM_LOD_FRAC, TEXEL0, PRIMITIVE,
+                       ENVIRONMENT, COMBINED, ENVIRONMENT, COMBINED, 0, SHADE, 0),
+    gsDPSetRenderMode(G_RM_PASS, G_RM_AA_ZB_XLU_SURF2),
+    gsSPClearGeometryMode(G_CULL_BACK | G_FOG | G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR),
+    gsDPSetPrimColor(0, 0x80, 190, 255, 150, 255), // grass-type green
+    gsDPSetEnvColor(40, 160, 30, 0),
+    gsSPDisplayList(0x08000001), // segment 0x08: animated tex scroll (set per-frame)
+    gsSPVertex(sPikaGrassConeVtx, 9, 0),
+    gsSP2Triangles(0, 1, 2, 0, 0, 2, 3, 0),
+    gsSP2Triangles(0, 3, 4, 0, 0, 4, 5, 0),
+    gsSP2Triangles(0, 5, 6, 0, 0, 6, 7, 0),
+    gsSP2Triangles(0, 7, 8, 0, 0, 8, 1, 0),
+    gsSPEndDisplayList(),
+};
+
+static void Pika_DrawGrassCone(PlayState* play, Player* p) {
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+
+    Matrix_Push();
+    f32 sinY = Math_SinS(p->actor.shape.rot.y);
+    f32 cosY = Math_CosS(p->actor.shape.rot.y);
+    Matrix_Translate(p->actor.world.pos.x + sinY * 60.0f, p->actor.world.pos.y + 18.0f,
+                     p->actor.world.pos.z + cosY * 60.0f, MTXMODE_NEW);
+    Matrix_RotateY(BINANG_TO_RAD(p->actor.shape.rot.y), MTXMODE_APPLY);
+    Matrix_RotateX(BINANG_TO_RAD((s16)-0x4000), MTXMODE_APPLY); // tip points forward
+    Matrix_Scale(0.012f, 0.012f, 0.012f, MTXMODE_APPLY);
+
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+
+    gDPPipeSync(POLY_XLU_DISP++);
+    gDPSetTextureLUT(POLY_XLU_DISP++, G_TT_NONE);
+    gSPTexture(POLY_XLU_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPLoadTextureBlock(POLY_XLU_DISP++, sWindEffTexture, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
+                        G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, G_TX_NOLOD, G_TX_NOLOD);
+    gDPLoadMultiBlock(POLY_XLU_DISP++, sWindEffTexture, 0x0100, 1, G_IM_FMT_I, G_IM_SIZ_8b, 64, 64, 0,
+                      G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, 6, 6, 14, 14);
+
+    u32 frames = play->gameplayFrames;
+    gSPSegment(POLY_XLU_DISP++, 0x08,
+               (uintptr_t)Gfx_TwoTexScroll(play->state.gfxCtx, 0, -(s32)(frames * 1), (s32)(frames * 20), 0x40, 0x40,
+                                           1, -(s32)(frames * 2), (s32)(frames * 10), 0x40, 0x40));
+
+    gSPDisplayList(POLY_XLU_DISP++, sPikaGrassConeGeo);
+
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 extern "C" void PikachuForm_Draw(PlayState* play, Player* player) {
     if (!sPika.initialized || !sPika.charInst.ssbbAnim)
         return;
@@ -2705,6 +3311,11 @@ extern "C" void PikachuForm_Draw(PlayState* play, Player* player) {
     // Damage flicker
     if (player->invincibilityTimer > 0 && (play->gameplayFrames % 4) < 2)
         return;
+
+    // Grass dash: wind cone in front of Pikachu (XLU, world-space).
+    if (sPika.grassDashActive) {
+        Pika_DrawGrassCone(play, player);
+    }
 
     Vec3f pos = player->actor.world.pos;
     Vec3s rot = player->actor.shape.rot;
@@ -3201,9 +3812,17 @@ extern "C" u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item) {
         sPika.giantTextTimer = 90;
         sPika.giantTextType = 1;
     } else {
-        if (gSaveContext.magic < 8)
-            return 1;
-        gSaveContext.magic -= 8;
+        if (Pika_IsBrokenMode()) {
+            // System 2: flat 48 MP (manual on/off, no drain). RequestChange
+            // returns false (and beeps) when the meter can't cover it.
+            if (!Magic_RequestChange(play, MAGIC_NORMAL_METER, MAGIC_CONSUME_NOW))
+                return 1;
+        } else {
+            // System 1 (pokeball): original cost — 8 MP up front (+ drain in Update).
+            if (gSaveContext.magic < 8)
+                return 1;
+            gSaveContext.magic -= 8;
+        }
         sPika.gigantamax = 1;
         sPika.giantScale = 1.0f;
         sPika.giantMpDrain = 0;
@@ -3212,4 +3831,35 @@ extern "C" u8 PikaItem_Gigantamax(PlayState* play, Player* player, s32 item) {
         Audio_PlayActorSound2(&player->actor, NA_SE_SY_CORRECT_CHIME);
     }
     return 1;
+}
+
+// ── Status interception (HUD chip) ──────────────────────────────────────────
+// Called from z_player.c right before Player_UpdateCommon consumes the AC hit
+// (same site as Sm64Mario_InterceptDamage) — the ONLY moment acHitEffect still
+// holds the damage type: 1=fire, 2=ice, 3=electric (z_player.c:5170/5328-5331).
+// Cosmetic only: sets the Pokemon-style status chip, never scrubs the damage.
+extern "C" void PikachuForm_InterceptStatus(PlayState* play, Player* player) {
+    (void)play;
+    if (!sPika.initialized || !Pika_IsBrokenMode()) {
+        return; // status chip is a SYSTEM 2 (mode) feature only
+    }
+    if (!(player->cylinder.base.acFlags & AC_HIT)) {
+        return;
+    }
+    switch (player->actor.colChkInfo.acHitEffect) {
+        case 1: // fire → burned
+            gPikaStatus = 2;
+            gPikaStatusTimer = 600;
+            break;
+        case 2: // ice → freeze
+            gPikaStatus = 3;
+            gPikaStatusTimer = 600;
+            break;
+        case 3: // electric → paralyzed
+            gPikaStatus = 1;
+            gPikaStatusTimer = 600;
+            break;
+        default:
+            break;
+    }
 }

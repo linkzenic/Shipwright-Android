@@ -12,7 +12,9 @@ typedef enum {
     /* 0 */ FD2_SIGNAL_NONE,
     /* 1 */ FD2_SIGNAL_FLY,
     /* 2 */ FD2_SIGNAL_DEATH,
-    /* 100 */ FD2_SIGNAL_GROUND = 100
+    /* 100 */ FD2_SIGNAL_GROUND = 100,
+    /* 200 */ FD2_SIGNAL_AIRKILL = 200 // FD/Pika killed the flying serpent: Boss_Fd2 runs its full
+                                       // death sequence (cutscene camera + all defeat triggers)
 } BossFd2Signal;
 
 typedef struct {

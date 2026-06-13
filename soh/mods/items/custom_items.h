@@ -72,6 +72,9 @@ typedef struct {
     u16 gustJarButtonMask;
     s8 gustJarPrevInvincibility;
     Actor* gustJarPotActor;
+    u8 gustJarBlowDir;        // Direction toggle: 0 = SUCK (hold C absorbs, release C blows
+                              // proportional to charge), 1 = BLOW (hold C directly blows
+                              // with current element). Toggled by L+R combo.
 
     // Shovel
     u8 shovelActive;
@@ -343,6 +346,8 @@ typedef struct {
     s8 minishCapDestIdx;   // Destination pod soil index
     u8 minishCapShrinking; // 1 = shrinking player during departure fade
     u8 minishCapGrowing;   // 1 = snap to start scale, 2 = growing to normal
+    u8 minishTinyActive;   // 1 = tiny toggle mode active (used away from pod soils)
+    u8 minishTinyAnim;     // 0 = none, 1 = shrinking toward tiny, 2 = growing back to normal
 
     // Postman Hat (Fast Travel via Mailboxes)
     u8 postmanHatWarpMode;         // Warp map active
@@ -365,6 +370,15 @@ typedef struct {
     u8 lanternCatchWindow; // 1 = catch frames active this frame
     u8 lanternCatchState;  // 0=none, 1=playing catch anim, 2=showing message
     s16 lanternHealTimer;  // Green fire regen countdown (150 frames)
+
+    // ── Gale Boomerang (Twilight Upgrade mode) ───────────────────────────
+    // Multi-target routing state. During boomerang aim with Gale mode active,
+    // pressing L or R locks an additional enemy as a route point. The thrown
+    // boomerang visits each target in sequence before returning to Link.
+    Actor* galeBoomerangTargets[4]; // up to 4 sequential targets
+    u8 galeBoomerangTargetCount;
+    u8 galeBoomerangCurrentTargetIdx;
+    u8 galeBoomerangLockHeld; // L/R debounce (true while either still pressed)
 
     // Shared (reused by items that never run simultaneously)
     Vec3f sharedProjectilePos;

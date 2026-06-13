@@ -1237,7 +1237,9 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Fix L&Z Page Switch in Pause Menu", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"))
         .Options(CheckboxOptions().Tooltip(
-            "Makes L and R switch pages like on the GameCube. Z opens the Debug Menu instead."));
+            "Makes L and R switch kaleido pages like on the GameCube. Z opens the Debug Menu instead.\n"
+            "Also mirrored by 'Kaleido Page Switch Button' in Skijer's NEI > Controls. When ON, the NEI in-page\n"
+            "features (inventory sub-page, extended equipment, SW97 arrow mode) use Z; when OFF (default) they use L."));
     AddWidget(path, "Wide Door Ranges", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("WideShutterDoorRange"))
         .Options(CheckboxOptions().Tooltip("Restores the wider range of certain shutter doors from NTSC 1.0.\n"

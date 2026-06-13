@@ -154,6 +154,15 @@ void EnBoom_Init(Actor* thisx, PlayState* play) {
         this->collider.info.toucher.dmgFlags = 0x00000002; // DMG_HAMMER
     }
 
+    // Zora cutter fins (params 1=left, 2=right): MM does 2 damage per fin
+    // (DMG_ZORA_BOOMERANG, qty=2). Vanilla OOT boomerang only does 1 — override
+    // the qty here when spawned by Player_StartZoraBoomerang so the Zora form
+    // matches MM. Flag bit (0x10) is identical between DMG_BOOMERANG (OOT) and
+    // DMG_ZORA_BOOMERANG (MM), so the default flag is left as-is.
+    if (this->actor.params == 1 || this->actor.params == 2) {
+        this->collider.info.toucher.damage = 2;
+    }
+
     EnBoom_SetupAction(this, EnBoom_Fly);
 }
 

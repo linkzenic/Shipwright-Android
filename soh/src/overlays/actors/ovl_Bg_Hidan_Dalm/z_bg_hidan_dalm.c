@@ -155,7 +155,12 @@ void BgHidanDalm_Wait(BgHidanDalm* this, PlayState* play) {
         this->dyna.actor.world.pos.x += 32.5f * Math_SinS(this->dyna.actor.world.rot.y);
         this->dyna.actor.world.pos.z += 32.5f * Math_CosS(this->dyna.actor.world.rot.y);
 
-        Player_SetCsActionWithHaltedActors(play, &this->dyna.actor, 8);
+        // SM64 Mario mode: the player is driven by libsm64, so a cutscene
+        // csAction never releases → softlock. Skip the player halt; the totem
+        // still rotates/shrinks/breaks and Mario keeps control.
+        if (!CVarGetInteger("gSm64Mario", 0)) {
+            Player_SetCsActionWithHaltedActors(play, &this->dyna.actor, 8);
+        }
         this->dyna.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         this->actionFunc = BgHidanDalm_Shrink;
         this->dyna.actor.bgCheckFlags &= ~2;
@@ -176,7 +181,10 @@ void BgHidanDalm_Shrink(BgHidanDalm* this, PlayState* play) {
     Vec3f pos;
 
     if (Math_StepToF(&this->dyna.actor.scale.x, 0.0f, 0.004f)) {
-        Player_SetCsActionWithHaltedActors(play, &this->dyna.actor, 7);
+        // See BgHidanDalm_Wait: don't halt/release the player in Mario mode.
+        if (!CVarGetInteger("gSm64Mario", 0)) {
+            Player_SetCsActionWithHaltedActors(play, &this->dyna.actor, 7);
+        }
         Actor_Kill(&this->dyna.actor);
     }
 

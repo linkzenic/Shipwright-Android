@@ -28,6 +28,19 @@ void Player_InitGustJarIA(PlayState* play, Player* this) {
     Collider_SetCylinder(play, &gCustomItemState.gustJarCollider, &this->actor, &sGustJarColliderInit);
 }
 
+// Returns the medallion ITEM_* matching the gust jar's current element, or -1
+// if the element is WIND (default — no medallion overlay needed).
+s32 GustJar_GetActiveMedallionItem(void) {
+    switch (gjElement) {
+        case GUST_ELEMENT_FIRE:   return ITEM_MEDALLION_FIRE;
+        case GUST_ELEMENT_ICE:    return ITEM_MEDALLION_WATER;
+        case GUST_ELEMENT_SHADOW: return ITEM_MEDALLION_SHADOW;
+        case GUST_ELEMENT_SPIRIT: return ITEM_MEDALLION_SPIRIT;
+        case GUST_ELEMENT_LIGHT:  return ITEM_MEDALLION_LIGHT;
+        default:                  return -1; // WIND or unknown
+    }
+}
+
 static void GustJar_ClearScaleCache(void); // Forward declaration
 
 // =============================================================================
@@ -44,14 +57,12 @@ static void GustJar_Equip(PlayState* play, Player* player) {
     gjBlowTimer = 0;
     gjCooldownTimer = 0;
 
-    if (Player_IsZTargeting(player)) {
-        gjAimMode = 1;
-        gjFirstPerson = 0;
-    } else {
-        gjAimMode = 0;
-        FirstPerson_Init(player, play);
-        gjFirstPerson = 1;
-    }
+    // Equip does NOT enter first-person. Link starts in "holding the gust jar"
+    // free-roam state with the carry pose applied each frame. C-Up explicitly
+    // toggles first-person aim. Z-target works independently (rotates Link
+    // toward focusActor like the bow, without forcing first-person).
+    gjFirstPerson = 0;
+    gjAimMode = 0;
     ItemEquip_PlayEquipSFX(play, player);
 }
 
@@ -79,12 +90,11 @@ static void GustJar_Unequip(PlayState* play, Player* player) {
 // =============================================================================
 
 static s16 GustJar_GetAimYaw(PlayState* play, Player* player) {
-    // Z-targeting ALWAYS overrides — aim at focus actor regardless of aim mode
+    // Priority: Z-target (lock-on) → first-person → Link's facing yaw.
     if (Player_IsZTargeting(player) && player->focusActor != NULL) {
         return Math_Vec3f_Yaw(&player->actor.world.pos, &player->focusActor->focus.pos);
     }
-    // Otherwise use aim mode
-    if (gjAimMode == 0 && gjFirstPerson) {
+    if (gjFirstPerson) {
         return FirstPerson_GetAimYaw(player);
     }
     return player->actor.shape.rot.y;
@@ -282,14 +292,12 @@ static void GustJar_Absorb(Player* player, PlayState* play, Vec3f* nozzle, s16 a
         }
     }
 
-    // Check overheat → transition to blow
-    if (gjHeatTimer >= GUST_HEAT_MAX) {
-        GustJar_ClearScaleCache();
-        gjMode = GUST_MODE_BLOW;
-        gjBlowActive = 1;
-        gjBlowTimer = GUST_BLOW_DURATION;
-        Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
-        Player_PlaySfx(player, NA_SE_PL_MAGIC_WIND_NORMAL);
+    // Cap heat at max — DO NOT auto-transition to blow. The blow is now
+    // manual: SUCK direction fires it on C-release (proportional to charge);
+    // BLOW direction fires it directly on C-hold. Per user request: blow
+    // never releases automatically.
+    if (gjHeatTimer > GUST_HEAT_MAX) {
+        gjHeatTimer = GUST_HEAT_MAX;
     }
 }
 
@@ -435,7 +443,10 @@ static void GustJar_Blow(Player* player, PlayState* play, Vec3f* nozzle, s16 aim
         gjMode = GUST_MODE_IDLE;
         gjBlowActive = 0;
         gjHeatTimer = 0;
-        gjCooldownTimer = GUST_COOLDOWN;
+        // No cooldown — the old GUST_COOLDOWN (120 frames) was for the legacy
+        // auto-overheat behaviour. With manual SUCK/BLOW direction control,
+        // the user should be able to immediately press C again to suck or
+        // blow without a 2-second lockout.
         Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
     }
 }
@@ -448,6 +459,36 @@ static void GustJar_Blow(Player* player, PlayState* play, Vec3f* nozzle, s16 aim
 
 void CustomItems_DrawGustJar(Player* this, PlayState* play) {
     GustJarPot_Draw(this, play);
+}
+
+// =============================================================================
+// Hold Pose — override Link's arm joints with frame 8 of carryB_free
+// =============================================================================
+//
+// While the gust jar is equipped, Link visually holds it in front of his chest
+// using the vanilla "carry pot with both hands" pose (gPlayerAnim_link_normal_
+// carryB_free at frame 8). We extract that exact frame's joint rotations and
+// copy ONLY the 6 arm bones (shoulder/forearm/hand × L/R) on top of whatever
+// animation Link is currently playing — walk, run, idle, jump, etc. all
+// continue normally; only the arms snap to the carry pose. Same pattern as
+// item_ballchain.c (BallChain_SetEquipPose), but data-driven from the anim
+// asset instead of hardcoded magic numbers.
+
+static void GustJar_ApplyCarryPose(Player* player, PlayState* play) {
+    Vec3s frameBuf[PLAYER_LIMB_MAX];
+
+    // AnimationContext_SetLoadFrame does an immediate synchronous memcpy of
+    // the frame's joint table into frameBuf (z_skelanime.c:909) — values are
+    // available right away.
+    AnimationContext_SetLoadFrame(play, (LinkAnimationHeader*)&gPlayerAnim_link_normal_carryB_free,
+                                  8, PLAYER_LIMB_MAX, frameBuf);
+
+    player->skelAnime.jointTable[PLAYER_LIMB_L_SHOULDER] = frameBuf[PLAYER_LIMB_L_SHOULDER];
+    player->skelAnime.jointTable[PLAYER_LIMB_L_FOREARM]  = frameBuf[PLAYER_LIMB_L_FOREARM];
+    player->skelAnime.jointTable[PLAYER_LIMB_L_HAND]     = frameBuf[PLAYER_LIMB_L_HAND];
+    player->skelAnime.jointTable[PLAYER_LIMB_R_SHOULDER] = frameBuf[PLAYER_LIMB_R_SHOULDER];
+    player->skelAnime.jointTable[PLAYER_LIMB_R_FOREARM]  = frameBuf[PLAYER_LIMB_R_FOREARM];
+    player->skelAnime.jointTable[PLAYER_LIMB_R_HAND]     = frameBuf[PLAYER_LIMB_R_HAND];
 }
 
 // =============================================================================
@@ -487,57 +528,73 @@ void Handle_GustJar(Player* this, PlayState* play) {
 
     if (!gjEquipped) {
         if (btnPressed) {
+            // Equip and fall through to the rest of Handle_GustJar so the
+            // pose, Z-target rotation, and C-button absorb/blow handler all
+            // run on the SAME frame as the equip. The old early-return only
+            // made sense when equip auto-entered first-person and needed a
+            // settle frame — the new flow never does that, so returning here
+            // just delays the first suck/blow by one frame and occasionally
+            // dropped fast C taps.
             GustJar_Equip(play, this);
-            if (!gjFirstPerson)
-                return;
         } else {
             return;
         }
     }
 
-    // C-Up toggles aim mode
+    // C-Up: explicit toggle of first-person aim. No other state changes here —
+    // Z-target rotation, pose override, and cone aim are handled separately
+    // and work in BOTH first-person and free-roam states.
     if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_CUP)) {
-        if (gjAimMode == 2) {
-            if (Player_IsZTargeting(this)) {
-                gjAimMode = 1;
-            } else {
-                gjAimMode = 0;
-                FirstPerson_Init(this, play);
-                gjFirstPerson = 1;
-            }
+        if (gjFirstPerson) {
+            FirstPerson_Exit(this, play);
+            gjFirstPerson = 0;
+            gjAimMode = 0;
         } else {
-            if (gjFirstPerson) {
-                FirstPerson_Exit(this, play);
-                gjFirstPerson = 0;
-            }
-            gjAimMode = 2;
+            FirstPerson_Init(this, play);
+            gjFirstPerson = 1;
+            gjAimMode = 0;
+            this->unk_834 = 14; // 14-frame camera transition (bow pattern)
         }
         ItemEquip_PlayEquipSFX(play, this);
         return;
     }
 
-    // Other button pressed → unequip
-    if (input.otherButtonPressed) {
-        GustJar_Unequip(play, this);
-        return;
+    // Other button pressed → unequip. R is excluded here (locally for the
+    // gust jar): R is used by the in-game element cycle / shield-suppress
+    // logic and must NOT trigger an unequip. We re-derive the check inline
+    // instead of trusting ItemInput_CheckOtherButtons, which lists R as an
+    // "action button" globally for all other items.
+    {
+        static const u16 sGjUnequipButtons = BTN_A | BTN_B | BTN_START | BTN_CLEFT | BTN_CDOWN | BTN_CRIGHT |
+                                             BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
+        u16 mask = sGjUnequipButtons & ~input.equippedButton;
+        if (play->state.input[0].press.button & mask) {
+            GustJar_Unequip(play, this);
+            return;
+        }
     }
 
-    // Auto-switch aim modes based on Z-targeting
+    // Z-target rotation (bow-style): smooth-rotate Link toward the focusActor
+    // when locked on. Works regardless of first-person state. This matches the
+    // bow's Z-target behaviour where Player_GetMovementSpeedAndYaw aligns the
+    // player yaw to focusActor every frame without forcing first-person.
     u8 isZTargeting = Player_IsZTargeting(this);
-    if (gjAimMode == 0 && isZTargeting) {
-        FirstPerson_Exit(this, play);
-        gjFirstPerson = 0;
-        gjAimMode = 1;
-    } else if (gjAimMode == 1 && !isZTargeting) {
-        FirstPerson_Init(this, play);
-        gjFirstPerson = 1;
-        gjAimMode = 0;
+    if (isZTargeting && this->focusActor != NULL) {
+        s16 targetYaw = Math_Vec3f_Yaw(&this->actor.world.pos, &this->focusActor->focus.pos);
+        Math_ScaledStepToS(&this->actor.shape.rot.y, targetYaw, 0x800);
+        this->actor.world.rot.y = this->actor.shape.rot.y;
+        this->yaw = this->actor.shape.rot.y;
     }
 
-    // First-person update
-    if (gjAimMode == 0 && gjFirstPerson) {
+    // First-person update — only when explicitly toggled on via C-Up.
+    if (gjFirstPerson) {
         FirstPerson_Update(this, play);
     }
+
+    // Hold pose — override Link's arm joints every frame so he visually holds
+    // the gust jar in front of him with both hands, regardless of what
+    // animation his lower body is playing (walk, run, idle, jump, ...).
+    GustJar_ApplyCarryPose(this, play);
 
     // Calculate nozzle position
     s16 aimYaw = GustJar_GetAimYaw(play, this);
@@ -561,21 +618,146 @@ void Handle_GustJar(Player* this, PlayState* play) {
             gjHeatTimer = 0;
     }
 
-    // ===== BLOW MODE (automatic, runs until timer expires) =====
+    // ===== BLOW MODE dispatch =====
+    // Two flavors share GUST_MODE_BLOW:
+    //   - SUCK direction: timed blow set on C-release. Runs until gjBlowTimer
+    //     decays to 0 (handled inside GustJar_Blow).
+    //   - BLOW direction (manual): hold C blows continuously. Release C stops
+    //     immediately (no timer involvement). Heat is not consumed here.
     if (gjMode == GUST_MODE_BLOW) {
+        if (gjBlowDir == GUST_DIR_BLOW && !btnHeld) {
+            // Manual blow ended — C released. Reset to IDLE.
+            GustJar_ClearScaleCache();
+            gjMode = GUST_MODE_IDLE;
+            gjBlowActive = 0;
+            gjBlowTimer = 0;
+            Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
+            return;
+        }
         GustJar_Blow(this, play, &nozzle, aimYaw);
         return;
     }
 
-    // ===== ABSORB MODE (hold C-button) =====
+    // ===== L+R COMBO: toggle SUCK/BLOW direction =====
+    // L+R simultaneously toggles gjBlowDir between SUCK (default — hold C
+    // absorbs, release C blows proportional to charge) and BLOW (manual —
+    // hold C directly blows with current element, no charge mechanic).
+    // Works in any mode while the gust jar is equipped.
+    u8 lrCurr = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_L) &&
+                CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_R);
+    u8 lrPress = CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L) ||
+                 CHECK_BTN_ALL(play->state.input[0].press.button, BTN_R);
+    u8 lrToggled = 0;
+    if (lrCurr && lrPress) {
+        gjBlowDir = (gjBlowDir == GUST_DIR_SUCK) ? GUST_DIR_BLOW : GUST_DIR_SUCK;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &this->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        lrToggled = 1;
+
+        // Reset to a clean IDLE so the new direction takes effect on the
+        // next C action — otherwise toggling mid-ABSORB or mid-BLOW leaves
+        // gjMode set in the OLD direction and the next C-press silently
+        // does nothing (user-reported bug after SUCK→BLOW toggle).
+        if (gjMode == GUST_MODE_ABSORB || gjMode == GUST_MODE_BLOW) {
+            GustJar_ClearScaleCache();
+            Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
+            gjMode = GUST_MODE_IDLE;
+            gjBlowActive = 0;
+            gjBlowTimer = 0;
+            gjHeatTimer = 0;
+        }
+
+        // Consume L/R so neither the cycle nor the shield handler also fires.
+        play->state.input[0].cur.button &= ~(BTN_L | BTN_R);
+        play->state.input[0].press.button &= ~(BTN_L | BTN_R);
+    }
+
+    // ===== SINGLE R/L: cycle element =====
+    // Works ANY time the gust jar is equipped (IDLE, ABSORB, BLOW — any
+    // state, any aim mode). Skipped if the L+R combo just toggled the
+    // direction this frame.
+    if (!lrToggled) {
+        s8 cycleDir = 0;
+        if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_R)) {
+            cycleDir = 1;
+        } else if (CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L)) {
+            cycleDir = -1;
+        }
+
+        if (cycleDir != 0) {
+            static const s32 sCycleQuestItems[] = { QUEST_MEDALLION_FIRE, QUEST_MEDALLION_WATER,
+                                                    QUEST_MEDALLION_SHADOW, QUEST_MEDALLION_SPIRIT,
+                                                    QUEST_MEDALLION_LIGHT };
+            static const u8 sCycleElements[] = { GUST_ELEMENT_FIRE, GUST_ELEMENT_ICE, GUST_ELEMENT_SHADOW,
+                                                 GUST_ELEMENT_SPIRIT, GUST_ELEMENT_LIGHT };
+            u8 available[6];
+            u8 count = 0;
+            available[count++] = GUST_ELEMENT_WIND;
+            for (s32 i = 0; i < 5; i++) {
+                if (CHECK_QUEST_ITEM(sCycleQuestItems[i])) {
+                    available[count++] = sCycleElements[i];
+                }
+            }
+
+            if (count > 1) {
+                u8 currentIdx = 0;
+                for (u8 i = 0; i < count; i++) {
+                    if (available[i] == gjElement) {
+                        currentIdx = i;
+                        break;
+                    }
+                }
+                if (cycleDir > 0) {
+                    currentIdx = (currentIdx + 1) % count;
+                } else {
+                    currentIdx = (currentIdx + count - 1) % count;
+                }
+                gjElement = available[currentIdx];
+                Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &this->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
+        }
+    }
+
+    // Defensive R/L swallow on play->state.input[0]: the sp44 copy is filtered
+    // earlier by GustJar_FilterPlayerInput (z_player.c, before Player_UpdateCommon),
+    // which prevents shield. This pass also clears the raw input so downstream
+    // consumers in the same frame (other custom items, ExtEquip, etc.) don't
+    // re-trigger off the same R/L press. Fires whenever the gust jar is the
+    // active C-button item.
+    if (gjEquipped) {
+        play->state.input[0].cur.button &= ~(BTN_L | BTN_R);
+        play->state.input[0].press.button &= ~(BTN_L | BTN_R);
+    }
+
+    // ===== C-BUTTON HANDLING (direction-aware) =====
     static u8 wasHeld = 0;
     u8 isHeld = btnHeld && !btnPressed;
 
     if (wasHeld && !btnHeld) {
-        // Released button → back to idle
-        if (gjMode == GUST_MODE_ABSORB) {
+        // C released. Two cases by direction:
+        if (gjBlowDir == GUST_DIR_SUCK && gjMode == GUST_MODE_ABSORB) {
+            // SUCK direction: discharge the accumulated charge as a timed blow.
+            // Blow duration = gjHeatTimer / 2 (half the suck time). If no
+            // charge was built, no blow — just return to IDLE.
+            s16 blowDuration = gjHeatTimer / 2;
+            GustJar_ClearScaleCache();
+            if (blowDuration > 0) {
+                gjMode = GUST_MODE_BLOW;
+                gjBlowActive = 1;
+                gjBlowTimer = blowDuration;
+                Audio_StopSfxById(NA_SE_EV_WIND_TRAP);
+                Player_PlaySfx(this, NA_SE_PL_MAGIC_WIND_NORMAL);
+            } else {
+                gjMode = GUST_MODE_IDLE;
+            }
+            gjHeatTimer = 0;
+        } else if (gjMode == GUST_MODE_ABSORB) {
+            // BLOW direction with C released from absorb (shouldn't normally
+            // happen since BLOW direction starts blow directly, but safe path).
             GustJar_ClearScaleCache();
             gjMode = GUST_MODE_IDLE;
+            gjHeatTimer = 0;
         }
         wasHeld = 0;
         return;
@@ -583,11 +765,45 @@ void Handle_GustJar(Player* this, PlayState* play) {
 
     if (isHeld && gjCooldownTimer <= 0) {
         if (gjMode == GUST_MODE_IDLE) {
-            gjMode = GUST_MODE_ABSORB;
+            // Start suck or blow based on direction.
+            if (gjBlowDir == GUST_DIR_BLOW) {
+                gjMode = GUST_MODE_BLOW;
+                gjBlowActive = 1;
+                gjBlowTimer = 0x7FFF; // sentinel — manual mode reads btnHeld, not timer
+                Player_PlaySfx(this, NA_SE_PL_MAGIC_WIND_NORMAL);
+            } else {
+                gjMode = GUST_MODE_ABSORB;
+            }
         }
         if (gjMode == GUST_MODE_ABSORB) {
             GustJar_Absorb(this, play, &nozzle, aimYaw);
         }
         wasHeld = 1;
     }
+}
+
+// Called from Player_Update BEFORE Player_UpdateCommon runs — strips L/R from
+// the local sp44 copy so the vanilla shield action handler (which reads
+// sControlInput->cur.button, the COPY) never sees the press. Handle_GustJar
+// runs much later in the frame and was too late to prevent shield latching.
+//
+// The actual in-game cycle logic in Handle_GustJar reads play->state.input[0]
+// (NOT this filtered copy), so cycling/L+R combo still see the raw bits.
+//
+// Gate: gjEquipped. Whenever the gust jar is the live C-button item, R must
+// never raise the shield — R/L are reserved for element cycling (IDLE+aim) or
+// the L+R combo (ABSORB). This covers ALL aim modes: first-person (gjAimMode
+// 0 / gjFirstPerson), Z-target (gjAimMode 1), and static (gjAimMode 2).
+// Independent of the NeiAimCycle CVar — the user explicitly asked: while
+// gust jar is in play, R never shields. Period.
+void GustJar_FilterPlayerInput(Input* input) {
+    if (input == NULL) {
+        return;
+    }
+    if (!gjEquipped) {
+        return;
+    }
+    input->cur.button &= ~(BTN_L | BTN_R);
+    input->press.button &= ~(BTN_L | BTN_R);
+    input->rel.button &= ~(BTN_L | BTN_R);
 }

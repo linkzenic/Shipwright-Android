@@ -7681,6 +7681,14 @@ Vec3s Camera_Update(Camera* camera) {
         viewFov = camera->fov;
     }
 
+    // Minish Cap tiny mode: pull the rendered eye/at toward tiny Link. Only the
+    // applied view is transformed — the camera's internal state stays at normal
+    // scale, so motion/collision keep working and the zoom undoes itself cleanly.
+    {
+        extern void MinishTiny_AdjustCameraView(Camera * camera, Vec3f * eye, Vec3f * at);
+        MinishTiny_AdjustCameraView(camera, &viewEye, &viewAt);
+    }
+
     if (camera->paramFlags & 4) {
         camera->paramFlags &= ~4;
         viewUp = camera->up;

@@ -77,7 +77,21 @@ void Ikana_OnShieldBlock(Player* player, PlayState* play) {
     if (attacker->colChkInfo.health > IKANA_SOUL_DRAIN_DAMAGE) {
         attacker->colChkInfo.health -= IKANA_SOUL_DRAIN_DAMAGE;
     } else {
+        // Lethal drain. Just zeroing colChkInfo.health is NOT enough: most
+        // enemies only enter their death state when their own update fn
+        // processes an AC_HIT event (then calls Actor_ApplyDamage and
+        // transitions to a death action). The soul drain bypasses that
+        // collision path, so the enemy never realises it died and keeps
+        // attacking with 0 HP. Drive the standard kill sequence manually:
+        // finishing-blow flash + drop + Actor_Kill. Bosses are skipped to
+        // avoid bypassing scripted death (warp pad / heart container) —
+        // their HP still drops to 0 here, but a real hit must finish them.
         attacker->colChkInfo.health = 0;
+        if (attacker->category != ACTORCAT_BOSS) {
+            Enemy_StartFinishingBlow(play, attacker);
+            Item_DropCollectibleRandom(play, attacker, &attacker->world.pos, 0xA0);
+            Actor_Kill(attacker);
+        }
     }
 
     // Visual/audio feedback: dark drain sound

@@ -11,11 +11,26 @@
 #include "expansions/sw97/sw97_config.h"
 #include <math.h>
 
-// Asset path for Adult Link's "rakkatyu" (falling) animation — used as Link's
-// pose while caught in the tornado core (matches the MM cliff-fall visual the
-// user referenced). Same ALIGN_ASSET pattern as the gameplay_keep anims.
-#define dgPlayerAnim_alink_rakkatyu "__OTR__misc/link_animetion/gPlayerAnim_alink_rakkatyu_Data"
-static const ALIGN_ASSET(2) char gPlayerAnim_alink_rakkatyu[] = dgPlayerAnim_alink_rakkatyu;
+// Adult Link's "rakkatyu" (falling) animation — used as Link's pose while
+// caught in the tornado core. The asset lives in misc/link_animetion/ as a
+// raw SOH_PlayerAnimation payload (no LinkAnimationHeader struct attached),
+// so the gameplay_keep-style asset-path pattern crashes inside
+// AnimationContext_SetLoadFrame. Use ResourceMgr_LoadPlayerAnimAsHeader which
+// wraps the raw payload in a runtime header — same approach the in-game
+// animation viewer uses (animationViewer.cpp:131-138).
+extern uint8_t ResourceMgr_FileExists(const char* resName);
+extern LinkAnimationHeader* ResourceMgr_LoadPlayerAnimAsHeader(const char* animPath);
+
+static LinkAnimationHeader* MagicWind_LoadFallAnim(void) {
+    static LinkAnimationHeader* cached = NULL;
+    if (cached != NULL) return cached;
+
+    static const char* path = "__OTR__misc/link_animetion/gPlayerAnim_alink_rakkatyu_Data";
+    if (ResourceMgr_FileExists(path)) {
+        cached = ResourceMgr_LoadPlayerAnimAsHeader(path);
+    }
+    return cached;
+}
 
 // ============================================================
 // Struct (merged from z_magic_wind.h)
@@ -592,10 +607,11 @@ static void MagicWind_TornadoApplyPlayer(PlayState* play, Player* p, Vec3f* c, f
         }
         p->actor.bgCheckFlags &= ~BGCHECKFLAG_GROUND;
         p->stateFlags2 |= PLAYER_STATE2_GRABBED_BY_ENEMY;
-        // Re-trigger the falling-loop animation only if Link isn't already in it,
-        // so we don't restart it every frame.
-        if (p->skelAnime.animation != (LinkAnimationHeader*)&gPlayerAnim_alink_rakkatyu) {
-            Player_AnimPlayLoop(play, p, (LinkAnimationHeader*)&gPlayerAnim_alink_rakkatyu);
+        // Falling animation — resolved at runtime so a missing/renamed asset
+        // returns NULL instead of crashing AnimationContext_SetLoadFrame.
+        LinkAnimationHeader* fallAnim = MagicWind_LoadFallAnim();
+        if (fallAnim != NULL && p->skelAnime.animation != fallAnim) {
+            Player_AnimPlayLoop(play, p, fallAnim);
         }
     }
 }

@@ -9,6 +9,10 @@
 #include "objects/object_link_child/object_link_child.h"
 #include "soh/ResourceManagerHelpers.h"
 
+// MM mask ownership check (mods/extended_inventory.c) — Bunny Hood with an MM
+// counterpart is permanent: selling it grants the reward without losing the mask.
+extern int32_t ExtInv_HasMmMask(uint16_t itemId);
+
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
 typedef enum {
@@ -239,8 +243,12 @@ s32 func_80AADAA0(EnMm* this, PlayState* play) {
             break;
         case TEXT_STATE_EVENT:
             if (Message_ShouldAdvance(play)) {
-                Player_UnsetMask(play);
-                Item_Give(play, ITEM_SOLD_OUT);
+                // MM Bunny Hood owners keep the mask: the Running Man pays for it but the
+                // permanent MM mask is not taken away.
+                if (!ExtInv_HasMmMask(ITEM_MM_MASK_BUNNY)) {
+                    Player_UnsetMask(play);
+                    Item_Give(play, ITEM_SOLD_OUT);
+                }
                 Flags_SetItemGetInf(ITEMGETINF_3B);
                 Rupees_ChangeBy(500);
                 player->actor.textId = 0x202E;

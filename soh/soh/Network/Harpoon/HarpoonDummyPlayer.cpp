@@ -2,6 +2,7 @@
 #include "HarpoonSkinSync.h"
 #include "Combat/CombatSync.h"
 #include "PropHunt/PropHunt.h"
+#include "TriforceThief/TriforceThief.h"
 #include "soh/Enhancements/nametag.h"
 #include "soh/frame_interpolation.h"
 
@@ -411,7 +412,23 @@ void HarpoonDummyPlayer_Init(Actor* actor, PlayState* play) {
     bool hideNames = (Harpoon::Instance != nullptr &&
                       Harpoon::Instance->currentRoomGameMode == "prop_hunt");
     if (!hideNames) {
-        NameTag_RegisterForActorWithOptions(actor, client.name.c_str(), {});
+        // Triforce Thief: tint nametag by team. We do NOT read
+        // client.color because ROOM.UPDATE rewrites it from the
+        // network-tunic color every refresh — overwriting any team
+        // tint we'd previously stashed there. Computing TeamRGB at
+        // register time keeps the tint stable across room updates.
+        NameTagOptions opts{};
+        if (Harpoon::Instance != nullptr &&
+            Harpoon::Instance->currentRoomGameMode == "triforce_thief" &&
+            !client.team.empty()) {
+            HarpoonTriforceThief::TeamColor tc =
+                HarpoonTriforceThief::TeamRGB(client.team);
+            opts.textColor.r = tc.r;
+            opts.textColor.g = tc.g;
+            opts.textColor.b = tc.b;
+            opts.textColor.a = 255;
+        }
+        NameTag_RegisterForActorWithOptions(actor, client.name.c_str(), opts);
     }
 }
 

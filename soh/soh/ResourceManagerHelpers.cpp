@@ -332,6 +332,30 @@ extern "C" char* ResourceMgr_LoadPlayerAnimByName(const char* animPath) {
     return (char*)&anim->limbRotData[0];
 }
 
+// Wrap a raw PlayerAnimation resource (the kind in misc/link_animetion/, which
+// is a raw s16 payload with no LinkAnimationHeader struct attached) in a
+// LinkAnimationHeader so it can be passed to Player_AnimPlayLoop/PlayOnce.
+// Mirrors the animation viewer's wrapping logic at animationViewer.cpp:131-138.
+// Cached by path so repeated calls return the same pointer.
+extern "C" LinkAnimationHeader* ResourceMgr_LoadPlayerAnimAsHeader(const char* animPath) {
+    if (animPath == nullptr) return nullptr;
+    auto res = ResourceMgr_GetResourceByNameHandlingMQ(animPath);
+    if (res == nullptr) return nullptr;
+    if (res->GetInitData()->Type != static_cast<uint32_t>(SOH::ResourceType::SOH_PlayerAnimation)) {
+        return nullptr;
+    }
+    auto playerAnim = std::static_pointer_cast<SOH::PlayerAnimation>(res);
+
+    constexpr size_t kS16PerFrame = 67; // matches animationViewer.cpp::PLAYER_ANIM_S16_PER_FRAME
+
+    static std::map<std::string, LinkAnimationHeader> sPlayerAnimWrappers;
+    LinkAnimationHeader& wrapper = sPlayerAnimWrappers[animPath];
+    size_t totalS16 = playerAnim->GetPointerSize() / sizeof(int16_t);
+    wrapper.common.frameCount = (s16)(totalS16 / kS16PerFrame);
+    wrapper.segment = (void*)playerAnim->GetPointer();
+    return &wrapper;
+}
+
 extern "C" void ResourceMgr_PushCurrentDirectory(char* path) {
     Fast::gfx_push_current_dir(path);
 }

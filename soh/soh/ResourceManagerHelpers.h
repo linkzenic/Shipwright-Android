@@ -41,6 +41,11 @@ uint16_t ResourceMgr_LoadTexWidthByName(char* texPath);
 uint16_t ResourceMgr_LoadTexHeightByName(char* texPath);
 char* ResourceMgr_LoadTexOrDListByName(const char* filePath);
 char* ResourceMgr_LoadPlayerAnimByName(const char* animPath);
+// Wraps a raw misc/link_animetion/ PlayerAnimation resource in a runtime
+// LinkAnimationHeader (frameCount + data pointer) so it can be passed to
+// Player_AnimPlayLoop / Player_AnimPlayOnce. Returns NULL if the path doesn't
+// exist or the resource isn't a PlayerAnimation. Cached by path.
+LinkAnimationHeader* ResourceMgr_LoadPlayerAnimAsHeader(const char* animPath);
 AnimationHeaderCommon* ResourceMgr_LoadAnimByName(const char* path);
 char* ResourceMgr_GetNameByCRC(uint64_t crc, char* alloc);
 Gfx* ResourceMgr_LoadGfxByCRC(uint64_t crc);

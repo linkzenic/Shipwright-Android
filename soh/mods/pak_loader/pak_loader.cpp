@@ -11,6 +11,11 @@
 
 extern "C" Gfx* ResourceMgr_LoadGfxByName(const char* path);
 extern "C" int ResourceMgr_OTRSigCheck(char* imgData);
+extern "C" SkeletonHeader* ResourceMgr_LoadSkeletonByName(const char* path, SkelAnime* skelAnime);
+
+// Forward declaration for end-of-Init use (definition lives near the body-model
+// Select* setters further down so it sits next to its callers).
+static void O2rUpdateMounts(void);
 
 #include <libultraship/libultra.h>
 #include "global.h"
@@ -28,8 +33,22 @@ extern PlayState* gPlayState;
 #include <cstring>
 #include <set>
 #include <map>
+#include <memory>
 #include <algorithm>
 #include <zlib.h>
+
+// .o2r archives for equipment-mix entries. Each .o2r dropped into mods/ shows
+// up as a selectable PakModel; its DLs flow through the same equipDLs map the
+// .pak/.zobj loaders populate. We hold an Archive + an IResource keep-alive
+// vector so the native Gfx* pointers from GetRawPointer() stay valid for the
+// model's lifetime.
+#include <ship/resource/archive/O2rArchive.h>
+#include <ship/resource/archive/ArchiveManager.h>
+#include <ship/resource/Resource.h>
+#include <ship/resource/ResourceManager.h>
+#include <ship/resource/ResourceLoader.h>
+#include <ship/Context.h>
+#include <fast/resource/type/DisplayList.h>
 
 // .pak files are scanned from mods/ at startup (and from harpoon/skins/
 // for the per-actor remote sync registry). All .o2r handling — both global mods
@@ -138,8 +157,18 @@ static inline void SWAP32_INPLACE(u8* p) {
 
 #define PAK_MAX_LIMBS 22
 
+// Source format of a PakModel entry — drives label prefix in the dropdown
+// ("[PAK]" / "[ZOBJ]" / "[O2R]") and the cleanup path on shutdown (o2r entries
+// own their Gfx* via shared_ptr<IResource> instead of zobj-allocated bytes).
+enum PakModelSource : u8 {
+    PAK_SOURCE_PAK  = 0,
+    PAK_SOURCE_ZOBJ = 1,
+    PAK_SOURCE_O2R  = 2,
+};
+
 struct PakModel {
     char displayName[128];
+    char displayLabel[160]; // displayName prefixed with "[PAK] " / "[ZOBJ] " / "[O2R] "
     std::string pakPath;
 
     // Loaded .zobj data (byte-swapped to native endian)
@@ -172,6 +201,25 @@ struct PakModel {
     u8 isEquipmentOnly; // 1 = zzequipment pak (no body, only equipment items)
     u8 isSyncOnly;      // 1 = loaded from harpoon/skins/; hidden from local menu,
                         //     only picked up via PakLoader_BeginRemoteRender for remote players
+    PakModelSource source; // PAK / ZOBJ / O2R — drives dropdown prefix + cleanup branch.
+
+    // .o2r entries: native Gfx* in adultEquipDLs/childEquipDLs come from
+    // resource->GetRawPointer() and are OWNED by the resource. We keep both
+    // the archive handle and the resource shared_ptrs alive so those pointers
+    // remain valid; nothing here should ever be free()'d on shutdown.
+    std::shared_ptr<Ship::Archive> o2rArchive;
+    std::vector<std::shared_ptr<Ship::IResource>> o2rResourceHolders;
+
+    // OTR paths to the body skeleton inside the .o2r (empty if none). Filled
+    // by LoadO2rEquipment after scanning the archive for gLinkAdultSkel /
+    // gLinkChildSkel; ResourceMgr_LoadSkeletonByName is invoked LAZILY when
+    // the model is selected from the body-model dropdown (we don't want to
+    // keep the archive mounted globally if the user isn't using it).
+    char o2rAdultSkelOtr[160];
+    char o2rChildSkelOtr[160];
+    FlexSkeletonHeader* o2rAdultSkel; // resolved at selection time
+    FlexSkeletonHeader* o2rChildSkel;
+    u8 o2rArchiveMounted; // 1 if currently re-added to global ArchiveManager
 };
 
 // ============================================================================
@@ -1069,9 +1117,10 @@ static const EquipSlotMapping sEquipSlotMap[] = {
     { "sword0_sheath", 0x50C0 }, // DL_SWORD_SHEATH_1 (Kokiri sheath)
     { "sword1_blade", 0x50F8 },  // DL_SWORD_BLADE_2 (Master)
     { "sword1_hilt", 0x50E0 },   // DL_SWORD_HILT_2
-    { "sword1_sheath", 0x50C0 }, // DL_SWORD_SHEATH_1
+    { "sword1_sheath", 0x50C8 }, // DL_SWORD_SHEATH_2 (Master sheath)
     { "sword2_blade", 0x5100 },  // DL_SWORD_BLADE_3 (Biggoron)
     { "sword2_hilt", 0x50E8 },   // DL_SWORD_HILT_3
+    { "sword2_sheath", 0x50D0 }, // DL_SWORD_SHEATH_3 (BGS sheath)
     { "sword2_broken", 0x51E0 }, // DL_SWORD_BLADE_3_BROKEN
     // Shields
     { "shield0_held", 0x5108 }, // DL_SHIELD_1 (Deku)
@@ -1448,10 +1497,10 @@ static void LoadEquipmentZobj(u8* zobjData, u32 zobjSize, PakModel& model) {
                                  { hasRFist ? (u32)0x5508 : (u32)0, { 0x5180, 0x50B8, 0, 0 } },
                                  { hasRHand ? (u32)0x5510 : (u32)0, { 0x5190, 0x50B0, 0, 0 } },
                                  { hasRHand ? (u32)0x5490 : (u32)0, { 0x5128, 0x50B0, 0, 0 } },
-                                 // Sheath combos
-                                 { 0x53D0, { 0x50D8, 0x50C0, 0, 0 } },
-                                 { 0x53D8, { 0x50E0, 0x50C0, 0, 0 } },
-                                 { 0x53E0, { 0x50E8, 0x50C0, 0, 0 } },
+                                 // Sheath combos — HILT_i + matching SHEATH_i
+                                 { 0x53D0, { 0x50D8, 0x50C0, 0, 0 } }, // SWORD1 (Kokiri)
+                                 { 0x53D8, { 0x50E0, 0x50C8, 0, 0 } }, // SWORD2 (Master)
+                                 { 0x53E0, { 0x50E8, 0x50D0, 0, 0 } }, // SWORD3 (BGS)
                                  { 0x53E8, { 0x5108, 0, 0, 0 } },
                                  { 0x53F0, { 0x5110, 0, 0, 0 } },
                                  { 0x53F8, { 0x5118, 0, 0, 0 } },
@@ -1639,6 +1688,382 @@ static bool LoadRawZobjModel(PakModel& model) {
 
     PAK_LOG("Raw zobj '%s' failed to build skeleton", model.displayName);
     return false;
+}
+
+// ============================================================================
+// O2R Equipment Loader (custom .o2r archives)
+// ============================================================================
+//
+// A community .o2r dropped into mods/ shows up in the same dropdown list as a
+// .pak/.zobj. We DON'T mount the archive globally (that would auto-override
+// vanilla OTR paths for everyone, including remote players) — we open it
+// standalone, walk its file list, decode each DisplayList resource and stash
+// the native Gfx* under the matching Z64O alias offset in adultEquipDLs /
+// childEquipDLs. Layer 2.5 of RebuildCachedEquipDLs then picks them up exactly
+// like .pak-sourced DLs.
+//
+// Alias inference works in two passes per file:
+//  (1) If the archive contains "equip_manifest.json", read it as a
+//      symbol-name → slot-name map (slot names match sEquipSlotMap).
+//  (2) Otherwise, lowercase the symbol name (last '/' segment of the path,
+//      e.g. "objects/object_custom/gCustomMasterSwordDL" → "gcustommasterswddl")
+//      and look for keyword combinations (sword + master, shield + hylian,
+//      hookshot, bottle, etc.). Adult vs child is inferred from the path
+//      ("child" / "_kid_" → child slot).
+//
+// Only DisplayList resources are kept; other resource types (textures,
+// vertices, matrices) are loaded but discarded — they'd never match a
+// gSPDisplayList lookup anyway.
+
+// Sniff out whether the symbol name refers to a child variant. Z64O custom
+// archives sometimes ship paired adult+child symbols under the same archive.
+static bool O2rPathIsChild(const std::string& path) {
+    std::string lower = path;
+    for (char& c : lower) c = (char)tolower((unsigned char)c);
+    if (lower.find("child") != std::string::npos) return true;
+    if (lower.find("_kid_") != std::string::npos) return true;
+    if (lower.find("kid_") != std::string::npos)  return true;
+    return false;
+}
+
+// Map a symbol name (the last '/' segment of an archive path) to a Z64O
+// equipment alias. Returns 0 if nothing recognisable.
+//
+// Strategy: lowercase, strip "g" prefix and "dl"/"neardl"/"fardl" suffix,
+// then look for distinguishing tokens. We prefer the MOST SPECIFIC match:
+// e.g. "mastersword" + "hilt" → 0x50E0, but plain "mastersword" alone (no
+// piece keyword) → 0x5450 (the combined LFIST_SWORD2 alias). Combined
+// aliases are useful for archives that ship a single drop-in DL for
+// "everything you see when Link holds the Master Sword" — Layer 2.5's
+// combo regen will overwrite them if hilt/blade pieces are also present.
+static u32 O2rInferAlias(const std::string& symbolName) {
+    std::string s = symbolName;
+    for (char& c : s) c = (char)tolower((unsigned char)c);
+    // Strip leading 'g' (gSym → sym) for cleaner keyword matching.
+    if (!s.empty() && s[0] == 'g') s.erase(0, 1);
+    auto has = [&](const char* k) { return s.find(k) != std::string::npos; };
+
+    // Exact Z64O slot-name match against the existing equip slot table.
+    for (const EquipSlotMapping* m = sEquipSlotMap; m->slotName != NULL; m++) {
+        if (s == m->slotName) return m->z64oAlias;
+    }
+
+    // Sword pieces — hilt / blade / sheath of Kokiri / Master / Biggoron.
+    bool sword       = has("sword") || has("kokirisword") || has("mastersword") ||
+                       has("biggoron") || has("giantsknife") || has("giantknife");
+    bool isKokiri    = has("kokiri") || has("sword_1") || has("sword1");
+    bool isMaster    = has("master") || has("sword_2") || has("sword2");
+    bool isBgs       = has("biggoron") || has("giants") || has("sword_3") ||
+                       has("sword3") || has("longsword");
+    bool pieceHilt   = has("hilt") || has("grip") || has("handle");
+    bool pieceBlade  = has("blade");
+    bool pieceSheath = has("sheath") || has("scabbard");
+
+    if (sword) {
+        if (isMaster) {
+            if (pieceHilt)   return 0x50E0;
+            if (pieceBlade)  return 0x50F8;
+            if (pieceSheath) return 0x50C8;
+            if (has("inhand") || has("lfist") || has("inhand") || has("holding"))
+                return 0x5450; // LFIST_SWORD2 combined
+            return 0x5450; // bare "MasterSword" → combined Master.
+        }
+        if (isBgs) {
+            if (has("broken")) return 0x51E0; // SWORD_BLADE_3_BROKEN
+            if (pieceHilt)     return 0x50E8;
+            if (pieceBlade)    return 0x5100;
+            if (pieceSheath)   return 0x50D0;
+            return 0x5458; // LFIST_SWORD3 combined.
+        }
+        if (isKokiri) {
+            if (pieceHilt)   return 0x50D8;
+            if (pieceBlade)  return 0x50F0;
+            if (pieceSheath) return 0x50C0;
+            return 0x5448; // LFIST_SWORD1 combined.
+        }
+    }
+
+    // Shields.
+    bool shield     = has("shield");
+    bool isDeku     = has("deku");
+    bool isHylian   = has("hylian");
+    bool isMirror   = has("mirror");
+    bool shieldBack = has("back") || has("onback") || has("on_back");
+    if (shield) {
+        if (isDeku)   return shieldBack ? 0x53E8 : 0x5108;
+        if (isHylian) return shieldBack ? 0x53F0 : 0x5110;
+        if (isMirror) return shieldBack ? 0x53F8 : 0x5118;
+    }
+
+    // Ranged + tools.
+    if (has("bow") && has("string"))    return 0x5140;
+    if (has("bow"))                     return 0x5138;
+    if (has("hookshot") && has("chain")) return 0x5150;
+    if (has("hookshot") && has("hook"))  return 0x5158;
+    if (has("hookshot") && has("aim"))   return 0x5160;
+    if (has("hookshot") || has("longshot")) return 0x5148;
+    if (has("boomerang"))               return 0x5178;
+    if (has("slingshot") && has("string")) return 0x5188;
+    if (has("slingshot"))               return 0x5180;
+    if (has("hammer") || has("megaton")) return 0x51F0;
+    if (has("dekustick") || has("deku_stick")) return 0x5130;
+    if (has("bottle"))                  return 0x5120;
+    if (has("ocarinaoftime") || has("ootime") || has("oot")) return 0x5128;
+    if (has("ocarina") || has("fairyocarina")) return 0x5190;
+    if (has("goronbracelet") || has("bracelet")) return 0x5198;
+
+    // Boots.
+    if (has("ironboot") || has("iron_boot")) return has("right") ? 0x5230 : 0x5228;
+    if (has("hoverboot") || has("hover_boot")) return has("right") ? 0x5240 : 0x5238;
+
+    // Gauntlet plates (silver/gold bracers drawn standalone for Adult).
+    if (has("gauntlet") || has("bracer")) {
+        bool right = has("right");
+        if (has("plate1") || has("forearm")) return right ? 0x5210 : 0x51F8;
+        if (has("plate2") || has("hand"))    return right ? 0x5218 : 0x5200;
+        if (has("plate3") || has("fist"))    return right ? 0x5220 : 0x5208;
+    }
+
+    // Child masks.
+    if (has("skullmask"))   return 0x51A0;
+    if (has("spookymask"))  return 0x51A8;
+    if (has("keatonmask"))  return 0x51B0;
+    if (has("maskoftruth") || has("truthmask")) return 0x51B8;
+    if (has("goronmask"))   return 0x51C0;
+    if (has("zoramask"))    return 0x51C8;
+    if (has("gerudomask"))  return 0x51D0;
+    if (has("bunnyhood") || has("bunnymask")) return 0x51D8;
+
+    return 0;
+}
+
+// Load an optional equip_manifest.json from inside the archive. Maps the
+// archive's internal symbol names to Z64O slot names. Format:
+//   { "gMyMasterSwordHilt": "sword1_hilt", "gMyMasterSwordBlade": "sword1_blade" }
+// Returns the parsed map (empty if no manifest or malformed).
+static std::map<std::string, u32> O2rLoadManifest(Ship::Archive& archive) {
+    std::map<std::string, u32> out;
+    auto file = archive.LoadFile("equip_manifest.json");
+    if (!file || !file->Buffer || file->Buffer->empty()) return out;
+    std::string text(file->Buffer->begin(), file->Buffer->end());
+    // Hand-rolled tiny JSON walker — same approach used elsewhere in this file
+    // to avoid pulling in a JSON dep for one optional config file. Pattern:
+    //   "symbol": "slot"
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t k1 = text.find('"', pos);
+        if (k1 == std::string::npos) break;
+        size_t k2 = text.find('"', k1 + 1);
+        if (k2 == std::string::npos) break;
+        std::string key = text.substr(k1 + 1, k2 - k1 - 1);
+        size_t colon = text.find(':', k2);
+        if (colon == std::string::npos) break;
+        size_t v1 = text.find('"', colon);
+        if (v1 == std::string::npos) break;
+        size_t v2 = text.find('"', v1 + 1);
+        if (v2 == std::string::npos) break;
+        std::string val = text.substr(v1 + 1, v2 - v1 - 1);
+        u32 alias = EquipSlotNameToAlias(val.c_str());
+        if (alias != 0) out[key] = alias;
+        pos = v2 + 1;
+    }
+    return out;
+}
+
+static bool LoadO2rEquipment(PakModel& model) {
+    const std::string& path = model.pakPath;
+
+    // CRITICAL: kill libultraship's auto-mount of mods/*.o2r.
+    //
+    // ArchiveManager::Init scans the patches directory (which defaults to
+    // `<app>/mods`) at startup and mounts every .o2r / .otr / .zip / .mpq it
+    // finds into the global archive stack ([ArchiveManager.cpp:212-219]). That
+    // makes ANY DL inside the .o2r SILENTLY OVERRIDE the matching vanilla OTR
+    // path for every actor in the game — that's the "auto-priority" the user
+    // hits, and it's also what crashes Fast3D when the .o2r ships a Link DL
+    // whose embedded vertex/segment references can't be resolved at draw time
+    // (`gfx_vtx_otr_filepath_handler_custom` → access violation in GfxSpVertex).
+    //
+    // We open our own standalone Archive instance below to pull the DLs we
+    // want into the equipment cache. Removing the global mount means the .o2r
+    // is now ONLY active when the user explicitly selects it in the dropdown.
+    auto rm = Ship::Context::GetInstance()->GetResourceManager();
+    if (!rm) return false;
+    auto archiveManager = rm->GetArchiveManager();
+    if (archiveManager) {
+        // RemoveArchive matches by exact stored path string. libultraship's
+        // patches scanner can store either the absolute or the relative form
+        // depending on platform, and a path like "./mods/foo.o2r" may differ
+        // from "mods/foo.o2r" or "C:\...\mods\foo.o2r" by literal chars. Walk
+        // the live archive list, compare filename stems (case-insensitive on
+        // Windows), and yank every match — that's the only reliable way to
+        // catch the auto-mounted copy regardless of how it was stored.
+        try {
+            auto archives = archiveManager->GetArchives();
+            if (archives) {
+                std::filesystem::path our(path);
+                std::string ourStem = our.filename().string();
+                for (char& c : ourStem) c = (char)tolower((unsigned char)c);
+                // Snapshot a list of paths to remove — RemoveArchive mutates
+                // the underlying vector, so iterating while removing is UB.
+                std::vector<std::string> toRemove;
+                for (auto& a : *archives) {
+                    if (!a) continue;
+                    std::filesystem::path ap(a->GetPath());
+                    std::string apStem = ap.filename().string();
+                    for (char& c : apStem) c = (char)tolower((unsigned char)c);
+                    if (apStem == ourStem) toRemove.push_back(a->GetPath());
+                }
+                for (auto& p : toRemove) {
+                    archiveManager->RemoveArchive(p);
+                    PAK_LOG("LoadO2rEquipment: removed auto-mounted '%s' from ArchiveManager",
+                            p.c_str());
+                }
+            }
+        } catch (...) {}
+    }
+
+    auto archive = std::make_shared<Ship::O2rArchive>(path);
+    if (!archive->Open()) {
+        PAK_LOG("O2R: failed to open '%s'", path.c_str());
+        return false;
+    }
+    auto files = archive->ListFiles();
+    if (!files || files->empty()) {
+        PAK_LOG("O2R: empty archive '%s'", path.c_str());
+        return false;
+    }
+    auto loader = rm->GetResourceLoader();
+    if (!loader) return false;
+
+    auto manifest = O2rLoadManifest(*archive);
+    if (!manifest.empty())
+        PAK_LOG("O2R '%s': manifest with %d entries", path.c_str(), (int)manifest.size());
+
+    // First pass: detect whether the archive ships a Link body skeleton AND
+    // capture the OTR path so we can lazy-resolve it on selection. If a skel
+    // is present, the model is eligible to show in the body-model dropdown
+    // too (1:1 with .pak / .zobj).
+    //
+    // Path normalisation: strip both "__OTR__" and "alt/" prefixes before
+    // storing. ResourceMgr_LoadSkeletonByName (in ResourceManagerHelpers.cpp)
+    // strips __OTR__ itself and, when alt-assets are enabled, re-prepends
+    // "alt/" automatically. Passing a path that already starts with alt/
+    // produces "alt/alt/..." which never resolves and silently returns
+    // garbage. Always hand it the canonical vanilla path "objects/...".
+    auto NormaliseSkelPath = [](const std::string& raw) -> std::string {
+        std::string s = raw;
+        if (s.compare(0, 7, "__OTR__") == 0) s.erase(0, 7);
+        if (s.compare(0, 4, "alt/") == 0) s.erase(0, 4);
+        return s;
+    };
+
+    bool hasAdultSkel = false;
+    bool hasChildSkel = false;
+    for (auto& [hash, fpath] : *files) {
+        // Compare the LAST path segment for EXACT equality. A naive
+        // fpath.find("gLinkAdultSkel") match also fires on limb DLs whose
+        // symbols start with the skel name as a literal prefix (e.g.
+        // gLinkAdultSkelLimb_013). Feeding a limb DL's path to
+        // ResourceMgr_LoadSkeletonByName returns a pointer to unrelated
+        // resource memory; the bogus segment then crashes Fast3D mid-draw.
+        size_t slash = fpath.find_last_of('/');
+        std::string sym = (slash == std::string::npos) ? fpath : fpath.substr(slash + 1);
+        if (!hasAdultSkel && sym == "gLinkAdultSkel") {
+            hasAdultSkel = true;
+            std::string norm = NormaliseSkelPath(fpath);
+            snprintf(model.o2rAdultSkelOtr, sizeof(model.o2rAdultSkelOtr),
+                     "__OTR__%s", norm.c_str());
+            PAK_LOG("O2R '%s': adult skel path '%s' → lookup '%s'",
+                    std::filesystem::path(path).stem().string().c_str(),
+                    fpath.c_str(), model.o2rAdultSkelOtr);
+        }
+        if (!hasChildSkel && sym == "gLinkChildSkel") {
+            hasChildSkel = true;
+            std::string norm = NormaliseSkelPath(fpath);
+            snprintf(model.o2rChildSkelOtr, sizeof(model.o2rChildSkelOtr),
+                     "__OTR__%s", norm.c_str());
+        }
+    }
+
+    s32 loadedCount = 0;
+    for (auto& [hash, fpath] : *files) {
+        if (fpath.find(".meta") != std::string::npos) continue;
+        if (fpath.find(".json") != std::string::npos) continue;
+
+        // Symbol = last path segment ("objects/object_custom/gFooDL" → "gFooDL").
+        size_t slash = fpath.find_last_of('/');
+        std::string symbol = (slash == std::string::npos) ? fpath : fpath.substr(slash + 1);
+
+        // Resolve alias: manifest wins, then fall back to keyword inference.
+        u32 alias = 0;
+        auto mit = manifest.find(symbol);
+        if (mit != manifest.end())
+            alias = mit->second;
+        if (alias == 0)
+            alias = O2rInferAlias(symbol);
+        if (alias == 0)
+            continue; // Not equipment-shaped — skip.
+
+        auto file = archive->LoadFile(fpath);
+        if (!file || !file->IsLoaded || !file->Buffer || file->Buffer->empty()) continue;
+
+        std::shared_ptr<Ship::IResource> res;
+        try {
+            res = loader->LoadResource(fpath, file, nullptr);
+        } catch (...) {
+            res = nullptr;
+        }
+        if (!res) continue;
+
+        // Only DisplayList resources contribute; textures/vertices loaded
+        // alongside stay alive via the resource holder but never participate
+        // in equipDL lookups.
+        auto dlRes = std::dynamic_pointer_cast<Fast::DisplayList>(res);
+        if (!dlRes) continue;
+
+        Gfx* dl = (Gfx*)res->GetRawPointer();
+        if (!dl) continue;
+
+        bool isChild = O2rPathIsChild(fpath);
+        auto& dest = isChild ? model.childEquipDLs : model.adultEquipDLs;
+        dest[alias] = dl;
+        model.o2rResourceHolders.push_back(std::move(res));
+        loadedCount++;
+    }
+
+    if (loadedCount == 0) {
+        PAK_LOG("O2R '%s': no equipment-shaped DLs found — skipping (body-only "
+                ".o2r packs aren't supported)", path.c_str());
+        return false;
+    }
+
+    model.o2rArchive = archive;
+    model.source = PAK_SOURCE_O2R;
+    // .o2r is ALWAYS equipment-only — the body-skel swap path is unstable for
+    // community packs (they typically reference vertex resources via OTR paths
+    // that don't resolve through ArchiveManager LIFO, and the unguarded
+    // gfx_vtx_otr_filepath_handler_custom in libultraship's Fast3D interpreter
+    // crashes the first frame after the swap). Forcing equipment-only here
+    // keeps the .o2r out of the body-model dropdown entirely (ModelHasAdult /
+    // ModelHasChild gate on this flag), so the user can only use its
+    // equipment DLs via Equipment Pack / Slot Mix. That path is safe because
+    // the standalone Archive shared_ptr keeps the Gfx* command stream alive
+    // and any vertex references inside still resolve through the sticky
+    // global mount.
+    (void)hasAdultSkel;
+    (void)hasChildSkel;
+    model.isEquipmentOnly = 1;
+    model.hasAdult = !model.adultEquipDLs.empty();
+    model.hasChild = !model.childEquipDLs.empty();
+    model.adultReady = 0; // body swap intentionally disabled for .o2r
+    model.childReady = 0;
+    snprintf(model.displayName, sizeof(model.displayName), "%s",
+             std::filesystem::path(path).stem().string().c_str());
+    PAK_LOG("O2R '%s' loaded %d equipment DLs (adult=%d, child=%d, skel adult=%d child=%d)",
+            model.displayName, loadedCount, (int)model.adultEquipDLs.size(),
+            (int)model.childEquipDLs.size(), hasAdultSkel, hasChildSkel);
+    return true;
 }
 
 // ============================================================================
@@ -1923,6 +2348,102 @@ static bool LoadPakModel(PakModel& model) {
 static void** sSavedSkeleton = NULL;
 static s32 sSavedDListCount = 0;
 
+// Re-add a .o2r file to the global ArchiveManager so its embedded OTR paths
+// (limb DLs, vertices, textures) can be resolved by Fast3D at draw time. We
+// have to mount globally because the skeleton walks limb DLs via
+// gSPDisplayList(OTR-string), which goes through ArchiveManager. Idempotent.
+static bool MountO2rArchive(PakModel& model) {
+    if (model.source != PAK_SOURCE_O2R) return false;
+    if (model.o2rArchiveMounted) return true;
+    auto rm = Ship::Context::GetInstance()->GetResourceManager();
+    if (!rm) return false;
+    auto am = rm->GetArchiveManager();
+    if (!am) return false;
+    auto added = am->AddArchive(model.pakPath);
+    if (!added) {
+        PAK_LOG("MountO2rArchive: AddArchive failed for '%s'", model.pakPath.c_str());
+        return false;
+    }
+    model.o2rArchiveMounted = 1;
+    PAK_LOG("MountO2rArchive: '%s' added to ArchiveManager", model.displayName);
+    return true;
+}
+
+static void UnmountO2rArchive(PakModel& model) {
+    // STICKY MOUNT — intentional no-op.
+    //
+    // ArchiveManager::RemoveArchive calls archive->Unload() (closes the
+    // backing zip) and then ResetVirtualFileSystem(), which Unload/Loads
+    // every remaining archive. But ResourceManager::mResourceCache is keyed
+    // by path (not by archive) and is NEVER evicted by RemoveArchive —
+    // cached Gfx*/Vtx* raw pointers handed out earlier by
+    // GetResourceRawPointer survive into the next frame, pointing at freed
+    // buffers. gfx_vtx_otr_filepath_handler_custom (interpreter.cpp:3099)
+    // has no null/UAF guard (unlike the hash variant at :3081), so the next
+    // draw crashes in GfxSpVertex (access violation reading v->ob[0]).
+    //
+    // Switching between .o2r body models is handled by ArchiveManager's
+    // LIFO priority: the most recently AddArchive'd file shadows older
+    // paths. Leaving 2–4 archives mounted costs a few MB and zero crashes,
+    // which is strictly better than the previous mount/unmount cycle.
+    //
+    // Note: model.o2rArchiveMounted stays 1 so MountO2rArchive remains
+    // idempotent. model.o2rAdultSkel / o2rChildSkel are kept — their
+    // backing resource is still in cache and still mounted.
+    (void)model;
+}
+
+// Resolve the o2r's body skeleton(s) via ResourceMgr_LoadSkeletonByName. The
+// archive MUST be mounted (MountO2rArchive) before this. Idempotent — caches
+// the resolved FlexSkeletonHeader* on the model.
+//
+// Sanity gate: reject anything with a limbCount outside the OOT-Link range
+// [1, 32]. A community .o2r that doesn't actually ship a Flex skeleton at the
+// expected path returns a pointer to UNRELATED resource memory, and reading
+// `limbCount` / `dListCount` off that gives garbage. Swapping the player
+// skeleton to garbage = guaranteed crash inside SkelAnime_DrawFlexLod when
+// the walker dereferences `skeleton[limbIndex]`. We log it and refuse the
+// swap — the body model dropdown entry just won't change Link's body, which
+// matches the .pak path's behaviour for a malformed pak.
+static bool IsValidLinkSkel(SkeletonHeader* hdr) {
+    if (!hdr) return false;
+    if (hdr->limbCount == 0 || hdr->limbCount > 32) return false;
+    if (!hdr->segment) return false;
+    return true;
+}
+
+static void LazyResolveO2rSkel(PakModel& model) {
+    if (model.source != PAK_SOURCE_O2R) return;
+    if (!model.o2rArchiveMounted) return;
+    if (!model.o2rAdultSkel && model.o2rAdultSkelOtr[0]) {
+        SkeletonHeader* hdr = ResourceMgr_LoadSkeletonByName(model.o2rAdultSkelOtr, NULL);
+        if (!IsValidLinkSkel(hdr)) {
+            PAK_LOG("LazyResolveO2rSkel: '%s' adult REJECTED (path='%s' hdr=%p limbCount=%d) — "
+                    "skel will fall back to vanilla so the game doesn't crash",
+                    model.displayName, model.o2rAdultSkelOtr, (void*)hdr,
+                    hdr ? hdr->limbCount : -1);
+        } else {
+            model.o2rAdultSkel = (FlexSkeletonHeader*)hdr;
+            PAK_LOG("LazyResolveO2rSkel: '%s' adult ok (limbCount=%d, dListCount=%d, segment=%p)",
+                    model.displayName, hdr->limbCount, model.o2rAdultSkel->dListCount,
+                    (void*)hdr->segment);
+        }
+    }
+    if (!model.o2rChildSkel && model.o2rChildSkelOtr[0]) {
+        SkeletonHeader* hdr = ResourceMgr_LoadSkeletonByName(model.o2rChildSkelOtr, NULL);
+        if (!IsValidLinkSkel(hdr)) {
+            PAK_LOG("LazyResolveO2rSkel: '%s' child REJECTED (path='%s' hdr=%p limbCount=%d)",
+                    model.displayName, model.o2rChildSkelOtr, (void*)hdr,
+                    hdr ? hdr->limbCount : -1);
+        } else {
+            model.o2rChildSkel = (FlexSkeletonHeader*)hdr;
+            PAK_LOG("LazyResolveO2rSkel: '%s' child ok (limbCount=%d, dListCount=%d, segment=%p)",
+                    model.displayName, hdr->limbCount, model.o2rChildSkel->dListCount,
+                    (void*)hdr->segment);
+        }
+    }
+}
+
 extern "C" void PakLoader_SwapSkeleton(Player* player) {
     if (sGetActiveIndex() < 0 || sGetActiveIndex() >= (s32)sModels.size())
         return;
@@ -1933,12 +2454,25 @@ extern "C" void PakLoader_SwapSkeleton(Player* player) {
     void** pakSkeleton = NULL;
     s32 pakDListCount = 0;
 
-    if (isAdult && model.adultReady) {
-        pakSkeleton = model.adultLimbTable;
-        pakDListCount = model.adultFlexHeader.dListCount;
-    } else if (!isAdult && model.childReady) {
-        pakSkeleton = model.childLimbTable;
-        pakDListCount = model.childFlexHeader.dListCount;
+    if (model.source == PAK_SOURCE_O2R) {
+        // .o2r body model: the skeleton lives inside the archive as OTR data;
+        // resolve it through ResourceMgr (mount already happened in Select).
+        // Falls back to vanilla if resolution failed.
+        LazyResolveO2rSkel(model);
+        FlexSkeletonHeader* flex = isAdult ? model.o2rAdultSkel : model.o2rChildSkel;
+        if (flex && flex->sh.segment) {
+            pakSkeleton = (void**)flex->sh.segment;
+            pakDListCount = flex->dListCount;
+        }
+    } else {
+        // .pak / .zobj body model: native limb table built at load time.
+        if (isAdult && model.adultReady) {
+            pakSkeleton = model.adultLimbTable;
+            pakDListCount = model.adultFlexHeader.dListCount;
+        } else if (!isAdult && model.childReady) {
+            pakSkeleton = model.childLimbTable;
+            pakDListCount = model.childFlexHeader.dListCount;
+        }
     }
 
     if (!pakSkeleton)
@@ -2143,13 +2677,46 @@ static bool IsValidGfxPtr(Gfx* ptr) {
     return false;    // 0x08-0x1F, 0x32-0xD2 are invalid → not a real DL
 }
 
+// Like IsValidGfxPtr, but ALSO accepts OTR path strings (Fast3D's GbiWrap
+// resolves these at draw time, so a gSPDisplayList(otrPath) command inside one
+// of our combined DLs is fine — the resource doesn't have to be loaded right
+// now). Use this in cache assembly / combo regeneration so vanilla fist DLs
+// that the resource manager can't materialise yet still go in as deferred OTR
+// references instead of being dropped.
+static bool IsValidGfxPtrOrOtrPath(Gfx* ptr) {
+    if (!ptr || ptr == PAK_DL_STUB)
+        return false;
+    if (ResourceMgr_OTRSigCheck((char*)ptr) == 1)
+        return true; // __OTR__ prefixed string — Fast3D handles it
+    return IsValidGfxPtr(ptr);
+}
+
+// True iff `ptr` points at an OTR filepath string (starts with "__OTR__").
+// Used to choose the right Fast3D opcode in the combined-DL builders below:
+// native Gfx* uses G_DL (0xDE) and gets passed to SegAddr; OTR paths must use
+// OTR_G_DL_OTR_FILEPATH (0x27) so libultraship's interpreter calls
+// ResourceMgr->GetResourceRawPointer at draw time instead of executing the
+// string bytes as opcodes (which crashes in gfx_set_shader_custom).
+static inline bool IsOtrPathString(Gfx* ptr) {
+    if (!ptr || ptr == PAK_DL_STUB)
+        return false;
+    return ResourceMgr_OTRSigCheck((char*)ptr) == 1;
+}
+
+// Build a tiny DL that simply calls each of `parts` in sequence and ENDDLs.
+// Per-part dispatch chooses G_DL or OTR_G_DL_OTR_FILEPATH so mixed combineds
+// (custom Gfx* hilt + vanilla OTR fist, for example) work without crashing.
 static Gfx* MakeMiniDL(Gfx* parts[], s32 count) {
     Gfx* dl = (Gfx*)calloc(count + 1, sizeof(Gfx));
     for (s32 i = 0; i < count; i++) {
-        dl[i].words.w0 = (uintptr_t)0xDE000000;
+        if (IsOtrPathString(parts[i])) {
+            dl[i].words.w0 = (uintptr_t)0x27000000; // OTR_G_DL_OTR_FILEPATH
+        } else {
+            dl[i].words.w0 = (uintptr_t)0xDE000000; // G_DL
+        }
         dl[i].words.w1 = (uintptr_t)parts[i];
     }
-    dl[count].words.w0 = (uintptr_t)0xDF000000;
+    dl[count].words.w0 = (uintptr_t)0xDF000000; // G_ENDDL
     dl[count].words.w1 = 0;
     return dl;
 }
@@ -2339,19 +2906,34 @@ static void RebuildCachedEquipDLs(void) {
     // aliases from the chosen pak so sheathed/unsheathed/combined stay visually
     // consistent. Skipped during Harpoon remote-player draws so remote skins
     // keep their authoritative appearance.
+    //
+    // Per-alias age fallback: if the age-appropriate map (adult or child) lacks
+    // an alias the slot needs, look it up in the OPPOSITE-age map as a fallback.
+    // Z64Online stores certain aliases age-specifically — child masks
+    // (0x51A0-0x51D8) only appear in childEquipDLs, and the master sword blade
+    // for child only appears at 0x50F8 in childEquipDLs. That asymmetry means
+    // strict same-age lookup would miss masks-as-adult (visible via cheats) or
+    // adult Master Sword pieces falling back from a child pak. Fallback is safe
+    // because translated Gfx* pointers are self-contained — they reference the
+    // zobj's own vertex/texture data regardless of which limb is drawing them.
     EnsureSlotMixLoaded();
     if (!PakLoader_IsRemoteRenderActive()) {
         for (s32 s = 0; s < kSlotCount; s++) {
             s32 mixIdx = sSlotMix[s];
             if (mixIdx < 0 || mixIdx >= (s32)sModels.size())
                 continue;
-            const auto& srcMap = isAdult ? sModels[mixIdx].adultEquipDLs
-                                         : sModels[mixIdx].childEquipDLs;
+            const auto& primary  = isAdult ? sModels[mixIdx].adultEquipDLs
+                                           : sModels[mixIdx].childEquipDLs;
+            const auto& fallback = isAdult ? sModels[mixIdx].childEquipDLs
+                                           : sModels[mixIdx].adultEquipDLs;
             for (s32 i = 0; sSlotGroups[s].aliases[i] != 0; i++) {
                 u32 alias = sSlotGroups[s].aliases[i];
-                auto it = srcMap.find(alias);
-                if (it == srcMap.end())
-                    continue;
+                auto it = primary.find(alias);
+                if (it == primary.end()) {
+                    it = fallback.find(alias);
+                    if (it == fallback.end())
+                        continue;
+                }
                 Gfx* v = it->second;
                 if (v == NULL || v == PAK_DL_STUB || IsValidGfxPtr(v)) {
                     sCachedEquipDLs[alias] = v;
@@ -2377,49 +2959,79 @@ static void RebuildCachedEquipDLs(void) {
     // Entries inserted below feed the per-frame staleness check in PakLoader_FrameBegin.
     sCachedVanillaPtrs.clear();
     if (bodyIdx < 0 && !sCachedEquipDLs.empty()) {
-        // Need LFIST for sword/hammer/boomerang pieces
+        // Need LFIST for sword/hammer/boomerang pieces.
+        //
+        // We try the immediate ResourceMgr lookup first (cheap, gives us a real
+        // Gfx* when the asset is already loaded). If it doesn't return a usable
+        // native DL, we build a tiny 2-command wrapper DL that defers the
+        // resolution to draw time via OTR_G_DL_OTR_FILEPATH (0x27) +
+        // G_ENDDL (0xDF). Fast3D dispatches 0x27 to its OTR-filepath handler
+        // which calls ResourceMgr->GetResourceRawPointer when the asset is
+        // actually being rendered (it's guaranteed loaded by then). This is
+        // what makes per-slot equipment work without requiring a body pak,
+        // AND avoids the crash from passing a raw OTR string to G_DL which
+        // would happily execute the string's bytes as opcodes.
+        auto resolveVanilla = [&](u32 alias, const char* path) {
+            if (sCachedEquipDLs.count(alias)) return;
+            Gfx* dl = ResourceMgr_LoadGfxByName(path);
+            if (IsValidGfxPtr(dl)) {
+                sCachedEquipDLs[alias] = dl;
+                sCachedVanillaPtrs[alias] = dl;
+                return;
+            }
+            // Deferred OTR resolution: allocate a [OTR_G_DL_OTR_FILEPATH(path), G_ENDDL] wrapper.
+            Gfx* wrapper = (Gfx*)calloc(2, sizeof(Gfx));
+            wrapper[0].words.w0 = (uintptr_t)0x27000000; // OTR_G_DL_OTR_FILEPATH
+            wrapper[0].words.w1 = (uintptr_t)path;
+            wrapper[1].words.w0 = (uintptr_t)0xDF000000; // G_ENDDL
+            wrapper[1].words.w1 = 0;
+            sCachedEquipDLs[alias] = wrapper;
+            sCachedVanillaPtrs[alias] = wrapper;
+            sEquipCombinedDLs.push_back(wrapper); // pool ownership; freed on rotation
+        };
         if (!sCachedEquipDLs.count(0x50A0) &&
             (sCachedEquipDLs.count(0x50D8) || sCachedEquipDLs.count(0x50E0) || sCachedEquipDLs.count(0x50E8) ||
              sCachedEquipDLs.count(0x51F0) || sCachedEquipDLs.count(0x5178))) {
-            const char* path = isAdult ? gLinkAdultLeftHandClosedNearDL : gLinkChildLeftFistNearDL;
-            Gfx* fist = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(fist)) {
-                sCachedEquipDLs[0x50A0] = fist;
-                sCachedVanillaPtrs[0x50A0] = fist;
-            } else
-                anyFistMissing = true;
+            resolveVanilla(0x50A0, isAdult ? gLinkAdultLeftHandClosedNearDL : gLinkChildLeftFistNearDL);
         }
         // Need RFIST for shield/bow/hookshot/slingshot pieces
         if (!sCachedEquipDLs.count(0x50B8) &&
             (sCachedEquipDLs.count(0x5108) || sCachedEquipDLs.count(0x5110) || sCachedEquipDLs.count(0x5118) ||
              sCachedEquipDLs.count(0x5138) || sCachedEquipDLs.count(0x5148) || sCachedEquipDLs.count(0x5180))) {
-            const char* path = isAdult ? gLinkAdultRightHandClosedNearDL : gLinkChildRightHandClosedNearDL;
-            Gfx* fist = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(fist)) {
-                sCachedEquipDLs[0x50B8] = fist;
-                sCachedVanillaPtrs[0x50B8] = fist;
-            } else
-                anyFistMissing = true;
+            resolveVanilla(0x50B8, isAdult ? gLinkAdultRightHandClosedNearDL : gLinkChildRightHandClosedNearDL);
         }
         // Need LHAND for open hand
         if (!sCachedEquipDLs.count(0x5098)) {
-            const char* path = isAdult ? gLinkAdultLeftHandNearDL : gLinkChildLeftHandNearDL;
-            Gfx* hand = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(hand)) {
-                sCachedEquipDLs[0x5098] = hand;
-                sCachedVanillaPtrs[0x5098] = hand;
-            } else
-                anyFistMissing = true;
+            resolveVanilla(0x5098, isAdult ? gLinkAdultLeftHandNearDL : gLinkChildLeftHandNearDL);
         }
         // Need RHAND for open hand / ocarina
         if (!sCachedEquipDLs.count(0x50B0)) {
-            const char* path = isAdult ? gLinkAdultRightHandNearDL : gLinkChildRightHandNearDL;
-            Gfx* hand = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(hand)) {
-                sCachedEquipDLs[0x50B0] = hand;
-                sCachedVanillaPtrs[0x50B0] = hand;
-            } else
-                anyFistMissing = true;
+            resolveVanilla(0x50B0, isAdult ? gLinkAdultRightHandNearDL : gLinkChildRightHandNearDL);
+        }
+        // Need SHEATH (0x50C0) for sword-sheathed-on-back combos. Most paks
+        // only ship sword hilt+blade and leave the sheath to vanilla, so when
+        // ANY custom sword hilt or blade is in the cache, pull the vanilla
+        // sheath in too — otherwise SWORD1_SHEATHED (0x53D0), SWORD2_SHEATHED
+        // (0x53D8) and the sword+shield-on-back combineds (0x5400-0x5440,
+        // 0x55C0-0x5600) can't be rebuilt and Link's back goes blank or
+        // reverts to a vanilla sword.
+        // Per-sword sheath seed: only fill the sheath slot that matches the
+        // pak's custom sword pieces, and use the CORRECT vanilla DL for each.
+        // Previously this seeded gLinkAdultSheathNearDL (which IS the Master
+        // sheath geometry) into 0x50C0 (SHEATH_1 = Kokiri slot), corrupting any
+        // Kokiri-sheathed combo built off it.
+        if (!sCachedEquipDLs.count(0x50C0) &&
+            (sCachedEquipDLs.count(0x50D8) || sCachedEquipDLs.count(0x50F0))) {
+            resolveVanilla(0x50C0, gLinkChildSheathNearDL); // SHEATH_1 = Kokiri
+        }
+        if (!sCachedEquipDLs.count(0x50C8) &&
+            (sCachedEquipDLs.count(0x50E0) || sCachedEquipDLs.count(0x50F8))) {
+            resolveVanilla(0x50C8, gLinkAdultSheathNearDL); // SHEATH_2 = Master
+        }
+        if (!sCachedEquipDLs.count(0x50D0) &&
+            (sCachedEquipDLs.count(0x50E8) || sCachedEquipDLs.count(0x5100))) {
+            // BGS has no dedicated sheath DL in vanilla; reuse Master sheath.
+            resolveVanilla(0x50D0, gLinkAdultSheathNearDL); // SHEATH_3 = BGS
         }
     }
 
@@ -2497,10 +3109,13 @@ static void RebuildCachedEquipDLs(void) {
             { 0x5508, { 0x5180, 0x50B8, 0, 0 } },      // RFIST_SLINGSHOT
             { 0x5510, { 0x5190, 0x50B0, 0, 0 } },      // RHAND_OCARINA2
             { 0x5490, { 0x5128, 0x50B0, 0, 0 } },      // RHAND_OCARINA1
-            // Level 0: sword sheathed (hilt/blade + sheath)
-            { 0x53D0, { 0x50D8, 0x50C0, 0, 0 } }, // SWORD1_SHEATHED
-            { 0x53D8, { 0x50E0, 0x50C0, 0, 0 } }, // SWORD2_SHEATHED
-            { 0x53E0, { 0x50E8, 0x50C0, 0, 0 } }, // SWORD3_SHEATHED
+            // Level 0: sword sheathed (hilt + matching sheath). Z64O canonical
+            // recipe pairs HILT_i with SHEATH_i — pairing every sword with
+            // SHEATH_1 (Kokiri) was a holdover bug that drew Master/Biggoron
+            // hilts emerging from the Kokiri sheath.
+            { 0x53D0, { 0x50D8, 0x50C0, 0, 0 } }, // SWORD1_SHEATHED = HILT_1 + SHEATH_1 (Kokiri)
+            { 0x53D8, { 0x50E0, 0x50C8, 0, 0 } }, // SWORD2_SHEATHED = HILT_2 + SHEATH_2 (Master)
+            { 0x53E0, { 0x50E8, 0x50D0, 0, 0 } }, // SWORD3_SHEATHED = HILT_3 + SHEATH_3 (BGS)
             // Shield-back DLs (0x53E8/0x53F0/0x53F8) are generated above with matrix wrapping,
             // NOT here. They need a 180° Z rotation + translation (Z64O MATRIX_SHIELD*_BACK)
             // that MakeMiniDL can't provide. Generated DLs are already in the cache.
@@ -2563,7 +3178,11 @@ static void RebuildCachedEquipDLs(void) {
             // that ResourceMgr_LoadGfxByName may return when an asset isn't loaded yet.
             bool partsValid = true;
             for (s32 v = 0; v < cnt; v++) {
-                if (!IsValidGfxPtr(parts[v])) {
+                // OTR path strings are valid here — Fast3D's GbiWrap resolves
+                // them at draw time, so gSPDisplayList(otrPath) inside our
+                // combined DL works even if the asset wasn't loaded when the
+                // cache was built.
+                if (!IsValidGfxPtrOrOtrPath(parts[v])) {
                     PAK_LOG("WARNING: piece 0x%04X for combined 0x%04X is not a valid Gfx*!", c->p[v], c->result);
                     partsValid = false;
                     break;
@@ -2669,17 +3288,29 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
                 result = FindEquip(eq, 0x50A0);
                 break;
             case PLAYER_MODELTYPE_LH_SWORD:
-                result = FindEquip(eq, 0x5448);
+            case PLAYER_MODELTYPE_LH_SWORD_2: {
+                // Vanilla OOT collapses Kokiri Sword and Master Sword into a single
+                // modeltype (LH_SWORD_2 is unused dead code per z64player.h:331) and
+                // resolves the actual blade via gSaveContext.linkAge inside
+                // sPlayerLeftHandSwordDLs[]. Adult+sword → Master; child+sword →
+                // Kokiri. Returning 0x5448 unconditionally repainted Adult's Master
+                // Sword with the pak's Kokiri combo any time the cache held
+                // 0x50D8/0x50F0 (Kokiri pieces). Dispatch by the actually-equipped
+                // sword item instead.
+                u8 item = gSaveContext.equips.buttonItems[0];
+                u32 alias;
+                if (item == ITEM_SWORD_MASTER)      alias = 0x5450; // LFIST_SWORD2
+                else if (item == ITEM_SWORD_BGS)    alias = 0x5458; // LFIST_SWORD3
+                else                                alias = 0x5448; // LFIST_SWORD1 (Kokiri/default)
+                result = FindEquip(eq, alias);
                 if (result)
                     sPakLeftHandCombined = 1;
                 break;
-            case PLAYER_MODELTYPE_LH_SWORD_2:
-                result = FindEquip(eq, 0x5450, 0x5448);
-                if (result)
-                    sPakLeftHandCombined = 1;
-                break;
+            }
             case PLAYER_MODELTYPE_LH_BGS:
-                result = FindEquip(eq, 0x5458, 0x5448);
+                // Reached only when PLAYER_MODELGROUP_BGS is active. No Kokiri
+                // fallback — vanilla shows if pak doesn't ship a Biggoron blade.
+                result = FindEquip(eq, 0x5458);
                 if (result)
                     sPakLeftHandCombined = 1;
                 break;
@@ -2771,8 +3402,15 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
                 result = FindEquip(eq, sOld54_s3[si]);
             // NULL → fall through to vanilla (which draws both sword+shield correctly)
         } else if (hasSword) {
-            // Sword sheathed, no shield on back
-            result = FindEquip(eq, 0x53D0, 0x50C0);
+            // Sword sheathed on back, no shield. Vanilla picks the sheathed-combo
+            // DL by the equipped sword (Kokiri/Master/Biggoron); mirror that or
+            // Adult+Master will render with the Kokiri SWORD1_SHEATHED visual.
+            u8 item = gSaveContext.equips.buttonItems[0];
+            u32 sheathedAlias, sheathPiece;
+            if (item == ITEM_SWORD_MASTER)      { sheathedAlias = 0x53D8; sheathPiece = 0x50C8; }
+            else if (item == ITEM_SWORD_BGS)    { sheathedAlias = 0x53E0; sheathPiece = 0x50D0; }
+            else                                { sheathedAlias = 0x53D0; sheathPiece = 0x50C0; }
+            result = FindEquip(eq, sheathedAlias, sheathPiece);
         } else if (hasShieldOnBack && shield > 0) {
             // Shield on back, no sword.
             // Do NOT fall back to a different shield type — return NULL instead so
@@ -2787,10 +3425,11 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
         result = FindEquip(eq, 0x5020);
     }
 
-    // Safety: never return a string pointer as a Gfx* — would crash the interpreter.
-    // Catches __OTR__ prefixed strings AND raw '/'-prefixed paths from unloaded assets.
+    // Safety: never return a raw '/'-prefixed path or other garbage pointer
+    // (would crash the Fast3D interpreter). __OTR__ strings DO pass — Fast3D's
+    // GbiWrap resolves them naturally when Player_DrawImpl renders *dList.
     if (result != NULL && result != PAK_DL_STUB) {
-        if (!IsValidGfxPtr(result)) {
+        if (!IsValidGfxPtrOrOtrPath(result)) {
             PAK_LOG("ERROR: GetEquipDL returning invalid Gfx* for limb %d! Falling back to NULL", limbIndex);
             result = NULL;
         }
@@ -2824,13 +3463,37 @@ struct OtrAliasEntry {
 };
 
 static const OtrAliasEntry sStandaloneOtrTable[] = {
+    // Child masks (drawn standalone by z_player.c:13582 via sMaskDlists[]).
+    // The OTR path → Z64O alias mapping lets per-slot equipment-mix picks for
+    // mask_skull/keaton/etc. actually take effect — without these entries the
+    // GbiWrap intercept doesn't know which custom DL to substitute for the
+    // vanilla mask.
+    { gLinkChildSkullMaskDL,    0x51A0 }, // DL_MASK_SKULL
+    { gLinkChildSpookyMaskDL,   0x51A8 }, // DL_MASK_SPOOKY
+    { gLinkChildKeatonMaskDL,   0x51B0 }, // DL_MASK_KEATON
+    { gLinkChildMaskOfTruthDL,  0x51B8 }, // DL_MASK_TRUTH
+    { gLinkChildGoronMaskDL,    0x51C0 }, // DL_MASK_GORON
+    { gLinkChildZoraMaskDL,     0x51C8 }, // DL_MASK_ZORA
+    { gLinkChildGerudoMaskDL,   0x51D0 }, // DL_MASK_GERUDO
+    { gLinkChildBunnyHoodDL,    0x51D8 }, // DL_MASK_BUNNY
     // Hookshot parts
     { gLinkAdultHookshotChainDL, 0x5150 }, // DL_HOOKSHOT_CHAIN
     { gLinkAdultHookshotTipDL, 0x5158 },   // DL_HOOKSHOT_HOOK
     // Bow string
-    { gLinkAdultBowStringDL, 0x5140 }, // DL_BOW_STRING
-    // Bottle
-    { gLinkAdultBottleDL, 0x5120 }, // DL_BOTTLE
+    { gLinkAdultBowStringDL, 0x5140 },         // DL_BOW_STRING
+    // Slingshot string — drawn standalone via sBowStringData[1].dList
+    // (z_player_lib.c:2251) when child holds the slingshot.
+    { gLinkChildSlingshotStringDL, 0x5188 },   // DL_SLINGSHOT_STRING (child)
+    // Bottle — both adult and child variants share alias 0x5120 (DL_BOTTLE).
+    // Drawn via sBottleDLists[gSaveContext.linkAge] (z_player_lib.c:2175).
+    { gLinkAdultBottleDL, 0x5120 },            // DL_BOTTLE (adult)
+    { gLinkChildBottleDL, 0x5120 },            // DL_BOTTLE (child)
+    // Deku Stick — drawn standalone in Player_PostLimbDrawGameplay
+    // (z_player_lib.c:2113) on the child's L_HAND limb when Deku Stick action.
+    { gLinkChildLinkDekuStickDL, 0x5130 },     // DL_DEKU_STICK
+    // Goron Bracelet — drawn standalone when child has STRENGTH upgrade
+    // (z_player_lib.c:1327).
+    { gLinkChildGoronBraceletDL, 0x5198 },     // DL_GORON_BRACELET
     // Boots
     { gLinkAdultLeftIronBootDL, 0x5228 },   // DL_BOOT_LIRON
     { gLinkAdultRightIronBootDL, 0x5230 },  // DL_BOOT_RIRON
@@ -2839,11 +3502,19 @@ static const OtrAliasEntry sStandaloneOtrTable[] = {
     // Waist
     { gLinkAdultWaistNearDL, 0x5020 }, // DL_WAIST
     { gLinkAdultWaistFarDL, 0x5020 },
-    // Gauntlet upgrade forearms/hands
-    { gLinkAdultRightArmOutNearDL, 0x5210 },  // DL_UPGRADE_RFOREARM
-    { gLinkAdultRightHandOutNearDL, 0x5218 }, // DL_UPGRADE_RHAND
-    { gLinkAdultLeftArmOutNearDL, 0x51F8 },   // DL_UPGRADE_LFOREARM
-    // Gauntlet plates (no direct Z64O alias — keep vanilla)
+    // Gauntlet plate DLs — these are the metal bracers drawn standalone in
+    // Player_DrawPauseImpl/SetEquipmentData when STRENGTH >= 2 (Silver/Gold).
+    // The DLs draw OVER vanilla arm geometry as separate primitives (see
+    // z_player_lib.c:1293 — six gSPDisplayList calls). Mapping them to the
+    // Z64O UPGRADE_* aliases lets a pak ship custom gauntlet bracer geometry.
+    //
+    // Plate1 = forearm bracer, Plate2 = open-hand bracer, Plate3 = closed-fist bracer.
+    { gLinkAdultLeftGauntletPlate1DL, 0x51F8 },  // DL_UPGRADE_LFOREARM
+    { gLinkAdultLeftGauntletPlate2DL, 0x5200 },  // DL_UPGRADE_LHAND
+    { gLinkAdultLeftGauntletPlate3DL, 0x5208 },  // DL_UPGRADE_LFIST
+    { gLinkAdultRightGauntletPlate1DL, 0x5210 }, // DL_UPGRADE_RFOREARM
+    { gLinkAdultRightGauntletPlate2DL, 0x5218 }, // DL_UPGRADE_RHAND
+    { gLinkAdultRightGauntletPlate3DL, 0x5220 }, // DL_UPGRADE_RFIST
     // Hookshot reticle
     { gLinkAdultHookshotReticleDL, 0x5160 }, // DL_HOOKSHOT_AIM
     // Sheath combos on back (drawn by OverrideLimbDraw but also referenced standalone)
@@ -2860,9 +3531,9 @@ static const OtrAliasEntry sStandaloneOtrTable[] = {
     { gLinkAdultMirrorShieldAndSheathNearDL, 0x53F8 }, // DL_SHIELD3_BACK
     { gLinkAdultMirrorShieldAndSheathFarDL, 0x53F8 },
     // Hand combos (also caught by OverrideLimbDraw but backup for other code paths)
-    { gLinkAdultLeftHandHoldingMasterSwordNearDL, 0x5448 }, // DL_LFIST_SWORD1
-    { gLinkAdultLeftHandHoldingMasterSwordFarDL, 0x5448 },
-    { gLinkAdultLeftHandHoldingBgsNearDL, 0x5458 }, // DL_LFIST_SWORD3
+    { gLinkAdultLeftHandHoldingMasterSwordNearDL, 0x5450 }, // DL_LFIST_SWORD2 (Master)
+    { gLinkAdultLeftHandHoldingMasterSwordFarDL, 0x5450 },
+    { gLinkAdultLeftHandHoldingBgsNearDL, 0x5458 }, // DL_LFIST_SWORD3 (Biggoron)
     { gLinkAdultLeftHandHoldingBgsFarDL, 0x5458 },
     { gLinkAdultLeftHandHoldingHammerNearDL, 0x5460 }, // DL_LFIST_HAMMER
     { gLinkAdultLeftHandHoldingHammerFarDL, 0x5460 },
@@ -2936,24 +3607,27 @@ static const OtrCombinedDef sOtrCombinedTable[] = {
     { gLinkAdultRightHandHoldingOotFarDL, gLinkAdultRightHandFarDL, { 0x5128, 0 } },
 
     // === ADULT SHEATH (sword+shield on back) ===
-    // Sword sheathed (master sword sheath)
-    { gLinkAdultMasterSwordAndSheathNearDL, NULL, { 0x50E0, 0x50C0, 0 } },
-    { gLinkAdultMasterSwordAndSheathFarDL, NULL, { 0x50E0, 0x50C0, 0 } },
-    // Sheath only
-    { gLinkAdultSheathNearDL, NULL, { 0x50C0, 0 } },
-    { gLinkAdultSheathFarDL, NULL, { 0x50C0, 0 } },
-    // Hylian shield + sword sheathed
-    { gLinkAdultHylianShieldSwordAndSheathNearDL, NULL, { 0x50E0, 0x50C0, 0x5110, 0 } },
-    { gLinkAdultHylianShieldSwordAndSheathFarDL, NULL, { 0x50E0, 0x50C0, 0x5110, 0 } },
-    // Hylian shield + sheath only
-    { gLinkAdultHylianShieldAndSheathNearDL, NULL, { 0x50C0, 0x5110, 0 } },
-    { gLinkAdultHylianShieldAndSheathFarDL, NULL, { 0x50C0, 0x5110, 0 } },
-    // Mirror shield + sword sheathed
-    { gLinkAdultMirrorShieldSwordAndSheathNearDL, NULL, { 0x50E0, 0x50C0, 0x5118, 0 } },
-    { gLinkAdultMirrorShieldSwordAndSheathFarDL, NULL, { 0x50E0, 0x50C0, 0x5118, 0 } },
-    // Mirror shield + sheath only
-    { gLinkAdultMirrorShieldAndSheathNearDL, NULL, { 0x50C0, 0x5118, 0 } },
-    { gLinkAdultMirrorShieldAndSheathFarDL, NULL, { 0x50C0, 0x5118, 0 } },
+    // Master Sword on back uses HILT_2 (0x50E0) + SHEATH_2 (0x50C8). Mirror DLs
+    // labelled "Adult" with Master/Mirror/Hylian all use the Master sheath.
+    // (Previously paired everything with 0x50C0 = Kokiri sheath, which made
+    // the new per-sword seeder fall apart for Adult.)
+    { gLinkAdultMasterSwordAndSheathNearDL, NULL, { 0x50E0, 0x50C8, 0 } },
+    { gLinkAdultMasterSwordAndSheathFarDL, NULL, { 0x50E0, 0x50C8, 0 } },
+    // Sheath only — adult is the Master sheath alias.
+    { gLinkAdultSheathNearDL, NULL, { 0x50C8, 0 } },
+    { gLinkAdultSheathFarDL, NULL, { 0x50C8, 0 } },
+    // Hylian shield + Master sword sheathed
+    { gLinkAdultHylianShieldSwordAndSheathNearDL, NULL, { 0x50E0, 0x50C8, 0x5110, 0 } },
+    { gLinkAdultHylianShieldSwordAndSheathFarDL, NULL, { 0x50E0, 0x50C8, 0x5110, 0 } },
+    // Hylian shield + Master sheath only
+    { gLinkAdultHylianShieldAndSheathNearDL, NULL, { 0x50C8, 0x5110, 0 } },
+    { gLinkAdultHylianShieldAndSheathFarDL, NULL, { 0x50C8, 0x5110, 0 } },
+    // Mirror shield + Master sword sheathed
+    { gLinkAdultMirrorShieldSwordAndSheathNearDL, NULL, { 0x50E0, 0x50C8, 0x5118, 0 } },
+    { gLinkAdultMirrorShieldSwordAndSheathFarDL, NULL, { 0x50E0, 0x50C8, 0x5118, 0 } },
+    // Mirror shield + Master sheath only
+    { gLinkAdultMirrorShieldAndSheathNearDL, NULL, { 0x50C8, 0x5118, 0 } },
+    { gLinkAdultMirrorShieldAndSheathFarDL, NULL, { 0x50C8, 0x5118, 0 } },
 
     // === CHILD LEFT HAND ===
     // Kokiri Sword (sword1 in Z64O = hilt1 + blade1)
@@ -2999,11 +3673,16 @@ static const OtrCombinedDef sOtrCombinedTable[] = {
     { NULL, NULL, { 0 } },
 };
 
-// Build a mini-DL that calls sub-DLs in sequence
+// Build a mini-DL that calls sub-DLs in sequence. Same per-part opcode
+// dispatch as MakeMiniDL — see comment above IsOtrPathString.
 static Gfx* MakeCombinedDL(Gfx* parts[], s32 count) {
     Gfx* dl = (Gfx*)calloc(count + 1, sizeof(Gfx));
     for (s32 i = 0; i < count; i++) {
-        dl[i].words.w0 = (uintptr_t)0xDE000000; // G_DL push
+        if (IsOtrPathString(parts[i])) {
+            dl[i].words.w0 = (uintptr_t)0x27000000; // OTR_G_DL_OTR_FILEPATH
+        } else {
+            dl[i].words.w0 = (uintptr_t)0xDE000000; // G_DL
+        }
         dl[i].words.w1 = (uintptr_t)parts[i];
     }
     dl[count].words.w0 = (uintptr_t)0xDF000000; // G_ENDDL
@@ -3082,34 +3761,43 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
         Gfx* parts[8];
         s32 partCount = 0;
 
-        // Add equipment pieces (custom if available, skip if not — vanilla is baked in the fist DL)
+        // Add equipment pieces. Accept OTR strings too: Fast3D's GbiWrap will
+        // resolve them when the runtime combined DL is interpreted.
         for (s32 i = 0; def->pieces[i] != 0; i++) {
             auto it = eq.find(def->pieces[i]);
             if (it != eq.end() && it->second != NULL && it->second != PAK_DL_STUB &&
-                IsValidGfxPtr(it->second)) {
+                IsValidGfxPtrOrOtrPath(it->second)) {
                 parts[partCount++] = it->second;
             }
         }
 
-        // Add vanilla fist/hand as fallback (resolved from OTR)
+        // Add vanilla fist/hand as fallback. If the ResourceManager doesn't
+        // give us a usable native Gfx* right now, push the OTR path string
+        // itself — Fast3D resolves OTR paths at draw time, which is when the
+        // vanilla object_link_boy / object_link_child resource is guaranteed
+        // to be loaded. This is what fixes "I need to equip a body pak to see
+        // the equipment" — we no longer require the fist resource to be
+        // materialised when the cache is built.
         if (def->fistOtrPath != NULL) {
-            // Check if body pak has a custom fist
             Gfx* fist = NULL;
             // DL_LFIST = 0x50A0, DL_RFIST = 0x50B8
             u8 isLeftHand = (strstr(def->otrPath, "Left") != NULL);
             u32 fistAlias = isLeftHand ? 0x50A0 : 0x50B8;
             auto fistIt = eq.find(fistAlias);
             if (fistIt != eq.end() && fistIt->second && fistIt->second != PAK_DL_STUB &&
-                IsValidGfxPtr(fistIt->second)) {
+                IsValidGfxPtrOrOtrPath(fistIt->second)) {
                 fist = fistIt->second;
             } else {
-                // Resolve vanilla fist from OTR — may fail if object not loaded yet
                 try {
                     fist = ResourceMgr_LoadGfxByName(def->fistOtrPath);
                 } catch (...) { fist = NULL; }
             }
-            if (IsValidGfxPtr(fist)) {
+            if (IsValidGfxPtrOrOtrPath(fist)) {
                 parts[partCount++] = fist;
+            } else {
+                // Deferred resolution: hand the OTR path string itself to the
+                // combined DL so Fast3D resolves it later.
+                parts[partCount++] = (Gfx*)def->fistOtrPath;
             }
         }
 
@@ -3126,10 +3814,10 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
         if (strcmp(otrPath, e->otr) == 0) {
             auto it = eq.find(e->alias);
             if (it != eq.end() && it->second != NULL && it->second != PAK_DL_STUB) {
-                // Belt-and-suspenders: even with RebuildCachedEquipDLs filtering
-                // string-path entries at insert time, validate here before sending
-                // a pointer straight to the Fast3D interpreter.
-                if (IsValidGfxPtr(it->second)) {
+                // OTR path strings are acceptable here — Fast3D handles them
+                // when *dList is interpreted. Only reject raw '/'-paths /
+                // garbage that would crash the interpreter.
+                if (IsValidGfxPtrOrOtrPath(it->second)) {
                     return it->second;
                 }
                 PAK_LOG("ERROR: GetDLOverride dropped invalid Gfx* for alias 0x%04X (path=%s)",
@@ -3323,32 +4011,36 @@ extern "C" void PakLoader_Init(void) {
     std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
     PAK_LOG("Mods path: %s", modsPath.c_str());
 
-    // Both .pak and raw .zobj files are scanned at the top level of mods/ only —
-    // subfolders are intentionally ignored so users keep a flat layout.
+    // .pak / .zobj are scanned at the TOP LEVEL of mods/ only — subfolders are
+    // intentionally ignored so users keep a flat layout. .o2r files are
+    // intentionally NOT scanned: community .o2r packs embed OTR vertex paths
+    // that don't resolve through pak_loader's standalone Archive instance,
+    // and the unguarded gfx_vtx_otr_filepath_handler_custom in libultraship's
+    // Fast3D interpreter crashes the first frame the .o2r's DLs are drawn.
+    // libultraship's own ArchiveManager auto-mounts mods/*.o2r at startup as
+    // a global override (its native intended behaviour) — pak_loader stays
+    // out of that path.
     std::vector<std::string> rawZobjFiles;
 
     if (!modsPath.empty() && std::filesystem::exists(modsPath) && std::filesystem::is_directory(modsPath)) {
         for (auto& entry : std::filesystem::directory_iterator(modsPath)) {
             if (entry.is_directory())
                 continue;
-            if (entry.path().extension() == ".pak") {
-                std::string p = entry.path().string();
+            std::string ext = entry.path().extension().string();
+            for (char& c : ext) c = (char)tolower((unsigned char)c);
+            std::string p = entry.path().string();
+            if (ext == ".pak") {
                 pakFiles.push_back(p);
-                PAK_LOG("Found: %s", p.c_str());
-            }
-        }
-
-        for (auto& entry : std::filesystem::directory_iterator(modsPath)) {
-            if (entry.is_directory())
-                continue;
-            if (entry.path().extension() == ".zobj") {
-                rawZobjFiles.push_back(entry.path().string());
-                PAK_LOG("Found raw zobj: %s", entry.path().string().c_str());
+                PAK_LOG("Found pak: %s", p.c_str());
+            } else if (ext == ".zobj") {
+                rawZobjFiles.push_back(p);
+                PAK_LOG("Found raw zobj: %s", p.c_str());
             }
         }
     }
 
-    PAK_LOG("Found %d .pak files, %d raw .zobj files", (int)pakFiles.size(), (int)rawZobjFiles.size());
+    PAK_LOG("Found %d .pak, %d .zobj files",
+            (int)pakFiles.size(), (int)rawZobjFiles.size());
 
     // Reserve space so push_back doesn't reallocate and invalidate internal pointers
     sModels.reserve(pakFiles.size() + rawZobjFiles.size());
@@ -3357,6 +4049,7 @@ extern "C" void PakLoader_Init(void) {
     for (auto& pakPath : pakFiles) {
         PakModel model = {};
         model.pakPath = pakPath;
+        model.source = PAK_SOURCE_PAK;
         snprintf(model.displayName, sizeof(model.displayName), "Unknown");
 
         if (LoadPakModel(model)) {
@@ -3385,6 +4078,7 @@ extern "C" void PakLoader_Init(void) {
     for (auto& zobjPath : rawZobjFiles) {
         PakModel model = {};
         model.pakPath = zobjPath;
+        model.source = PAK_SOURCE_ZOBJ;
 
         if (LoadRawZobjModel(model)) {
             sModels.push_back(std::move(model));
@@ -3450,6 +4144,12 @@ extern "C" void PakLoader_Init(void) {
     PAK_LOG("Init Select: enabled=%d adult=%d child=%d equip=%d",
             CVarGetInteger("gMods.PakLoader.Enabled", 0),
             finalAdult, finalChild, finalEquip);
+
+    // Force one pass through the o2r mount tracker so slot-mix-only selections
+    // (no body, no equipment pack, only per-slot picks) still mount their
+    // chosen .o2r at boot. Select* calls above skip the trigger when value
+    // didn't change from default -1.
+    O2rUpdateMounts();
 
     // Populate the sync registry (harpoon/skins/) — forward declared at
     // global scope near the top of this file.
@@ -3609,6 +4309,72 @@ extern "C" const char* PakLoader_GetModelName(s32 index) {
     return sModels[index].displayName;
 }
 
+// Display label for dropdowns — prefixes the displayName with the source
+// category ("[PAK]" / "[ZOBJ]" / "[O2R]") so a user with three "MasterSword"
+// entries (one of each type) can tell them apart. The label is cached on the
+// PakModel itself (displayLabel) so the returned pointer stays valid for the
+// model's lifetime — safe to stash in a comboMap<int, const char*>.
+//
+// Built lazily: if displayLabel is empty, regenerate from displayName + source.
+// This handles the case where displayName changes after load (e.g. forced
+// equipment relabels).
+extern "C" const char* PakLoader_GetModelLabel(s32 index) {
+    if (index < 0 || index >= (s32)sModels.size())
+        return NULL;
+    PakModel& m = sModels[index];
+    if (m.displayLabel[0] == '\0') {
+        const char* tag = "[PAK]";
+        if (m.source == PAK_SOURCE_ZOBJ) tag = "[ZOBJ]";
+        else if (m.source == PAK_SOURCE_O2R) tag = "[O2R]";
+        snprintf(m.displayLabel, sizeof(m.displayLabel), "%s %s", tag, m.displayName);
+    }
+    return m.displayLabel;
+}
+
+// Per-selection mount management for .o2r entries. We mount the .o2r in the
+// global ArchiveManager when it's actively in use (body model, equipment
+// pack, forced equipment, OR any per-slot mix) and unmount when nothing
+// references it.
+//
+// Why mounting matters for equipment too: the native Gfx* we cached from the
+// .o2r at load time reference VERTICES and TEXTURES via OTR string paths
+// embedded in the DL. Fast3D resolves those paths through the global
+// ArchiveManager at draw time — if the .o2r isn't mounted, the resolution
+// fails and `gfx_vtx_otr_filepath_handler_custom` crashes in `GfxSpVertex`
+// (access violation). So the rule is: a .o2r is mounted IFF the user
+// selected it somewhere; otherwise it stays unmounted (no auto-priority).
+static void O2rUpdateMounts(void) {
+    std::set<s32> needMounted;
+    auto noteO2r = [&](s32 idx) {
+        if (idx < 0 || idx >= (s32)sModels.size()) return;
+        if (sModels[idx].source == PAK_SOURCE_O2R) needMounted.insert(idx);
+    };
+    noteO2r(sSelectedAdultIndex);
+    noteO2r(sSelectedChildIndex);
+    noteO2r(sSelectedEquipIndex);
+    noteO2r(sForcedModelIndex);
+    noteO2r(sForcedEquipIndex);
+    EnsureSlotMixLoaded();
+    for (s32 s = 0; s < kSlotCount; s++) noteO2r(sSlotMix[s]);
+
+    // Sticky mount: we only ADD here. UnmountO2rArchive is a no-op (see its
+    // definition) because Fast3D's resource cache survives RemoveArchive with
+    // freed-buffer pointers — a single Unmount during gameplay = guaranteed
+    // crash on the next draw. Switching .o2r body models is handled by
+    // ArchiveManager LIFO: the most-recently-mounted file shadows older
+    // paths for any symbol both archives ship. Worst case is a few MB of
+    // resident archive data; the alternative is the access violation in
+    // gfx_vtx_otr_filepath_handler_custom we just patched away.
+    for (size_t i = 0; i < sModels.size(); i++) {
+        if (sModels[i].source != PAK_SOURCE_O2R) continue;
+        bool want = needMounted.count((s32)i) != 0;
+        if (want && !sModels[i].o2rArchiveMounted) {
+            MountO2rArchive(sModels[i]);
+            LazyResolveO2rSkel(sModels[i]);
+        }
+    }
+}
+
 extern "C" void PakLoader_SelectAdultModel(s32 index) {
     if (index < -1 || index >= (s32)sModels.size())
         index = -1;
@@ -3624,6 +4390,7 @@ extern "C" void PakLoader_SelectAdultModel(s32 index) {
     } else {
         PAK_LOG("Deselected adult model");
     }
+    O2rUpdateMounts();
 }
 
 extern "C" void PakLoader_SelectChildModel(s32 index) {
@@ -3639,6 +4406,7 @@ extern "C" void PakLoader_SelectChildModel(s32 index) {
     } else {
         PAK_LOG("Deselected child model");
     }
+    O2rUpdateMounts();
 }
 
 extern "C" s32 PakLoader_GetSelectedAdultIndex(void) {
@@ -3687,6 +4455,7 @@ extern "C" void PakLoader_SelectEquipment(s32 index) {
     } else {
         PAK_LOG("Deselected equipment");
     }
+    O2rUpdateMounts();
 }
 
 extern "C" s32 PakLoader_GetSelectedEquipIndex(void) {
@@ -3765,6 +4534,7 @@ extern "C" void PakLoader_SetSlotMix(s32 slotIdx, s32 pakIdx) {
     } else {
         PAK_LOG("SlotMix[%s] = default (inherit)", sSlotGroups[slotIdx].cvarKey);
     }
+    O2rUpdateMounts();
 }
 
 extern "C" s32 PakLoader_GetSlotMix(s32 slotIdx) {

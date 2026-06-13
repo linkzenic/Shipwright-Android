@@ -179,7 +179,18 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
             (touchedActor->flags & (ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR | ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER))) {
             if (this->collider.info.atHitInfo->bumperFlags & BUMP_HOOKABLE) {
                 ArmsHook_AttachHookToActor(this, touchedActor);
-                if (CHECK_FLAG_ALL(touchedActor->flags, ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER)) {
+                // Twilight Upgrade — Clawshot mode: when active, INVERT the pull
+                // direction on actors that would normally pull Link (ACTOR_FLAG_
+                // HOOKSHOT_PULLS_PLAYER). Instead of attaching Link to the hook
+                // (which would yank Link forward), we leave the actor flagged
+                // ATTACHED so the standard "drag target back to Link" branch at
+                // the bottom of this function moves the target each frame —
+                // exactly the Twilight Princess clawshot grab. Surfaces (no
+                // touchedActor->update or no flag set) still pull Link normally
+                // so terrain grappling still works.
+                extern u8 TwilightUpgrade_IsClawshotActive(void);
+                u8 clawshotInvert = TwilightUpgrade_IsClawshotActive();
+                if (CHECK_FLAG_ALL(touchedActor->flags, ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER) && !clawshotInvert) {
                     ArmsHook_PullPlayer(this);
                 }
             }

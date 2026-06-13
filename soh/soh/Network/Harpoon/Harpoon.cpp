@@ -1231,6 +1231,23 @@ void Harpoon::HandlePacket_Damage(nlohmann::json payload) {
     if (self->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_IN_CUTSCENE))
         return;
 
+    // Friendly fire is OFF in Triforce Thief team mode. If the attacker is
+    // on our team, drop the packet entirely (no knockback, no status, no
+    // damage, no drop trigger). Spectators with no assigned team are
+    // never gated — they can both deal and take damage normally.
+    if (currentRoomGameMode == "triforce_thief") {
+        uint32_t atkId = payload.value("clientId", (uint32_t)0);
+        if (atkId == 0) atkId = payload.value("source", (uint32_t)0);
+        const std::string& myTeam = HarpoonTriforceThief::GetLocalState().team;
+        auto atkIt = clients.find(atkId);
+        if (atkIt != clients.end() &&
+            !myTeam.empty() &&
+            !atkIt->second.team.empty() &&
+            atkIt->second.team == myTeam) {
+            return;
+        }
+    }
+
     // PVP off: apply status effects only (stun/freeze), no damage or knockback
     if (!pvpEnabled) {
         if (damageEffect == HARPOON_HIT_RESPONSE_STUN) {
@@ -2406,6 +2423,20 @@ void Harpoon_SendCustomDamage(Actor* hitActor, s32 damageType, s32 damage) {
     if (clientId == 0)
         return;
 
+    // Triforce Thief: drop friendly-fire packets at the source. Without
+    // this the attacker still pays the hit cost (invuln below) and the
+    // wire carries a redundant packet that the target gates server-side.
+    if (Harpoon::Instance->currentRoomGameMode == "triforce_thief") {
+        const std::string& myTeam = HarpoonTriforceThief::GetLocalState().team;
+        auto it = Harpoon::Instance->clients.find(clientId);
+        if (it != Harpoon::Instance->clients.end() &&
+            !myTeam.empty() &&
+            !it->second.team.empty() &&
+            it->second.team == myTeam) {
+            return;
+        }
+    }
+
     Player* localPlayer = GET_PLAYER(gPlayState);
 
     nlohmann::json payload;
@@ -2438,6 +2469,19 @@ void Harpoon_SendCustomEffect(Actor* hitActor, s32 effectType, Vec3f* attackerPo
     uint32_t clientId = Harpoon::Instance->GetDummyPlayerClientId(hitActor);
     if (clientId == 0)
         return;
+
+    // Triforce Thief friendly-fire gate (status effects too: stun, freeze,
+    // burn, etc. would otherwise still apply between teammates).
+    if (Harpoon::Instance->currentRoomGameMode == "triforce_thief") {
+        const std::string& myTeam = HarpoonTriforceThief::GetLocalState().team;
+        auto it = Harpoon::Instance->clients.find(clientId);
+        if (it != Harpoon::Instance->clients.end() &&
+            !myTeam.empty() &&
+            !it->second.team.empty() &&
+            it->second.team == myTeam) {
+            return;
+        }
+    }
 
     nlohmann::json payload;
     payload["type"] = Harpoon::HPN_COMBAT_CUSTOM_EFFECT;  // v2: COMBAT.CUSTOM_EFFECT

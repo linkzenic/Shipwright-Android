@@ -615,9 +615,16 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                     ImGui::Text("Round-win seconds:");
                     ImGui::SameLine();
                     ImGui::SetNextItemWidth(140);
+                    // Team-mode cap per user spec: max 99 sec.
                     ImGui::SliderInt("##TTwinSec",
                                       &HarpoonTriforceThief::GetLocalState().roundWinSeconds,
-                                      15, 300, "%d s");
+                                      15, 99, "%d s");
+                    if (HarpoonTriforceThief::GetLocalState().roundWinSeconds > 99) {
+                        HarpoonTriforceThief::GetLocalState().roundWinSeconds = 99;
+                    }
+                    if (HarpoonTriforceThief::GetLocalState().roundWinSeconds < 5) {
+                        HarpoonTriforceThief::GetLocalState().roundWinSeconds = 5;
+                    }
 
                     // Map-select mode picker — binds DIRECTLY to the
                     // room-wide mapSelectMode so L+R+Z and "Open Map Select"
@@ -655,10 +662,30 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                         HarpoonTriforceThief::HandleEvent(env);
                     }
                     ImGui::SameLine();
+                    // Disable Confirm-Map if any online client is teamless.
+                    // The host gets a visible hint listing the offenders.
+                    std::string teamlessHint;
+                    bool anyTeamless = false;
+                    for (auto& [cid, c] : harpoon->clients) {
+                        if (!c.online) continue;
+                        if (c.team.empty()) {
+                            anyTeamless = true;
+                            if (!teamlessHint.empty()) teamlessHint += ", ";
+                            teamlessHint += c.name.empty()
+                                              ? ("cid" + std::to_string(cid))
+                                              : c.name;
+                        }
+                    }
+                    ImGui::BeginDisabled(anyTeamless);
                     if (ImGui::Button("Confirm Map (start round)")) {
                         // Shared host-confirm path — applies locally and
                         // broadcasts MAP_CONFIRMED + ROUND_CONFIG + spawn.
                         HarpoonTriforceThief::HostConfirmMap(selectedMap);
+                    }
+                    ImGui::EndDisabled();
+                    if (anyTeamless) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                            "  No team picked yet: %s", teamlessHint.c_str());
                     }
                     ImGui::EndDisabled();
                 }
@@ -678,6 +705,45 @@ static void HarpoonMainMenu(WidgetInfo& info) {
                     HarpoonTriforceThief::HandleEvent(payload);
                 }
                 ImGui::EndDisabled();
+
+                // --- Team picker (lobby only, per-user spec) --------------
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f),
+                                    "Teams (lobby only):");
+                const bool inLobby =
+                    (harpoon->gameState == HARPOON_STATE_LOBBY);
+                ImGui::BeginDisabled(!inLobby);
+                if (ImGui::Button("Join Red")) {
+                    HarpoonTriforceThief::SetLocalTeam("red");
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Join Blue")) {
+                    HarpoonTriforceThief::SetLocalTeam("blue");
+                }
+                ImGui::EndDisabled();
+                if (!inLobby) {
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                        "  Team switching disabled mid-round.");
+                }
+
+                // Per-client team badge list (mirrors PropHunt role list).
+                for (auto& [cid, c] : harpoon->clients) {
+                    ImGui::PushID((int)cid + 0x7700);
+                    ImVec4 col(0.7f, 0.7f, 0.7f, 1.0f);
+                    const char* tag = "(no team)";
+                    if (c.team == "red") {
+                        col = ImVec4(0.92f, 0.30f, 0.30f, 1.0f);
+                        tag = "RED";
+                    } else if (c.team == "blue") {
+                        col = ImVec4(0.30f, 0.55f, 0.92f, 1.0f);
+                        tag = "BLUE";
+                    }
+                    ImGui::TextColored(col, "  [%s]", tag);
+                    ImGui::SameLine();
+                    ImGui::TextColored(col, "%s%s",
+                                       c.name.c_str(), c.self ? " (you)" : "");
+                    ImGui::PopID();
+                }
             }
         }
 

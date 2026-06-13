@@ -15,18 +15,21 @@ static void GustJarPot_Draw(Player* player, PlayState* play) {
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    // 1. Calculate position
-    Vec3f potPos = player->actor.world.pos;
-    potPos.y += 20.0f;
-    f32 frontOffset = 15.0f;
+    // 1. Calculate position — midpoint between Link's two hands (same pattern
+    // as ball-and-chain bcBallPos). The carry pose puts both hands in front of
+    // his chest; placing the jar at the midpoint makes it look held.
+    Vec3f* leftHand = &player->bodyPartsPos[PLAYER_BODYPART_L_HAND];
+    Vec3f* rightHand = &player->bodyPartsPos[PLAYER_BODYPART_R_HAND];
+    Vec3f potPos;
+    potPos.x = (leftHand->x + rightHand->x) * 0.5f;
+    potPos.y = (leftHand->y + rightHand->y) * 0.5f;
+    potPos.z = (leftHand->z + rightHand->z) * 0.5f;
     s16 yaw = player->actor.shape.rot.y;
-    potPos.x += Math_SinS(yaw) * frontOffset;
-    potPos.z += Math_CosS(yaw) * frontOffset;
 
     // 2. Setup render state (OPA for solid geometry)
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
 
-    // 3. Transformation matrix
+    // 3. Transformation matrix — rotate with Link so the jar tracks his facing.
     Matrix_Translate(potPos.x, potPos.y, potPos.z, MTXMODE_NEW);
     Matrix_RotateY(BINANG_TO_RAD(yaw), MTXMODE_APPLY);
     Matrix_RotateX(DEG_TO_RAD(90.0f), MTXMODE_APPLY);
@@ -38,7 +41,9 @@ static void GustJarPot_Draw(Player* player, PlayState* play) {
     // 4. Draw body (gray/base)
     gSPDisplayList(POLY_OPA_DISP++, jar_body_dl);
 
-    // 5. Draw decoration (recolorable) - heat gradient: blue→yellow→red
+    // 5. Draw decoration (recolorable) — color by SUCK/BLOW direction.
+    //    SUCK = blue, BLOW = red. Brightness scales with heat (more charge →
+    //    more saturated color) so the visual still feeds back the charge level.
     {
         f32 heat = (f32)gCustomItemState.gustJarHeatTimer / 300.0f;
         if (heat > 1.0f)
@@ -46,16 +51,16 @@ static void GustJarPot_Draw(Player* player, PlayState* play) {
         if (heat < 0.0f)
             heat = 0.0f;
         u8 r, g, b;
-        if (heat < 0.5f) {
-            f32 t = heat * 2.0f; // Blue → Yellow
-            r = (u8)(86 + (255 - 86) * t);
-            g = (u8)(169 + (255 - 169) * t);
-            b = (u8)(255 * (1.0f - t) + 100 * t);
+        if (gCustomItemState.gustJarBlowDir == 1 /* GUST_DIR_BLOW */) {
+            // Red gradient (dim red → bright red as heat builds)
+            r = (u8)(180 + 75 * heat);
+            g = (u8)(40 * (1.0f - heat));
+            b = (u8)(40 * (1.0f - heat));
         } else {
-            f32 t = (heat - 0.5f) * 2.0f; // Yellow → Red
-            r = 255;
-            g = (u8)(255 * (1.0f - t));
-            b = (u8)(100 * (1.0f - t));
+            // Blue gradient (dim blue → bright blue as heat builds)
+            r = (u8)(60 * (1.0f - heat));
+            g = (u8)(120 + 60 * heat);
+            b = (u8)(200 + 55 * heat);
         }
         gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, r, g, b, 255);
     }

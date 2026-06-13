@@ -109,6 +109,14 @@ constexpr const char* kMessageTableId = "SpiritualStones";
 // Helpers
 // ============================================================================
 
+// Master toggle (NEI "Spells" tab). Default ON. When OFF, the spiritual stones
+// behave VANILLA: no passive buffs, no warp prompt, no statues, no equip hijack.
+// Gated at runtime (in the hooks + the public API) so toggling takes effect
+// without a restart.
+inline bool StonesEnabled() {
+    return CVarGetInteger("gMods.SpiritualStones.Enabled", 1) != 0;
+}
+
 inline s32 StoneItemId(int stone) {
     switch (stone) {
         case SPIRITUAL_STONE_KOKIRI: return ITEM_KOKIRI_EMERALD;
@@ -222,6 +230,7 @@ void SummonStatueHere(PlayState* play, int stone) {
 // Re-spawn statues that belong to the freshly-loaded scene. Called from the
 // OnSceneSpawnActors hook so the actor list is ready to accept new spawns.
 void SpawnStatuesForCurrentScene() {
+    if (!StonesEnabled()) return;
     if (gPlayState == nullptr) return;
     for (int i = 0; i < SPIRITUAL_STONE_COUNT; ++i) {
         StoneWarp& w = gState.warp[i];
@@ -250,6 +259,7 @@ void BuildWarpMessage(int stone, uint16_t* textId, bool* loadFromMessageTable) {
 }
 
 void OnOpenTextDispatch(uint16_t* textId, bool* loadFromMessageTable) {
+    if (!StonesEnabled()) return;
     if (*textId < kStoneWarpTextIdBase) return;
     int stone = *textId - kStoneWarpTextIdBase;
     if (stone < 0 || stone >= SPIRITUAL_STONE_COUNT) return;
@@ -338,6 +348,7 @@ static RegisterShipInitFunc gSpiritualStonesInit(Register);
 // ============================================================================
 
 extern "C" s32 SpiritualStone_TryToggleAtCursor(PlayState* play, Input* input) {
+    if (!StonesEnabled()) return false;
     if (!CHECK_BTN_ALL(input->press.button, BTN_A)) return false;
     s16 cursorPoint = play->pauseCtx.cursorPoint[PAUSE_QUEST];
     int stone = CursorPointToStone(cursorPoint);
@@ -351,6 +362,7 @@ extern "C" s32 SpiritualStone_TryToggleAtCursor(PlayState* play, Input* input) {
 }
 
 extern "C" s32 SpiritualStone_TryEquipAtCursor(PlayState* play, Input* input) {
+    if (!StonesEnabled()) return false;
     s16 cursorPoint = play->pauseCtx.cursorPoint[PAUSE_QUEST];
     int stone = CursorPointToStone(cursorPoint);
     if (stone < 0) return false;
@@ -391,6 +403,7 @@ extern "C" s32 SpiritualStone_TryEquipAtCursor(PlayState* play, Input* input) {
 }
 
 extern "C" void SpiritualStone_TickHold(PlayState* play, Player* player) {
+    if (!StonesEnabled()) return;
     if (play == nullptr || player == nullptr) return;
 
     // If a warp prompt is open, watch for its close and act on the choice.
@@ -443,18 +456,22 @@ extern "C" void SpiritualStone_TickHold(PlayState* play, Player* player) {
 }
 
 extern "C" s32 SpiritualStone_IsPassiveActive(s32 stone) {
+    if (!StonesEnabled()) return 0;
     if (stone < 0 || stone >= SPIRITUAL_STONE_COUNT) return 0;
     return gState.passive[stone];
 }
 
 extern "C" s32 SpiritualStone_KokiriWalkActive(void) {
+    if (!StonesEnabled()) return 0;
     return gState.passive[SPIRITUAL_STONE_KOKIRI] && StoneOwned(SPIRITUAL_STONE_KOKIRI);
 }
 
 extern "C" s32 SpiritualStone_GoronClimbActive(void) {
+    if (!StonesEnabled()) return 0;
     return gState.passive[SPIRITUAL_STONE_GORON] && StoneOwned(SPIRITUAL_STONE_GORON);
 }
 
 extern "C" s32 SpiritualStone_ZoraSwimActive(void) {
+    if (!StonesEnabled()) return 0;
     return gState.passive[SPIRITUAL_STONE_ZORA] && StoneOwned(SPIRITUAL_STONE_ZORA);
 }

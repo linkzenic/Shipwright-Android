@@ -6,7 +6,9 @@
 #include "expansions/ssbb/characters/pikachu_ssbb_skel.c"
 #include "expansions/ssbb/characters/pikachu_ssbb_Wait1.c"
 #include "expansions/ssbb/characters/pikachu_ssbb_Wait3.c"
-#include "expansions/ssbb/characters/pikachu_ssbb_all_anims.c"
+// NOTE: pikachu_ssbb_all_anims.c (322 *_ssbb.c, ~82 MB) is no longer compiled.
+// The SSBB animations are loaded at runtime from NEI/pikachu_anims.bin by
+// PikaAnims_EnsureLoaded() in pikachu_form.cpp.
 #include "expansions/ssbb/characters/pikachu_ssbb_dl.c"
 #include "expansions/ssbb/characters/pikachu_ssbb_skin.c"
 #include "expansions/ssbb/characters/pikachu_ssbb_shadow.c"

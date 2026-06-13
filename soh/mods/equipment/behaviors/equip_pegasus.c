@@ -31,6 +31,16 @@
 // lower body keeps the running animation.
 
 // ---------------------------------------------------------------------------
+// State helpers
+// ---------------------------------------------------------------------------
+// Back-to-idle action reset (z_player.c, non-static): Player_Action_Idle + idle
+// anim + yaw resync. Same helper the NEI mailbox/mushroom actors use.
+extern void func_80853080(Player* this, PlayState* play);
+
+static u8 sPegasusCrateBonk = 0;  // AT collider smashed a crate this frame → force bonk
+static u8 sPegasusNeedsReset = 0; // dash ended while airborne → reset action on landing
+
+// ---------------------------------------------------------------------------
 // Collider
 // ---------------------------------------------------------------------------
 static ColliderCylinder sPegasusCol;
@@ -66,6 +76,13 @@ static void Pegasus_UpdateCollider(PlayState* play, Player* p) {
 
     // Check and clear hit
     if (sPegasusCol.base.atFlags & AT_HIT) {
+        // Smashing a crate ends the dash with a bonk, same as ramming it as a wall.
+        // Without this, the AT collider breaks the crate before the wall touch
+        // registers and the dash blows through it only sometimes (inconsistent).
+        Actor* hitActor = sPegasusCol.base.at;
+        if (hitActor != NULL && (hitActor->id == ACTOR_OBJ_KIBAKO || hitActor->id == ACTOR_OBJ_KIBAKO2)) {
+            sPegasusCrateBonk = 1;
+        }
         Audio_PlaySoundGeneral(NA_SE_IT_SWORD_STRIKE, &p->actor.world.pos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         sPegasusCol.base.atFlags &= ~AT_HIT;
@@ -75,15 +92,47 @@ static void Pegasus_UpdateCollider(PlayState* play, Player* p) {
 // ---------------------------------------------------------------------------
 // Stop / Cleanup
 // ---------------------------------------------------------------------------
-static void Pegasus_Stop(Player* p) {
+// Return the player to a clean vanilla action after a dash. The dash runs on top
+// of the spin-charge action (Player_Action_80845000 charge-walk); leaving that
+// action active after the dash ends is what caused inverted controls — charge-walk
+// moves the stick relative to the locked facing instead of the camera.
+static void Pegasus_ResetPlayer(Player* p, PlayState* play) {
+    p->linearVelocity = 0.0f;
+    p->actor.speedXZ = 0.0f;
+    p->unk_858 = 0.0f; // spin charge amount
+    p->actor.world.rot.y = p->actor.shape.rot.y;
+    p->yaw = p->actor.shape.rot.y;
+    func_80853080(p, play); // Player_Action_Idle + idle anim + yaw resync
+    sPegasusNeedsReset = 0;
+}
+
+// resetAction: when stopping an actual dash (RUNNING/BONK), kick the player back
+// to the idle action so the hijacked spin-charge action doesn't linger. Pass 0
+// from the windup cancel (charge action still owns the player and exits itself)
+// and from the cutscene/death path (the cutscene owns the player).
+static void Pegasus_Stop(Player* p, PlayState* play, s32 resetAction) {
+    s32 wasDashing = (gExtEquipBehavior.pegasusState == PEGASUS_RUNNING) ||
+                     (gExtEquipBehavior.pegasusState == PEGASUS_BONK);
+
     gExtEquipBehavior.pegasusState = PEGASUS_IDLE;
     gExtEquipBehavior.pegasusTimer = 0;
     gExtEquipBehavior.pegasusMagicTick = 0;
+    sPegasusCrateBonk = 0;
     // (stab pose is per-frame, no state to reset)
     p->stateFlags1 &= ~PLAYER_STATE1_CHARGING_SPIN_ATTACK;
     p->stateFlags2 &= ~PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
     p->actor.gravity = -1.2f;
     sPegasusCol.base.atFlags &= ~AT_ON;
+
+    if (resetAction && wasDashing) {
+        if (p->actor.bgCheckFlags & 0x0001) {
+            Pegasus_ResetPlayer(p, play);
+        } else {
+            // Airborne (dash off a ledge): finish the reset on landing —
+            // this is the "controls invert after landing" case.
+            sPegasusNeedsReset = 1;
+        }
+    }
 }
 
 // Full cleanup when Pegasus boots are unequipped (disables collider completely)
@@ -96,6 +145,8 @@ static void Pegasus_Cleanup(void) {
     gExtEquipBehavior.pegasusState = PEGASUS_IDLE;
     gExtEquipBehavior.pegasusTimer = 0;
     gExtEquipBehavior.pegasusMagicTick = 0;
+    sPegasusCrateBonk = 0;
+    sPegasusNeedsReset = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,9 +209,9 @@ static void Pegasus_StateIdle(Player* p, PlayState* play) {
 static void Pegasus_StateWindup(Player* p, PlayState* play) {
     u8 bHeld = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_B);
 
-    // Cancel if B released
+    // Cancel if B released (no action reset: the charge action exits on its own)
     if (!bHeld) {
-        Pegasus_Stop(p);
+        Pegasus_Stop(p, play, 0);
         return;
     }
 
@@ -189,7 +240,7 @@ static void Pegasus_StateRunning(Player* p, PlayState* play) {
 
     // Stop if B released or in water
     if (!bHeld || (p->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
-        Pegasus_Stop(p);
+        Pegasus_Stop(p, play, 1);
         return;
     }
 
@@ -246,6 +297,13 @@ static void Pegasus_StateRunning(Player* p, PlayState* play) {
     {
         Actor* ocCollidedActor = NULL;
         u8 doBonk = 0;
+
+        // Crate smashed by the AT collider this frame → always bonk, consistent
+        // with hitting it as a wall (vanilla roll also bonks when breaking crates)
+        if (sPegasusCrateBonk) {
+            sPegasusCrateBonk = 0;
+            doBonk = 1;
+        }
 
         // Wall collision (same flag roll uses)
         if (p->actor.bgCheckFlags & 0x200) {
@@ -313,7 +371,7 @@ static void Pegasus_StateBonk(Player* p, PlayState* play) {
 
     // Wait for hip_down animation to finish
     if (LinkAnimation_Update(play, &p->skelAnime)) {
-        Pegasus_Stop(p);
+        Pegasus_Stop(p, play, 1);
     }
 }
 
@@ -549,12 +607,18 @@ static void Pegasus_DrawAnklet(PlayState* play, s32 isRightFoot) {
 // Main Behavior Entry
 // ---------------------------------------------------------------------------
 static void Pegasus_Behavior(Player* player, PlayState* play) {
-    // Skip during cutscenes, etc.
+    // Skip during cutscenes, etc. (no action reset — the cutscene owns the player)
     if (player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
                                PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM)) {
         if (gExtEquipBehavior.pegasusState != PEGASUS_IDLE)
-            Pegasus_Stop(player);
+            Pegasus_Stop(player, play, 0);
+        sPegasusNeedsReset = 0;
         return;
+    }
+
+    // Finish the post-dash reset once we touch ground (dash that ended airborne)
+    if (sPegasusNeedsReset && (player->actor.bgCheckFlags & 0x0001)) {
+        Pegasus_ResetPlayer(player, play);
     }
 
     // Always update wing pendulum physics (even when not dashing)

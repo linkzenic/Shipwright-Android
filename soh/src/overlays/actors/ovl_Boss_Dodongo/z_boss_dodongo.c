@@ -7,6 +7,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "mods/transformation_masks/boss_super_damage.h"
 
 #include <stdlib.h> // malloc
 #include <string.h> // memcpy
@@ -1260,7 +1261,11 @@ void BossDodongo_Update(Actor* thisx, PlayState* play2) {
 
     for (i = 6; i < 19; i++) {
         if (i != 12) {
-            this->collider.elements[i].dim.scale = (this->actionFunc == BossDodongo_Roll) ? 0.0f : 1.0f;
+            // Vanilla disables the body spheres while rolling (you can't hurt the
+            // ball). FD / Pika keep them active so the rolling ball stays hittable
+            // and can be stunned mid-roll.
+            u8 disableForRoll = (this->actionFunc == BossDodongo_Roll) && !BossSuperDamage_IsActive(play);
+            this->collider.elements[i].dim.scale = disableForRoll ? 0.0f : 1.0f;
         }
     }
 
@@ -1391,6 +1396,21 @@ void BossDodongo_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 
     BossDodongo_DrawEffects(play);
+
+    // FD / Pika Gigantamax electric glow. The 19 JntSph collider spheres were just
+    // refreshed during the skeleton draw (Collider_UpdateSpheres in PostLimbDraw)
+    // and their world-space centers blanket Dodongo's whole body — ideal anchors
+    // for the light-orb shell. No-op when the spark timer is 0 (not recently hit).
+    {
+        Vec3f limbs[19];
+        s32 k;
+        for (k = 0; k < 19; k++) {
+            limbs[k].x = this->collider.elements[k].dim.worldSphere.center.x;
+            limbs[k].y = this->collider.elements[k].dim.worldSphere.center.y;
+            limbs[k].z = this->collider.elements[k].dim.worldSphere.center.z;
+        }
+        BossSuperDamage_DrawElectricSparks(&this->actor, play, limbs, 19, 1.3f);
+    }
 }
 
 f32 func_808C4F6C(BossDodongo* this, PlayState* play) {
@@ -1487,6 +1507,41 @@ void BossDodongo_UpdateDamage(BossDodongo* this, PlayState* play) {
     }
 
     if (this->unk_1C0 == 0) {
+        // FD / Pika Gigantamax super-attack: paralyze-or-damage on a hit to ANY
+        // collider sphere, in ANY state. Runs before (and overrides) the vanilla
+        // bomb-feed + sword logic. Scanning every element — not just element 0 —
+        // is what makes him stunnable while ROLLING, where only a subset of his
+        // spheres are active. Standing/rolling → first hit forces a collapse
+        // (paralysis); once down, each hit damages and refreshes the down timer
+        // so mashing kills him fast. VFX = electric light-orb glow.
+        if (BossSuperDamage_IsActive(play)) {
+            s32 sdHit = 0;
+            for (i = 0; i < 19; i++) {
+                if (this->collider.elements[i].info.bumperFlags & 2) {
+                    this->collider.elements[i].info.bumperFlags &= ~2;
+                    sdHit = 1;
+                }
+            }
+            if (sdHit) {
+                u8 isDown =
+                    (this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown);
+                BossSuperDamage_StartElectricSparks(&this->actor, 90);
+                this->unk_1C0 = 5;
+                if (isDown) {
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);
+                    func_80033E88(&this->actor, play, 4, 10);
+                    this->health -= BossSuperDamage_FormDamage(play);
+                    this->unk_1DA = 100; // keep him down (don't let Vulnerable time out)
+                } else {
+                    Animation_Change(&this->skelAnime, &object_kingdodongo_Anim_004E0C, 1.0f, 0.0f,
+                                     Animation_GetLastFrame(&object_kingdodongo_Anim_004E0C), ANIMMODE_ONCE, -5.0f);
+                    this->actionFunc = BossDodongo_LayDown;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);
+                }
+                return;
+            }
+        }
+
         if (this->actionFunc == BossDodongo_Inhale) {
             for (i = 0; i < 19; i++) {
                 if (this->collider.elements[i].info.bumperFlags & 2) {
@@ -1507,25 +1562,16 @@ void BossDodongo_UpdateDamage(BossDodongo* this, PlayState* play) {
         if (this->collider.elements->info.bumperFlags & 2) {
             this->collider.elements->info.bumperFlags &= ~2;
             item1 = this->collider.elements[0].info.acHitInfo;
-            lusprintf(__FILE__, __LINE__, 2, "DODONGO HIT: dmgFlags=0x%08X\n", item1->toucher.dmgFlags);
-            {
-                // Gigantamax Pikachu: bypass state check, force damage
-                extern u8 gPikaGigantamaxActive;
-                u8 isVulnerable =
-                    (this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown);
-                u8 isGigaHit = (item1->toucher.dmgFlags & DMG_UNBLOCKABLE) != 0;
 
-                if (isVulnerable || isGigaHit) {
-                    swordDamage = damage = CollisionCheck_GetSwordDamage(item1->toucher.dmgFlags, play);
-                    if (isGigaHit && damage < 4)
-                        damage = swordDamage = 4; /* clamp handled by boss death check */
+            if ((this->actionFunc == BossDodongo_Vulnerable) || (this->actionFunc == BossDodongo_LayDown)) {
+                // Vanilla: only damageable while collapsed after eating a bomb.
+                swordDamage = damage = CollisionCheck_GetSwordDamage(item1->toucher.dmgFlags, play);
 
-                    if (damage != 0) {
-                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);
-                        BossDodongo_SetupDamaged(this);
-                        this->unk_1C0 = 5;
-                        this->health -= swordDamage;
-                    }
+                if (damage != 0) {
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EN_DODO_K_DAMAGE);
+                    BossDodongo_SetupDamaged(this);
+                    this->unk_1C0 = 5;
+                    this->health -= swordDamage;
                 }
             }
         }

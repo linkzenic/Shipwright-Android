@@ -2,7 +2,15 @@
  * item_minish_cap.c - The Minish Cap (Fast Travel via Pod Soils)
  *
  * Controls:
- *   C Button: Open custom Minish Kaleido warp map
+ *   C Button near an unlocked pod soil: Open custom Minish Kaleido warp map
+ *   C Button away from pod soils:       Toggle Minish tiny mode (shrink/grow)
+ *
+ * Tiny mode:
+ *   - Link shrinks to 10% scale (Minish size) and the camera zooms in with him
+ *   - Movement speed drops to 20% of normal; everything else works as usual
+ *   - Small enough to walk straight through crawlspace holes (no crawl anim)
+ *   - Press the item button again to grow back (blocked under low ceilings)
+ *   - ANY loading zone / scene reload automatically restores normal size
  *
  * Features:
  *   - Opens custom kaleido with full world map + area box indicators
@@ -194,6 +202,222 @@ void Player_InitMinishCapIA(PlayState* play, Player* this) {
 #define MINISH_SCALE_TINY 0.0005f // 5% of normal (starting size on arrival)
 #define MINISH_SCALE_RATE 0.0005f // Step per frame (~19 frames for full transition)
 
+// ════════════════════════════════════════════════════════════════════════════
+// Tiny mode (Minish-size toggle, used away from pod soils)
+// ════════════════════════════════════════════════════════════════════════════
+
+#define MINISH_TINY_SCALE 0.001f                                       // 10% of normal — Minish size
+#define MINISH_TINY_FACTOR (MINISH_TINY_SCALE / MINISH_SCALE_NORMAL)   // 0.1
+#define MINISH_TINY_SPEED_FACTOR 0.2f                                  // 20% of normal movement speed
+#define MINISH_TINY_CAM_MIN 0.14f // camera zoom floor (keeps eye outside the near plane)
+#define MINISH_TINY_WALL_SKIP_FRAMES 10 // wall bgcheck off this long to squeeze through a crawl hole
+
+// Declared in transformation_masks.h, which is included AFTER this file in the
+// z_player.c unity build — forward-declare it here.
+extern u8 TransformMasks_IsTransformed(void);
+
+// Saved PlayerAgeProperties originals. The struct is a static table shared with
+// the rest of z_player.c, so tiny mode scales the fields in place and restores
+// them when the mode ends (or a scene loads).
+static u8 sTinyAgePropsSaved = 0;
+static PlayerAgeProperties* sTinyAgePropsPtr = NULL;
+static f32 sTinyOrigCeiling;    // ceilingCheckHeight
+static f32 sTinyOrigWallRadius; // wallCheckRadius
+static f32 sTinyOrigWade;       // unk_2C (water wade depth threshold)
+
+// Scene-load detection (postman hat pattern: sceneNum change OR frame rewind)
+static s16 sTinyLastScene = -1;
+static u32 sTinyLastFrames = 0;
+
+// Frames left with the player's wall bgcheck disabled (crawlspace pass-through)
+static s16 sTinyWallSkipTimer = 0;
+
+s32 MinishTiny_IsActive(void) {
+    return gCustomItemState.minishTinyActive != 0;
+}
+
+f32 MinishTiny_GetSpeedFactor(void) {
+    return gCustomItemState.minishTinyActive ? MINISH_TINY_SPEED_FACTOR : 1.0f;
+}
+
+static void MinishTiny_ApplyAgeProps(Player* p) {
+    PlayerAgeProperties* props = p->ageProperties;
+
+    if (sTinyAgePropsSaved)
+        return;
+    sTinyAgePropsPtr = props;
+    sTinyOrigCeiling = props->ceilingCheckHeight;
+    sTinyOrigWallRadius = props->wallCheckRadius;
+    sTinyOrigWade = props->unk_2C;
+
+    // Actor_UpdateBgCheckInfo computes the ceiling probe as
+    // (ceilingCheckHeight + yDelta) - 10.0f — below ~12 the height goes
+    // NEGATIVE (documented as "must be positive") and on a hit it rewrites
+    // world.pos.y every frame, pinning the player in place. Clamp to 12.
+    props->ceilingCheckHeight = props->ceilingCheckHeight * MINISH_TINY_FACTOR;
+    if (props->ceilingCheckHeight < 12.0f) {
+        props->ceilingCheckHeight = 12.0f;
+    }
+    props->wallCheckRadius *= MINISH_TINY_FACTOR;
+    props->unk_2C *= MINISH_TINY_FACTOR;
+    // NOTE: unk_14/unk_18/unk_1C (ledge vault thresholds) are deliberately NOT
+    // scaled — shrinking them makes every wall register as a vaultable step and
+    // auto-traps the player in the 250jump vault state. Ledge climbing is
+    // disabled entirely while tiny instead (Player_ActionHandler_12 gate).
+    sTinyAgePropsSaved = 1;
+}
+
+static void MinishTiny_RestoreAgeProps(void) {
+    if (!sTinyAgePropsSaved)
+        return;
+    sTinyAgePropsPtr->ceilingCheckHeight = sTinyOrigCeiling;
+    sTinyAgePropsPtr->wallCheckRadius = sTinyOrigWallRadius;
+    sTinyAgePropsPtr->unk_2C = sTinyOrigWade;
+    sTinyAgePropsSaved = 0;
+}
+
+// Instantly end tiny mode and restore everything (loading zones, form changes)
+static void MinishTiny_ForceReset(Player* p) {
+    MinishTiny_RestoreAgeProps();
+    gCustomItemState.minishTinyActive = 0;
+    gCustomItemState.minishTinyAnim = 0;
+    sTinyWallSkipTimer = 0;
+    // The pod-soil warp arrival anim owns the scale ramp — don't fight it
+    if (p != NULL && gCustomItemState.minishCapGrowing == 0 && gCustomItemState.minishCapShrinking == 0) {
+        p->actor.scale.x = p->actor.scale.y = p->actor.scale.z = MINISH_SCALE_NORMAL;
+    }
+}
+
+void MinishTiny_Update(Player* p, PlayState* play) {
+    if (p == NULL || play == NULL)
+        return;
+
+    // ANY loading zone (scene change or same-scene reload/void-out) resets the mode
+    s32 sceneLoaded = (play->sceneNum != sTinyLastScene) || (play->state.frames < sTinyLastFrames);
+    sTinyLastScene = play->sceneNum;
+    sTinyLastFrames = play->state.frames;
+    if (sceneLoaded) {
+        if (gCustomItemState.minishTinyActive || gCustomItemState.minishTinyAnim || sTinyAgePropsSaved) {
+            MinishTiny_ForceReset(p);
+        }
+        return;
+    }
+
+    if (!gCustomItemState.minishTinyActive && gCustomItemState.minishTinyAnim == 0)
+        return;
+
+    // Transformation forms (FD/Pikachu/etc.) own the player scale — bail out
+    if (TransformMasks_IsTransformed()) {
+        MinishTiny_ForceReset(p);
+        return;
+    }
+
+    if (gCustomItemState.minishTinyAnim == 1) {
+        // Shrinking toward tiny
+        p->actor.scale.x -= MINISH_SCALE_RATE;
+        if (p->actor.scale.x <= MINISH_TINY_SCALE) {
+            p->actor.scale.x = MINISH_TINY_SCALE;
+            gCustomItemState.minishTinyAnim = 0;
+        }
+        p->actor.scale.y = p->actor.scale.z = p->actor.scale.x;
+    } else if (gCustomItemState.minishTinyAnim == 2) {
+        // Growing back to normal
+        p->actor.scale.x += MINISH_SCALE_RATE;
+        if (p->actor.scale.x >= MINISH_SCALE_NORMAL) {
+            p->actor.scale.x = MINISH_SCALE_NORMAL;
+            gCustomItemState.minishTinyAnim = 0;
+            gCustomItemState.minishTinyActive = 0;
+            MinishTiny_RestoreAgeProps();
+        }
+        p->actor.scale.y = p->actor.scale.z = p->actor.scale.x;
+    } else {
+        // Fully tiny: re-assert the scale every frame (other systems reset it to 0.01)
+        p->actor.scale.x = p->actor.scale.y = p->actor.scale.z = MINISH_TINY_SCALE;
+    }
+}
+
+s32 MinishTiny_CrawlspacePassthrough(Player* p, PlayState* play) {
+    if (!gCustomItemState.minishTinyActive || gCustomItemState.minishTinyAnim != 0) {
+        sTinyWallSkipTimer = 0;
+        return 0;
+    }
+
+    // Touching a crawlspace hole wall poly while moving → open a short window
+    // with wall collision off so tiny Link walks straight through the hole.
+    // Only re-arm from a FRESH wall contact (timer == 0): while the skip window
+    // is open the wall check doesn't run, so wallPoly is stale and re-arming
+    // from it would keep walls disabled indefinitely.
+    if (sTinyWallSkipTimer == 0 && (p->actor.bgCheckFlags & 8) && (p->actor.wallPoly != NULL) &&
+        (p->linearVelocity > 0.1f)) {
+        if (func_80041DB8(&play->colCtx, p->actor.wallPoly, p->actor.wallBgId) & 0x30) {
+            sTinyWallSkipTimer = MINISH_TINY_WALL_SKIP_FRAMES;
+        }
+    }
+
+    if (sTinyWallSkipTimer > 0) {
+        sTinyWallSkipTimer--;
+        return 1;
+    }
+    return 0;
+}
+
+void MinishTiny_AdjustCameraView(Camera* camera, Vec3f* eye, Vec3f* at) {
+    Player* p;
+    f32 f;
+
+    if (camera == NULL || camera->thisIdx != MAIN_CAM)
+        return;
+    if (!gCustomItemState.minishTinyActive && gCustomItemState.minishTinyAnim == 0)
+        return;
+    p = camera->player;
+    if (p == NULL)
+        return;
+
+    // Scale the whole camera rig toward the player's position, following the
+    // actor scale so the zoom eases in/out with the shrink/grow animation
+    f = p->actor.scale.x / MINISH_SCALE_NORMAL;
+    if (f >= 0.999f)
+        return;
+    if (f < MINISH_TINY_CAM_MIN)
+        f = MINISH_TINY_CAM_MIN;
+
+    eye->x = p->actor.world.pos.x + (eye->x - p->actor.world.pos.x) * f;
+    eye->y = p->actor.world.pos.y + (eye->y - p->actor.world.pos.y) * f;
+    eye->z = p->actor.world.pos.z + (eye->z - p->actor.world.pos.z) * f;
+    at->x = p->actor.world.pos.x + (at->x - p->actor.world.pos.x) * f;
+    at->y = p->actor.world.pos.y + (at->y - p->actor.world.pos.y) * f;
+    at->z = p->actor.world.pos.z + (at->z - p->actor.world.pos.z) * f;
+}
+
+// Grow back, unless a ceiling within normal-Link height would embed him in geometry
+static void MinishTiny_TryGrowBack(Player* p, PlayState* play) {
+    Vec3f checkPos = p->actor.world.pos;
+    CollisionPoly* ceilPoly = NULL;
+    s32 ceilBgId;
+    f32 ceilY;
+    f32 normalCeilHeight = sTinyAgePropsSaved ? sTinyOrigCeiling : p->ageProperties->ceilingCheckHeight;
+
+    checkPos.y += 2.0f;
+    if (BgCheck_EntityCheckCeiling(&play->colCtx, &ceilY, &checkPos, normalCeilHeight, &ceilPoly, &ceilBgId,
+                                   &p->actor)) {
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    gCustomItemState.minishTinyAnim = 2;
+    Audio_PlaySoundGeneral(NA_SE_SY_CAMERA_ZOOM_DOWN, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+}
+
+static void MinishTiny_StartShrink(Player* p) {
+    gCustomItemState.minishTinyActive = 1;
+    gCustomItemState.minishTinyAnim = 1;
+    MinishTiny_ApplyAgeProps(p);
+    Audio_PlaySoundGeneral(NA_SE_SY_CAMERA_ZOOM_UP, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+}
+
 static void MinishCap_TriggerWarp(PlayState* play, s8 destIdx) {
     const PodSoilWarpPoint* dest = &sPodSoilTable[destIdx];
 
@@ -277,20 +501,33 @@ void Handle_MinishCap(Player* p, PlayState* play) {
         return;
 
     if (input.isPressed) {
-        // Must be near an unlocked pod soil to use
-        if (!MinishCap_IsNearPodSoil(p, play)) {
-            Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-            return;
-        }
-
-        // Don't open if pause menu is already open or transitioning
+        // Don't act if pause menu is already open or a transition is in progress
         if (pauseCtx->state != 0 || pauseCtx->debugState != 0)
             return;
         if (play->transitionTrigger != TRANS_TRIGGER_OFF)
             return;
         if (play->gameOverCtx.state != GAMEOVER_INACTIVE)
             return;
+
+        // Tiny mode toggle off: pressing while tiny always grows back
+        if (gCustomItemState.minishTinyActive) {
+            if (gCustomItemState.minishTinyAnim == 0) {
+                MinishTiny_TryGrowBack(p, play);
+            }
+            return;
+        }
+
+        // Away from pod soils: toggle tiny mode on instead of warping
+        if (!MinishCap_IsNearPodSoil(p, play)) {
+            if (TransformMasks_IsTransformed()) {
+                // Transformation forms own the player scale — refuse
+                Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+                return;
+            }
+            MinishTiny_StartShrink(p);
+            return;
+        }
 
         // Set warp mode flag and freeze gameplay
         gCustomItemState.minishCapWarpMode = 1;

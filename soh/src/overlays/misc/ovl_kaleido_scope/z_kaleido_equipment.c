@@ -232,8 +232,11 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
             gExtEquipState.pageSwitchTimer--;
         }
 
-        // L button: toggle extended equipment page
-        if (CHECK_BTN_ALL(input->press.button, BTN_L) && ExtEquip_IsEnabled() && ExtEquip_CanSwitch()) {
+        // Toggle the extended equipment page with the shoulder button NOT bound to
+        // kaleido tab switching (the freed button — see NGCKaleidoSwitcher).
+        bool ngcModeEq = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
+        s16 freedBtnEq = ngcModeEq ? BTN_Z : BTN_L;
+        if (CHECK_BTN_ALL(input->press.button, freedBtnEq) && ExtEquip_IsEnabled() && ExtEquip_CanSwitch()) {
             ExtEquip_SwitchPage();
             extEquipPage = (ExtEquip_GetPage() == 1);
             Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,

@@ -28,6 +28,14 @@
 #define gLinkDekuClosedFlowerDL "__OTR__objects/object_link_nuts/gLinkDekuClosedFlowerDL"
 #define gLinkDekuOpenFlowerDL "__OTR__objects/object_link_nuts/gLinkDekuOpenFlowerDL"
 
+// Hand-petal stem DLs (from 2Ship z_player_lib.c D_801C0B14):
+// Drawn BEFORE the flower at L_HAND/R_HAND during flight. Without the stem the
+// flower has nothing to attach to and appears to float at random.
+// Left  hand stem = object_link_nuts_DL_008760
+// Right hand stem = object_link_nuts_DL_008660
+#define gLinkDekuLeftStemDL  "__OTR__objects/object_link_nuts/object_link_nuts_DL_008760"
+#define gLinkDekuRightStemDL "__OTR__objects/object_link_nuts/object_link_nuts_DL_008660"
+
 // Underground flower petals (3 petals drawn at surface while burrowed)
 // From 2Ship z_player.c D_8085D574: object_link_nuts_DL_009C48/009AB8/009DB8
 #define gLinkDekuFlowerPetal1DL "__OTR__objects/object_link_nuts/object_link_nuts_DL_009C48"

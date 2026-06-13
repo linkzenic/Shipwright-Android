@@ -40,15 +40,23 @@ typedef void (*pfn_sm64_set_mario_position)(int32_t, float, float, float);
 typedef void (*pfn_sm64_set_mario_water_level)(int32_t, int);
 typedef void (*pfn_sm64_set_mario_health)(int32_t, uint16_t);
 typedef void (*pfn_sm64_mario_take_damage)(int32_t, uint32_t, uint32_t, float, float, float);
+typedef void (*pfn_sm64_mario_heal)(int32_t, uint8_t);
 typedef void (*pfn_sm64_audio_init)(const uint8_t*);
 typedef uint32_t (*pfn_sm64_audio_tick)(uint32_t, uint32_t, int16_t*);
 typedef void (*pfn_sm64_play_sound_global)(int32_t);
 typedef void (*pfn_sm64_set_sound_volume)(float);
 typedef void (*pfn_sm64_set_mario_action)(int32_t, uint32_t);
+typedef void (*pfn_sm64_set_mario_action_arg)(int32_t, uint32_t, uint32_t);
+typedef void (*pfn_sm64_set_mario_forward_velocity)(int32_t, float);
+typedef void (*pfn_sm64_set_mario_velocity)(int32_t, float, float, float);
 typedef void (*pfn_sm64_set_mario_animation)(int32_t, int32_t);
 typedef void (*pfn_sm64_mario_grab_dummy)(int32_t);
 typedef void (*pfn_sm64_mario_release_dummy)(int32_t);
 typedef void (*pfn_sm64_mario_interact_cap)(int32_t, uint32_t, uint16_t, uint8_t);
+typedef void (*pfn_sm64_set_mario_state)(int32_t, uint32_t);
+typedef void (*pfn_sm64_stop_background_music)(uint16_t);
+typedef uint16_t (*pfn_sm64_get_current_background_music)(void);
+typedef void (*pfn_sm64_play_music)(uint8_t, uint16_t, uint16_t);
 
 static pfn_sm64_global_init p_sm64_global_init = NULL;
 static pfn_sm64_global_terminate p_sm64_global_terminate = NULL;
@@ -60,15 +68,23 @@ static pfn_sm64_set_mario_position p_sm64_set_mario_position = NULL;
 static pfn_sm64_set_mario_water_level p_sm64_set_mario_water_level = NULL;
 static pfn_sm64_set_mario_health p_sm64_set_mario_health = NULL;
 static pfn_sm64_mario_take_damage p_sm64_mario_take_damage = NULL;
+static pfn_sm64_mario_heal p_sm64_mario_heal = NULL;
 static pfn_sm64_audio_init p_sm64_audio_init = NULL;
 static pfn_sm64_audio_tick p_sm64_audio_tick = NULL;
 static pfn_sm64_play_sound_global p_sm64_play_sound_global = NULL;
 static pfn_sm64_set_sound_volume p_sm64_set_sound_volume = NULL;
 static pfn_sm64_set_mario_action p_sm64_set_mario_action = NULL;
+static pfn_sm64_set_mario_action_arg p_sm64_set_mario_action_arg = NULL;
+static pfn_sm64_set_mario_forward_velocity p_sm64_set_mario_forward_velocity = NULL;
+static pfn_sm64_set_mario_velocity p_sm64_set_mario_velocity = NULL;
 static pfn_sm64_set_mario_animation p_sm64_set_mario_animation = NULL;
 static pfn_sm64_mario_grab_dummy p_sm64_mario_grab_dummy = NULL;
 static pfn_sm64_mario_release_dummy p_sm64_mario_release_dummy = NULL;
 static pfn_sm64_mario_interact_cap p_sm64_mario_interact_cap = NULL;
+static pfn_sm64_set_mario_state p_sm64_set_mario_state = NULL;
+static pfn_sm64_stop_background_music p_sm64_stop_background_music = NULL;
+static pfn_sm64_get_current_background_music p_sm64_get_current_background_music = NULL;
+static pfn_sm64_play_music p_sm64_play_music = NULL;
 
 static void* sDllHandle = NULL;
 
@@ -93,11 +109,18 @@ static s32 Sm64_LoadDll(void) {
         (pfn_sm64_set_mario_water_level)SM64_GET_PROC(sDllHandle, "sm64_set_mario_water_level");
     p_sm64_set_mario_health = (pfn_sm64_set_mario_health)SM64_GET_PROC(sDllHandle, "sm64_set_mario_health");
     p_sm64_mario_take_damage = (pfn_sm64_mario_take_damage)SM64_GET_PROC(sDllHandle, "sm64_mario_take_damage");
+    p_sm64_mario_heal = (pfn_sm64_mario_heal)SM64_GET_PROC(sDllHandle, "sm64_mario_heal");
     p_sm64_audio_init = (pfn_sm64_audio_init)SM64_GET_PROC(sDllHandle, "sm64_audio_init");
     p_sm64_audio_tick = (pfn_sm64_audio_tick)SM64_GET_PROC(sDllHandle, "sm64_audio_tick");
     p_sm64_play_sound_global = (pfn_sm64_play_sound_global)SM64_GET_PROC(sDllHandle, "sm64_play_sound_global");
     p_sm64_set_sound_volume = (pfn_sm64_set_sound_volume)SM64_GET_PROC(sDllHandle, "sm64_set_sound_volume");
     p_sm64_set_mario_action = (pfn_sm64_set_mario_action)SM64_GET_PROC(sDllHandle, "sm64_set_mario_action");
+    p_sm64_set_mario_action_arg =
+        (pfn_sm64_set_mario_action_arg)SM64_GET_PROC(sDllHandle, "sm64_set_mario_action_arg");
+    p_sm64_set_mario_forward_velocity =
+        (pfn_sm64_set_mario_forward_velocity)SM64_GET_PROC(sDllHandle, "sm64_set_mario_forward_velocity");
+    p_sm64_set_mario_velocity =
+        (pfn_sm64_set_mario_velocity)SM64_GET_PROC(sDllHandle, "sm64_set_mario_velocity");
     p_sm64_set_mario_animation =
         (pfn_sm64_set_mario_animation)SM64_GET_PROC(sDllHandle, "sm64_set_mario_animation");
     p_sm64_mario_grab_dummy =
@@ -106,6 +129,13 @@ static s32 Sm64_LoadDll(void) {
         (pfn_sm64_mario_release_dummy)SM64_GET_PROC(sDllHandle, "sm64_mario_release_dummy");
     p_sm64_mario_interact_cap =
         (pfn_sm64_mario_interact_cap)SM64_GET_PROC(sDllHandle, "sm64_mario_interact_cap");
+    p_sm64_set_mario_state =
+        (pfn_sm64_set_mario_state)SM64_GET_PROC(sDllHandle, "sm64_set_mario_state");
+    p_sm64_stop_background_music =
+        (pfn_sm64_stop_background_music)SM64_GET_PROC(sDllHandle, "sm64_stop_background_music");
+    p_sm64_get_current_background_music =
+        (pfn_sm64_get_current_background_music)SM64_GET_PROC(sDllHandle, "sm64_get_current_background_music");
+    p_sm64_play_music = (pfn_sm64_play_music)SM64_GET_PROC(sDllHandle, "sm64_play_music");
 
     if (!p_sm64_global_init || !p_sm64_mario_create || !p_sm64_mario_tick) {
         SM64_FREE_LIB(sDllHandle);
@@ -122,6 +152,14 @@ static s32 Sm64_LoadDll(void) {
 
 static s32 sSm64Initialized = 0;
 static int32_t sSm64MarioId = -1;
+
+// Independent Mario health (8 segments = 8 hits), decoupled from Link's hearts.
+// Mario is the source of truth; Link's gSaveContext.health is mirrored from it
+// (for the OOT game-over) and OOT recovery is forwarded back to Mario.
+//   sMarioLinkMirrorHP  — the Link HP we last wrote (heal-detect baseline; -1 = needs reinit)
+//   sMarioHealthPersist — Mario's HP carried across scene-change recreates (-1 = start full)
+static s16 sMarioLinkMirrorHP = -1;
+static s16 sMarioHealthPersist = -1;
 static uint8_t* sSm64RomData = NULL;
 static uint8_t* sSm64TextureAtlas = NULL;
 static s16 sSm64LastSceneNum = -1;
@@ -185,9 +223,37 @@ static struct SM64MarioGeometryBuffers sSm64OutBuffers;
 // Maps OOT spells to SM64 caps in the Mario item bridge:
 //   Nayru's Love → Metal Cap (invincibility, sinks in water)
 //   Farore's Wind → Wing Cap (flight via triple jump → flap)
+#define SM64_MARIO_NORMAL_CAP       0x00000001
 #define SM64_MARIO_VANISH_CAP       0x00000002
 #define SM64_MARIO_METAL_CAP        0x00000004
 #define SM64_MARIO_WING_CAP         0x00000008
+#define SM64_MARIO_CAP_ON_HEAD      0x00000010  // restored after clearing a special cap
+
+// How often (in frames) to re-upload OOT collision into libsm64 so the LIVE
+// world stays in sync: broken blocks stop colliding, dynapoly doors / moving
+// platforms track their current pose, vanish-cap phase-through uses the current
+// wall set. The static set is otherwise frozen at scene-load. Every 4 frames
+// (~15 Hz) is imperceptible for block-break / door response and cheap.
+#define SM64_SURFACE_REFRESH_FRAMES 4
+
+// =============================================================================
+// Damage / environment reaction actions (sm64.h). Forced via set_mario_action
+// when the matching OOT state is detected (Sm64Mario_ApplyBehaviorAnims), so
+// Mario plays SM64's native reaction animation + recovery instead of his normal
+// moveset. ACT_FLAG_AIR/IDLE are used to branch ground/air and gate the idle
+// shiver. Defined here (before sm64_mario_items.c is #included) so the cap
+// handler there can reach SM64_ACT_PUTTING_ON_CAP / SM64_ACT_FLAG_AIR too.
+// =============================================================================
+#define SM64_ACT_FLAG_AIR           0x00000800
+#define SM64_ACT_FLAG_IDLE          0x00400000
+#define SM64_ACT_IDLE               0x0C400201  // grounded standing idle
+#define SM64_ACT_SHIVERING          0x0C40020B  // cold idle (Ice Cavern)
+#define SM64_ACT_SHOCKED            0x00020338  // electric (bodyShockTimer)
+#define SM64_ACT_BURNING_GROUND     0x00020449  // on fire, grounded
+#define SM64_ACT_BURNING_JUMP       0x010208B4  // on fire, airborne
+#define SM64_ACT_PUTTING_ON_CAP     0x0000133D  // cap-on visual
+#define SM64_ACT_TWIRLING           0x108008A4  // X (C-Left) spin — ACT_FLAG_ATTACKING
+#define SM64_ACT_FORWARD_ROLLOUT    0x010008A6  // Y (C-Right) forward spin roll
 
 // =============================================================================
 // Master-Sword punch collider (AT) — positioned at Mario's fist per-frame
@@ -203,6 +269,27 @@ static ColliderCylinderInit sSm64AttackColliderInit = {
       { 0x00000000, 0x00, 0x00 },
       TOUCH_ON | TOUCH_NEAREST, BUMP_NONE, OCELEM_NONE },
     { 15, 40, -20, { 0, 0, 0 } }
+};
+
+// =============================================================================
+// Metal Cap blast aura (AT) — a persistent damage cylinder centered on Mario,
+// armed EVERY frame while the Metal Cap is worn. Contact kills enemies and
+// breaks props (SM64 invincible "star" feel). Broad dmgFlags (0xFFFFFFFF) so it
+// matches slash / hammer / explosive AC reactions alike — i.e. "blast + Master
+// Sword" in one collider. Independent of the attack collider above (which only
+// arms during punches/kicks/spins).
+// =============================================================================
+static ColliderCylinder sSm64MetalCollider;
+static u8 sSm64MetalColliderInited = 0;
+
+static ColliderCylinderInit sSm64MetalColliderInit = {
+    { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE,
+      OC1_NONE, OC2_TYPE_PLAYER, COLSHAPE_CYLINDER },
+    { ELEMTYPE_UNK0,
+      { 0xFFFFFFFF, 0x00, 0x08 },   // dmgFlags = ALL damage types → kills/breaks everything
+      { 0x00000000, 0x00, 0x00 },
+      TOUCH_ON | TOUCH_SFX_NONE, BUMP_NONE, OCELEM_NONE },
+    { 45, 70, -10, { 0, 0, 0 } }    // radius 45, height 70, yShift -10 (whole-body reach)
 };
 
 // =============================================================================
@@ -345,8 +432,15 @@ static u32 Sm64_LoadSceneSurfacesEx(PlayState* play, u8 floorOnly) {
         return 0;
     }
 
-    lusprintf(__FILE__, __LINE__, 2, "[SM64] Loaded %u surfaces for scene %d (floorOnly=%d)",
-        numSurfaces, play->sceneNum, floorOnly);
+    {
+        // Throttled: this now also runs on a periodic refresh (every few
+        // frames), so logging every call would spam. Log ~once per second.
+        static u32 sLoadLog = 0;
+        if ((sLoadLog++ % 60) == 0) {
+            lusprintf(__FILE__, __LINE__, 2, "[SM64] Loaded %u surfaces for scene %d (floorOnly=%d)",
+                numSurfaces, play->sceneNum, floorOnly);
+        }
+    }
     p_sm64_static_surfaces_load(surfaces, numSurfaces);
     free(surfaces);
     return numSurfaces;
@@ -399,6 +493,12 @@ s32 Sm64Mario_Init(PlayState* play, Player* player) {
     }
 
     if (sSm64MarioId >= 0) {
+        // Independent health: restore Mario's carried-over HP (full the first time).
+        if (p_sm64_set_mario_health) {
+            p_sm64_set_mario_health(sSm64MarioId,
+                (sMarioHealthPersist > 0) ? (u16)sMarioHealthPersist : (u16)SM64_MARIO_MAX_HP);
+            sMarioLinkMirrorHP = -1;
+        }
         sSm64LastSceneNum = play->sceneNum;
         // Install the sentinel held-object so ACT_PICKING_UP / ACT_HOLD_IDLE /
         // ACT_THROWING run their full anim flow without crashing on a NULL
@@ -534,6 +634,12 @@ static void Sm64Mario_TryGrabOrThrow(PlayState* play, Player* player) {
             // Detach OOT-side — the actor's own action func reads
             // parent==NULL as "thrown" and applies gravity itself.
             sSm64HeldActor->parent = NULL;
+            // Release OOT's grip too (the offer-grab set heldActor + CARRYING),
+            // so it doesn't keep the item or re-throw it from Link's position.
+            if (player->heldActor == sSm64HeldActor) {
+                player->heldActor = NULL;
+            }
+            player->stateFlags1 &= ~PLAYER_STATE1_CARRYING_ACTOR;
             sSm64HeldActor = NULL;
 
             // Mario throw animation. Safe with grab_dummy: act_throwing
@@ -546,30 +652,22 @@ static void Sm64Mario_TryGrabOrThrow(PlayState* play, Player* player) {
         return;
     }
 
-    // Nothing held — B-press while a grabbable is in range triggers the
-    // attach. Use Mario's position (read via player->actor since we sync
-    // them on every tick) so the search origin tracks Mario's current pos.
-    if (bPress && sSm64GrabLockoutFrames == 0) {
-        Actor* target = Sm64Mario_FindGrabbable(play, player);
-        if (target != NULL) {
-            target->parent = &player->actor;
-            // Actor's action func (e.g. EnBom_Move checks Actor_HasParent)
-            // will transition itself to the "held/wait-for-release" state
-            // next update.
-            sSm64HeldActor = target;
-
-            // Mario pickup animation. With grab_dummy installed earlier
-            // (at Init), act_picking_up's actionState=1 branch reads a
-            // valid sentinel heldObj and plays MARIO_ANIM_PICK_UP_LIGHT_OBJ
-            // → ACT_HOLD_IDLE → MARIO_ANIM_IDLE_WITH_LIGHT_OBJ. The action
-            // machine handles all anim transitions natively.
-            if (p_sm64_set_mario_action && sSm64MarioId >= 0) {
-                p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_PICKING_UP);
-            }
-            sSm64GrabLockoutFrames = 10;
-            lusprintf(__FILE__, __LINE__, 2, "[SM64] Grabbed actor id=0x%02X", target->id);
+    // Nothing held — adopt whatever OOT's offer-grab handed us. The vanilla
+    // A-action (Player_ActionHandler_2) fires on real-B via the A<->B swap and
+    // sets player->heldActor; we take it over so the held actor runs through the
+    // pin + throw-from-Mario logic above. Without this, OOT carries it on Link's
+    // (undrawn) hand, so it stays put and throws from the wrong spot — exactly
+    // the bug reported. No more proximity search.
+    if (player->heldActor != NULL && player->heldActor->parent == &player->actor) {
+        sSm64HeldActor = player->heldActor;
+        // Mario pickup animation (grab_dummy makes act_picking_up safe).
+        if (p_sm64_set_mario_action && sSm64MarioId >= 0) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_PICKING_UP);
         }
+        sSm64GrabLockoutFrames = 10;
+        lusprintf(__FILE__, __LINE__, 2, "[SM64] Adopted OOT heldActor id=0x%02X", player->heldActor->id);
     }
+    (void)bPress;
 }
 
 // Scene change / Mario reset must drop the held ref — actor may already be
@@ -584,6 +682,183 @@ static void Sm64Mario_DropHeldActor(void) {
     sSm64GrabLockoutFrames = 0;
 }
 
+// =============================================================================
+// Environment behavior anims — per-frame ambient reactions driven by scene/
+// hazard state (not by a hit). Forcing the native ACTION (not a raw anim — the
+// tick would overwrite a forced anim) lets libsm64 play + recover it.
+//
+// Hit-driven reactions (fire / ice / electric / knockback) are NOT here: they
+// come from OOT's AC pipeline (colChkInfo.acHitEffect), which
+// Sm64Mario_InterceptDamage short-circuits before bodyShockTimer / bodyIsBurning
+// are ever set — so they're applied there instead, where the effect is live.
+// =============================================================================
+static void Sm64Mario_ApplyBehaviorAnims(PlayState* play, Player* player) {
+    (void)player; // reserved for future state-driven env reactions
+    if (sSm64MarioId < 0 || !p_sm64_set_mario_action)
+        return;
+
+    u32 act = sSm64OutState.action;
+
+    // Ice Cavern ambiance — shiver while standing idle. Only nudge out of a
+    // plain idle/sleep action with no input; ACT_SHIVERING itself transitions
+    // back to walking when the stick moves, so movement is unaffected.
+    if (play->sceneNum == SCENE_ICE_CAVERN) {
+        Input* in = &play->state.input[0];
+        u8 idleNoInput = (in->rel.stick_x == 0) && (in->rel.stick_y == 0) &&
+                         ((in->cur.button & (BTN_A | BTN_B | BTN_Z)) == 0);
+        if (idleNoInput && (act & SM64_ACT_FLAG_IDLE) && (act != SM64_ACT_SHIVERING)) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_SHIVERING);
+        }
+    }
+}
+
+// =============================================================================
+// Mario-mode Odyssey moves on the freed C-buttons (camera forced free-cam):
+//   C-Left  → Cappy throw. The VARIANT is read from the stick at the press:
+//             airborne → DIVE, stick spun → SPIN, stick up → UP, else FORWARD.
+//             Grounded variants force ACT_CAP_THROW (real throw anim); the thrown
+//             cap (Sm64Cappy_Throw) homes/orbits, stuns, and can be cap-bounced.
+//   C-Right → roll: ACT_ROLL, a forward-spinning momentum roll.
+// Both consume their press so the Ivan C-button item handler doesn't also fire.
+// Setting the action before the tick lets libsm64 play it this frame.
+// =============================================================================
+
+// Stick-rotation detector for the spin throw: accumulate the signed angle the
+// analog stick sweeps while deflected; a full-ish rotation arms SPIN for a few
+// frames. Uses the cross/dot of consecutive stick vectors so there's no angle
+// wrap-around to track.
+static s16 Sm64Mario_StickSpinReady(Input* in) {
+    static f32 sAccum = 0.0f;
+    static f32 sPrevX = 0.0f, sPrevZ = 0.0f;
+    static s16 sReady = 0;
+
+    f32 sx = (f32)in->rel.stick_x;
+    f32 sz = (f32)in->rel.stick_y;
+    if (sx * sx + sz * sz > (38.0f * 38.0f)) {
+        if (sPrevX != 0.0f || sPrevZ != 0.0f) {
+            f32 cross = sPrevX * sz - sPrevZ * sx;
+            f32 dot = sPrevX * sx + sPrevZ * sz;
+            sAccum += atan2f(cross, dot);
+        }
+        sPrevX = sx;
+        sPrevZ = sz;
+        if (fabsf(sAccum) > 6.5f) { // ~1.0 full rotation
+            sReady = 14;
+            sAccum = 0.0f;
+        }
+    } else {
+        sAccum *= 0.80f;
+        sPrevX = sPrevZ = 0.0f;
+    }
+    if (sReady > 0) sReady--;
+    return sReady;
+}
+
+static void Sm64Mario_HandleMoves(PlayState* play) {
+    if (sSm64MarioId < 0 || !p_sm64_set_mario_action) return;
+    // No Cappy / roll while a transform cap is active (Wing / Metal / Vanish /
+    // Fire Flower) — those power-ups own Mario's moveset.
+    if (Sm64MarioCaps_GetActiveIndex() >= 0) return;
+    Input* in = &play->state.input[0];
+    u8 grounded = !(sSm64OutState.action & SM64_ACT_FLAG_AIR);
+
+    s16 spinReady = Sm64Mario_StickSpinReady(in);
+
+    if (CHECK_BTN_ALL(in->press.button, BTN_CLEFT)) {
+        in->press.button &= ~BTN_CLEFT;
+        in->cur.button &= ~BTN_CLEFT;
+
+        s32 mode;
+        if (!grounded) {
+            mode = SM64_CAPPY_DIVE;             // air throw
+        } else if (spinReady > 0) {
+            mode = SM64_CAPPY_SPIN;             // spun the stick
+        } else {
+            mode = SM64_CAPPY_FWD;
+        }
+        // Grounded variants play the real throw anim; the air dive keeps Mario's
+        // air state (no ground action) so the cap just flies out mid-air.
+        if (grounded) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_CAP_THROW);
+        }
+        Sm64Cappy_Throw(play, mode, mode != SM64_CAPPY_SPIN);
+        return;
+    }
+
+    if (CHECK_BTN_ALL(in->press.button, BTN_CRIGHT)) {
+        in->press.button &= ~BTN_CRIGHT;
+        in->cur.button &= ~BTN_CRIGHT;
+        if (grounded) {
+            p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_ROLL);
+        }
+        return;
+    }
+}
+
+// True while Mario is performing his boss-room "super attack" — currently the
+// spin (ACT_TWIRLING). Read by boss_super_damage so the reworked bosses take
+// FD-style paralyze-or-damage from the spin. Implicitly gated to boss rooms:
+// only those bosses query boss_super_damage, so regular enemies still take the
+// twirl's normal contact damage. (Fireball/Fire Flower will OR in here later.)
+u8 Sm64Mario_IsSuperAttacking(void) {
+    return (CVarGetInteger("gSm64Mario", 0) != 0) && (sSm64MarioId >= 0) &&
+           (sSm64OutState.action == SM64_ACT_TWIRLING || sSm64OutState.action == SM64_ACT_ROLL);
+}
+
+// Mario's independent health as a 0..8 wedge count (the SM64 power-meter
+// segments: full 0x880 → 8). Read by the HUD's HP dial. Returns 8 when Mario
+// isn't active yet so the dial doesn't flash empty during creation.
+s32 Sm64Mario_GetHealthWedges(void) {
+    if (sSm64MarioId < 0) {
+        return 8;
+    }
+    s32 w = (s32)sSm64OutState.health >> 8; // each segment = 0x100
+    if (w < 0) {
+        w = 0;
+    }
+    if (w > 8) {
+        w = 8;
+    }
+    return w;
+}
+
+// OOT door/exit "walk-through" action funcs. Non-static in z_player.c (which
+// compares this->actionFunc against these by identity itself, e.g. z_player.c
+// ~12072), just absent from functions.h — so a forward extern lets us detect
+// them by pointer. doorType is only a 1-frame latch that Player_UpdateCommon
+// nulls (z_player.c:13089) BEFORE Sm64Mario_Update runs, so the action-func
+// identity is the ONLY signal that persists across the multi-frame door walk.
+extern void Player_Action_80845EF8(Player* this, PlayState* play); // knob door: open + walk-through
+extern void Player_Action_80845CA4(Player* this, PlayState* play); // sliding door + entrance/exit walk
+
+// TRUE when OOT must own the player this frame (a scripted sequence is running).
+// Used at BOTH enforcement points so they can never diverge:
+//   (A) the z_player hook leaves PLAYER_STATE3_PAUSE_ACTION_FUNC CLEAR when this
+//       is true, so OOT's action func runs the door/void/cutscene/exit to
+//       completion. (The door START frame still installs its action via the
+//       handler block at z_player.c:13023 — at that pre-UpdateCommon point
+//       neither the action func nor IN_CUTSCENE is set yet, so this is false and
+//       PAUSE is left set, letting Player_ActionHandler_1 install + run it.)
+//   (B) Sm64Mario_Update PARKS libsm64 (pin to Link, zero velocity, idle, skip
+//       tick, no write-back) so it never fights the scripted move.
+// Player_InBlockingCsMode covers cutscene/csAction/transition-start/loading/
+// magic/hookshot-fly; the explicit flags cover talk/item-get/ledge; the action-
+// func identity covers the multi-frame door + entrance/exit walk (incl. FAKE
+// doors, which after frame 0 set neither doorType nor IN_CUTSCENE).
+s32 Sm64Mario_OotIsScriptingPlayer(PlayState* play, Player* p) {
+    if (Player_InBlockingCsMode(play, p)) {
+        return 1;
+    }
+    if (p->stateFlags1 & (PLAYER_STATE1_TALKING | PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS |
+                          PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_HANGING_OFF_LEDGE)) {
+        return 1;
+    }
+    if (p->actionFunc == Player_Action_80845EF8 || p->actionFunc == Player_Action_80845CA4) {
+        return 1;
+    }
+    return 0;
+}
+
 void Sm64Mario_Update(PlayState* play, Player* player) {
     Camera* cam;
     float lookX, lookZ, lookMag, waterY;
@@ -595,6 +870,15 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     // post-transition would pin the state forever and leave an invisible Link.
     if (!sSm64Initialized || !p_sm64_mario_tick)
         return;
+
+    // Mario mode owns the camera and aiming — keep OOT Z-targeting suppressed
+    // every frame so the lock-on state machine never engages while Mario is
+    // active. Free camera is enabled separately via gSettings.FreeLook.Enabled,
+    // which the Modos Rotos menu turns on when Mario mode is activated.
+    if (sSm64MarioId >= 0 && player != NULL) {
+        player->stateFlags1 &= ~PLAYER_STATE1_Z_TARGETING;
+        player->zTargetActiveTimer = 0;
+    }
 
     // Scene change: nuke Mario immediately so IsReady() becomes false and
     // Link falls back to normal rendering. Otherwise the old Mario (with
@@ -670,6 +954,12 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
         }
 
         if (sSm64MarioId >= 0) {
+            // Independent health: restore Mario's carried-over HP across the scene change.
+            if (p_sm64_set_mario_health) {
+                p_sm64_set_mario_health(sSm64MarioId,
+                    (sMarioHealthPersist > 0) ? (u16)sMarioHealthPersist : (u16)SM64_MARIO_MAX_HP);
+                sMarioLinkMirrorHP = -1;
+            }
             sSm64LastSceneNum = play->sceneNum;
             // Re-install the sentinel held-object on the new Mario instance —
             // mario_create resets gMarioState including usedObj, so the dummy
@@ -701,6 +991,63 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     // gMarioState->usedObj which we never populate. Mario keeps his normal
     // anim during carries; the actor still gets visually pinned via OOT's
     // heldActor system or our own B-grab in TryGrabOrThrow.)
+
+    // =========================================================================
+    // YIELD to OOT scripted-player sequences: door/exit walk-through, void-fall,
+    // cutscenes, scene/room transitions, talk, item-get, ledge climb. ONE
+    // predicate (Sm64Mario_OotIsScriptingPlayer) decides; the z_player hook uses
+    // the SAME predicate to leave PLAYER_STATE3_PAUSE_ACTION_FUNC clear so OOT's
+    // action func actually RUNS and completes the sequence. Here we PARK libsm64
+    // so it never fights that scripted move:
+    //   - pin libsm64's internal position to Link's (OOT-scripted) world.pos;
+    //   - ZERO both velocity reps (set_mario_velocity + forward) so there is no
+    //     leftover momentum to fling Mario when the tick resumes — this is the
+    //     fix for the door slide/softlock (the old no-tick defer FROZE velocity
+    //     instead of zeroing it, so it re-applied on resume; worse when airborne,
+    //     where there is no ground friction to ever stop the slide);
+    //   - force a grounded idle action;
+    //   - SKIP the tick (a scripted position can NULL-deref sm64_mario_tick — see
+    //     the no-tick note below) and RETURN before the write-back, so OOT's
+    //     scripted world.pos survives and the mesh follows Link via the draw delta.
+    //
+    // WATCHDOG: a lingering IN_CUTSCENE (cutscene already ended, csCtx idle, no
+    // transition/door/void) once stranded Mario "until you toggle the CVAR".
+    // If we park many frames with nothing actually scripting, break out and tick.
+    // =========================================================================
+    if (Sm64Mario_OotIsScriptingPlayer(play, player)) {
+        static u32 sParkFrames = 0;
+        u8 reallyScripted =
+            (play->transitionTrigger != TRANS_TRIGGER_OFF) || (play->csCtx.state != CS_STATE_IDLE) ||
+            (player->csAction != 0) || (player->actionFunc == Player_Action_80845EF8) ||
+            (player->actionFunc == Player_Action_80845CA4) ||
+            (player->stateFlags1 & (PLAYER_STATE1_LOADING | PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_IN_ITEM_CS |
+                                    PLAYER_STATE1_TALKING | PLAYER_STATE1_CLIMBING_LEDGE |
+                                    PLAYER_STATE1_HANGING_OFF_LEDGE));
+        if (reallyScripted) {
+            sParkFrames = 0;
+        } else {
+            sParkFrames++;
+        }
+        if (sParkFrames < 120) { // ~2s grace before breaking a stuck park
+            if (p_sm64_set_mario_position) {
+                p_sm64_set_mario_position(sSm64MarioId, player->actor.world.pos.x * SM64_WORLD_SCALE,
+                                          player->actor.world.pos.y * SM64_WORLD_SCALE,
+                                          player->actor.world.pos.z * SM64_WORLD_SCALE);
+            }
+            if (p_sm64_set_mario_velocity) {
+                p_sm64_set_mario_velocity(sSm64MarioId, 0.0f, 0.0f, 0.0f);
+            }
+            if (p_sm64_set_mario_forward_velocity) {
+                p_sm64_set_mario_forward_velocity(sSm64MarioId, 0.0f);
+            }
+            if (p_sm64_set_mario_action) {
+                p_sm64_set_mario_action(sSm64MarioId, SM64_ACT_IDLE);
+            }
+            Sm64Audio_RefillRing();
+            return;
+        }
+        // watchdog tripped — fall through and tick normally (anti-stuck escape)
+    }
 
     // No-tick defer — during item-get cutscenes, demo cutscenes, door
     // open/walk-through anims, and any PlayerCs (Player_InCsMode) sequence,
@@ -746,7 +1093,9 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     // mesh mirrors Link while the vanilla action func drives the anim.
     if (player->stateFlags1 & (PLAYER_STATE1_LOADING |
                                 PLAYER_STATE1_TALKING |
-                                PLAYER_STATE1_CARRYING_ACTOR |
+                                // CARRYING_ACTOR NOT deferred: Mario keeps ticking
+                                // (walks with the held item, which TryGrabOrThrow
+                                // pins to his hands) instead of freezing.
                                 PLAYER_STATE1_CLIMBING_LEDGE |
                                 PLAYER_STATE1_HANGING_OFF_LEDGE)) {
         // Only zero velocity for pure transitions — for TALKING/CARRYING the
@@ -846,11 +1195,34 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     inputs.buttonB = (input->cur.button & BTN_B) ? 1 : 0;
     inputs.buttonZ = (input->cur.button & BTN_Z) ? 1 : 0;
 
+    // Fire Flower (Fire cap active): B still PUNCHES (libsm64 keeps buttonB via
+    // cur), and additionally invokes a fireball. The helper reads the B *press*
+    // edge and consumes it (so the proximity grab doesn't also fire) — the punch
+    // is driven from cur, so it plays normally.
+    if (Sm64MarioCaps_IsFireActive()) {
+        Sm64Mario_FireballOnBPress(play, player);
+    }
+    // Always advance in-flight fireballs (unconditional) so balls already thrown
+    // keep arcing/bouncing/burning even if the Fire cap times out mid-flight.
+    Sm64Mario_UpdateFireballs(play);
+    // Advance the thrown cap (Cappy): out/hover/return + cap-bounce detection.
+    Sm64Cappy_Update(play);
+
     // Water level — Sm64Surfaces_GetWaterLevel returns OOT-scale Y; scale up for libsm64.
     if (p_sm64_set_mario_water_level) {
         waterY = Sm64Surfaces_GetWaterLevel(play, player->actor.world.pos.x, player->actor.world.pos.z);
         p_sm64_set_mario_water_level(sSm64MarioId, (int)(waterY * SM64_WORLD_SCALE));
     }
+
+    // Damage / environment behavior anims — map OOT shock/burn/cold onto
+    // Mario's native reaction action so the tick below plays it. Runs only in
+    // normal play (the cutscene/defer branches above already returned).
+    Sm64Mario_ApplyBehaviorAnims(play, player);
+
+    // Mario-mode special moves (X/Y on the freed C-buttons). After the env
+    // anims so a deliberate spin overrides the idle shiver; before the tick so
+    // libsm64 plays the forced action this frame.
+    Sm64Mario_HandleMoves(play);
 
     // Tick SM64 at ~30 fps effective (SM64's native rate) regardless of OOT's
     // gameplay rate. OOT runs at 60 / R_UPDATE_RATE fps (R_UPDATE_RATE=3 → 20 fps).
@@ -880,20 +1252,49 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
         // That's intentional — keeps Mario at 30 fps physics even on 60 fps OOT.
     }
 
-    // Shared-HP sync. Link is the source of truth: each frame we rescale
-    // Link's current health (quarter-hearts, capacity-relative) into Mario's
-    // 0..SM64_MARIO_MAX_HP range and overwrite libsm64's internal HP. This
-    // keeps fall / burn / drown damage that libsm64 applies to Mario from
-    // silently desyncing the two — InterceptDamage already routes enemy
-    // hits through Health_ChangeBy in the opposite direction.
-    if (p_sm64_set_mario_health && sSm64MarioId >= 0) {
-        s16 linkHP = gSaveContext.health;
+    // Independent Mario health: MARIO is the source of truth (his own 8-segment
+    // bar = 8 hits; see InterceptDamage's take_damage(1) per hit). We mirror
+    // Mario → Link's gSaveContext.health so the OOT game-over still fires when
+    // Mario dies, and we detect OOT recovery (a Link-health increase from a
+    // heart/fairy) and forward it to Mario so healing works "the same".
+    if (sSm64MarioId >= 0) {
         s16 linkMax = gSaveContext.healthCapacity;
         if (linkMax > 0) {
-            if (linkHP < 0) linkHP = 0;
-            if (linkHP > linkMax) linkHP = linkMax;
-            u16 marioHP = (u16)(((u32)linkHP * SM64_MARIO_MAX_HP) / linkMax);
-            p_sm64_set_mario_health(sSm64MarioId, marioHP);
+            // OOT heal → Mario heal. healCounter units: 4 per segment, 32 = full bar.
+            if (sMarioLinkMirrorHP >= 0 && gSaveContext.health > sMarioLinkMirrorHP && p_sm64_mario_heal) {
+                s32 healDelta = gSaveContext.health - sMarioLinkMirrorHP; // quarter-hearts
+                s32 healCounter = (healDelta * 32 + linkMax - 1) / linkMax;
+                if (healCounter > 255) {
+                    healCounter = 255;
+                }
+                if (healCounter > 0) {
+                    p_sm64_mario_heal(sSm64MarioId, (u8)healCounter);
+                }
+            }
+            // Mirror Mario → Link.
+            s32 marioHP = sSm64OutState.health;
+            if (marioHP < 0) {
+                marioHP = 0;
+            }
+            if (marioHP < 0x100) {
+                // Mario dead → set Link's HP to 0 so OOT's death/game-over runs
+                // (IsActive yields). Forget the saved health so the respawn
+                // recreate starts Mario at a full 8-segment bar.
+                gSaveContext.health = 0;
+                sMarioLinkMirrorHP = 0;
+                sMarioHealthPersist = -1;
+            } else {
+                s16 linkHP = (s16)(((s32)marioHP * linkMax) / SM64_MARIO_MAX_HP);
+                if (linkHP < 1) {
+                    linkHP = 1;
+                }
+                if (linkHP > linkMax) {
+                    linkHP = linkMax;
+                }
+                gSaveContext.health = linkHP;
+                sMarioLinkMirrorHP = linkHP;
+                sMarioHealthPersist = (s16)marioHP;
+            }
         }
     }
 
@@ -904,15 +1305,25 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     // Detected via sSm64OutState.flags & MARIO_VANISH_CAP — libsm64 also
     // auto-expires the cap after its internal timer.
     {
-        static u8 sVanishCapPrev = 0;
+        static u8  sVanishCapPrev = 0;
+        static u32 sSurfRefresh = 0;
         u8 vanishNow = (sSm64OutState.flags & SM64_MARIO_VANISH_CAP) != 0;
-        if (vanishNow != sVanishCapPrev) {
-            // State edge — swap surface set
+        u8 vanishEdge = (vanishNow != sVanishCapPrev);
+
+        // Re-upload the world surfaces immediately on a vanish edge (swap the
+        // floorOnly set) AND periodically otherwise, so libsm64 tracks the LIVE
+        // world instead of a scene-load snapshot. Fixes: Mario colliding with
+        // blocks he already broke, dynapoly doors/platforms frozen in place, and
+        // vanish-cap phase-through using a stale wall set. (MM forms don't need
+        // this — they keep OOT's native per-frame bgcheck; Mario replaces it.)
+        if (vanishEdge || (++sSurfRefresh >= SM64_SURFACE_REFRESH_FRAMES)) {
             Sm64_LoadSceneSurfacesEx(play, vanishNow);
-            sVanishCapPrev = vanishNow;
-            lusprintf(__FILE__, __LINE__, 2,
-                "[SM64] Vanish cap %s — surfaces reloaded (floorOnly=%d)",
-                vanishNow ? "ACTIVATED" : "EXPIRED", vanishNow);
+            sSurfRefresh = 0;
+            if (vanishEdge) {
+                sVanishCapPrev = vanishNow;
+                lusprintf(__FILE__, __LINE__, 2, "[SM64] Vanish cap %s — surfaces swapped (floorOnly=%d)",
+                    vanishNow ? "ACTIVATED" : "EXPIRED", vanishNow);
+            }
         }
     }
 
@@ -925,7 +1336,73 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     player->actor.world.rot.y = player->actor.shape.rot.y;
     player->linearVelocity = sSm64OutState.forwardVelocity / SM64_WORLD_SCALE;
     player->actor.velocity.y = sSm64OutState.velocity[1] / SM64_WORLD_SCALE;
-    player->actor.prevPos = player->actor.world.pos;
+
+    // Keep prevPos ONE FRAME behind world.pos (clamped) so OOT's wall/exit
+    // bgcheck sees Mario's real per-frame displacement. This used to be
+    // `prevPos = world.pos` — i.e. ZERO displacement — which makes
+    // BgCheck_CheckWallImpl skip its line-sweep, so actor.wallPoly never
+    // populates and wall-based loading zones / scene-exit polys never fired for
+    // Mario (couldn't walk into dungeon entrances). The distance clamp drops the
+    // sweep on teleports (scene change, warp, knockback) so a cross-scene jump
+    // can't trigger a spurious far-wall exit or snag a wall across the map.
+    {
+        static Vec3f sPrevMarioPos;
+        static u8 sHavePrevMarioPos = 0;
+        f32 dpx = player->actor.world.pos.x - sPrevMarioPos.x;
+        f32 dpy = player->actor.world.pos.y - sPrevMarioPos.y;
+        f32 dpz = player->actor.world.pos.z - sPrevMarioPos.z;
+        if (sHavePrevMarioPos && (dpx * dpx + dpy * dpy + dpz * dpz) < (200.0f * 200.0f)) {
+            player->actor.prevPos = sPrevMarioPos;
+        } else {
+            player->actor.prevPos = player->actor.world.pos; // first frame / teleport: no sweep
+        }
+        sPrevMarioPos = player->actor.world.pos;
+        sHavePrevMarioPos = 1;
+    }
+
+    // Void-out. OOT's Player_HandleExitsAndVoids reacts to a void plane by setting
+    // a falling-into-void player ACTION — but with Mario active that action is
+    // paused (or never armed), AND libsm64 OWNS the collision and keeps the void
+    // plane SOLID (the surface extractor emits every floor as type=0), so Mario
+    // just STANDS on the void plane and OOT never even sees it. We must detect it
+    // Mario-side. player->floorProperty can't be trusted (it's computed against
+    // Link's pre-override body and is force-zeroed on the anim/airborne branch),
+    // so RAYCAST OOT collision under Mario's REAL world.pos and read the floor's
+    // void property directly (func_80041EA4): 12 = void (Play_TriggerVoidOut),
+    // 5 = void-with-respawn (Play_TriggerRespawn). world.pos.y < -4000 covers a
+    // true bottomless pit (no floor poly at all). Gated on transitionTrigger==OFF
+    // so it fires once and Mario then parks through the fade via the predicate.
+    if (play->transitionTrigger == TRANS_TRIGGER_OFF &&
+        !(player->stateFlags1 & (PLAYER_STATE1_LOADING | PLAYER_STATE1_DEAD))) {
+        u8 doVoid = 0;
+        u8 doRespawn = 0;
+        if (player->actor.world.pos.y < -4000.0f) {
+            doVoid = 1; // bottomless pit
+        } else {
+            CollisionPoly* voidPoly = NULL;
+            s32 voidBgId = 0;
+            Vec3f probe = player->actor.world.pos;
+            probe.y += 20.0f; // start just above the feet so the floor under him is found
+            f32 fy = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &voidPoly, &voidBgId, &player->actor, &probe);
+            if (voidPoly != NULL && fy > BGCHECK_Y_MIN && (player->actor.world.pos.y - fy) < 80.0f) {
+                u32 fprop = func_80041EA4(&play->colCtx, voidPoly, voidBgId);
+                if (fprop == 12) {
+                    doVoid = 1;
+                } else if (fprop == 5) {
+                    doRespawn = 1;
+                }
+            }
+        }
+        if (doRespawn) {
+            Play_TriggerRespawn(play);
+            play->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+            Sfx_PlaySfxCentered(NA_SE_OC_ABYSS);
+        } else if (doVoid) {
+            Play_TriggerVoidOut(play);
+            play->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+            Sfx_PlaySfxCentered(NA_SE_OC_ABYSS);
+        }
+    }
 
     // ----- bodyPartsPos / focus.pos fallback -----
     // Link's skeleton draw is skipped while Mario is showing, so OOT's
@@ -951,6 +1428,17 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
         player->bodyPartsPos[PLAYER_BODYPART_R_FOOT].y = player->actor.world.pos.y;
         player->bodyPartsPos[PLAYER_BODYPART_HEAD].y =
             player->actor.world.pos.y + marioHeight - 10.0f;
+
+        // Foot shadow: ActorShadow_DrawFeet (the player's shadowDraw) reads
+        // actor.shape.feetPos[], which Link's skeleton PostLimbDraw normally
+        // writes — but that draw is skipped in Mario mode, so the foot shadow
+        // stays frozen at Link's entry point. Pin both feet to Mario; the
+        // shadow still raycasts each foot's own floor Y, so it sits correctly
+        // on slopes/stairs and simply follows him now.
+        player->actor.shape.feetPos[FOOT_LEFT].x = player->actor.world.pos.x;
+        player->actor.shape.feetPos[FOOT_LEFT].y = player->actor.world.pos.y;
+        player->actor.shape.feetPos[FOOT_LEFT].z = player->actor.world.pos.z;
+        player->actor.shape.feetPos[FOOT_RIGHT] = player->actor.shape.feetPos[FOOT_LEFT];
 
         // focus.pos = lock-on origin + boomerang return target. Center on
         // Mario's torso so anything tracking him (camera C-up, boomerang)
@@ -1015,10 +1503,17 @@ void Sm64Mario_Draw(PlayState* play, Player* player) {
     float dy = player->actor.world.pos.y - sSm64OutState.position[1] / SM64_WORLD_SCALE;
     float dz = player->actor.world.pos.z - sSm64OutState.position[2] / SM64_WORLD_SCALE;
     // Vanish cap → render translucent (ghost look) into the XLU pass.
-    // Metal cap → grayscale + silver bias on vertex colors (libsm64
-    // strips the env-mapped metal material so we fake it on the OOT side).
+    // Metal cap → sphere-map the real SM64 metal envmap (atlas tile 0) into
+    // the vertex colors (libsm64 strips the env-mapped metal material when it
+    // emits the geometry buffer, so we reconstruct it on the OOT side from
+    // per-vertex normals — see emitTrisSingle in sm64_mario_render.c).
+    // Wing cap → drop alpha on the wing-texture tiles so the alpha-cutout
+    // wing edges don't render an opaque halo.
     u8 translucent = (sSm64OutState.flags & SM64_MARIO_VANISH_CAP) != 0;
     u8 metalTint   = (sSm64OutState.flags & SM64_MARIO_METAL_CAP) != 0;
+    u8 wingCap     = (sSm64OutState.flags & SM64_MARIO_WING_CAP) != 0;
+    // Fire cap has no libsm64 flag (it's a pure OOT-side cap) — query the cap module.
+    u8 fireActive  = Sm64MarioCaps_IsFireActive();
     // Cap-state heartbeat — log on any cap edge change so we can verify
     // the libsm64 patched interact_cap is actually applying the new cap
     // flag. If the user casts Vanish then Metal and the log doesn't show
@@ -1037,13 +1532,20 @@ void Sm64Mario_Draw(PlayState* play, Player* player) {
             sLastCapState = nowState;
         }
     }
-    Sm64Render_DrawMarioMesh(play, &sSm64OutBuffers, dx, dy, dz, translucent, metalTint);
+    Sm64Render_DrawMarioMesh(play, &sSm64OutBuffers, dx, dy, dz, translucent, metalTint, wingCap, fireActive);
 
     // If the player is holding a deku stick C-button, render the lit stick
     // model floating at Mario's hand. State + render impl live in
     // sm64_mario_items.c; the call is here so the stick appears in the
     // same draw pass as Mario's body (no z-fight, same render layer).
     Sm64Mario_DrawHeldStick(play);
+
+    // Fire Flower fireballs — drawn here so each flame billboard shares Mario's
+    // draw pass (same XLU layer). Positions are absolute/world, so the fire
+    // follows each ball's own bouncing trajectory, not Mario.
+    Sm64Mario_DrawFireballs(play);
+    // Thrown cap (Cappy) billboard.
+    Sm64Cappy_Draw(play);
 }
 
 // Suspend cascade. While sSm64SuspendActive is true, Sm64Mario_IsActive()
@@ -1073,6 +1575,11 @@ static u8 sSm64PrevSuspendTrigger = 0;
 
 u8 Sm64Mario_IsActive(void) {
     if (sSm64SuspendActive) return 0;
+    // Mario dead (the health manager set Link's HP to 0): yield so OOT runs its
+    // own death / game-over / respawn on Link without Mario overriding it —
+    // otherwise the player is stuck mid-death (softlock). On respawn the scene
+    // reloads, OnPlayerInit recreates Mario at full, and this returns true again.
+    if (gSaveContext.health <= 0) return 0;
     return CVarGetInteger("gSm64Mario", 0) != 0;
 }
 
@@ -1087,7 +1594,13 @@ void Sm64Mario_TickTransitionSuspend(PlayState* play, Player* player) {
         (player->stateFlags1 & (PLAYER_STATE1_GETTING_ITEM |
                                 PLAYER_STATE1_IN_ITEM_CS |
                                 PLAYER_STATE1_IN_CUTSCENE)) != 0;
-    u8 nowSuspend = nowLoading || nowCutscene;
+    // Persistence: ONLY the actual scene-load fade detransforms Mario. Cutscenes
+    // / talk / doors / item-get are handled live by the defer branches in
+    // Sm64Mario_Update (sync position, skip the crash-prone tick, the draw shifts
+    // the mesh), so Mario stays VISIBLE through them instead of vanishing. The old
+    // behavior also suspended on cutscenes — that's why Mario disappeared on every
+    // NPC / door / item-get. nowCutscene is kept only for the diagnostic log.
+    u8 nowSuspend = nowLoading;
 
     // Rising edge of any trigger → start a fresh suspend window.
     //   LOADING (scene fade): 30 frames so Mario stays gone through the
@@ -1122,6 +1635,14 @@ u8 Sm64Mario_IsReady(void) {
     return Sm64Mario_IsActive() && sSm64MarioId >= 0;
 }
 
+// True only while the Vanish Cap is worn. Used to FORCE the NoClip wall-bypass
+// (z_bgcheck.c) so Mario phases through walls AND floor-based loading zones
+// still fire — independent of the gCheats.NoClip CVar. Preferred over the
+// surface-strip approach, which left actor.wallPoly stale so exits didn't trigger.
+u8 Sm64Mario_IsVanishActive(void) {
+    return Sm64Mario_IsReady() && (sSm64OutState.flags & SM64_MARIO_VANISH_CAP) != 0;
+}
+
 u8 Sm64Mario_HasMesh(void) {
     // Lens-of-truth held → hide Mario entirely (mirror of EnPartner.shouldDraw=0
     // in z_en_partner.c:617-622). Sm64Mario_LensActive is set by the Lens
@@ -1135,6 +1656,10 @@ u8 Sm64Mario_ShouldHideLink(void) {
     // visibility-only flag. Detransform still happens internally; we just
     // don't want the draw hook to fall back to drawing Link during that
     // window because the user wants Mario mode to stay visually consistent.
+    // EXCEPTION: when Mario is dead (HP 0) we must SHOW Link so his death /
+    // game-over animation is visible instead of an invisible, frozen-looking
+    // player (matches the IsActive yield above).
+    if (gSaveContext.health <= 0) return 0;
     return CVarGetInteger("gSm64Mario", 0) != 0;
 }
 
@@ -1164,6 +1689,16 @@ void Sm64Mario_Reset(void) {
     // ItemsResetWithPlayer variant is invoked from the z_player.c hook
     // path where a Player* is available.
     Sm64Mario_ItemsReset();
+    // Mario mode is ending (CVAR off / detransform): drop the active cap to
+    // its proportional cooldown. The per-cap timer state itself persists,
+    // frozen, until Mario mode resumes — it is NOT cleared here.
+    Sm64MarioCaps_OnSuspend();
+
+    // Forget Mario's independent health so re-enabling Mario mode starts at a
+    // full 8-segment bar. (Scene changes keep it via sMarioHealthPersist; only
+    // a full mode-off resets it.)
+    sMarioHealthPersist = -1;
+    sMarioLinkMirrorHP = -1;
 }
 
 // =============================================================================
@@ -1177,35 +1712,12 @@ void Sm64Mario_Reset(void) {
 #define SM64_CDOWN_BUTTON_INDEX 2  // buttonItems[2] is the C-Down slot
 
 void Sm64MarioMask_ForceAndToggle(PlayState* play, Player* player) {
+    (void)play;
     (void)player;
-    if (play == NULL) return;
-    if (!CVarGetInteger("gSm64MarioMaskForce", 0)) return;
-
-    // Force ITEM_MARIO_MASK on C-Down each frame. If the user fiddles with
-    // the kaleido subscreen and equips something else, our override puts
-    // the mask back next frame — they can't actually unequip it. The icon
-    // override in ExtInv_GetItemIcon (extended_inventory.c) handles the
-    // rendering side.
-    if (gSaveContext.equips.buttonItems[SM64_CDOWN_BUTTON_INDEX] != ITEM_MARIO_MASK) {
-        gSaveContext.equips.buttonItems[SM64_CDOWN_BUTTON_INDEX] = ITEM_MARIO_MASK;
-        // SLOT_NONE = 0xFF — no inventory grid slot binding. Prevents
-        // ammo-display / decay / etc. from running on the mask slot.
-        gSaveContext.equips.cButtonSlots[SM64_CDOWN_BUTTON_INDEX] = 0xFF;
-    }
-
-    // C-Down press → toggle gSm64Mario. Consume the press so the item-use
-    // path doesn't try to do anything else with the mask.
-    Input* in = &play->state.input[0];
-    if (in->press.button & BTN_CDOWN) {
-        s32 cur = CVarGetInteger("gSm64Mario", 0);
-        s32 next = !cur;
-        CVarSetInteger("gSm64Mario", next);
-        CVarSave();
-        in->press.button &= ~BTN_CDOWN;
-        in->cur.button   &= ~BTN_CDOWN;  // also strip cur so HandleItems's "current" detection skips it
-        lusprintf(__FILE__, __LINE__, 2,
-            "[SM64] MarioMask C-Down toggle: gSm64Mario %d → %d", cur, next);
-    }
+    // C-Down NO LONGER toggles Mario Mode — it's freed for the Cappy / cap-throw.
+    // Mario Mode is toggled via the menu CVar gSm64Mario (or the Broken Items
+    // pause page). This handler is kept as a no-op so the z_player hook call
+    // site stays valid; no mask is stamped onto C-Down anymore.
 }
 
 void Sm64Mario_OnSceneChange(PlayState* play) {
@@ -1235,6 +1747,10 @@ void Sm64Mario_OnPlayerInit(PlayState* play, Player* player) {
     // Held actor belongs to the old scene — never carry it across a
     // loading zone, that path crashes once the old actor pool is freed.
     Sm64Mario_DropHeldActor();
+    // Scene change: drop the active cap to its proportional cooldown (the
+    // recreated Mario starts cap-less). Cooldown timers freeze across the
+    // transition and resume once Mario mode is active again.
+    Sm64MarioCaps_OnSuspend();
     // Trigger the post-scene-transition suspend — forces a Reset→Init cycle
     // in the z_player hook (Mario hidden for ~30 frames, Link runs normally,
     // then Mario re-created fresh). Empirically this is the only way to get
@@ -1260,6 +1776,20 @@ void Sm64Mario_InterceptDamage(PlayState* play, Player* player) {
     u8 pendingDamage = player->actor.colChkInfo.damage;
     s32 hadAcHit = (player->cylinder.base.acFlags & AC_HIT) != 0;
 
+    // Metal Cap → total invulnerability (SM64 Metal Mario shrugs off every hit).
+    // The damage scrub at the bottom still runs (so OOT applies nothing), but we
+    // skip Mario's own take_damage below: no health segments lost, no flinch.
+    u32 metalActive = (sSm64OutState.flags & SM64_MARIO_METAL_CAP) != 0;
+
+    // Per-hit invincibility window. Mario loses exactly ONE of his 8 segments
+    // per hit; without this an enemy/boss that keeps overlapping Link's bumper
+    // would drain several segments in a few frames (instant death). 40 frames
+    // ~= 0.66s, similar to SM64's post-hit i-frames.
+    static s16 sMarioHurtCooldown = 0;
+    if (sMarioHurtCooldown > 0) {
+        sMarioHurtCooldown--;
+    }
+
     // Periodic snapshot of Link's damage-reception state so we can diagnose
     // "Mario doesn't get hurt" reports. Logs once every ~3 seconds (60 frames
     // × ~3). Reveals if acFlags is stuck, invincibilityTimer is nonzero, or
@@ -1277,7 +1807,9 @@ void Sm64Mario_InterceptDamage(PlayState* play, Player* player) {
         sHeartbeat++;
     }
 
-    if ((hadAcHit || pendingDamage > 0) && p_sm64_mario_take_damage && sSm64MarioId >= 0) {
+    if ((hadAcHit || pendingDamage > 0) && sMarioHurtCooldown == 0 && !metalActive && p_sm64_mario_take_damage &&
+        sSm64MarioId >= 0) {
+        sMarioHurtCooldown = 40; // start i-frames; one segment lost this hit
         // Source position drives the knockback direction inside libsm64.
         // Use the attacker's world.pos if the AC link is populated, else
         // fall back to Link's own position (knockback then defaults forward).
@@ -1286,23 +1818,40 @@ void Sm64Mario_InterceptDamage(PlayState* play, Player* player) {
         if (player->cylinder.base.ac != NULL) {
             src = player->cylinder.base.ac->world.pos;
         }
-        // OOT damage is in quarter-hearts; libsm64's fake_interaction uses
-        // 2 and 4 as soft/medium/hard knockback thresholds. Map 1/4-heart →
-        // 1 (soft), full-heart+ → damage/4.
-        u32 mDamage = (pendingDamage >= 4) ? (pendingDamage / 4) : 1;
+        // Independent Mario health: every enemy/hazard hit removes exactly ONE
+        // of Mario's 8 segments (with his cap on head, take_damage(1) drains
+        // 0x100 = one wedge), so Mario always dies in 8 hits regardless of how
+        // much OOT damage the source would have dealt. libsm64's own i-frames
+        // keep contiguous contact from chewing through multiple segments.
+        u32 mDamage = 1;
         p_sm64_mario_take_damage(sSm64MarioId, mDamage, 0,
             src.x * SM64_WORLD_SCALE,
             src.y * SM64_WORLD_SCALE,
             src.z * SM64_WORLD_SCALE);
 
-        // Shared-HP: scrubbing colChkInfo.damage below keeps OOT's
-        // func_80837C0C from running, which means Link's HP never goes down
-        // unless we apply the decrement ourselves. Health_ChangeBy also
-        // honors double-defense, one-hit-KO, defense modifier — we want
-        // those to still modulate Mario's damage.
-        if (pendingDamage > 0 && play != NULL) {
-            Health_ChangeBy(play, -(s16)pendingDamage);
+        // Element-specific reaction. OOT's AC hit effect (colChkInfo.acHitEffect:
+        // 1=fire, 2=ice, 3=electric) survives the scrub below, so map it onto
+        // Mario's native reaction action — overriding take_damage's plain
+        // knockback. Effect 4 / others keep that default knockback.
+        if (p_sm64_set_mario_action) {
+            u32 react = 0;
+            switch (player->actor.colChkInfo.acHitEffect) {
+                case 1: // fire
+                    react = (sSm64OutState.action & SM64_ACT_FLAG_AIR)
+                                ? SM64_ACT_BURNING_JUMP : SM64_ACT_BURNING_GROUND;
+                    break;
+                case 2: react = SM64_ACT_SHIVERING; break; // ice (closest SM64 has to "frozen")
+                case 3: react = SM64_ACT_SHOCKED;   break; // electric
+            }
+            if (react != 0) {
+                p_sm64_set_mario_action(sSm64MarioId, react);
+            }
         }
+
+        // NOTE: we deliberately do NOT call Health_ChangeBy on Link here.
+        // Mario's health is now independent (the take_damage above is the real
+        // hit), and the health manager in Sm64Mario_Update mirrors Mario → Link
+        // each frame. Decrementing Link here too would double-count.
 
         // Drop whatever Mario was carrying — real SM64 calls
         // drop_and_set_mario_action() in damage transitions, but our held
@@ -1360,11 +1909,48 @@ void Sm64Mario_InitAttackCollider(PlayState* play, Player* player) {
     Collider_InitCylinder(play, &sSm64AttackCollider);
     Collider_SetCylinder(play, &sSm64AttackCollider, &player->actor, &sSm64AttackColliderInit);
     sSm64AttackColliderInited = 1;
-    lusprintf(__FILE__, __LINE__, 2, "[SM64] Attack collider bound to Player actor");
+    // Bind the Metal Cap blast aura to the same (possibly new) Player actor.
+    Collider_InitCylinder(play, &sSm64MetalCollider);
+    Collider_SetCylinder(play, &sSm64MetalCollider, &player->actor, &sSm64MetalColliderInit);
+    sSm64MetalColliderInited = 1;
+    lusprintf(__FILE__, __LINE__, 2, "[SM64] Attack + Metal-aura colliders bound to Player actor");
+}
+
+// Metal Cap blast aura — see sSm64MetalColliderInit. While the Metal Cap is on,
+// arm a damage cylinder centered on Mario each frame so contact kills enemies
+// and breaks pots/grass/props. No one-hit gate: it's a CONTINUOUS aura (enemy
+// i-frames pace repeat damage; breakables shatter on first contact).
+static void Sm64Mario_UpdateMetalBlast(PlayState* play, Player* player) {
+    if (!Sm64Mario_IsReady()) return;
+
+    // Lazy bind (mode toggled on mid-scene, before any Player_Init re-bind).
+    if (!sSm64MetalColliderInited) {
+        Collider_InitCylinder(play, &sSm64MetalCollider);
+        Collider_SetCylinder(play, &sSm64MetalCollider, &player->actor, &sSm64MetalColliderInit);
+        sSm64MetalColliderInited = 1;
+    }
+
+    sSm64MetalCollider.base.atFlags &= ~(AT_ON | AT_HIT);
+
+    // Only while the Metal Cap is actually worn.
+    if (!(sSm64OutState.flags & SM64_MARIO_METAL_CAP)) return;
+
+    f32 mx = sSm64OutState.position[0] / SM64_WORLD_SCALE;
+    f32 my = sSm64OutState.position[1] / SM64_WORLD_SCALE;
+    f32 mz = sSm64OutState.position[2] / SM64_WORLD_SCALE;
+    sSm64MetalCollider.dim.pos.x = (s16)mx;
+    sSm64MetalCollider.dim.pos.y = (s16)my;
+    sSm64MetalCollider.dim.pos.z = (s16)mz;
+    sSm64MetalCollider.base.atFlags |= AT_ON;
+    CollisionCheck_SetAT(play, &play->colChkCtx, &sSm64MetalCollider.base);
 }
 
 void Sm64Mario_UpdateAttackCollider(PlayState* play, Player* player) {
     if (!Sm64Mario_IsReady()) return;
+
+    // Metal Cap blast aura — independent of the attack-state logic below, which
+    // has several early returns. Runs every frame the Metal Cap is worn.
+    Sm64Mario_UpdateMetalBlast(play, player);
 
     // Lazy init: if Player_Init's InitAttackCollider bailed (CVAR was off at
     // scene-load, user toggled on later), bind now.
@@ -1391,6 +1977,9 @@ void Sm64Mario_UpdateAttackCollider(PlayState* play, Player* player) {
     } else if (action == SM64_ACT_DIVE || action == SM64_ACT_DIVE_SLIDE ||
                action == SM64_ACT_SLIDE_KICK || action == SM64_ACT_SLIDE_KICK_SLIDE) {
         attacking = 1; fwd = 25.0f; up = 10.0f;
+    } else if (action == SM64_ACT_TWIRLING) {
+        // Spin attack (X) — 360° rotation, so the collider sits centered on Mario.
+        attacking = 1; fwd = 0.0f; up = 15.0f;
     }
 
     // ONE-HIT-PER-ATTACK gate (fix for "sometimes kills in one hit"): the

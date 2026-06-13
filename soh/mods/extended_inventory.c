@@ -136,10 +136,12 @@ int ExtInv_GetMaxPages(void) {
     return count;
 }
 bool ExtInv_IsCustomItemsEnabled(void) {
-    return CVarGetInteger("gMods.CustomItems.Enabled", 0) != 0;
+    // Default ON — NEI features are enabled by default.
+    return CVarGetInteger("gMods.CustomItems.Enabled", 1) != 0;
 }
 bool ExtInv_IsMmMasksEnabled(void) {
-    return CVarGetInteger("gMods.MmMasks.InventoryEnabled", 0) != 0;
+    // Default ON — NEI features are enabled by default.
+    return CVarGetInteger("gMods.MmMasks.InventoryEnabled", 1) != 0;
 }
 bool ExtInv_IsOnlyTransformation(void) {
     return CVarGetInteger("gMods.MmMasks.OnlyTransformation", 0) != 0;
@@ -308,6 +310,20 @@ extern const char* MmMasks_GetIconPath(uint16_t itemId);
 extern void* MmAssets_LoadFDSwordIcon(void);
 extern const char* MmAssets_GetChateauIconPath(void);
 
+// SM64 Mario caps — direct icon lookup, decoupled from the OOT spells. The caps
+// are their own custom behavior (D-pad → Sm64Mario_HandleCapDpad), not an
+// extension of Din's/Nayru's/Farore's. cap: 0 = Vanish, 1 = Metal, 2 = Wing,
+// 3 = Fire Flower. Used by the corner power-up HUD draw in z_parameter.c.
+void* ExtInv_GetCapIcon(uint8_t cap) {
+    switch (cap) {
+        case 0: return (void*)gItemIconVanishCapTex;
+        case 1: return (void*)gItemIconMetalCapTex;
+        case 2: return (void*)gItemIconWingCapTex;
+        case 3: return (void*)gItemIconFireFlowerTex;
+        default: return NULL;
+    }
+}
+
 void* ExtInv_GetItemIcon(uint16_t itemId) {
 
     // Extended equipment: override A button icon when ext sword/shield is active
@@ -330,24 +346,32 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return fdIcon;
     }
 
-    // SM64 Mario mode: when active, the spells map to SM64 caps in the
-    // gameplay logic (sm64_mario_items.c MarioItem_UseSpell). Mirror that on
-    // the UI side — show the cap icons in the C-button slots so the player
-    // knows which cap each slot will trigger.
-    //   Din's Fire     → Vanish Cap  (translucent, walks through walls)
-    //   Nayru's Love   → Metal Cap   (invincible, sinks)
-    //   Farore's Wind  → Wing Cap    (flight via triple-jump → flap)
-    if (CVarGetInteger("gSm64Mario", 0)) {
-        if (itemId == ITEM_DINS_FIRE)    return (void*)gItemIconVanishCapTex;
-        if (itemId == ITEM_NAYRUS_LOVE)  return (void*)gItemIconMetalCapTex;
-        if (itemId == ITEM_FARORES_WIND) return (void*)gItemIconWingCapTex;
-    }
+    // SM64 caps are NO LONGER tied to the OOT spells — they're custom behavior
+    // triggered straight from the D-pad (Sm64Mario_HandleCapDpad). The cap icons
+    // are looked up directly via ExtInv_GetCapIcon (below), so there's no
+    // spell→cap icon override here anymore.
 
     // SM64 Mario mask — the toggle item that locks to C-Down via
     // gSm64MarioMaskForce. Pressing C-Down with this equipped flips
     // gSm64Mario on/off (handled in mod_menu / z_player hook).
     if (itemId == ITEM_MARIO_MASK) {
         return (void*)gItemIconMarioMaskTex;
+    }
+
+    // Twilight Upgrade icon swap — when the corresponding mode is active
+    // (persistent toggle via A in kaleido), swap hookshot/longshot/
+    // boomerang icons to the upgraded variant. Placeholder textures live
+    // in soh/assets/custom/textures/icon_item_custom/ (currently copies
+    // of gust jar art) until proper assets land.
+    {
+        extern unsigned char TwilightUpgrade_IsClawshotActive(void);
+        extern unsigned char TwilightUpgrade_IsGaleBoomerangActive(void);
+        if ((itemId == ITEM_HOOKSHOT || itemId == ITEM_LONGSHOT) && TwilightUpgrade_IsClawshotActive()) {
+            return (void*)gItemIconClawshotTex;
+        }
+        if (itemId == ITEM_BOOMERANG && TwilightUpgrade_IsGaleBoomerangActive()) {
+            return (void*)gItemIconGaleBoomerangTex;
+        }
     }
 
     if (itemId < 156) {
@@ -488,6 +512,22 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return gItemIcons[0];
     }
 }
+// Returns 1 if the player owns the given MM mask item (extended inventory page 3, slots 48-71).
+// Used by the trade-mask sale actors (En_Heishi2/Keaton, En_Mm/Bunny): masks with an MM
+// counterpart are permanent items — selling them grants the reward without losing the mask.
+int32_t ExtInv_HasMmMask(uint16_t itemId) {
+    if (itemId < ITEM_MM_MASK_POSTMAN || itemId > ITEM_MM_MASK_FIERCE_DEITY) {
+        return 0;
+    }
+    for (int i = 0; i < 24; i++) {
+        if (gPage3MaskItems[i] == itemId) {
+            extern SaveContext gSaveContext;
+            return gSaveContext.inventory.items[48 + i] == itemId;
+        }
+    }
+    return 0;
+}
+
 uint8_t ExtInv_GetItemSlot(uint16_t itemId) {
     if (itemId < 52) {
         return gItemSlots[itemId];

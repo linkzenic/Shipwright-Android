@@ -717,13 +717,16 @@ void GenerateItemPool() {
     }
 
     if (ctx->GetOption(RSK_MASK_QUEST).Is(RO_MASK_QUEST_SHUFFLE)) {
-        // Remove OOT masks that have MM counterparts when MM masks are in the rando pool
-        bool mmMasksInPool = ctx->GetOption(RSK_MM_MASKS_ALL) ||
-                             ctx->GetOption(RSK_MM_MASKS_TRANSFORM);
-        if (!mmMasksInPool) {
+        // OOT masks with an MM counterpart in the rando pool are skipped — the MM mask IS the
+        // item (receiving it also grants the OOT child-trade mask, see Randomizer_Item_Give).
+        // Goron/Zora counterparts exist in both MM mask modes; Keaton/Bunny/Truth only in "All".
+        bool mmTransformMasksInPool = ctx->GetOption(RSK_MM_MASKS_ALL) ||
+                                      ctx->GetOption(RSK_MM_MASKS_TRANSFORM);
+        if (!mmTransformMasksInPool) {
             AddItemToPool(RG_GORON_MASK, 2, 1, 1, 1);
             AddItemToPool(RG_ZORA_MASK, 2, 1, 1, 1);
-        } else if (ctx->GetOption(RSK_MM_MASKS_ALL)) {
+        }
+        if (!ctx->GetOption(RSK_MM_MASKS_ALL)) {
             AddItemToPool(RG_KEATON_MASK, 2, 1, 1, 1);
             AddItemToPool(RG_BUNNY_HOOD, 2, 1, 1, 1);
             AddItemToPool(RG_MASK_OF_TRUTH, 2, 1, 1, 1);
