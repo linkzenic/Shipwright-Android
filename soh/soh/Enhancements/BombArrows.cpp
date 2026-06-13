@@ -95,6 +95,22 @@ static void SetBombArrowButton(s32 buttonIndex, bool enabled) {
     }
 }
 
+extern "C" u8 BombArrows_IsButtonBombArrow(s16 buttonIndex) {
+    return CVAR_BOMB_ARROWS_VALUE && IsBombArrowButton(buttonIndex);
+}
+
+extern "C" s16 BombArrows_GetEffectiveAmmo() {
+    s16 arrowAmmo = AMMO(ITEM_BOW);
+    s16 bombAmmo = AMMO(ITEM_BOMB);
+    return arrowAmmo < bombAmmo ? arrowAmmo : bombAmmo;
+}
+
+extern "C" s16 BombArrows_GetEffectiveMaxAmmo() {
+    s16 arrowCapacity = CUR_CAPACITY(UPG_QUIVER);
+    s16 bombCapacity = CUR_CAPACITY(UPG_BOMB_BAG);
+    return arrowCapacity < bombCapacity ? arrowCapacity : bombCapacity;
+}
+
 static bool IsActiveBombArrowButton() {
     Player* player = GET_PLAYER(gPlayState);
     return player != nullptr && IsBombArrowButton(player->heldItemButton);
@@ -194,7 +210,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         *slot = sPendingEquip.slot;
         SetBombArrowButton(targetButtonIndex, isBombArrow);
         sPendingEquip = {};
-        return false;
+        return isBombArrow;
     }
 
     if (IsBowButtonItem(*item)) {
@@ -210,18 +226,6 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
     SetBombArrowButton(targetButtonIndex, true);
     *slot = SLOT_BOW;
     return true;
-}
-
-static void ApplyPendingBombArrowEquip() {
-    if (gPlayState == nullptr || !sPendingEquip.active || gPlayState->pauseCtx.unk_1E4 != 0) {
-        return;
-    }
-
-    gSaveContext.equips.buttonItems[sPendingEquip.buttonIndex] = sPendingEquip.item;
-    gSaveContext.equips.cButtonSlots[sPendingEquip.buttonIndex - 1] = sPendingEquip.slot;
-    SetBombArrowButton(sPendingEquip.buttonIndex, sPendingEquip.isBombArrow);
-    Interface_LoadItemIcon1(gPlayState, sPendingEquip.buttonIndex);
-    sPendingEquip = {};
 }
 
 static void CleanupBombArrowButtons() {
@@ -302,11 +306,9 @@ void RegisterBombArrows() {
     COND_ID_HOOK(OnActorInit, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowInit);
     COND_ID_HOOK(OnActorUpdate, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowUpdate);
     COND_HOOK(OnGameFrameUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
-        ApplyPendingBombArrowEquip();
         CleanupBombArrowButtons();
     });
     COND_HOOK(OnKaleidoUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
-        ApplyPendingBombArrowEquip();
         CleanupBombArrowButtons();
     });
 }

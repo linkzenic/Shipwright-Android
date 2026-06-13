@@ -28,6 +28,9 @@ extern MessageTableEntry* sNesMessageEntryTablePtr;
 extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
 extern MessageTableEntry* sJpnMessageEntryTablePtr;
+extern u8 BombArrows_IsButtonBombArrow(s16 button);
+extern s16 BombArrows_GetEffectiveAmmo(void);
+extern s16 BombArrows_GetEffectiveMaxAmmo(void);
 
 #define DO_ACTION_TEX_WIDTH() 48
 #define DO_ACTION_TEX_HEIGHT() 16
@@ -4891,11 +4894,35 @@ void Interface_DrawAmmoCount(PlayState* play, s16 button, s16 alpha) {
 
     i = gSaveContext.equips.buttonItems[button];
 
-    if (GameInteractor_Should(VB_DRAW_AMMO_COUNT,
-                              ((i == ITEM_STICK) || (i == ITEM_NUT) || (i == ITEM_BOMB) || (i == ITEM_BOW) ||
-                               ((i >= ITEM_BOW_ARROW_FIRE) && (i <= ITEM_BOW_ARROW_LIGHT)) || (i == ITEM_SLINGSHOT) ||
-                               (i == ITEM_BOMBCHU) || (i == ITEM_BEAN)),
-                              &i)) {
+    if (BombArrows_IsButtonBombArrow(button)) {
+        ammo = BombArrows_GetEffectiveAmmo();
+
+        gDPPipeSync(OVERLAY_DISP++);
+
+        if (ammo == BombArrows_GetEffectiveMaxAmmo()) {
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 120, 255, 0, alpha);
+        }
+
+        if (ammo == 0) {
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 100, 100, 100, alpha);
+        }
+
+        for (i = 0; ammo >= 10; i++) {
+            ammo -= 10;
+        }
+
+        if (i != 0) {
+            OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, (u8*)_gAmmoDigit0Tex[i], 8, 8, ItemIconPos[button][0],
+                                          ItemIconPos[button][1], 8, 8, 1 << 10, 1 << 10);
+        }
+
+        OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, (u8*)_gAmmoDigit0Tex[ammo], 8, 8, ItemIconPos[button][0] + 6,
+                                      ItemIconPos[button][1], 8, 8, 1 << 10, 1 << 10);
+    } else if (GameInteractor_Should(VB_DRAW_AMMO_COUNT,
+                                     ((i == ITEM_STICK) || (i == ITEM_NUT) || (i == ITEM_BOMB) || (i == ITEM_BOW) ||
+                                      ((i >= ITEM_BOW_ARROW_FIRE) && (i <= ITEM_BOW_ARROW_LIGHT)) ||
+                                      (i == ITEM_SLINGSHOT) || (i == ITEM_BOMBCHU) || (i == ITEM_BEAN)),
+                                     &i)) {
         if ((i >= ITEM_BOW_ARROW_FIRE) && (i <= ITEM_BOW_ARROW_LIGHT)) {
             i = ITEM_BOW;
         }
