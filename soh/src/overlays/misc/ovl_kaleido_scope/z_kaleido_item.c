@@ -1770,8 +1770,6 @@ void KaleidoScope_DrawItemCycles(PlayState* play) {
     // Draw Bow / Slingshot press-A selector (Roc's Feather visual)
     ArrowWheel_DrawPressA(play);
 
-    KaleidoScope_DrawItemCycleExtras(play, SLOT_BOMB, BombArrows_CanCycleBombSlot(), ITEM_NONE,
-                                     BombArrows_IsBombSlotMode() ? ITEM_BOMB : ITEM_BOW);
 }
 
 bool IsItemCycling() {
