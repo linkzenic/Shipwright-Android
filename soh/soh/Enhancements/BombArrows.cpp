@@ -80,7 +80,9 @@ static bool IsBombArrowButton(s32 buttonIndex) {
         return false;
     }
 
-    return (sBombArrowButtons & (1 << buttonIndex)) != 0 && IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex]);
+    return (sBombArrowButtons & (1 << buttonIndex)) != 0 &&
+           (gSaveContext.equips.buttonItems[buttonIndex] == ITEM_BOMB ||
+            IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex]));
 }
 
 static void SetBombArrowButton(s32 buttonIndex, bool enabled) {
@@ -109,6 +111,14 @@ extern "C" s16 BombArrows_GetEffectiveMaxAmmo() {
     s16 arrowCapacity = CUR_CAPACITY(UPG_QUIVER);
     s16 bombCapacity = CUR_CAPACITY(UPG_BOMB_BAG);
     return arrowCapacity < bombCapacity ? arrowCapacity : bombCapacity;
+}
+
+extern "C" u8 BombArrows_GetEffectiveButtonItem(s16 buttonIndex, u8 item) {
+    if (CVAR_BOMB_ARROWS_VALUE && item == ITEM_BOMB && IsBombArrowButton(buttonIndex)) {
+        return ITEM_BOW;
+    }
+
+    return item;
 }
 
 static bool IsActiveBombArrowButton() {
@@ -193,9 +203,7 @@ extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16*
         return;
     }
 
-    sPendingEquip = { true, targetButtonIndex, ITEM_BOW, SLOT_BOW, true };
-    *item = ITEM_BOW;
-    *slot = SLOT_BOW;
+    sPendingEquip = { true, targetButtonIndex, ITEM_BOMB, SLOT_BOMB, true };
 }
 
 extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonIndex, u16* item, u16* slot) {
@@ -213,7 +221,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         return isBombArrow;
     }
 
-    if (IsBowButtonItem(*item)) {
+    if (IsBowButtonItem(*item) || *item == ITEM_BOMB) {
         SetBombArrowButton(targetButtonIndex, false);
         return false;
     }
@@ -222,9 +230,9 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         return false;
     }
 
-    *item = ITEM_BOW;
+    *item = ITEM_BOMB;
     SetBombArrowButton(targetButtonIndex, true);
-    *slot = SLOT_BOW;
+    *slot = SLOT_BOMB;
     return true;
 }
 
@@ -234,7 +242,8 @@ static void CleanupBombArrowButtons() {
     }
 
     for (s32 buttonIndex = 1; buttonIndex <= 7; buttonIndex++) {
-        if (!IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex])) {
+        if (gSaveContext.equips.buttonItems[buttonIndex] != ITEM_BOMB &&
+            !IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex])) {
             SetBombArrowButton(buttonIndex, false);
         }
     }

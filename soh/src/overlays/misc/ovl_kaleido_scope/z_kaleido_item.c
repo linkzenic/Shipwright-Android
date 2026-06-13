@@ -439,8 +439,6 @@ void KaleidoScope_DrawItemCycles(PlayState* play) {
     KaleidoScope_DrawItemCycleExtras(play, SLOT_NAYRUS_LOVE, Randomizer_GetSettingValue(RSK_ROCS_FEATHER),
                                      Enhancement_GetPrevNayrusItem(), Enhancement_GetNextNayrusItem());
 
-    KaleidoScope_DrawItemCycleExtras(play, SLOT_BOMB, BombArrows_CanCycleBombSlot(), ITEM_NONE,
-                                     BombArrows_IsBombSlotMode() ? ITEM_BOMB : ITEM_BOW);
 }
 
 bool IsItemCycling() {

@@ -33,6 +33,8 @@
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 
+extern u8 BombArrows_GetEffectiveButtonItem(s16 buttonIndex, u8 item);
+
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -2486,27 +2488,31 @@ s32 Player_ItemIsItemAction(s32 item1, s32 itemAction) {
 }
 
 s32 Player_GetItemOnButton(PlayState* play, s32 index) {
+    s32 item = ITEM_NONE;
+
     if (index >= ((CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) ? 8 : 4)) {
         return ITEM_NONE;
     } else if (play->bombchuBowlingStatus != 0) {
         return (play->bombchuBowlingStatus > 0) ? ITEM_BOMBCHU : ITEM_NONE;
     } else if (index == 0) {
-        return B_BTN_ITEM;
+        item = B_BTN_ITEM;
     } else if (index == 1) {
-        return C_BTN_ITEM(0);
+        item = C_BTN_ITEM(0);
     } else if (index == 2) {
-        return C_BTN_ITEM(1);
+        item = C_BTN_ITEM(1);
     } else if (index == 3) {
-        return C_BTN_ITEM(2);
+        item = C_BTN_ITEM(2);
     } else if (index == 4) {
-        return DPAD_ITEM(0);
+        item = DPAD_ITEM(0);
     } else if (index == 5) {
-        return DPAD_ITEM(1);
+        item = DPAD_ITEM(1);
     } else if (index == 6) {
-        return DPAD_ITEM(2);
+        item = DPAD_ITEM(2);
     } else if (index == 7) {
-        return DPAD_ITEM(3);
+        item = DPAD_ITEM(3);
     }
+
+    return BombArrows_GetEffectiveButtonItem(index, item);
 }
 
 /**
