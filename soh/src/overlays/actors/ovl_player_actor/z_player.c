@@ -2550,11 +2550,13 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             bool hasOnDpad = false;
             if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
                 for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
-                    hasOnDpad |= Player_ItemIsInUse(this, DPAD_ITEM(buttonIndex));
+                    hasOnDpad |= Player_ItemIsInUse(this, Player_GetItemOnButton(play, buttonIndex + 4));
                 }
             }
-            if (!Player_ItemIsInUse(this, B_BTN_ITEM) && !Player_ItemIsInUse(this, C_BTN_ITEM(0)) &&
-                !Player_ItemIsInUse(this, C_BTN_ITEM(1)) && !Player_ItemIsInUse(this, C_BTN_ITEM(2)) && !hasOnDpad) {
+            if (!Player_ItemIsInUse(this, Player_GetItemOnButton(play, 0)) &&
+                !Player_ItemIsInUse(this, Player_GetItemOnButton(play, 1)) &&
+                !Player_ItemIsInUse(this, Player_GetItemOnButton(play, 2)) &&
+                !Player_ItemIsInUse(this, Player_GetItemOnButton(play, 3)) && !hasOnDpad) {
                 Player_UseItem(play, this, ITEM_NONE);
                 return;
             }
