@@ -210,7 +210,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         *slot = sPendingEquip.slot;
         SetBombArrowButton(targetButtonIndex, isBombArrow);
         sPendingEquip = {};
-        return isBombArrow;
+        return false;
     }
 
     if (IsBowButtonItem(*item)) {
@@ -226,6 +226,18 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
     SetBombArrowButton(targetButtonIndex, true);
     *slot = SLOT_BOW;
     return true;
+}
+
+static void ApplyPendingBombArrowEquip() {
+    if (gPlayState == nullptr || !sPendingEquip.active || gPlayState->pauseCtx.unk_1E4 != 0) {
+        return;
+    }
+
+    gSaveContext.equips.buttonItems[sPendingEquip.buttonIndex] = sPendingEquip.item;
+    gSaveContext.equips.cButtonSlots[sPendingEquip.buttonIndex - 1] = sPendingEquip.slot;
+    SetBombArrowButton(sPendingEquip.buttonIndex, sPendingEquip.isBombArrow);
+    Interface_LoadItemIcon1(gPlayState, sPendingEquip.buttonIndex);
+    sPendingEquip = {};
 }
 
 static void CleanupBombArrowButtons() {
