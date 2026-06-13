@@ -31,6 +31,8 @@ struct PendingBombArrowEquip {
     bool active = false;
     s32 buttonIndex = -1;
     u8 item = ITEM_NONE;
+    u8 slot = SLOT_NONE;
+    bool isBombArrow = false;
 };
 
 static PendingBombArrowEquip sPendingEquip = {};
@@ -91,6 +93,22 @@ static void SetBombArrowButton(s32 buttonIndex, bool enabled) {
     } else {
         sBombArrowButtons &= ~(1 << buttonIndex);
     }
+}
+
+extern "C" u8 BombArrows_IsButtonBombArrow(s16 buttonIndex) {
+    return CVAR_BOMB_ARROWS_VALUE && IsBombArrowButton(buttonIndex);
+}
+
+extern "C" s16 BombArrows_GetEffectiveAmmo() {
+    s16 arrowAmmo = AMMO(ITEM_BOW);
+    s16 bombAmmo = AMMO(ITEM_BOMB);
+    return arrowAmmo < bombAmmo ? arrowAmmo : bombAmmo;
+}
+
+extern "C" s16 BombArrows_GetEffectiveMaxAmmo() {
+    s16 arrowCapacity = CUR_CAPACITY(UPG_QUIVER);
+    s16 bombCapacity = CUR_CAPACITY(UPG_BOMB_BAG);
+    return arrowCapacity < bombCapacity ? arrowCapacity : bombCapacity;
 }
 
 static bool IsActiveBombArrowButton() {
@@ -156,8 +174,7 @@ extern "C" u8 BombArrows_CanCycleBombSlot() {
 }
 
 extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot) {
-    if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || *item != ITEM_BOMB ||
-        !CanEquipBombArrow()) {
+    if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || !CanEquipBombArrow()) {
         return;
     }
 
@@ -167,54 +184,48 @@ extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16*
         return;
     }
 
-    u8 equippedItem = gSaveContext.equips.buttonItems[targetButtonIndex];
-    bool equipFromBombSlot = ShouldEquipBombArrowFromBombSlot(*item);
-    if (!equipFromBombSlot && !IsBowButtonItem(equippedItem)) {
+    if (*item == ITEM_BOW) {
+        sPendingEquip = { true, targetButtonIndex, ITEM_BOW, SLOT_BOW, false };
         return;
     }
 
-    if (!IsBowButtonItem(equippedItem)) {
-        equippedItem = ITEM_BOW;
+    if (!ShouldEquipBombArrowFromBombSlot(*item)) {
+        return;
     }
 
-    sPendingEquip = { true, targetButtonIndex, equippedItem };
-    SetBombArrowButton(targetButtonIndex, true);
-    *item = equippedItem;
+    sPendingEquip = { true, targetButtonIndex, ITEM_BOW, SLOT_BOW, true };
+    *item = ITEM_BOW;
     *slot = SLOT_BOW;
 }
 
 extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonIndex, u16* item, u16* slot) {
-    if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || *item != ITEM_BOMB ||
-        targetButtonIndex < 1 || targetButtonIndex > 7 || !CanEquipBombArrow()) {
+    if (!CVAR_BOMB_ARROWS_VALUE || play == nullptr || item == nullptr || slot == nullptr || targetButtonIndex < 1 ||
+        targetButtonIndex > 7) {
         return false;
     }
 
-    u8 equippedItem = gSaveContext.equips.buttonItems[targetButtonIndex];
-    bool equipFromBombSlot = ShouldEquipBombArrowFromBombSlot(*item);
-    if (!equipFromBombSlot && !IsBowButtonItem(equippedItem)) {
+    if (sPendingEquip.active && sPendingEquip.buttonIndex == targetButtonIndex) {
+        bool isBombArrow = sPendingEquip.isBombArrow;
+        *item = sPendingEquip.item;
+        *slot = sPendingEquip.slot;
+        SetBombArrowButton(targetButtonIndex, isBombArrow);
+        sPendingEquip = {};
+        return isBombArrow;
+    }
+
+    if (IsBowButtonItem(*item)) {
+        SetBombArrowButton(targetButtonIndex, false);
         return false;
     }
 
-    if (!IsBowButtonItem(equippedItem)) {
-        equippedItem = ITEM_BOW;
+    if (!CanEquipBombArrow() || !ShouldEquipBombArrowFromBombSlot(*item)) {
+        return false;
     }
 
+    *item = ITEM_BOW;
     SetBombArrowButton(targetButtonIndex, true);
-    *item = equippedItem;
     *slot = SLOT_BOW;
     return true;
-}
-
-static void ApplyPendingBombArrowEquip() {
-    if (gPlayState == nullptr || !sPendingEquip.active || gPlayState->pauseCtx.unk_1E4 != 0) {
-        return;
-    }
-
-    gSaveContext.equips.buttonItems[sPendingEquip.buttonIndex] = sPendingEquip.item;
-    gSaveContext.equips.cButtonSlots[sPendingEquip.buttonIndex - 1] = SLOT_BOW;
-    SetBombArrowButton(sPendingEquip.buttonIndex, true);
-    Interface_LoadItemIcon1(gPlayState, sPendingEquip.buttonIndex);
-    sPendingEquip = {};
 }
 
 static void CleanupBombArrowButtons() {
@@ -295,11 +306,9 @@ void RegisterBombArrows() {
     COND_ID_HOOK(OnActorInit, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowInit);
     COND_ID_HOOK(OnActorUpdate, ACTOR_EN_ARROW, CVAR_BOMB_ARROWS_VALUE, OnBombArrowUpdate);
     COND_HOOK(OnGameFrameUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
-        ApplyPendingBombArrowEquip();
         CleanupBombArrowButtons();
     });
     COND_HOOK(OnKaleidoUpdate, CVAR_BOMB_ARROWS_VALUE, [] {
-        ApplyPendingBombArrowEquip();
         CleanupBombArrowButtons();
     });
 }
