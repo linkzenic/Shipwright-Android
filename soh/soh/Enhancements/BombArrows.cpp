@@ -263,12 +263,18 @@ static void SpawnBombArrowExplosion(EnArrow* arrow) {
 
 static void OnBombArrowInit(void* actorRef) {
     EnArrow* arrow = (EnArrow*)actorRef;
+    Player* player = GET_PLAYER(gPlayState);
 
-    if (!CanUseBombArrow() || !IsBowArrow(arrow) || arrow->actor.parent != &GET_PLAYER(gPlayState)->actor) {
+    if (player == nullptr || !CanUseBombArrow(false) || !IsBowArrow(arrow)) {
+        return;
+    }
+
+    if (!IsActiveBombArrowButton() && sBombArrowShotWindow <= 0) {
         return;
     }
 
     ObjectExtension::GetInstance().Set(&arrow->actor, BombArrowData{});
+    sBombArrowShotWindow = 8;
 }
 
 static void OnBombArrowUpdate(void* actorRef) {
@@ -300,15 +306,15 @@ static void OnBombArrowUpdate(void* actorRef) {
 
 void RegisterBombArrows() {
     COND_VB_SHOULD(VB_CHANGE_HELD_ITEM_AND_USE_ITEM, CVAR_BOMB_ARROWS_VALUE, {
-        int32_t item = va_arg(args, int32_t);
+        (void)va_arg(args, int32_t);
 
-        if (!IsBowButtonItem(item) || gPlayState == nullptr) {
+        if (gPlayState == nullptr) {
             return;
         }
 
         s32 buttonIndex = GetPressedEquipButtonIndex(gPlayState);
         if (IsBombArrowButton(buttonIndex)) {
-            sBombArrowShotWindow = 5;
+            sBombArrowShotWindow = 8;
         }
     });
 
