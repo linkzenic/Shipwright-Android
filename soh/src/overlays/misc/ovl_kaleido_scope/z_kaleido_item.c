@@ -330,8 +330,12 @@ void KaleidoScope_DrawItemCycleExtras(PlayState* play, u8 slot, u8 canCycle, u8 
 static void KaleidoScope_DrawBombArrowSlotOverlay(PlayState* play, s16 vtxIndex) {
     PauseContext* pauseCtx = &play->pauseCtx;
     GraphicsContext* gfxCtx = play->state.gfxCtx;
-    Vtx bombOverlayVtx[4];
+    Vtx* bombOverlayVtx = Graph_Alloc(gfxCtx, sizeof(Vtx) * 4);
     Vtx* slotVtx = &pauseCtx->itemVtx[vtxIndex];
+
+    if (bombOverlayVtx == NULL) {
+        return;
+    }
 
     for (s32 i = 0; i < 4; i++) {
         bombOverlayVtx[i] = slotVtx[i];
