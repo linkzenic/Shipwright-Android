@@ -97,6 +97,14 @@ static void SetBombArrowButton(s32 buttonIndex, bool enabled) {
     }
 }
 
+static void ClearOtherBombArrowButtons(s32 targetButtonIndex) {
+    for (s32 buttonIndex = 1; buttonIndex <= 7; buttonIndex++) {
+        if (buttonIndex != targetButtonIndex) {
+            SetBombArrowButton(buttonIndex, false);
+        }
+    }
+}
+
 extern "C" u8 BombArrows_IsButtonBombArrow(s16 buttonIndex) {
     return CVAR_BOMB_ARROWS_VALUE && IsBombArrowButton(buttonIndex);
 }
@@ -216,6 +224,9 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         bool isBombArrow = sPendingEquip.isBombArrow;
         *item = sPendingEquip.item;
         *slot = sPendingEquip.slot;
+        if (isBombArrow) {
+            ClearOtherBombArrowButtons(targetButtonIndex);
+        }
         SetBombArrowButton(targetButtonIndex, isBombArrow);
         sPendingEquip = {};
         return isBombArrow;
@@ -231,6 +242,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
     }
 
     *item = ITEM_BOMB;
+    ClearOtherBombArrowButtons(targetButtonIndex);
     SetBombArrowButton(targetButtonIndex, true);
     *slot = SLOT_BOMB;
     return true;

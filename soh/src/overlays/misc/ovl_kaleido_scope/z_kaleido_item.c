@@ -277,10 +277,10 @@ static void KaleidoScope_DrawBombArrowSlotOverlay(PlayState* play, s16 vtxIndex)
         bombOverlayVtx[i] = slotVtx[i];
     }
 
-    s16 left = slotVtx[0].v.ob[0] + 17;
-    s16 right = slotVtx[0].v.ob[0] + 33;
-    s16 top = slotVtx[0].v.ob[1] - 1;
-    s16 bottom = slotVtx[0].v.ob[1] - 17;
+    s16 left = slotVtx[0].v.ob[0] + 10;
+    s16 right = slotVtx[0].v.ob[0] + 32;
+    s16 top = slotVtx[0].v.ob[1] - 4;
+    s16 bottom = slotVtx[0].v.ob[1] - 26;
 
     bombOverlayVtx[0].v.ob[0] = bombOverlayVtx[2].v.ob[0] = left;
     bombOverlayVtx[1].v.ob[0] = bombOverlayVtx[3].v.ob[0] = right;
@@ -289,6 +289,9 @@ static void KaleidoScope_DrawBombArrowSlotOverlay(PlayState* play, s16 vtxIndex)
 
     OPEN_DISPS(gfxCtx);
 
+    gDPPipeSync(POLY_OPA_DISP++);
+    Gfx_SetupDL_42Opa(gfxCtx);
+    gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
     gSPVertex(POLY_OPA_DISP++, bombOverlayVtx, 4, 0);
     KaleidoScope_DrawQuadTextureRGBA32(gfxCtx, gItemIcons[ITEM_BOMB], 32, 32, 0);
 
