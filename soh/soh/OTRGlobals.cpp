@@ -841,6 +841,10 @@ void OTRGlobals::Initialize() {
                          // jitter and slow-frame spikes without perceptible audio latency.
                          .DesiredBuffered = 4096 });
 
+    // The menu is set up before audio is initialized, so its list of available audio backends has to be
+    // populated here rather than in Menu::InitElement (where the window backends are handled).
+    SohGui::GetSohMenu()->UpdateAudioBackendObjects();
+
     SPDLOG_INFO("Starting Ship of Harkinian version {} (Branch: {} | Commit: {})", (char*)gBuildVersion,
                 (char*)gGitBranch, (char*)gGitCommitHash);
 
