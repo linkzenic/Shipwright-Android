@@ -937,6 +937,14 @@ typedef enum {
 
     // #### `result`
     // ```c
+    // play->sceneNum == SCENE_KOKIRI_FOREST
+    // ```
+    // #### `args`
+    // - `*EnSa`
+    VB_SARIA_GESTURE,
+
+    // #### `result`
+    // ```c
     // true
     // ```
     // #### `args`
