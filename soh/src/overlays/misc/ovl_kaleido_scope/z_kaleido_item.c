@@ -337,10 +337,10 @@ static void KaleidoScope_DrawBombArrowSlotOverlay(PlayState* play, s16 vtxIndex)
         bombOverlayVtx[i] = slotVtx[i];
     }
 
-    s16 left = slotVtx[0].v.ob[0] + 12;
-    s16 right = slotVtx[0].v.ob[0] + 34;
-    s16 top = slotVtx[0].v.ob[1] - 10;
-    s16 bottom = slotVtx[0].v.ob[1] - 32;
+    s16 left = slotVtx[0].v.ob[0] + 17;
+    s16 right = slotVtx[0].v.ob[0] + 33;
+    s16 top = slotVtx[0].v.ob[1] - 1;
+    s16 bottom = slotVtx[0].v.ob[1] - 17;
 
     bombOverlayVtx[0].v.ob[0] = bombOverlayVtx[2].v.ob[0] = left;
     bombOverlayVtx[1].v.ob[0] = bombOverlayVtx[3].v.ob[0] = right;
