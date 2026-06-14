@@ -4503,6 +4503,7 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
     OPEN_DISPS(play->state.gfxCtx);
     GraphicsContext* gfxCtx = play->state.gfxCtx;
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
+    u8 isBombArrow = BombArrows_IsButtonBombArrow(button);
     s16 X_Margins_CL;
     s16 X_Margins_CR;
     s16 X_Margins_CD;
@@ -4734,6 +4735,10 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
     s32 isSmallIcon = (btnItem >= ITEM_SONG_MINUET && btnItem <= ITEM_SKULL_TOKEN) ||
                       (btnItem >= ITEM_SW97_ARROW_FIRE && btnItem <= ITEM_SW97_ARROW_WIND);
 
+    if (isBombArrow) {
+        texture = (void*)gItemIcons[ITEM_BOW];
+    }
+
     // Composite icon for elemental weapon mode: medallion semi-alpha + weapon overlay (bow for adult, slingshot for
     // child)
     s32 isElementalWeapon =
@@ -4850,6 +4855,21 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
                                         G_TX_RENDERTILE, 0, 0, ddOverlay, ddOverlay);
             }
         }
+    }
+
+    if (isBombArrow) {
+        s16 overlaySize = (button >= 4) ? 8 : 12;
+        s16 overlayLeft = ItemIconPos[button][0] + ((gItemIconWidth[button] - overlaySize) / 2) + 2;
+        s16 overlayTop = ItemIconPos[button][1] + ((gItemIconWidth[button] - overlaySize) / 2) - 2;
+        s16 overlayStep = ((32 << 10) / overlaySize);
+
+        gDPPipeSync(OVERLAY_DISP++);
+        gDPLoadTextureBlock(OVERLAY_DISP++, gItemIcons[ITEM_BOMB], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(OVERLAY_DISP++, overlayLeft << 2, overlayTop << 2,
+                                (overlayLeft + overlaySize) << 2, (overlayTop + overlaySize) << 2, G_TX_RENDERTILE, 0,
+                                0, overlayStep, overlayStep);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
