@@ -105,6 +105,21 @@ static void ClearOtherBombArrowButtons(s32 targetButtonIndex) {
     }
 }
 
+static void ClearOtherBombSlotButtons(PlayState* play, s32 targetButtonIndex) {
+    for (s32 buttonIndex = 1; buttonIndex <= 3; buttonIndex++) {
+        if (buttonIndex == targetButtonIndex) {
+            continue;
+        }
+
+        s32 slotIndex = buttonIndex - 1;
+        if (gSaveContext.equips.cButtonSlots[slotIndex] == SLOT_BOMB) {
+            gSaveContext.equips.buttonItems[buttonIndex] = ITEM_NONE;
+            gSaveContext.equips.cButtonSlots[slotIndex] = SLOT_NONE;
+            Interface_LoadItemIcon2(play, buttonIndex);
+        }
+    }
+}
+
 extern "C" u8 BombArrows_IsButtonBombArrow(s16 buttonIndex) {
     return CVAR_BOMB_ARROWS_VALUE && IsBombArrowButton(buttonIndex);
 }
@@ -226,6 +241,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         *slot = sPendingEquip.slot;
         if (isBombArrow) {
             ClearOtherBombArrowButtons(targetButtonIndex);
+            ClearOtherBombSlotButtons(play, targetButtonIndex);
         }
         SetBombArrowButton(targetButtonIndex, isBombArrow);
         sPendingEquip = {};
@@ -243,6 +259,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
 
     *item = ITEM_BOMB;
     ClearOtherBombArrowButtons(targetButtonIndex);
+    ClearOtherBombSlotButtons(play, targetButtonIndex);
     SetBombArrowButton(targetButtonIndex, true);
     *slot = SLOT_BOMB;
     return true;
