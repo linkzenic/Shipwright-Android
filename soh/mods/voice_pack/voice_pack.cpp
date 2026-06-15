@@ -14,6 +14,7 @@
  */
 
 #include <libultraship/libultra.h>
+#include <ship/Context.h> // Ship::Context was transitively via OTRGlobals.h before upstream #6636 cleanup
 
 #include <atomic>
 #include <cstdio>

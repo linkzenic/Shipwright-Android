@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <exception>
 #include <unordered_map>
+#include <vector> // was transitively via OTRGlobals.h before upstream #6636 cleanup
 #include <libultraship/libultraship.h>
 #include <libultraship/log/luslog.h>
 #include <SDL2/SDL.h>

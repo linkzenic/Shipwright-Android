@@ -1023,6 +1023,7 @@ typedef struct Player {
     // #region SOH [Enhancements]
     // Upstream TODO: Rename this to make it more obvious it is apart of an enhancement
     /*        */ u8 boomerangQuickRecall; // Has the player pressed the boomerang button while it's in the air still?
+    // NEI: kept after upstream #6735 removed it — used by Sm64Mario float gating and Ivan coop (z_player.c, sm64_mario_items.c)
     /*        */ u8 ivanFloating;
     /*        */ u8 ivanDamageMultiplier;
     // #endregion

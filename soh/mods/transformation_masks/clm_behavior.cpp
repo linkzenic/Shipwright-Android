@@ -26,6 +26,7 @@
 #include "soh/Enhancements/custom-message/CustomMessageManager.h"
 #include "soh/Enhancements/randomizer/randomizerTypes.h"
 #include "soh/Enhancements/randomizer/static_data.h"
+#include "soh/Enhancements/randomizer/SeedContext.h" // Rando::Context was transitively via OTRGlobals.h before upstream #6636 cleanup
 
 extern "C" {
 #include "variables.h"

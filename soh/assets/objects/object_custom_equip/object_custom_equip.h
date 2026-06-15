@@ -7,6 +7,9 @@
 #define dgCustomBowDL "__OTR__objects/object_custom_equip/gCustomBowDL"
 static const ALIGN_ASSET(2) char gCustomBowDL[] = dgCustomBowDL;
 
+#define dgCustomFPSBowDL "__OTR__objects/object_custom_equip/gCustomFPSBowDL"
+static const ALIGN_ASSET(2) char gCustomFPSBowDL[] = dgCustomFPSBowDL;
+
 #define dgCustomHammerDL "__OTR__objects/object_custom_equip/gCustomHammerDL"
 static const ALIGN_ASSET(2) char gCustomHammerDL[] = dgCustomHammerDL;
 
@@ -16,11 +19,26 @@ static const ALIGN_ASSET(2) char gCustomHookshotDL[] = dgCustomHookshotDL;
 #define dgCustomLongshotDL "__OTR__objects/object_custom_equip/gCustomLongshotDL"
 static const ALIGN_ASSET(2) char gCustomLongshotDL[] = dgCustomLongshotDL;
 
+#define dgCustomFPSSlingshotDL "__OTR__objects/object_custom_equip/gCustomFPSSlingshotDL"
+static const ALIGN_ASSET(2) char gCustomFPSSlingshotDL[] = dgCustomFPSSlingshotDL;
+
+#define dgCustomFPSHookshotDL "__OTR__objects/object_custom_equip/gCustomFPSHookshotDL"
+static const ALIGN_ASSET(2) char gCustomFPSHookshotDL[] = dgCustomFPSHookshotDL;
+
+#define dgCustomFPSLongshotDL "__OTR__objects/object_custom_equip/gCustomFPSLongshotDL"
+static const ALIGN_ASSET(2) char gCustomFPSLongshotDL[] = dgCustomFPSLongshotDL;
+
 #define dgCustomHookshotTipDL "__OTR__objects/object_custom_equip/gCustomHookshotTipDL"
 static const ALIGN_ASSET(2) char gCustomHookshotTipDL[] = dgCustomHookshotTipDL;
 
 #define dgCustomHookshotChainDL "__OTR__objects/object_custom_equip/gCustomHookshotChainDL"
 static const ALIGN_ASSET(2) char gCustomHookshotChainDL[] = dgCustomHookshotChainDL;
+
+#define dgCustomLongshotTipDL "__OTR__objects/object_custom_equip/gCustomLongshotTipDL"
+static const ALIGN_ASSET(2) char gCustomLongshotTipDL[] = dgCustomLongshotTipDL;
+
+#define dgCustomLongshotChainDL "__OTR__objects/object_custom_equip/gCustomLongshotChainDL"
+static const ALIGN_ASSET(2) char gCustomLongshotChainDL[] = dgCustomLongshotChainDL;
 
 #define dgCustomSlingshotDL "__OTR__objects/object_custom_equip/gCustomSlingshotDL"
 static const ALIGN_ASSET(2) char gCustomSlingshotDL[] = dgCustomSlingshotDL;

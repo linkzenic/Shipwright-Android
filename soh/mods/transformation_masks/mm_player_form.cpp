@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <exception>
+#include <vector> // was transitively via OTRGlobals.h before upstream #6636 cleanup
 
 // C headers - NOT wrapped in extern "C" because they already have their own
 // __cplusplus guards internally, and wrapping them breaks Clang/GCC when
