@@ -120,6 +120,27 @@ static void ClearOtherBombSlotButtons(PlayState* play, s32 targetButtonIndex) {
     }
 }
 
+static void ClearOtherBowFamilyButtons(PlayState* play, s32 targetButtonIndex) {
+    bool dpadEnabled = CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0);
+    s32 maxButton = dpadEnabled ? 7 : 3;
+
+    for (s32 buttonIndex = 1; buttonIndex <= maxButton; buttonIndex++) {
+        if (buttonIndex == targetButtonIndex) {
+            continue;
+        }
+
+        if (IsBowButtonItem(gSaveContext.equips.buttonItems[buttonIndex]) || IsBombArrowButton(buttonIndex)) {
+            gSaveContext.equips.buttonItems[buttonIndex] = ITEM_NONE;
+            SetBombArrowButton(buttonIndex, false);
+
+            if (buttonIndex <= 3) {
+                gSaveContext.equips.cButtonSlots[buttonIndex - 1] = SLOT_NONE;
+                Interface_LoadItemIcon2(play, buttonIndex);
+            }
+        }
+    }
+}
+
 extern "C" u8 BombArrows_IsButtonBombArrow(s16 buttonIndex) {
     return CVAR_BOMB_ARROWS_VALUE && IsBombArrowButton(buttonIndex);
 }
@@ -225,6 +246,7 @@ extern "C" void BombArrows_SetArrowCycleButton(PlayState* play, s16 buttonIndex,
     }
 
     ClearOtherBombArrowButtons(buttonIndex);
+    ClearOtherBowFamilyButtons(play, buttonIndex);
     ClearOtherBombSlotButtons(play, buttonIndex);
     SetBombArrowButton(buttonIndex, true);
 
@@ -234,6 +256,28 @@ extern "C" void BombArrows_SetArrowCycleButton(PlayState* play, s16 buttonIndex,
         Interface_LoadItemIcon1(play, buttonIndex);
     }
     gSaveContext.buttonStatus[buttonIndex] = BTN_ENABLED;
+}
+
+extern "C" void BombArrows_ClearOtherBowFamilyButtons(PlayState* play, s16 targetButtonIndex) {
+    if (play == nullptr || targetButtonIndex < 1 || targetButtonIndex > 7) {
+        return;
+    }
+
+    ClearOtherBowFamilyButtons(play, targetButtonIndex);
+}
+
+extern "C" void BombArrows_UpdateArrowCycleArrow(Actor* arrowActor, u8 enabled) {
+    if (arrowActor == nullptr || arrowActor->id != ACTOR_EN_ARROW) {
+        return;
+    }
+
+    EnArrow* arrow = (EnArrow*)arrowActor;
+    if (enabled && CVAR_BOMB_ARROWS_VALUE && CanUseBombArrow(false) && IsBowArrow(arrow)) {
+        ObjectExtension::GetInstance().Set(&arrow->actor, BombArrowData{});
+        sBombArrowShotWindow = 8;
+    } else {
+        ObjectExtension::GetInstance().Remove<BombArrowData>(&arrow->actor);
+    }
 }
 
 extern "C" void BombArrows_HandleSetupItemEquip(PlayState* play, u16* item, u16* slot) {
@@ -271,14 +315,23 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
         *slot = sPendingEquip.slot;
         if (isBombArrow) {
             ClearOtherBombArrowButtons(targetButtonIndex);
+            ClearOtherBowFamilyButtons(play, targetButtonIndex);
             ClearOtherBombSlotButtons(play, targetButtonIndex);
+        } else if (IsBowButtonItem(*item)) {
+            ClearOtherBowFamilyButtons(play, targetButtonIndex);
         }
         SetBombArrowButton(targetButtonIndex, isBombArrow);
         sPendingEquip = {};
         return false;
     }
 
-    if (IsBowButtonItem(*item) || *item == ITEM_BOMB) {
+    if (IsBowButtonItem(*item)) {
+        ClearOtherBowFamilyButtons(play, targetButtonIndex);
+        SetBombArrowButton(targetButtonIndex, false);
+        return false;
+    }
+
+    if (*item == ITEM_BOMB) {
         SetBombArrowButton(targetButtonIndex, false);
         return false;
     }
@@ -289,6 +342,7 @@ extern "C" u8 BombArrows_HandleEquipCommit(PlayState* play, u16 targetButtonInde
 
     *item = ITEM_BOMB;
     ClearOtherBombArrowButtons(targetButtonIndex);
+    ClearOtherBowFamilyButtons(play, targetButtonIndex);
     ClearOtherBombSlotButtons(play, targetButtonIndex);
     SetBombArrowButton(targetButtonIndex, true);
     *slot = SLOT_BOMB;
