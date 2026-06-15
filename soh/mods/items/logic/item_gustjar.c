@@ -245,6 +245,10 @@ static void GustJar_Absorb(Player* player, PlayState* play, Vec3f* nozzle, s16 a
     col->dim.pos.x = (s16)nozzle->x;
     col->dim.pos.y = (s16)nozzle->y;
     col->dim.pos.z = (s16)nozzle->z;
+    // SUCK always deals DMG_HAMMER_SWING regardless of selected element — only
+    // the BLOW cone delivers elemental damage. Reset every frame because
+    // GustJar_Blow rewrites this with elemDmgFlags on the next mode switch.
+    col->info.toucher.dmgFlags = 0x00000040; // DMG_HAMMER_SWING
     col->base.atFlags |= AT_ON | AT_TYPE_PLAYER;
     CollisionCheck_SetAT(play, &play->colChkCtx, &col->base);
     if (col->base.atFlags & AT_HIT) {
@@ -305,28 +309,43 @@ static void GustJar_Absorb(Player* player, PlayState* play, Vec3f* nozzle, s16 a
 // Blow Mode — elemental cone VFX + strong push + collider sweep for env effects
 // =============================================================================
 
-// Element → AT collider dmgFlags mapping (for triggering torches, sun switches, etc.)
+// Element → AT collider dmgFlags mapping for the BLOW cone. Match the SW97
+// arrow counterparts so each gustjar element delivers the SAME damage type as
+// its bow medallion arrow does (per user direction: only BLOW should mirror
+// the elemental arrows; SUCK uses DMG_HAMMER_SWING and is set separately in
+// GustJar_Absorb).
 static u32 GustJar_GetElementDmgFlags(u8 element) {
     switch (element) {
         case GUST_ELEMENT_FIRE:
-            return 0x00020800; // DMG_ARROW_FIRE | DMG_MAGIC_FIRE → lights torches
+            // ARROW_SW97_FIRE = DMG_ARROW_FIRE (0x0800). Keep DMG_MAGIC_FIRE
+            // so the existing torch-lighting + Fire Temple bumpers still hit.
+            return 0x00020800;
         case GUST_ELEMENT_ICE:
-            return 0x00041000; // DMG_ARROW_ICE | DMG_MAGIC_ICE
+            // ARROW_SW97_ICE = DMG_ARROW_ICE (0x1000). Keep DMG_MAGIC_ICE.
+            return 0x00041000;
         case GUST_ELEMENT_LIGHT:
-            return 0x00282000; // DMG_ARROW_LIGHT | DMG_MAGIC_LIGHT | DMG_MIR_RAY → sun switches
+            // ARROW_SW97_LIGHT = DMG_ARROW_LIGHT (0x2000). Keep MAGIC_LIGHT
+            // and MIR_RAY so sun switches and Spirit Temple bumpers still fire.
+            return 0x00282000;
         case GUST_ELEMENT_SHADOW:
-            return 0x00020000; // DMG_MAGIC_FIRE (shadow burns)
+            // ARROW_SW97_0C (Dark) = 0x00010000.
+            return 0x00010000;
         case GUST_ELEMENT_SPIRIT:
-            return 0x00080000; // DMG_MAGIC_LIGHT
+            // ARROW_SW97_0D (Soul) = 0x00004000.
+            return 0x00004000;
         case GUST_ELEMENT_WIND:
         default:
-            return 0x00000048; // DMG_HAMMER_SWING | DMG_EXPLOSIVE (base push)
+            // ARROW_SW97_0E (Wind) = 0x00008000. OR'd with DMG_HAMMER_SWING
+            // (0x40) so the base "wind push" still doubles as a heavy strike
+            // for vanilla bumpers that only accept physical damage.
+            return 0x00008040;
     }
 }
 
 // Element effects on regular enemies (NOT bosses — bosses use AT collider dmgFlags natively).
 // Twinrova/Ganon stuns happen via the AT collider sweep with correct dmgFlags,
 // not through freezeTimer (which they ignore).
+extern void Sw97_TagBlinded(Actor* actor, int16_t frames);
 static void GustJar_ApplyElementEffect(Actor* actor, PlayState* play, u8 element) {
     // Only affect regular enemies, not bosses
     if (actor->category != ACTORCAT_ENEMY)
@@ -339,6 +358,10 @@ static void GustJar_ApplyElementEffect(Actor* actor, PlayState* play, u8 element
                 actor->freezeTimer = 60;
                 Actor_SetColorFilter(actor, 0x8000, 255, 0x2000, 60);
             }
+            // Shadow gustjar BLOW blinds the target — same effect as Shadow
+            // Arrow. Distance-to-player is spoofed to 32000 for ~10 sec so the
+            // enemy stops tracking Link.
+            Sw97_TagBlinded(actor, 300);
             break;
         case GUST_ELEMENT_FIRE:
             // Burn enemies

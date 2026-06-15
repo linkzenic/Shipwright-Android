@@ -360,13 +360,21 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
 
     // Twilight Upgrade icon swap — when the corresponding mode is active
     // (persistent toggle via A in kaleido), swap hookshot/longshot/
-    // boomerang icons to the upgraded variant. Placeholder textures live
-    // in soh/assets/custom/textures/icon_item_custom/ (currently copies
-    // of gust jar art) until proper assets land.
+    // boomerang icons to the upgraded variant.
+    //
+    // Clawshot specifically uses the MM (Majora's Mask) hookshot icon
+    // straight from mm.o2r so the visual is 1:1 with TP's clawshot. The
+    // local placeholder PNG (gItemIconClawshotTex) is only used if mm.o2r
+    // isn't loaded — keeps the rest of the system working in environments
+    // without the MM archive. Gale boomerang still uses its local
+    // placeholder; no MM equivalent ported yet.
     {
         extern unsigned char TwilightUpgrade_IsClawshotActive(void);
         extern unsigned char TwilightUpgrade_IsGaleBoomerangActive(void);
         if ((itemId == ITEM_HOOKSHOT || itemId == ITEM_LONGSHOT) && TwilightUpgrade_IsClawshotActive()) {
+            void* mmIcon = MmAssets_LoadHookshotIcon();
+            if (mmIcon)
+                return mmIcon;
             return (void*)gItemIconClawshotTex;
         }
         if (itemId == ITEM_BOOMERANG && TwilightUpgrade_IsGaleBoomerangActive()) {

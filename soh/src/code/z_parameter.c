@@ -4810,26 +4810,25 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
             wantLBadge = 1;
         }
         if (wantLBadge && button >= 1 && button <= 7) {
+            // Same footprint and rendering pattern as the gust jar medallion
+            // overlay below (lines 4836-4864): 12 wide × 12 tall in the
+            // TOP-RIGHT corner of the icon. Source texture is gLButtonTex
+            // (24×32 ia8), drawn at 12×12 dest. dd matches gust jar's 2048
+            // for horizontal (24/12 × 1024); vertical stretch is acceptable
+            // since the L glyph is roughly square inside its texture.
             s16 iconW = gItemIconWidth[button];
-            // Badge: ~14×10 (50% scale of 24×32 → roughly square-ish small
-            // glyph). Placed CENTERED HORIZONTALLY directly below the icon's
-            // bottom edge. Sits under the ammo digits too — readable, doesn't
-            // crop the icon.
-            s16 badgeW = 14;
-            s16 badgeH = 10;
-            s32 x0 = ItemIconPos[button][0] + (iconW - badgeW) / 2;
-            s32 y0 = ItemIconPos[button][1] + iconW + 1;
-            // 24/14 ≈ 1.71× → 1755 ; 32/10 = 3.2× → 3277.
-            s32 ddX = (24 * 1024) / badgeW;
-            s32 ddY = (32 * 1024) / badgeH;
+            s16 overlayW = 12;
+            s32 x0 = ItemIconPos[button][0] + (iconW - overlayW);
+            s32 y0 = ItemIconPos[button][1];
+            s32 ddOverlay = 24 * 1024 / overlayW; // 2048, matches gust jar overlay
             gDPPipeSync(OVERLAY_DISP++);
             gDPSetCombineMode(OVERLAY_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
             gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, 255);
             gDPLoadTextureBlock(OVERLAY_DISP++, gLButtonTex, G_IM_FMT_IA, G_IM_SIZ_8b, 24, 32, 0,
                                 G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
                                 G_TX_NOLOD, G_TX_NOLOD);
-            gSPWideTextureRectangle(OVERLAY_DISP++, x0 << 2, y0 << 2, (x0 + badgeW) << 2, (y0 + badgeH) << 2,
-                                    G_TX_RENDERTILE, 0, 0, ddX, ddY);
+            gSPWideTextureRectangle(OVERLAY_DISP++, x0 << 2, y0 << 2, (x0 + overlayW) << 2, (y0 + overlayW) << 2,
+                                    G_TX_RENDERTILE, 0, 0, ddOverlay, ddOverlay);
         }
     }
 

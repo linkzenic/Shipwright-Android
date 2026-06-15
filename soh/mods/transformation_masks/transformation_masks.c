@@ -189,11 +189,13 @@ void TransformMasks_PlayMmVoice(u16 ootVoiceSfxId, Vec3f* pos) {
             // 0x20-wide block (e.g. 0x40 or 0x60) and ship the samples in mm.o2r.
             return;
         case MM_PLAYER_FORM_GARO:
-            // No Garo voice samples shipped yet. Same rationale as Gerudo above:
-            // fall through to default (Link's normal voice) until Garo Master MM
-            // voice samples are bundled. Once available, assign 0x60 offset and
-            // remove this early-return.
-            return;
+            // Garo Master MM voice samples bundled at mm.o2r SFX bank
+            // 0x6800+0x60+action. Block layout: FD=0x00, Gerudo=0x40, Garo=0x60,
+            // Deku=0x80, Zora=0xA0, Goron=0xC0. Each form gets a 0x20-wide
+            // action range (0x00..0x1F). If a sample is missing in mm.o2r the
+            // MmSfx_PlayAtPos call no-ops silently.
+            mmOffset = 0x60;
+            break;
         default:
             return;
     }
@@ -282,10 +284,32 @@ void TransformMasks_FilterB(Input* input) {
         return;
     }
 
-    // Garo skin: B is NOT stripped — Link's normal sword/item flow on B keeps
-    // working 1:1. garo_form.cpp observes Link's slash anim and overrides it
-    // visually with the Garo combo (and throws shuriken knives on the combo
-    // finisher) without taking over the input.
+    // Garo: B is reserved for the Garo combat moveset (Goron-style 3-slash
+    // combo + rod-mode aim on hold). A is conditionally reserved for Garo
+    // dash so it replaces Link's vanilla roll WITHOUT also clobbering
+    // sidehop / backflip — same model as Goron's A-roll, which only fires
+    // from idle / forward run and lets backwards or sideways A go through
+    // to vanilla evade actions.
+    //
+    //   Stick forward or neutral  → strip A (Garo dash takes over)
+    //   Stick pulled back         → let A through (vanilla backflip)
+    //   Stick strongly to a side  → let A through (vanilla sidehop)
+    //
+    // GaroForm_Update reads raw play->state.input[0] so the dash trigger
+    // there mirrors this same stick check before firing — keeps the two
+    // sides in sync. C-button items live on C and are unaffected.
+    if (MmForm_GetCurrentForm() == MM_PLAYER_FORM_GARO) {
+        // v10: Garo OWNS B and A entirely. The new IDLE dispatcher handles
+        // every A-press case (dash / shadow ball / sidehop / backflip /
+        // jump-attack / air-slash) with Garo-native anims; vanilla Link
+        // backflip/sidehop must NOT fire in parallel — they would race the
+        // form's anim driver and we'd see Link's vanilla anim playing
+        // instead of garo_jumpBack / garo_bounce. GaroForm_Update reads
+        // raw play->state.input[0] (not this sp44 copy) so its dispatcher
+        // still sees the press; only Link's actionFunc sees A=0.
+        input->cur.button   &= ~(BTN_B | BTN_A);
+        input->press.button &= ~(BTN_B | BTN_A);
+    }
 
     // Gerudo Form: by default every action falls back to OoT vanilla — the only
     // explicit Gerudo override is the dual-scimitar combo on B-press from idle/
@@ -354,9 +378,16 @@ void TransformMasks_Update(PlayState* play, Player* player) {
 
     MmForm_Update(play, player);
 
-    // Garo attack kit (3-slash combo + charge spin). Always called — internal
-    // GaroForm_IsActive check no-ops when the Garo skin isn't the active model.
-    GaroForm_Update(play, player);
+    // v9: Garo combat dispatch is now driven exclusively by MmForm_UpdateActive
+    // (mm_player_form.cpp:11030) when the Garo Mask activates the form. Calling
+    // GaroForm_Update here ALSO caused the state machine to tick twice per
+    // frame — the visible bug was the 3-slash combo blurring into a single
+    // instantaneous swing, animations playing at 2x, and the rod charge timer
+    // ramping in half the expected time. The MmForm path is the canonical
+    // activation, the only one that should exist; this legacy unconditional
+    // call is the old O2rLoader skin-swap pathway and is now dead.
+    //
+    // GaroForm_Update(play, player);  // intentionally removed in v9
 
     // Gerudo dual-scimitar combo + block-mirror. Same no-op pattern.
     GerudoForm_Update(play, player);
@@ -377,6 +408,17 @@ void TransformMasks_Reset(void) {
 
 void TransformMasks_OnDeath(void) {
     MmMaskWear_DeactivateChateauRomani();
+
+    // Garo: spawn the MM-canon 9-flame death ring BEFORE MmForm_OnDeath rolls
+    // back the form. Once MmForm_OnDeath runs, MmForm_GetCurrentForm flips off
+    // and any form-aware callback can no longer fire, so the ordering matters.
+    if (MmForm_GetCurrentForm() == MM_PLAYER_FORM_GARO && gPlayState != NULL) {
+        Player* p = GET_PLAYER(gPlayState);
+        if (p != NULL) {
+            GaroForm_OnDeath(p, gPlayState);
+        }
+    }
+
     // Roll back equipment / strength / pending-reactivate state synchronously.
     // The scene reload that follows will call MmForm_Reset, but by then the
     // backup is empty so the equipment stays restored (instead of being wiped).
@@ -460,11 +502,20 @@ extern u8 gPikaThunderActive;
 // sm64_mario.c (#included into z_player.c). extern'd here to avoid pulling the
 // whole SM64 header into the masks TU.
 extern u8 Sm64Mario_IsSuperAttacking(void);
+// Fire Flower fireballs (sm64_mario_items.c) — a fireball in flight / near a part
+// makes the fire count as a super attack so it can break/kill bosses.
+extern u8 Sm64Mario_FireballActive(void);
+extern u8 Sm64Mario_FireballNear(Vec3f* pos, f32 range);
 
 u8 BossSuperDamage_IsActive(PlayState* play) {
     // SM64 Mario: the spin counts as a super attack (only bosses query this, so
     // it's implicitly boss-room-gated).
     if (Sm64Mario_IsSuperAttacking()) {
+        return 1;
+    }
+    // Fire Flower: a fireball in flight counts as a super attack so the fire can
+    // break/kill bosses (gated naturally — fireballs only exist while throwing fire).
+    if (Sm64Mario_FireballActive()) {
         return 1;
     }
     // AND the gPika* mirror with the authoritative form-state check so a latched
@@ -493,8 +544,8 @@ u8 BossSuperDamage_IsFormActive(PlayState* play) {
     // it can stay latched at 1 after leaving Pika form (e.g. if Cleanup didn't run).
     // Without this AND, normal play (boomerang/bow) would be treated as a super
     // attack and skip the bosses' real phases — breaking the regression.
-    return (Sm64Mario_IsSuperAttacking() || (MmForm_IsPikachuActive() && gPikaGigantamaxMode) ||
-            MmForm_IsFDSkinMode())
+    return (Sm64Mario_IsSuperAttacking() || Sm64Mario_FireballActive() ||
+            (MmForm_IsPikachuActive() && gPikaGigantamaxMode) || MmForm_IsFDSkinMode())
                ? 1
                : 0;
 }
@@ -535,6 +586,13 @@ u8 BossSuperDamage_FormAttackReaches(PlayState* play, Vec3f* targetPos, f32 rang
     player = GET_PLAYER(play);
     if (player == NULL) {
         return 0;
+    }
+
+    // Fire Flower: a fireball within `range` of this part breaks/kills it. Uses the
+    // FIREBALL'S position (not the player's), so it only lands where fire actually
+    // reaches — independent of the FD/Pika form gate below.
+    if (Sm64Mario_FireballNear(targetPos, range)) {
+        return 1;
     }
 
     // Must be in a super form (FD or Pika Gigantamax) for ANY of this to fire, so
@@ -598,6 +656,9 @@ f32 BossSuperDamage_FormAttackRange(PlayState* play) {
 // form-gated, so this is just a safe default).
 u8 BossSuperDamage_FormDamage(PlayState* play) {
     (void)play;
+    if (Sm64Mario_FireballActive()) {
+        return 8; // Fire Flower hits hard — kills bosses fast
+    }
     if (MmForm_IsPikachuActive() && gPikaGigantamaxMode) {
         return 8;
     }

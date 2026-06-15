@@ -119,7 +119,16 @@ extern "C" void gSPInvalidateTexCache(Gfx* pkt, uintptr_t texAddr) {
     if (texAddr != 0 && ResourceMgr_OTRSigCheck(imgData)) {
         // Temporary solution to the mq/nonmq issue, this will be
         // handled better with LUS 1.0
-        texAddr = (uintptr_t)ResourceMgr_LoadTexOrDListByName(imgData);
+        // Defensive: ResourceMgr_LoadTexOrDListByName returns nullptr when
+        // pak_loader hot-swaps a resource mid-draw and the OTR lookup races
+        // (see ResourceManagerHelpers.cpp). Keep the original texAddr in that
+        // case so InvalidateTexCache invalidates the prior frame's address
+        // rather than a NULL pointer — the kaleido draw can then settle on
+        // the new resource next frame instead of crashing this one.
+        char* loaded = ResourceMgr_LoadTexOrDListByName(imgData);
+        if (loaded != nullptr) {
+            texAddr = (uintptr_t)loaded;
+        }
     }
 
     __gSPInvalidateTexCache(pkt, texAddr);

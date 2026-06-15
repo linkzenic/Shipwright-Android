@@ -301,6 +301,19 @@ extern "C" char* ResourceMgr_LoadJPEG(char* data, size_t dataSize) {
 extern "C" char* ResourceMgr_LoadTexOrDListByName(const char* filePath) {
     auto res = ResourceMgr_GetResourceByNameHandlingMQ(filePath);
 
+    // Defensive null guard. Mirrors the pattern already used in
+    // ResourceMgr_LoadIfDListByName below (line 318). When pak_loader hot-
+    // swaps equipment textures during a kaleido draw, the OTR lookup can
+    // race-return nullptr while the prior cached pointer is still in flight,
+    // causing the next `res->GetInitData()` deref to AV inside
+    // gSPInvalidateTexCache / KaleidoScope_DrawEquipment. Returning nullptr
+    // lets the caller skip the texture invalidation and keep its current
+    // texAddr — the RSP will pick up the new resource on the next draw once
+    // the cache settles.
+    if (res == nullptr) {
+        return nullptr;
+    }
+
     if (res->GetInitData()->Type == static_cast<uint32_t>(Fast::ResourceType::DisplayList)) {
         return (char*)&((std::static_pointer_cast<Fast::DisplayList>(res))->Instructions[0]);
     }

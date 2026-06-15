@@ -855,11 +855,15 @@ static u8 TwilightSel_IsHookshotItem(s32 item) {
 }
 
 // ── Clawshot Mode Selector (Hookshot/Longshot icon) ─────────────────────────
-// A-press toggle restored — single tap flips clawshotModeActive instantly,
-// same one-shot pattern as GustJar_HandlePressASelector. The selector flag
-// (sClawshotSelectorActive) gates the "cycling" animation in the draw
-// function so the icons briefly expand to the small-flip pattern. Held
-// state isn't needed since there are only two modes; one tap = swap.
+// 1:1 with the canonical ArrowWheel / Lantern / GustJar pattern:
+//   - A press → toggle the selector ON/OFF (NA_SE_SY_DECIDE)
+//   - While active: stick L/R (or D-pad L/R/Up/Down) advances cursor through
+//     the two options (vanilla ↔ clawshot), each move plays NA_SE_SY_CURSOR
+//     and immediately applies the new mode
+//   - While active: pauseCtx->cursorColorSet = 8 (yellow cursor)
+//   - A press again → confirm + exit selector
+// pauseCtx->stickRelX/Y is already debounced by the kaleido (resets when the
+// stick returns to center), so no manual debounce needed.
 static void Clawshot_HandleKaleidoSelector(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     Input* input = &play->state.input[0];
@@ -873,23 +877,43 @@ static void Clawshot_HandleKaleidoSelector(PlayState* play) {
         return;
     }
 
+    bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));
+
     if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
-        u8 newMode = TwilightUpgrade_IsClawshotActive() ? 0 : 1;
-        TwilightUpgrade_SetClawshotActive(newMode);
-        sClawshotSelectorActive = !sClawshotSelectorActive; // flash anim
+        sClawshotSelectorActive = !sClawshotSelectorActive;
         gCurrentItemCyclingSlot = sClawshotSelectorActive ? pauseCtx->cursorSlot[PAUSE_ITEM] : -1;
         Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    if (!sClawshotSelectorActive) return;
+    pauseCtx->cursorColorSet = 8;
+    gCurrentItemCyclingSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+
+    // Two-position cursor: 0 = vanilla hookshot, 1 = clawshot. Stick/D-pad
+    // flips between them; each flip immediately applies the new mode.
+    s8 newMode = -1;
+    if ((pauseCtx->stickRelX > 30 || pauseCtx->stickRelY > 30) ||
+        (dpad && CHECK_BTN_ANY(input->press.button, BTN_DRIGHT | BTN_DUP))) {
+        newMode = TwilightUpgrade_IsClawshotActive() ? 0 : 1;
+    } else if ((pauseCtx->stickRelX < -30 || pauseCtx->stickRelY < -30) ||
+               (dpad && CHECK_BTN_ANY(input->press.button, BTN_DLEFT | BTN_DDOWN))) {
+        newMode = TwilightUpgrade_IsClawshotActive() ? 0 : 1;
+    }
+
+    if (newMode >= 0) {
+        TwilightUpgrade_SetClawshotActive(newMode);
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
 // Draws the small left/right flip — vanilla hookshot/longshot vs clawshot —
 // via the shared KaleidoCycle_DrawRocStyle helper (same renderer Lantern,
-// GustJar press-A, and arrows use). Both sides render the same base icon
-// because we don't yet have a dedicated clawshot texture in use; tint
-// distinguishes them: white = vanilla, cyan = clawshot (TP chain colour).
-// When ITEM_CLAWSHOT-style texture eventually replaces tint, pass it as
-// rightIconTex instead.
+// GustJar press-A, and arrows use). Left side: vanilla hookshot/longshot
+// icon (taken directly from gItemIcons to bypass ExtInv's clawshot
+// override). Right side: dedicated clawshot icon texture.
 static void Clawshot_DrawKaleidoSelector(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
@@ -899,15 +923,24 @@ static void Clawshot_DrawKaleidoSelector(PlayState* play) {
         return;
     }
 
-    void* baseTex = ExtInv_GetItemIcon(cursorItem);
-    if (baseTex == NULL) return;
+    // Pull the vanilla icon directly so the left/prev side shows hookshot/longshot
+    // even when ExtInv_GetItemIcon would swap to the clawshot placeholder.
+    extern void* gItemIcons[];
+    extern void* MmAssets_LoadHookshotIcon(void);
+    void* vanillaTex = gItemIcons[cursorItem];
+    // Prefer MM hookshot icon from mm.o2r (matches the in-inventory grid swap).
+    // Falls back to the local placeholder PNG when mm.o2r isn't loaded.
+    void* clawshotTex = MmAssets_LoadHookshotIcon();
+    if (clawshotTex == NULL)
+        clawshotTex = (void*)gItemIconClawshotTex;
+    if (vanillaTex == NULL || clawshotTex == NULL) return;
 
     static const u8 sVanillaTint[3]  = { 255, 255, 255 };
-    static const u8 sClawshotTint[3] = {  80, 220, 255 };
+    static const u8 sClawshotTint[3] = { 255, 255, 255 };
 
     KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sClawshotSelectorActive,
                               /*hasLeft=*/1, /*hasRight=*/1,
-                              baseTex, baseTex,
+                              vanillaTex, clawshotTex,
                               sVanillaTint, sClawshotTint,
                               /*leftSize=*/32, /*rightSize=*/32);
 }
@@ -926,20 +959,40 @@ static void Gale_HandleKaleidoSelector(PlayState* play) {
         return;
     }
 
-    // A-press toggle restored — single tap flips galeBoomerangModeActive,
-    // same one-shot pattern as Clawshot above.
+    // Same canonical ArrowWheel pattern as Clawshot above.
+    bool dpad = (CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0) && !CHECK_BTN_ALL(input->cur.button, BTN_CUP));
+
     if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
-        u8 newMode = TwilightUpgrade_IsGaleBoomerangActive() ? 0 : 1;
-        TwilightUpgrade_SetGaleBoomerangActive(newMode);
-        sGaleSelectorActive = !sGaleSelectorActive; // flash anim
+        sGaleSelectorActive = !sGaleSelectorActive;
         gCurrentItemCyclingSlot = sGaleSelectorActive ? pauseCtx->cursorSlot[PAUSE_ITEM] : -1;
         Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    if (!sGaleSelectorActive) return;
+    pauseCtx->cursorColorSet = 8;
+    gCurrentItemCyclingSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
+
+    s8 newMode = -1;
+    if ((pauseCtx->stickRelX > 30 || pauseCtx->stickRelY > 30) ||
+        (dpad && CHECK_BTN_ANY(input->press.button, BTN_DRIGHT | BTN_DUP))) {
+        newMode = TwilightUpgrade_IsGaleBoomerangActive() ? 0 : 1;
+    } else if ((pauseCtx->stickRelX < -30 || pauseCtx->stickRelY < -30) ||
+               (dpad && CHECK_BTN_ANY(input->press.button, BTN_DLEFT | BTN_DDOWN))) {
+        newMode = TwilightUpgrade_IsGaleBoomerangActive() ? 0 : 1;
+    }
+
+    if (newMode >= 0) {
+        TwilightUpgrade_SetGaleBoomerangActive(newMode);
+        Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
     }
 }
 
-// Same small-flip pattern as Clawshot above — vanilla boomerang (white)
-// vs gale boomerang (pale green TP wind tint), via the shared helper.
+// Same small-flip pattern as Clawshot above — left side shows the vanilla
+// boomerang icon (taken directly from gItemIcons to bypass ExtInv's gale
+// override), right side shows the gale boomerang icon texture.
 static void Gale_DrawKaleidoSelector(PlayState* play) {
     PauseContext* pauseCtx = &play->pauseCtx;
     s32 cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
@@ -948,15 +1001,17 @@ static void Gale_DrawKaleidoSelector(PlayState* play) {
         return;
     }
 
-    void* baseTex = ExtInv_GetItemIcon(ITEM_BOOMERANG);
-    if (baseTex == NULL) return;
+    extern void* gItemIcons[];
+    void* vanillaTex = gItemIcons[ITEM_BOOMERANG];
+    void* galeTex = (void*)gItemIconGaleBoomerangTex;
+    if (vanillaTex == NULL || galeTex == NULL) return;
 
     static const u8 sVanillaTint[3] = { 255, 255, 255 };
-    static const u8 sGaleTint[3]    = { 180, 255, 160 };
+    static const u8 sGaleTint[3]    = { 255, 255, 255 };
 
     KaleidoCycle_DrawRocStyle(play, pauseCtx->cursorSlot[PAUSE_ITEM], sGaleSelectorActive,
                               /*hasLeft=*/1, /*hasRight=*/1,
-                              baseTex, baseTex,
+                              vanillaTex, galeTex,
                               sVanillaTint, sGaleTint,
                               /*leftSize=*/32, /*rightSize=*/32);
 }

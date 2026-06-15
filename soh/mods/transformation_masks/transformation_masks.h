@@ -250,6 +250,29 @@ void TransformMasks_Reset(void);
 // Called on player death — deactivates Chateau Romani infinite magic.
 void TransformMasks_OnDeath(void);
 
+// =============================================================================
+// Garo form hooks (defined in garo_form.cpp). Called from transformation_masks.c
+// (OnDeath spawns 9 flame particles BEFORE MmForm_OnDeath rolls back the form)
+// and from z_player.c revival sites (OnReset clears death-once flags).
+// =============================================================================
+void GaroForm_OnDeath(Player* player, PlayState* play);
+void GaroForm_OnReset(void);
+
+// Glass-cannon damage multiplier for Garo form (1.5x incoming). Returns 1.0f for
+// non-Garo forms. Applied inside z_player.c func_80837B18_modified.
+f32 MmForm_GetIncomingDamageMult(void);
+
+// MM player voice action codes (subset). Confirmed against mm_decomp
+// sPlayerVoiceSfxOffsets at voicebank_table.h (NA_SE_VO_LI_*).
+//   ATTACK : NA_SE_VO_LI_SWORD_N   = 0x6800 + 0x00 (sword swing grunt)
+//   DAMAGE : NA_SE_VO_LI_DAMAGE_S  = 0x6800 + 0x05 (damage-taken cry)
+//   DEATH  : NA_SE_VO_LI_DOWN      = 0x6800 + 0x0B (knockdown / death)
+// The base MM voice bank has no dedicated laugh/taunt slot — Garo laugh
+// uses an OOT fallback SFX (NA_SE_VO_SK_LAUGH, Skull Kid taunt).
+#define VOICE_ACTION_ATTACK 0x00
+#define VOICE_ACTION_DAMAGE 0x05
+#define VOICE_ACTION_DEATH  0x0B
+
 // Water entry: called when player enters deep water (swim depth).
 // Returns 1 if swimming was blocked (Goron/Deku can't swim), 0 if allowed (Zora/FD).
 u8 TransformMasks_OnWaterSwimAttempt(PlayState* play, Player* player);

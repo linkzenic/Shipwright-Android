@@ -7,6 +7,7 @@ extern "C" {
 #include "overlays/actors/ovl_Bg_Breakwall/z_bg_breakwall.h"
 #include "overlays/actors/ovl_Bg_Ice_Shelter/z_bg_ice_shelter.h"
 #include "overlays/actors/ovl_En_Arrow/z_en_arrow.h"
+#include "mods/items/custom_items.h"
 
 extern PlayState* gPlayState;
 }
@@ -36,6 +37,18 @@ static bool IsSw97IceArrow(Actor* ac) {
     return p == ARROW_SW97_ICE || p == ARROW_SEED_ICE;
 }
 
+// The Gust Jar's BLOW collider is owned by the Player (ac->id == ACTOR_PLAYER),
+// not by an EnArrow — so CheckAC/IsSw97IceArrow alone would reject it even
+// though the dmgFlag is DMG_ARROW_ICE. Treat an Ice-element BLOW as an SW97
+// ice arrow for the red-ice melt check so the Water medallion gustjar also
+// melts BgIceShelter, the same way the SW97 bow / slingshot ice already do.
+static bool IsGustJarIceBlow(Actor* ac) {
+    if (ac == NULL || ac->id != ACTOR_PLAYER) return false;
+    return gCustomItemState.gustJarEquipped &&
+           gCustomItemState.gustJarMode == 3 /* GUST_MODE_BLOW */ &&
+           gCustomItemState.gustJarElement == 2 /* GUST_ELEMENT_ICE */;
+}
+
 void RegisterBlueFireArrowsHooks() {
     bool cheatOn =
         CVarGetInteger(CVAR_ENHANCEMENT("BlueFireArrows"), 0) || (IS_RANDO && RAND_GET_OPTION(RSK_BLUE_FIRE_ARROWS));
@@ -62,8 +75,10 @@ void RegisterBlueFireArrowsHooks() {
         Actor* ac1 = thisx->cylinder1.base.ac;
         Actor* ac2 = thisx->cylinder2.base.ac;
 
-        if (IsSw97IceArrow(ac1) || IsSw97IceArrow(ac2)) {
-            // SW97 ice (bow or slingshot) always melts red ice
+        if (IsSw97IceArrow(ac1) || IsSw97IceArrow(ac2) ||
+            IsGustJarIceBlow(ac1) || IsGustJarIceBlow(ac2)) {
+            // SW97 ice (bow or slingshot) and Water-medallion gustjar BLOW
+            // always melt red ice regardless of cheat state.
             *should = true;
         } else if (meltCheatOn && (CheckAC(ac1) || CheckAC(ac2))) {
             // Vanilla ice only melts when the cheat is on

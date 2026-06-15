@@ -734,20 +734,25 @@ static s16 Sm64Mario_StickSpinReady(Input* in) {
 
     f32 sx = (f32)in->rel.stick_x;
     f32 sz = (f32)in->rel.stick_y;
-    if (sx * sx + sz * sz > (38.0f * 38.0f)) {
+    if (sx * sx + sz * sz > (50.0f * 50.0f)) { // only a near-fully-deflected stick
         if (sPrevX != 0.0f || sPrevZ != 0.0f) {
             f32 cross = sPrevX * sz - sPrevZ * sx;
             f32 dot = sPrevX * sx + sPrevZ * sz;
-            sAccum += atan2f(cross, dot);
+            f32 d = atan2f(cross, dot);
+            if (fabsf(d) > 0.22f) {  // only count FAST rotation (a real spin)
+                sAccum += d;
+            } else {
+                sAccum *= 0.5f;      // slow aim/turn -> decay, don't accumulate
+            }
         }
         sPrevX = sx;
         sPrevZ = sz;
-        if (fabsf(sAccum) > 6.5f) { // ~1.0 full rotation
-            sReady = 14;
+        if (fabsf(sAccum) > 11.0f) { // ~1.75 fast rotations — a deliberate spin
+            sReady = 12;
             sAccum = 0.0f;
         }
     } else {
-        sAccum *= 0.80f;
+        sAccum = 0.0f;               // stick released -> full reset
         sPrevX = sPrevZ = 0.0f;
     }
     if (sReady > 0) sReady--;
@@ -871,14 +876,11 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     if (!sSm64Initialized || !p_sm64_mario_tick)
         return;
 
-    // Mario mode owns the camera and aiming — keep OOT Z-targeting suppressed
-    // every frame so the lock-on state machine never engages while Mario is
-    // active. Free camera is enabled separately via gSettings.FreeLook.Enabled,
-    // which the Modos Rotos menu turns on when Mario mode is activated.
-    if (sSm64MarioId >= 0 && player != NULL) {
-        player->stateFlags1 &= ~PLAYER_STATE1_Z_TARGETING;
-        player->zTargetActiveTimer = 0;
-    }
+    // Z-targeting now WORKS for Mario, driven by R: z_player.c swaps Z<->R in the
+    // OOT input copy (sp44) so OOT's lock-on (which reads BTN_Z) fires on physical
+    // R. We no longer clear PLAYER_STATE1_Z_TARGETING here — that suppression was
+    // what stopped targeting. (Mario's jump/punch still come from the REAL buttons
+    // read below; physical Z is mapped to jump.)
 
     // Scene change: nuke Mario immediately so IsReady() becomes false and
     // Link falls back to normal rendering. Otherwise the old Mario (with
@@ -1191,6 +1193,9 @@ void Sm64Mario_Update(PlayState* play, Player* player) {
     inputs.camLookZ = lookZ / lookMag;
     inputs.stickX = (float)input->rel.stick_x / 64.0f;
     inputs.stickY = -(float)input->rel.stick_y / 64.0f;
+    // Mario's real buttons: A = jump, B = punch, Z = crouch / ground-pound (SM64
+    // default). R is freed for OOT Z-targeting via the Z<->R swap in z_player.c,
+    // which only touches OOT's input copy — these REAL buttons are untouched.
     inputs.buttonA = (input->cur.button & BTN_A) ? 1 : 0;
     inputs.buttonB = (input->cur.button & BTN_B) ? 1 : 0;
     inputs.buttonZ = (input->cur.button & BTN_Z) ? 1 : 0;

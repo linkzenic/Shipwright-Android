@@ -172,6 +172,37 @@ const char* MmMasks_GetNamePath(uint16_t itemId);
 void* MmAssets_LoadFDSwordIcon(void);
 
 /**
+ * Load MM hookshot icon — used as the Clawshot mode icon (Twilight Upgrade).
+ * Path: __OTR__icon_item_static_yar/gItemIconHookshotTex
+ * @return Pointer to 32x32 RGBA icon texture, or NULL if not found
+ */
+void* MmAssets_LoadHookshotIcon(void);
+
+/**
+ * Load MM hookshot body DL (held in right hand) — used to render the
+ * Clawshot's body in Link's hand when Clawshot mode is active.
+ * Path: __OTR__objects/object_link_child/gLinkHumanRightHandHoldingHookshotDL
+ * @return Gfx* (cast to void*), or NULL if not in mm.o2r
+ */
+void* MmAssets_LoadHookshotBodyDL(void);
+
+/**
+ * Load MM hookshot chain DL — used to render the chain segments when
+ * the Clawshot is mid-air during a shoot.
+ * Path: __OTR__objects/gameplay_keep/gHookshotChainDL
+ * @return Gfx* (cast to void*), or NULL if not in mm.o2r
+ */
+void* MmAssets_LoadHookshotChainDL(void);
+
+/**
+ * Load MM hookshot reticle DL — used to render the first-person aim
+ * reticle when Clawshot mode is active.
+ * Path: __OTR__objects/gameplay_keep/gHookshotReticleDL
+ * @return Gfx* (cast to void*), or NULL if not in mm.o2r
+ */
+void* MmAssets_LoadHookshotReticleDL(void);
+
+/**
  * Load form-specific B-button icon (mask icon for each transformation)
  * @param form MM_PLAYER_FORM_* enum (0=FD, 1=Goron, 2=Zora, 3=Deku)
  * @return Pointer to 32x32 RGBA icon texture, or NULL if not found

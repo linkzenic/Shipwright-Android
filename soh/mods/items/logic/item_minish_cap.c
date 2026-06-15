@@ -210,7 +210,7 @@ void Player_InitMinishCapIA(PlayState* play, Player* this) {
 #define MINISH_TINY_FACTOR (MINISH_TINY_SCALE / MINISH_SCALE_NORMAL)   // 0.1
 #define MINISH_TINY_SPEED_FACTOR 0.2f                                  // 20% of normal movement speed
 #define MINISH_TINY_CAM_MIN 0.14f // camera zoom floor (keeps eye outside the near plane)
-#define MINISH_TINY_WALL_SKIP_FRAMES 10 // wall bgcheck off this long to squeeze through a crawl hole
+#define MINISH_TINY_WALL_SKIP_FRAMES 8 // wall-check-off linger after a crawlspace is last detected
 
 // Declared in transformation_masks.h, which is included AFTER this file in the
 // z_player.c unity build — forward-declare it here.
@@ -229,8 +229,26 @@ static f32 sTinyOrigWade;       // unk_2C (water wade depth threshold)
 static s16 sTinyLastScene = -1;
 static u32 sTinyLastFrames = 0;
 
-// Frames left with the player's wall bgcheck disabled (crawlspace pass-through)
+// Frames left with the player's wall bgcheck disabled (crawlspace pass-through).
+// Re-armed every frame the crawlspace is detected (in z_player.c), so this is just
+// the linger after detection stops.
 static s16 sTinyWallSkipTimer = 0;
+
+// Saved body-cylinder radius. The per-frame code recomputes height/yShift on its
+// own (they self-heal once Link is normal size), but it NEVER touches dim.radius,
+// so we must capture and restore it ourselves or it stays shrunk after growing back.
+static u8 sTinyCylSaved = 0;
+static s16 sTinyOrigCylRadius = 0;
+
+static void MinishTiny_RestoreCylinder(Player* p) {
+    if (!sTinyCylSaved)
+        return;
+    if (p != NULL) {
+        p->cylinder.dim.radius = sTinyOrigCylRadius;
+        Collider_UpdateCylinder(&p->actor, &p->cylinder);
+    }
+    sTinyCylSaved = 0;
+}
 
 s32 MinishTiny_IsActive(void) {
     return gCustomItemState.minishTinyActive != 0;
@@ -239,6 +257,15 @@ s32 MinishTiny_IsActive(void) {
 f32 MinishTiny_GetSpeedFactor(void) {
     return gCustomItemState.minishTinyActive ? MINISH_TINY_SPEED_FACTOR : 1.0f;
 }
+
+// How small the scene-collision wall radius gets while tiny. The cylinder
+// (combat/OC hitbox) already auto-shrinks from the scaled skeleton; this is the
+// horizontal SCENE collider that decides how close Link can get to walls and
+// how narrow a gap he fits through. 0.1 == proportional to the 0.1 visual scale
+// (≈1.4 world units, about Link's rendered half-width at 0.001). Smaller never
+// freezes movement (it only reduces wall blocking) — push toward 0.05 for a
+// tighter squeeze if this still feels too big.
+#define MINISH_TINY_WALLRADIUS_FACTOR 0.1f
 
 static void MinishTiny_ApplyAgeProps(Player* p) {
     PlayerAgeProperties* props = p->ageProperties;
@@ -250,20 +277,12 @@ static void MinishTiny_ApplyAgeProps(Player* p) {
     sTinyOrigWallRadius = props->wallCheckRadius;
     sTinyOrigWade = props->unk_2C;
 
-    // Actor_UpdateBgCheckInfo computes the ceiling probe as
-    // (ceilingCheckHeight + yDelta) - 10.0f — below ~12 the height goes
-    // NEGATIVE (documented as "must be positive") and on a hit it rewrites
-    // world.pos.y every frame, pinning the player in place. Clamp to 12.
-    props->ceilingCheckHeight = props->ceilingCheckHeight * MINISH_TINY_FACTOR;
-    if (props->ceilingCheckHeight < 12.0f) {
-        props->ceilingCheckHeight = 12.0f;
-    }
-    props->wallCheckRadius *= MINISH_TINY_FACTOR;
-    props->unk_2C *= MINISH_TINY_FACTOR;
-    // NOTE: unk_14/unk_18/unk_1C (ledge vault thresholds) are deliberately NOT
-    // scaled — shrinking them makes every wall register as a vaultable step and
-    // auto-traps the player in the 250jump vault state. Ledge climbing is
-    // disabled entirely while tiny instead (Player_ActionHandler_12 gate).
+    // ONLY the wall-check radius is shrunk. Deliberately NOT touched:
+    //  - ceilingCheckHeight: the bgcheck ceiling probe is (ceil + yDelta) - 10;
+    //    shrinking it pins world.pos.y / froze the player (the regression we hit).
+    //  - unk_14/18/1C (ledge vault thresholds): shrinking them traps Link in the
+    //    250jump vault. Ledge climbing is disabled while tiny instead.
+    props->wallCheckRadius *= MINISH_TINY_WALLRADIUS_FACTOR;
     sTinyAgePropsSaved = 1;
 }
 
@@ -279,6 +298,7 @@ static void MinishTiny_RestoreAgeProps(void) {
 // Instantly end tiny mode and restore everything (loading zones, form changes)
 static void MinishTiny_ForceReset(Player* p) {
     MinishTiny_RestoreAgeProps();
+    MinishTiny_RestoreCylinder(p);
     gCustomItemState.minishTinyActive = 0;
     gCustomItemState.minishTinyAnim = 0;
     sTinyWallSkipTimer = 0;
@@ -328,32 +348,54 @@ void MinishTiny_Update(Player* p, PlayState* play) {
             gCustomItemState.minishTinyAnim = 0;
             gCustomItemState.minishTinyActive = 0;
             MinishTiny_RestoreAgeProps();
+            MinishTiny_RestoreCylinder(p);
         }
         p->actor.scale.y = p->actor.scale.z = p->actor.scale.x;
     } else {
         // Fully tiny: re-assert the scale every frame (other systems reset it to 0.01)
         p->actor.scale.x = p->actor.scale.y = p->actor.scale.z = MINISH_TINY_SCALE;
     }
+
+    // ── Body cylinder (combat/OC collider) ───────────────────────────────────
+    // The per-frame code in Player_UpdateCommon recomputes cylinder height/yShift
+    // from the skeleton but NEVER touches dim.radius, so it stays pinned at 12 —
+    // that's the "radius still huge" the player sees. Mirror Pikachu's approach
+    // (pikachu_form.cpp: player->cylinder.dim.radius = 10; yShift = -15) but at
+    // 75% of his size. We run AFTER Player_UpdateCommon (and its
+    // CollisionCheck_SetOC) but BEFORE the frame's actual CollisionCheck pass, so
+    // re-applying the dims with Collider_UpdateCylinder takes effect this frame.
+    if (gCustomItemState.minishTinyActive) {
+        if (!sTinyCylSaved) {
+            sTinyOrigCylRadius = p->cylinder.dim.radius; // capture vanilla radius (12) before shrinking
+            sTinyCylSaved = 1;
+        }
+        p->cylinder.dim.radius = (s16)(2.0f); // Pikachu radius 10 → 7
+        p->cylinder.dim.height = (s16)(2.0f); // Pikachu body height ~35 → 26
+        Collider_UpdateCylinder(&p->actor, &p->cylinder);
+    }
 }
 
+// Armed by z_player.c each frame tiny Link faces a crawlspace, using the SAME
+// sTouchedWallFlags vanilla reads for the "Enter on A" prompt (the interact-wall
+// probe, which sees the crawlspace hole poly — the movement wall check only sees
+// the solid rock around it). Keeps the wall check off for a short linger so brief
+// detection gaps mid-tunnel don't snap the walls back and stop him.
+void MinishTiny_ArmCrawlspace(void) {
+    if (gCustomItemState.minishTinyActive && gCustomItemState.minishTinyAnim == 0) {
+        sTinyWallSkipTimer = MINISH_TINY_WALL_SKIP_FRAMES;
+    }
+}
+
+// Returns 1 while a pass-through window is open → caller drops the wall check so
+// Link's forward velocity carries him straight through the crawlspace hole. The
+// detection lives in z_player.c (MinishTiny_ArmCrawlspace); this just counts down.
 s32 MinishTiny_CrawlspacePassthrough(Player* p, PlayState* play) {
+    (void)p;
+    (void)play;
     if (!gCustomItemState.minishTinyActive || gCustomItemState.minishTinyAnim != 0) {
         sTinyWallSkipTimer = 0;
         return 0;
     }
-
-    // Touching a crawlspace hole wall poly while moving → open a short window
-    // with wall collision off so tiny Link walks straight through the hole.
-    // Only re-arm from a FRESH wall contact (timer == 0): while the skip window
-    // is open the wall check doesn't run, so wallPoly is stale and re-arming
-    // from it would keep walls disabled indefinitely.
-    if (sTinyWallSkipTimer == 0 && (p->actor.bgCheckFlags & 8) && (p->actor.wallPoly != NULL) &&
-        (p->linearVelocity > 0.1f)) {
-        if (func_80041DB8(&play->colCtx, p->actor.wallPoly, p->actor.wallBgId) & 0x30) {
-            sTinyWallSkipTimer = MINISH_TINY_WALL_SKIP_FRAMES;
-        }
-    }
-
     if (sTinyWallSkipTimer > 0) {
         sTinyWallSkipTimer--;
         return 1;

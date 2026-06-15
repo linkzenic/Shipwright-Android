@@ -219,7 +219,10 @@ static void MmMaskWear_StopBremenMarch(Player* player, PlayState* play) {
     }
     sBremenMarching = 0;
     if (sBremenBgmStarted) {
-        MmBgm_StopFanfare();
+        // Pair with MmBgm_PlayLoop at the start path — restore the snapshotted
+        // scene BGM rather than just stopping fanfare (which left BGM_MAIN in
+        // a stale state).
+        MmBgm_RestorePreviousBgm();
         sBremenBgmStarted = 0;
     }
     LinkAnimation_PlayLoop(play, &player->skelAnime, (LinkAnimationHeader*)gPlayerAnim_link_normal_wait);
@@ -893,7 +896,9 @@ extern "C" void MmMaskWear_Toggle(PlayState* play, Player* player, s32 itemId) {
         // Already wearing this mask - take it off
         sCurrentMmMask = ITEM_NONE;
         if (sKamaroDancing) {
-            MmBgm_StopFanfare();
+            // Kamaro BGM lives on BGM_MAIN now — restore the snapshotted
+            // scene BGM instead of just stopping fanfare.
+            MmBgm_RestorePreviousBgm();
         }
         // Stop march via the helper so the looping march animation is also
         // restored to idle — prevents the animation softlock the user reported.
@@ -1306,7 +1311,11 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                     sBremenActiveAnim = NULL;
 
                     if (!sBremenBgmStarted) {
-                        MmBgm_PlayFanfare(MM_BGM_BREMEN_MARCH);
+                        // Use BGM_MAIN (looping) instead of fanfare — fanfare
+                        // gets preempted by item pickup jingles, cutting the
+                        // march mid-loop. PlayLoop snapshots the scene BGM so
+                        // MmBgm_RestorePreviousBgm can resume it on unequip.
+                        MmBgm_PlayLoop(MM_BGM_BREMEN_MARCH);
                         sBremenBgmStarted = 1;
                     }
                 }
@@ -1573,7 +1582,9 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                                 // Real MM BGM via mm_bgm_loader (Sequence_113, NA_BGM_KAMARO_DANCE).
                                 // No-op if mm.o2r is not loaded — dance mechanic still works
                                 // silently. There is NO OOT BGM fallback by design.
-                                MmBgm_PlayFanfare(MM_BGM_KAMARO_DANCE);
+                                // Use BGM_MAIN (looping) — fanfare gets preempted by
+                                // item pickup jingles, cutting the dance music.
+                                MmBgm_PlayLoop(MM_BGM_KAMARO_DANCE);
                             }
                             sKamaroDancing = 1;
                             sKamaroDanceFrame = 0.0f;
@@ -1582,7 +1593,8 @@ extern "C" void MmMaskWear_Update(PlayState* play, Player* player) {
                 } else {
                     // A released → stop dancing
                     if (sKamaroDancing) {
-                        MmBgm_StopFanfare();
+                        // Restore scene BGM that was snapshotted by MmBgm_PlayLoop
+                        MmBgm_RestorePreviousBgm();
                         if (EnDu_IsDancing()) {
                             // Stop Darunia's dance too (find him in Goron City)
                             Actor* npc = play->actorCtx.actorLists[ACTORCAT_NPC].head;
@@ -1763,7 +1775,9 @@ extern "C" void MmMaskWear_Clear(void) {
     // transitions so the 20-second timer is real cooldown time, not "until you
     // walk through a door".
     if (sBremenBgmStarted) {
-        MmBgm_StopFanfare();
+        // Bremen BGM lives on BGM_MAIN now (see MmBgm_PlayLoop) — restore the
+        // pre-march scene BGM instead of just stopping fanfare.
+        MmBgm_RestorePreviousBgm();
     }
     sBremenBgmStarted = 0;
     // Mask of Scents transient state (anim cache persists, like Kamaro's).

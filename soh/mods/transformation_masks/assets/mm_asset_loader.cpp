@@ -2545,6 +2545,13 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
             // the raw 35 sample). So `effectIdx = (transpose<<6) + raw_effect` IS the
             // right sample-selection formula. The vibrato wiring below handles the
             // per-channel modulation that was missing.
+            //
+            // FALLBACK = 192 (Deku idle grunt, (3<<6)+0). NEVER use values outside the
+            // Deku block 192-255 — earlier versions had several slots leaking into FD
+            // (0..63), Human Link (64..127), or NPC (128..191) blocks, causing Deku
+            // voices to play OTHER FORMS' samples. MM seq_0 maps most Deku DUMMY_*
+            // slots to silent dummy channels, so falling back to the Deku base grunt
+            // is the safe choice — never the WRONG form's voice.
             u8 action = sfxIndex - 0x80;
             static const u16 sDekuActionToSfxId[] = {
                 // action  sfxId       CHAN→jump→arr           formula
@@ -2559,29 +2566,29 @@ static SoundFontSound* MmDirectAudio_GetSound(u16 mmSfxId) {
                 235, // 0x6888 DUMMY_136 BC5E→B976 [43,44] (3<<6)+43
                 239, // 0x6889 DUMMY_137 BC5E→B98E [47,48] (3<<6)+47
                 244, // 0x688A DUMMY_138 BC64→BCA8 [52]    (3<<6)+52  (vibrato)
-                64,  // 0x688B DUMMY_139 BC5E→VO43 [0,1,2] (1<<6)+0
+                192, // 0x688B DOWN — was 64 (HUMAN LINK BLOCK leak); MM channel silent
                 235, // 0x688C DUMMY_140 BC5E→B9BE [43,44] (3<<6)+43
                 212, // 0x688D DUMMY_141 BC5E→B9D6 [20]    (3<<6)+20
-                20,  // 0x688E fallback
-                20,  // 0x688F fallback
+                192, // 0x688E SNEEZE — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x688F SWEAT — was 20 (FD BLOCK leak); MM channel silent
                 243, // 0x6890 DUMMY_144 BC64→BCC7 [51]    (3<<6)+51  (vibrato)
-                20,  // 0x6891 fallback
-                20,  // 0x6892 fallback
-                20,  // 0x6893 fallback
+                192, // 0x6891 RELAX — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x6892 SWORD_PUTAWAY — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x6893 GROAN — was 20 (FD BLOCK leak); MM channel silent
                 245, // 0x6894 DUMMY_148 BC64→BA3B [53,54] (3<<6)+53  (vibrato)
-                20,  // 0x6895 fallback
-                137, // 0x6896 DUMMY_150 BC5E→BCE1 [9]     (2<<6)+9   (layer trans=2)
-                20,  // 0x6897 fallback
+                192, // 0x6895 MAGIC_NALE — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x6896 SURPRISE — was 137 (NPC BLOCK leak); MM channel silent
+                192, // 0x6897 MAGIC_FROL — was 20 (FD BLOCK leak); MM channel silent
                 227, // 0x6898 DUMMY_152 BC5E→BA84 [35]    (3<<6)+35
-                20,  // 0x6899 fallback
+                192, // 0x6899 HOOKSHOT_HANG — was 20 (FD BLOCK leak); MM channel silent
                 241, // 0x689A DUMMY_154 BC5E→BA9A [49]    (3<<6)+49
-                20,  // 0x689B fallback
-                20,  // 0x689C fallback
-                20,  // 0x689D fallback
-                20,  // 0x689E fallback
-                28,  // 0x689F fallback
+                192, // 0x689B MAGIC_START — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x689C MAGIC_ATTACK — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x689D BL_DOWN — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x689E DEMO_DAMAGE — was 20 (FD BLOCK leak); MM channel silent
+                192, // 0x689F LAST — was 28 (FD BLOCK leak); base Deku grunt
             };
-            effectIdx = (action < 32) ? sDekuActionToSfxId[action] : 220;
+            effectIdx = (action < 32) ? sDekuActionToSfxId[action] : 192;
         } else if (sfxIndex < 0xC0) {
             // Zora (0xA0-0xBF) → CHAN_BCF3 trans=3 / CHAN_BCF9 vibrato 240/32.
             u8 action = sfxIndex - 0xA0;
@@ -3088,6 +3095,24 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                 sPlayingSounds[i].volume = vol;
                 sPlayingSounds[i].pan = pan;
                 sPlayingSounds[i].lastRefreshFrame = sMmAudioFrame;
+                // MM verbatim re-attack semantics for the Deku flower propeller
+                // hum (0x1851 ONLY): MM's Audio_PlaySfx_AtPosWithTimer fires a
+                // fresh note-on every cadence pulse, which re-runs the channel's
+                // portamento opcode and re-sweeps D3→D2. Without this re-trigger
+                // SOH plays the porta sweep ONCE on the first hit then sits at
+                // the end pitch (flat D2 hum) for the rest of the dive.
+                //
+                // SCOPED to 0x1851. Other continuous SFX with porta config
+                // (Goron ball-charge 0x08EB, Zora swim 0x08ED, Goron slip
+                // 0x09AD, Deku bubble breath 0x09A1, etc.) are NOT re-attacked
+                // by MM — their porta is a one-shot ramp that holds at the end
+                // pitch and the per-frame refresh only updates vol/pan. Re-
+                // setting porta state for those would make them restart the
+                // ramp every refresh and sound broken.
+                if (mmSfxId == 0x1851 && sPlayingSounds[i].portaRate > 0.0f) {
+                    sPlayingSounds[i].portaProgress = 0.0f;
+                    sPlayingSounds[i].advance = sPlayingSounds[i].portaStartAdv;
+                }
                 anyFound = true;
             }
         }
@@ -4370,6 +4395,85 @@ void* MmAssets_LoadFDSwordIcon(void) {
         MMASSETS_LOG("[MM Assets] Loaded FD sword icon");
     }
     return sCachedFDSwordIcon;
+}
+
+// =============================================================================
+// MM Hookshot assets (icon + held body DL + chain DL + reticle DL)
+//
+// Used by the Clawshot mode (Twilight Upgrade) to render Link wielding MM's
+// hookshot 1:1 instead of the OOT graphics. MM's hookshot tip has no separate
+// DL (the body DL covers it), so the OOT tip stays as-is. Cached on first
+// load; each loader returns NULL when mm.o2r isn't present and callers fall
+// back to vanilla.
+// =============================================================================
+
+static void* sCachedMmHookshotIcon = nullptr;
+static bool sMmHookshotIconLoaded = false;
+
+void* MmAssets_LoadHookshotIcon(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (sMmHookshotIconLoaded)
+        return sCachedMmHookshotIcon;
+
+    sMmHookshotIconLoaded = true;
+    sCachedMmHookshotIcon = MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconHookshotTex");
+    if (sCachedMmHookshotIcon) {
+        MMASSETS_LOG("[MM Assets] Loaded MM hookshot icon (Clawshot)");
+    }
+    return sCachedMmHookshotIcon;
+}
+
+static void* sCachedMmHookshotBodyDL = nullptr;
+static bool sMmHookshotBodyDLLoaded = false;
+
+void* MmAssets_LoadHookshotBodyDL(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (sMmHookshotBodyDLLoaded)
+        return sCachedMmHookshotBodyDL;
+
+    sMmHookshotBodyDLLoaded = true;
+    sCachedMmHookshotBodyDL =
+        MmAssets_LoadResource("__OTR__objects/object_link_child/gLinkHumanRightHandHoldingHookshotDL");
+    if (sCachedMmHookshotBodyDL) {
+        MMASSETS_LOG("[MM Assets] Loaded MM hookshot body DL");
+    }
+    return sCachedMmHookshotBodyDL;
+}
+
+static void* sCachedMmHookshotChainDL = nullptr;
+static bool sMmHookshotChainDLLoaded = false;
+
+void* MmAssets_LoadHookshotChainDL(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (sMmHookshotChainDLLoaded)
+        return sCachedMmHookshotChainDL;
+
+    sMmHookshotChainDLLoaded = true;
+    sCachedMmHookshotChainDL = MmAssets_LoadResource("__OTR__objects/gameplay_keep/gHookshotChainDL");
+    if (sCachedMmHookshotChainDL) {
+        MMASSETS_LOG("[MM Assets] Loaded MM hookshot chain DL");
+    }
+    return sCachedMmHookshotChainDL;
+}
+
+static void* sCachedMmHookshotReticleDL = nullptr;
+static bool sMmHookshotReticleDLLoaded = false;
+
+void* MmAssets_LoadHookshotReticleDL(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (sMmHookshotReticleDLLoaded)
+        return sCachedMmHookshotReticleDL;
+
+    sMmHookshotReticleDLLoaded = true;
+    sCachedMmHookshotReticleDL = MmAssets_LoadResource("__OTR__objects/gameplay_keep/gHookshotReticleDL");
+    if (sCachedMmHookshotReticleDL) {
+        MMASSETS_LOG("[MM Assets] Loaded MM hookshot reticle DL");
+    }
+    return sCachedMmHookshotReticleDL;
 }
 
 // =============================================================================

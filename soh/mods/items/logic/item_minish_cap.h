@@ -50,6 +50,10 @@ void MinishTiny_Update(Player* p, PlayState* play);
 // True when the player should pass through a crawlspace hole wall poly this
 // frame (caller skips the wall bgcheck flag). Called from Player_ProcessSceneCollision.
 s32 MinishTiny_CrawlspacePassthrough(Player* p, PlayState* play);
+// Arm the crawlspace pass-through. Called from z_player.c whenever tiny Link's
+// interact-wall flags (sTouchedWallFlags) report a crawlspace — the same signal
+// vanilla uses for the "Enter on A" prompt.
+void MinishTiny_ArmCrawlspace(void);
 // Pulls the rendered main-camera eye/at toward tiny Link proportionally to his
 // scale. Called from Camera_Update just before the view is applied.
 void MinishTiny_AdjustCameraView(Camera* camera, Vec3f* eye, Vec3f* at);

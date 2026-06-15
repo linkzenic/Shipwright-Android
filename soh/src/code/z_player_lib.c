@@ -1726,6 +1726,45 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
                 }
             }
         } // close pakHandled block
+
+        // Hide vanilla weapon DL for items that draw their own model on top:
+        // Byrna / IK Axe (via ExtEquip_ShouldHideSwordDL) and the custom rods
+        // (Fire/Ice/Light, which use BGS modelGroup for animations but ship
+        // their own DLs). Runs AFTER pak_loader so the override also catches
+        // o2r equipment mods — otherwise their custom hammer/BGS DL renders
+        // alongside the rod/cane/axe and the user sees two weapons in Link's
+        // hand. The inner ExtEquip check above (~line 1662) only covers the
+        // vanilla fallback path; pak_loader short-circuits it.
+        if (!gerudoHandled && limbIndex == PLAYER_LIMB_L_HAND && this->actor.scale.y >= 0.0f) {
+            u8 hideLH = ExtEquip_ShouldHideSwordDL() ||
+                        this->itemAction == PLAYER_IA_ROD_FIRE ||
+                        this->itemAction == PLAYER_IA_ROD_ICE ||
+                        this->itemAction == PLAYER_IA_ROD_LIGHT;
+            if (hideLH && sLeftHandType != PLAYER_MODELTYPE_LH_OPEN &&
+                sLeftHandType != PLAYER_MODELTYPE_LH_CLOSED &&
+                sLeftHandType != PLAYER_MODELTYPE_LH_BOOMERANG) {
+                Gfx** openDLs = &gPlayerLeftHandOpenDLs[gSaveContext.linkAge];
+                *dList = Player_ResolveLimbDLForDummyOrLocal(openDLs[sDListsLodOffset]);
+                sLeftHandType = PLAYER_MODELTYPE_LH_OPEN;
+            }
+        }
+
+        // Twilight Upgrade — Clawshot mode: swap the right-hand hookshot
+        // body DL with MM's hookshot held-DL from mm.o2r so the visual
+        // matches Twilight Princess / MM 1:1. Falls through to vanilla
+        // when mm.o2r isn't loaded or the path doesn't resolve. Chain/tip
+        // are swapped separately in ovl_Arms_Hook.
+        if (!gerudoHandled && limbIndex == PLAYER_LIMB_R_HAND && this->actor.scale.y >= 0.0f &&
+            sRightHandType == PLAYER_MODELTYPE_RH_HOOKSHOT) {
+            extern u8 TwilightUpgrade_IsClawshotActive(void);
+            extern void* MmAssets_LoadHookshotBodyDL(void);
+            if (TwilightUpgrade_IsClawshotActive()) {
+                Gfx* mmBody = (Gfx*)MmAssets_LoadHookshotBodyDL();
+                if (mmBody != NULL) {
+                    *dList = mmBody;
+                }
+            }
+        }
     }
 
     if (GameInteractor_InvisibleLinkActive()) {
@@ -1777,6 +1816,19 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
             }
             *dList = Player_HoldsHookshot(this) ? gLinkAdultRightHandHoldingHookshotFarDL
                                                 : sFirstPersonRightHandHoldingWeaponDLs[firstPersonWeaponIndex];
+            // Twilight Upgrade — Clawshot mode: swap to MM hookshot body DL
+            // in first-person view too. Same fallback rule as gameplay path
+            // — only overrides when mm.o2r is loaded and the DL resolves.
+            if (Player_HoldsHookshot(this)) {
+                extern u8 TwilightUpgrade_IsClawshotActive(void);
+                extern void* MmAssets_LoadHookshotBodyDL(void);
+                if (TwilightUpgrade_IsClawshotActive()) {
+                    Gfx* mmBody = (Gfx*)MmAssets_LoadHookshotBodyDL();
+                    if (mmBody != NULL) {
+                        *dList = mmBody;
+                    }
+                }
+            }
         } else {
             *dList = NULL;
         }
@@ -2024,7 +2076,21 @@ void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange
         gSPMatrix(OVERLAY_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         if (GameInteractor_Should(VB_TARGETABLE_HOOKSHOT_RETICLE, true, colPoly, bgId)) {
             gSPSegment(OVERLAY_DISP++, 0x06, play->objectCtx.status[this->actor.objBankIndex].segment);
-            gSPDisplayList(OVERLAY_DISP++, gLinkAdultHookshotReticleDL);
+            // Twilight Upgrade — Clawshot mode: swap reticle DL to MM's
+            // gameplay_keep reticle. Falls through to OOT when mm.o2r isn't
+            // loaded or the DL doesn't resolve.
+            Gfx* reticleDL = gLinkAdultHookshotReticleDL;
+            {
+                extern u8 TwilightUpgrade_IsClawshotActive(void);
+                extern void* MmAssets_LoadHookshotReticleDL(void);
+                if (TwilightUpgrade_IsClawshotActive()) {
+                    Gfx* mmReticle = (Gfx*)MmAssets_LoadHookshotReticleDL();
+                    if (mmReticle != NULL) {
+                        reticleDL = mmReticle;
+                    }
+                }
+            }
+            gSPDisplayList(OVERLAY_DISP++, reticleDL);
         }
 
         CLOSE_DISPS(play->state.gfxCtx);

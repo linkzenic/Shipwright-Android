@@ -335,9 +335,18 @@ s32 MmBgm_IsAvailable(void) {
 u16 MmBgm_GetSeqId(const char* mmBgmName) {
     if (mmBgmName == nullptr) return 0xFFFF;
     EnsureRegistered();
-    if (!sRegistered) return 0xFFFF;
+    if (!sRegistered) {
+        MMBGM_LOG("[MmBgm] GetSeqId('%s'): registry not populated (mm.o2r missing/unmounted?)",
+                  mmBgmName);
+        return 0xFFFF;
+    }
     auto it = sNameToId.find(std::string(mmBgmName));
-    return (it != sNameToId.end()) ? it->second : 0xFFFF;
+    if (it == sNameToId.end()) {
+        MMBGM_LOG("[MmBgm] GetSeqId: no registered sequence named '%s' — check mm.o2r contents",
+                  mmBgmName);
+        return 0xFFFF;
+    }
+    return it->second;
 }
 
 // Pre-set the 16-bit seqToPlay side-channel so Audio_QueueSeqCmd's patched
@@ -356,7 +365,8 @@ static void MmBgm_PrimeSideChannel(u8 playerIdx, u16 fullSeqId) {
 
 void MmBgm_PlayFanfare(const char* mmBgmName) {
     u16 id = MmBgm_GetSeqId(mmBgmName);
-    if (id == 0xFFFF) return;
+    if (id == 0xFFFF) return; // GetSeqId already logged the failure
+    MMBGM_LOG("[MmBgm] PlayFanfare '%s' (id=0x%04X)", mmBgmName, id);
     MmBgm_PrimeSideChannel(/*SEQ_PLAYER_FANFARE=*/ 1, id);
     Audio_PlayFanfare(id);
 }
@@ -364,11 +374,63 @@ void MmBgm_PlayFanfare(const char* mmBgmName) {
 void MmBgm_PlayMain(const char* mmBgmName) {
     u16 id = MmBgm_GetSeqId(mmBgmName);
     if (id == 0xFFFF) return;
+    MMBGM_LOG("[MmBgm] PlayMain '%s' (id=0x%04X)", mmBgmName, id);
     MmBgm_PrimeSideChannel(/*SEQ_PLAYER_BGM_MAIN=*/ 0, id);
     // SEQ_PLAYER_BGM_MAIN = 0. Format: (op << 28) | (seqPlayer << 24) | (seq & 0xFFFF).
     // The low 8 bits of `id` may be garbage when truncated, but the side-channel
     // primed above carries the full 16-bit ID through.
     Audio_QueueSeqCmd((u32)id & 0xFFFFu);
+}
+
+// =============================================================================
+// Loop helper for diegetic mask BGM (Bremen March, Kamaro Dance).
+//
+// These sequences MUST live on SEQ_PLAYER_BGM_MAIN because:
+//   - SEQ_PLAYER_FANFARE is a one-shot priority channel — any rupee/heart/item
+//     jingle preempts it, cutting the mask BGM mid-loop.
+//   - The fanfare player has different mixer attenuation semantics from BGM_MAIN,
+//     so the scene BGM stays half-ducked after the mask BGM dies (perceived as
+//     "wrong song" / "broken music").
+// MmBgm_PlayLoop snapshots whatever is currently on BGM_MAIN (the scene BGM)
+// and queues the requested MM sequence; MmBgm_RestorePreviousBgm re-queues
+// the snapshot when the mask is removed.
+// =============================================================================
+static u16 sSavedBgmMainId = NA_BGM_DISABLED;
+
+void MmBgm_PlayLoop(const char* mmBgmName) {
+    u16 id = MmBgm_GetSeqId(mmBgmName);
+    if (id == 0xFFFF) return;
+
+    // Snapshot the current scene BGM BEFORE we queue our own — only update the
+    // saved id when it's a sequence we didn't queue ourselves (avoids stomping
+    // the snapshot if PlayLoop is called twice for the same mask).
+    u16 prev = func_800FA0B4(SEQ_PLAYER_BGM_MAIN);
+    if (prev != id && prev != NA_BGM_DISABLED) {
+        sSavedBgmMainId = prev;
+    }
+    MMBGM_LOG("[MmBgm] PlayLoop '%s' (id=0x%04X) snapshot prev=0x%04X",
+              mmBgmName, id, sSavedBgmMainId);
+
+    MmBgm_PrimeSideChannel(/*SEQ_PLAYER_BGM_MAIN=*/ 0, id);
+    Audio_QueueSeqCmd((u32)id & 0xFFFFu);
+}
+
+void MmBgm_RestorePreviousBgm(void) {
+    u16 prev = sSavedBgmMainId;
+    sSavedBgmMainId = NA_BGM_DISABLED;
+    if (prev == NA_BGM_DISABLED) {
+        // No saved BGM — stop the main player so the next scene change
+        // naturally re-cues whatever should play.
+        MMBGM_LOG("[MmBgm] RestorePreviousBgm: no saved id, stopping BGM_MAIN");
+        Audio_QueueSeqCmd(NA_BGM_STOP);
+        return;
+    }
+    MMBGM_LOG("[MmBgm] RestorePreviousBgm: resuming 0x%04X", prev);
+    // Assumption: the snapshotted previous BGM is a vanilla OOT sequence
+    // (true for scene BGMs in OOT/Termina). If a future use case puts an MM
+    // sequence on BGM_MAIN before the mask is equipped, we'd need to re-prime
+    // the side-channel here.
+    Audio_QueueSeqCmd((u32)prev & 0xFFFFu);
 }
 
 void MmBgm_StopFanfare(void) {

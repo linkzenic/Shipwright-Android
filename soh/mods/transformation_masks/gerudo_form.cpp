@@ -11,9 +11,9 @@
  *     VB_GIVE_ITEM_GERUDO_MEMBERSHIP_CARD → false (no card autograntee).
  *   - Sandstorm-OFF enforcement in Haunted Wasteland (per-frame + on
  *     transition end).
- *   - Haunted Wasteland lost-warp chooser: getting lost no longer loops you
- *     back — a "Go to:" textbox offers the Gerudo Fortress side or the Desert
- *     Colossus side of the desert and warps there. Real exits stay vanilla.
+ *   - Haunted Wasteland "cross the desert" offer: the vanilla lost-warp runs
+ *     untouched, but on spawning in the wasteland a skippable Yes/No textbox
+ *     offers a direct warp to the opposite side of the desert (skip the maze).
  *   - GerudoForm_GetTunicColor helper used by the hybrid render to recolor
  *     the gerudo outfit with Link's current tunic.
  *
@@ -76,63 +76,68 @@ bool IsWearingGerudoMask() {
 // falling edge → ClearForcedModel. Polled in OnPlayerUpdate.
 bool sPrevWantGerudo = false;
 
-// --- Haunted Wasteland "lost" warp chooser ---------------------------------
-// Gerudo desert skill: instead of the vanilla lost-warp looping you back to
-// the entrance you came from, a "Go to:" two-choice textbox lets you pick
-// which end of the desert to warp to. Genuine exits (next entrance's scene is
-// Gerudo Fortress / Desert Colossus, not the wasteland itself) pass through
-// untouched. Same textbox plumbing as mods/spiritual_stones (open custom
-// textId, then poll msgMode/choiceIndex).
+// --- Haunted Wasteland "cross the desert" offer ----------------------------
+// Gerudo desert skill. Rather than fighting the vanilla lost-warp (which loops
+// you back to the entrance), we let it run completely — it works and never
+// softlocks. THEN, once you've spawned in the wasteland (whether you entered
+// legitimately or got looped back), we present a skippable Yes/No textbox
+// offering to warp straight across to the OTHER side of the desert, skipping
+// the maze. Pick "No" (or press B) to walk it yourself.
+//
+// Detecting "you're back at the entrance" is just "a transition into the
+// wasteland finished" (OnTransitionEnd) — getting lost respawns you via a full
+// transition, so the offer re-appears each time you end up back here.
 constexpr uint16_t kWastelandWarpTextId = 0x9FB0; // free slot above spiritual_stones' 0x9FA0-0x9FA2
-bool sWastelandPromptQueued = false; // a lost-warp fired; open the chooser
-bool sWastelandPromptOpen = false;   // chooser textbox currently on screen
-bool sWastelandWarpChosen = false;   // our own warp transition is running; don't re-intercept it
+bool sWastelandOfferPending = false;  // entered the wasteland; show the offer once
+bool sWastelandOfferOpen = false;     // offer textbox currently on screen
+bool sWastelandOfferToFortress = false; // message/dest target: true = Fortress, false = Colossus
+s16  sWastelandOfferDest = -1;        // entrance to warp to if accepted
+bool sWastelandWarpChosen = false;    // our own warp transition is running
+
+void GerudoForm_ResetWastelandOffer() {
+    sWastelandOfferPending = false;
+    sWastelandOfferOpen = false;
+    sWastelandOfferDest = -1;
+    sWastelandWarpChosen = false;
+}
 
 void GerudoForm_TickWastelandWarp(PlayState* play) {
     Player* player = GET_PLAYER(play);
 
-    // 1. Intercept exit-surface warps that loop back INTO the wasteland (the
-    //    "you got lost" mechanic warps to a wasteland self-entrance). The two
-    //    real exits load Gerudo Fortress / Desert Colossus scenes, so they
-    //    never match and keep working vanilla.
-    if (!sWastelandWarpChosen && play->transitionTrigger == TRANS_TRIGGER_START) {
-        s32 next = play->nextEntranceIndex;
-        if (next >= 0 && next < ENTR_MAX && gEntranceTable[next].scene == SCENE_HAUNTED_WASTELAND) {
-            play->transitionTrigger = TRANS_TRIGGER_OFF;
-            if (player != nullptr) {
-                // Player_HandleExitsAndVoids set these while arming the exit.
-                player->stateFlags1 &= ~(PLAYER_STATE1_LOADING | PLAYER_STATE1_IN_CUTSCENE);
-            }
-            sWastelandPromptQueued = true;
-        }
-    }
+    // 1. Offer textbox is up → watch for B (skip) or the choice closing.
+    if (sWastelandOfferOpen) {
+        Input* input = &play->state.input[0];
+        bool skip = (input != nullptr) && CHECK_BTN_ALL(input->press.button, BTN_B);
 
-    // 2. Chooser closed → execute the chosen warp.
-    if (sWastelandPromptOpen) {
-        if (play->msgCtx.msgMode == MSGMODE_NONE) {
-            sWastelandPromptOpen = false;
-            sWastelandPromptQueued = false;
+        if (skip) {
+            Message_CloseTextbox(play);
+        }
+        if (skip || play->msgCtx.msgMode == MSGMODE_NONE) {
+            bool warp = !skip && (play->msgCtx.choiceIndex == 0); // choice 0 == "Yes"
+            sWastelandOfferOpen = false;
             if (player != nullptr) {
                 player->stateFlags1 &= ~PLAYER_STATE1_IN_CUTSCENE;
             }
-            sWastelandWarpChosen = true;
-            play->nextEntranceIndex = (play->msgCtx.choiceIndex == 0)
-                                          ? ENTR_HAUNTED_WASTELAND_EAST_EXIT  // Gerudo Fortress side
-                                          : ENTR_HAUNTED_WASTELAND_WEST_EXIT; // Desert Colossus side
-            play->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
-            play->transitionTrigger = TRANS_TRIGGER_START;
+            if (warp && sWastelandOfferDest >= 0) {
+                sWastelandWarpChosen = true;
+                play->nextEntranceIndex = sWastelandOfferDest;
+                play->transitionType = TRANS_TYPE_FADE_BLACK_FAST;
+                play->transitionTrigger = TRANS_TRIGGER_START;
+            }
         }
         return;
     }
 
-    // 3. Open the chooser (never on top of another textbox or a transition).
-    if (sWastelandPromptQueued && play->msgCtx.msgMode == MSGMODE_NONE &&
-        play->transitionTrigger == TRANS_TRIGGER_OFF) {
-        sWastelandPromptQueued = false;
-        sWastelandPromptOpen = true;
-        if (player != nullptr) {
-            player->stateFlags1 |= PLAYER_STATE1_IN_CUTSCENE; // freeze while choosing
-        }
+    // 2. Open the offer once we're in normal control (post-load, no textbox,
+    //    no transition, player not already frozen).
+    if (sWastelandOfferPending && !sWastelandWarpChosen &&
+        play->msgCtx.msgMode == MSGMODE_NONE &&
+        play->transitionTrigger == TRANS_TRIGGER_OFF && play->transitionMode == TRANS_MODE_OFF &&
+        player != nullptr &&
+        !(player->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING))) {
+        sWastelandOfferPending = false;
+        sWastelandOfferOpen = true;
+        player->stateFlags1 |= PLAYER_STATE1_IN_CUTSCENE; // freeze while choosing
         Message_StartTextbox(play, kWastelandWarpTextId, nullptr);
     }
 }
@@ -163,7 +168,7 @@ void GerudoForm_OnPlayerUpdate() {
 
     // Sandstorm OFF in Haunted Wasteland (per-frame, so toggling the mask
     // mid-scene clears the sandstorm without re-entering the area), plus the
-    // lost-warp "Go to:" chooser.
+    // "cross the desert" offer.
     //
     // CRITICAL: never force OFF while a transition is running. Every wasteland
     // exit/entry uses a TRANS_TYPE_SANDSTORM_* wipe whose completion check
@@ -177,27 +182,33 @@ void GerudoForm_OnPlayerUpdate() {
             gPlayState->envCtx.sandstormState = SANDSTORM_OFF;
         }
         GerudoForm_TickWastelandWarp(gPlayState);
-    } else if (sWastelandPromptOpen || sWastelandPromptQueued) {
-        // Form deactivated (or left the scene) with the chooser pending —
-        // drop the pending state so the player isn't left frozen.
-        sWastelandPromptQueued = false;
-        sWastelandPromptOpen = false;
+    } else if (sWastelandOfferOpen || sWastelandOfferPending) {
+        // Form deactivated (or left the scene) with the offer pending — drop it
+        // so the player isn't left frozen.
         Player* p = GET_PLAYER(gPlayState);
         if (p != nullptr) {
             p->stateFlags1 &= ~PLAYER_STATE1_IN_CUTSCENE;
         }
+        GerudoForm_ResetWastelandOffer();
     }
 }
 
 void GerudoForm_OnTransitionEnd(int16_t sceneNum) {
-    // Any completed transition resets the chooser plumbing (including our own
-    // chosen warp — the next lost-trigger should prompt again).
-    sWastelandPromptQueued = false;
-    sWastelandPromptOpen = false;
-    sWastelandWarpChosen = false;
+    // A completed transition clears the in-flight offer/warp state. If we just
+    // arrived in the wasteland (legit entry OR looped back from getting lost)
+    // while wearing the mask, arm the "cross the desert" offer for the side
+    // opposite the one we spawned at.
+    GerudoForm_ResetWastelandOffer();
 
     if (sceneNum == SCENE_HAUNTED_WASTELAND && GerudoForm_IsActive() && gPlayState != nullptr) {
         gPlayState->envCtx.sandstormState = SANDSTORM_OFF;
+
+        // Spawn 0 = entered from Gerudo Fortress (east) → offer Desert Colossus.
+        // Spawn 1 = entered from Desert Colossus (west) → offer Gerudo Fortress.
+        sWastelandOfferToFortress = (gPlayState->curSpawn != 0);
+        sWastelandOfferDest = sWastelandOfferToFortress ? ENTR_GERUDOS_FORTRESS_GATE_EXIT
+                                                        : ENTR_DESERT_COLOSSUS_EAST_EXIT;
+        sWastelandOfferPending = true;
     }
 }
 
@@ -392,38 +403,25 @@ extern "C" void GerudoForm_Init(void) {
         }
     });
 
-    // Desert skill — Haunted Wasteland "lost" warp chooser.
-    // Two mechanics warp a lost wanderer back in the wasteland:
-    //   1. VB_SET_VOIDOUT_FROM_SURFACE / exit surfaces whose entrance loops
-    //      back into the wasteland itself (intercepted by transitionTrigger in
-    //      GerudoForm_TickWastelandWarp — real exits to Fortress/Colossus are
-    //      excluded because their entrance loads a different scene).
-    //   2. VB_TRIGGER_VOIDOUT — the sinking-sand void planes.
-    // For Gerudo in the wasteland both are converted into the "Go to:" choice
-    // textbox (Gerudo Fortress side / Desert Colossus side) instead of the
-    // vanilla loop-back. Outside Haunted Wasteland the hooks pass through to
-    // vanilla so falling off a cliff still voids out.
-    REGISTER_VB_SHOULD(VB_TRIGGER_VOIDOUT, {
-        if (GerudoForm_IsActive() && gPlayState != nullptr &&
-            gPlayState->sceneNum == SCENE_HAUNTED_WASTELAND) {
-            *should = false;
-            sWastelandPromptQueued = true; // got lost → offer the warp chooser
-        }
-    });
-    REGISTER_VB_SHOULD(VB_SET_VOIDOUT_FROM_SURFACE, {
-        if (GerudoForm_IsActive() && gPlayState != nullptr &&
-            gPlayState->sceneNum == SCENE_HAUNTED_WASTELAND) {
-            *should = false;
-        }
-    });
+    // Desert skill — Haunted Wasteland "cross the desert" offer.
+    // The vanilla lost-warp runs untouched (no interception → no softlock).
+    // Once we spawn in the wasteland (legit entry or looped back from getting
+    // lost), GerudoForm_OnTransitionEnd arms a skippable Yes/No offer to warp
+    // straight to the opposite side of the desert; GerudoForm_TickWastelandWarp
+    // opens it in normal control and performs the warp (or B/No to walk it).
 
-    // "Go to:" chooser message — injected on demand for our custom textId.
+    // Offer message — Yes/No, injected on demand for our custom textId. The
+    // destination side is chosen from the spawn point in OnTransitionEnd.
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnOpenText>(
         [](uint16_t* textId, bool* loadFromMessageTable) {
             if (*textId != kWastelandWarpTextId) {
                 return;
             }
-            CustomMessage msg("You are lost in the desert...&Go to:\x1B%gGerudo Fortress&Desert Colossus%w");
+            const char* body =
+                sWastelandOfferToFortress
+                    ? "Cross the desert to the&Gerudo Fortress?\x1B%gYes&No%w"
+                    : "Cross the desert to the&Desert Colossus?\x1B%gYes&No%w";
+            CustomMessage msg(body);
             msg.AutoFormat();
             msg.LoadIntoFont();
             *loadFromMessageTable = false;

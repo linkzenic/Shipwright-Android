@@ -296,15 +296,24 @@ static void ArrowSoul_LerpPos(Vec3f* unkPos, Vec3f* soulPos, f32 scale) {
 // Strict mapping per design:
 //   Undead (ReDead, Gibdo share EN_RD; Stalfos = EN_TEST) → Poe (EN_PO_FIELD)
 //   Small (Keese = EN_FIREFLY, Tektite = EN_TITE) → Healing Fairy (EN_ELF FAIRY_HEAL=6)
-// TODO: Cucco hit → Cucco mode (deferred per user, end-of-feature).
+//   Cucco (EN_NIW) → CUCCO MODE (30-second transformation, Soul-arrow only).
+extern void Sw97_StartCuccoMode(void);
 static void ArrowSoul_TryTransform(EnArrow* arrow, PlayState* play) {
-    Actor* hit = arrow->hitActor;
+    // Use collider.base.at for the hit actor — arrow->hitActor only gets set for
+    // actors with ACTOR_FLAG_CAN_ATTACH_TO_ARROW (most enemies don't qualify).
+    Actor* hit = arrow->collider.base.at;
     if (hit == NULL || hit->update == NULL) {
         return;
     }
-    Vec3f pos = hit->world.pos;
     s16 actorId = hit->id;
 
+    // Cucco hit → CUCCO MODE. The cucco isn't killed — Link transforms.
+    if (actorId == ACTOR_EN_NIW) {
+        Sw97_StartCuccoMode();
+        return;
+    }
+
+    Vec3f pos = hit->world.pos;
     s16 spawnId = -1;
     s16 spawnParams = 0;
 

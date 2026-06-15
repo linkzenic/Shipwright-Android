@@ -121,6 +121,11 @@ void Sm64Mario_UpdateFireballs(PlayState* play);
 // change / suspend (Sm64MarioCaps_OnSuspend) so fire colliders never leak.
 void Sm64Mario_KillAllFireballs(void);
 
+// Boss super-damage hooks: a Fire Flower fireball in flight is treated as an
+// active super attack by boss_super_damage so the fire can break/kill bosses.
+u8 Sm64Mario_FireballActive(void);                 // any fireball in flight
+u8 Sm64Mario_FireballNear(Vec3f* pos, f32 range);  // a fireball within range of pos
+
 // Draw one camera-facing flame billboard per in-flight fireball at its absolute
 // world position (independent of Mario's facing). Call from Sm64Mario_Draw.
 void Sm64Mario_DrawFireballs(PlayState* play);

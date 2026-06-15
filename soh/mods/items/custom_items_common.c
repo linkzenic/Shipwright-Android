@@ -307,44 +307,26 @@ void CustomItems_Update(Player* p, PlayState* play) {
     // Postman Hat: unlock-on-visit + Mail Dash state machine always run.
     Handle_PostmanHat(p, play);
 
-    // Twilight Upgrade — L-tap toggle for the Clawshot mode. Press L while
-    // the hookshot or longshot is the held item to flip clawshotModeActive.
-    //
-    // Detection is INTENTIONALLY broad: heldItemAction can transiently leave
-    // PLAYER_IA_HOOKSHOT/LONGSHOT during the aim/fire/grapple state machine
-    // (the chain actor takes over part of the action). To make the toggle
-    // reliable mid-aim, we ALSO accept the case where the player still has
-    // hookshot/longshot equipped on any C-slot AND the held item id matches —
-    // catches every frame the player is wielding it, including aim.
-    // (Boomerang's gale mode does NOT use a persistent toggle — see the
-    //  multi-target block below, which interprets L during aim as "add
-    //  the current focus actor to the route".)
+    // Twilight Upgrade — L-tap toggle for the Clawshot mode. Press L ONLY
+    // while the hookshot/longshot is the actually-held item (or actively
+    // aiming it). DELIBERATELY narrow: when the player has both hookshot
+    // and boomerang equipped on C-buttons, the previous broad fallback
+    // (firing on any focusActor != NULL while hookshot was equipped on a
+    // C-slot) stole the L press during boomerang aim and prevented the
+    // gale multi-target block below from ever receiving it. Now the
+    // toggle requires either heldItemAction/Id matching hookshot/longshot,
+    // OR ready-to-fire while NOT using the boomerang.
     {
         extern u8 TwilightUpgrade_HasClawshot(void);
         extern u8 TwilightUpgrade_IsClawshotActive(void);
         extern void TwilightUpgrade_SetClawshotActive(u8 active);
         if (TwilightUpgrade_HasClawshot() &&
-            CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L)) {
+            CHECK_BTN_ALL(play->state.input[0].press.button, BTN_L) &&
+            !(p->stateFlags1 & PLAYER_STATE1_USING_BOOMERANG)) {
             s8 act = p->heldItemAction;
             s16 itemId = p->heldItemId;
             u8 wielding = (act == PLAYER_IA_HOOKSHOT || act == PLAYER_IA_LONGSHOT) ||
                           (itemId == ITEM_HOOKSHOT || itemId == ITEM_LONGSHOT);
-            if (!wielding) {
-                // Final fallback — hookshot/longshot equipped on any C-button.
-                for (s32 i = 1; i <= 7; i++) {
-                    u8 it = gSaveContext.equips.buttonItems[i];
-                    if (it == ITEM_HOOKSHOT || it == ITEM_LONGSHOT) {
-                        // Only fire when actually first-person aiming or
-                        // Z-target so we don't toggle from a stray L press
-                        // while the player is, say, just standing around.
-                        if ((p->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) ||
-                            (p->focusActor != NULL)) {
-                            wielding = 1;
-                        }
-                        break;
-                    }
-                }
-            }
             if (wielding) {
                 u8 newMode = TwilightUpgrade_IsClawshotActive() ? 0 : 1;
                 TwilightUpgrade_SetClawshotActive(newMode);
@@ -503,6 +485,15 @@ void CustomItems_Update(Player* p, PlayState* play) {
                                        &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             }
         }
+    }
+
+    // Clawshot Bullet Time per-frame update — runs every frame so the slow
+    // factor stays applied, exits get detected, joystick aim integrates,
+    // and gravity stays suspended while Link is hanging from the anchor.
+    // The state machine itself lives in the ClawshotBT_* block below.
+    {
+        extern void ClawshotBT_Update(Player* player, PlayState* play);
+        ClawshotBT_Update(p, play);
     }
 
     if (gCustomItemState.demiseDestructionActive) {
@@ -787,6 +778,270 @@ s32 CustomItems_OverrideDraw(Player* p, PlayState* play) {
     }
 
     return 0;
+}
+
+// =============================================================================
+// Clawshot Hang (Twilight Upgrade)
+// =============================================================================
+// When the player lands a clawshot on a hookshot SURFACE (wall/ceiling — NOT
+// an enemy or actor), Link is pinned in place at the impact point so he can
+// re-aim and fire another clawshot from there. NO slow motion, NO Z-target
+// requirement — Z-targeting was suspending Link unintentionally. Instead we
+// just keep Link's physics frozen (zero gravity, zero velocity, ground flag
+// forced) so the game treats him as standing on solid ground — that is the
+// "invisible platform" the player requested, implemented via physics flags
+// rather than a separate collision actor.
+//
+// Wall hit:    Link rotates so his back is to the wall (TP side grapple).
+// Ceiling hit: Link drops ~70u so he hangs below the anchor (TP ceiling
+//              hang, hands gripping the target above).
+//
+// Exit:
+//  - A press (drop and fall normally — normal physics resume next frame).
+//  - Firing another hookshot/clawshot (ArmsHook_Wait → Shoot calls
+//    ClawshotBT_NoteShotFired which clears the hang flag; if the new shot
+//    lands on another hookshot surface, the hang re-enters on arrival).
+//  - Cutscene / damage / loading / etc. (safety unhook).
+//
+// Enemy pulls (the BUMP_HOOKABLE-bypass branch above) DON'T trigger the
+// hang. Only surface hits do. Surface kind is set externally by
+// z_arms_hook.c via ClawshotBT_NoteHit*.
+
+// Surface kind detected at hit time — drives where Link hangs and how he
+// faces during bullet time. Wall = Link's back glued to the wall (TP side
+// grapple); Ceiling = Link dangles ~70u below the anchor (TP ceiling
+// hang); else = stick at hook pos with no rotation adjustment.
+typedef enum {
+    CLAWSHOT_BT_HIT_NONE = 0,
+    CLAWSHOT_BT_HIT_WALL,
+    CLAWSHOT_BT_HIT_CEILING,
+    CLAWSHOT_BT_HIT_OTHER,
+} ClawshotBTHitKind;
+
+static u8  sClawshotBTActive = 0;
+static u8  sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_NONE;
+static Vec3f sClawshotBTLastHitNormal = { 0.0f, 0.0f, 0.0f };
+static s16 sClawshotBTLockedYaw = 0;
+static Vec3f sClawshotBTAnchorPos = { 0.0f, 0.0f, 0.0f };
+// Invisible platform actor (Obj_Hsblock w/ draw nulled). Spawned at arrival
+// so Actor_UpdateBgCheckInfo's raycast hits real geometry and Link is
+// treated as grounded — that's what unblocks the first-person aim subsystem
+// (which refuses to engage if no floor is detected, even if we manually
+// force bgCheckFlags |= 1 since the engine re-raycasts every frame).
+static Actor* sClawshotBTPlatform = NULL;
+// Position offset of the platform from Link — placed slightly below his feet.
+#define CLAWSHOT_BT_PLATFORM_Y_OFFSET 5.0f
+
+// TP ceiling hang: Link's hands grip the anchor, body dangles below. ~70u
+// is roughly Link's torso+upper-body height (matches the visual where his
+// head sits below the anchor with arms extended up).
+#define CLAWSHOT_BT_CEILING_DROP 70.0f
+
+// z_arms_hook.c calls these from the surface- and actor-hit branches so we
+// can discriminate when arrival triggers bullet time. Surface variant takes
+// the surface normal (XYZ) so we can detect wall (|nY|<0.5) vs ceiling
+// (nY<-0.5) and orient Link properly.
+void ClawshotBT_NoteHitSurface(f32 nx, f32 ny, f32 nz) {
+    sClawshotBTLastHitNormal.x = nx;
+    sClawshotBTLastHitNormal.y = ny;
+    sClawshotBTLastHitNormal.z = nz;
+    if (ny < -0.5f) {
+        sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_CEILING;
+    } else if (ny > -0.5f && ny < 0.5f) {
+        sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_WALL;
+    } else {
+        // Floor or near-floor — clawshot from above (rare). Treat as a
+        // generic anchor; Link stops at hook pos with no special pose.
+        sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_OTHER;
+    }
+}
+void ClawshotBT_NoteHitActor(void)    { sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_NONE; }
+// Called when a new hookshot leaves Link's hand. Cancels any active hang so
+// the new shot's vanilla pull isn't fighting against the pin. Gravity will
+// self-restore via Player_UpdateCommon next frame.
+void ClawshotBT_NoteShotFired(void) {
+    sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_NONE;
+    sClawshotBTActive = 0;
+}
+
+u8 ClawshotBT_IsActive(void) { return sClawshotBTActive; }
+
+// Called by z_arms_hook.c at the arrival moment (phi_f16 == 0.0f) so we can
+// suppress the vanilla -20 velocity.y kick AND enter bullet time when the
+// upgrade applies. Returns 1 if bullet time started (caller should skip the
+// kick), 0 otherwise.
+u8 ClawshotBT_TryStartOnArrival(Player* player, PlayState* play) {
+    extern u8 TwilightUpgrade_IsClawshotActive(void);
+    if (!TwilightUpgrade_IsClawshotActive())
+        return 0;
+    if (sClawshotBTLastHitKind == CLAWSHOT_BT_HIT_NONE)
+        return 0;
+    if (sClawshotBTActive)
+        return 1; // already active — still suppress the kick
+
+    sClawshotBTActive = 1;
+    sClawshotBTAnchorPos = player->actor.world.pos;
+
+    // Surface-kind-specific positioning + facing:
+    //
+    //   Wall:    Push Link OUT from the wall by an extra 30u along the surface
+    //            normal. Vanilla pull stops Link within ~30u of the hook (which
+    //            itself is 10u off the wall) — for thin walls or steep angles
+    //            Link can overshoot and end up clipped through the wall geometry.
+    //            The extra offset keeps his whole body on the safe side.
+    //            Rotate his back into the wall (forward = surface normal).
+    //
+    //   Ceiling: Drop him CLAWSHOT_BT_CEILING_DROP units below the impact so he
+    //            hangs from the anchor TP-style. Facing stays as he was.
+    //
+    //   Other:   Keep current pose.
+    switch (sClawshotBTLastHitKind) {
+        case CLAWSHOT_BT_HIT_WALL: {
+            sClawshotBTAnchorPos.x += 30.0f * sClawshotBTLastHitNormal.x;
+            sClawshotBTAnchorPos.z += 30.0f * sClawshotBTLastHitNormal.z;
+            sClawshotBTLockedYaw =
+                Math_Atan2S(sClawshotBTLastHitNormal.z, sClawshotBTLastHitNormal.x);
+            break;
+        }
+        case CLAWSHOT_BT_HIT_CEILING: {
+            sClawshotBTAnchorPos.y -= CLAWSHOT_BT_CEILING_DROP;
+            sClawshotBTLockedYaw = player->actor.shape.rot.y;
+            break;
+        }
+        default:
+            sClawshotBTLockedYaw = player->actor.shape.rot.y;
+            break;
+    }
+
+    // Stop Link cold, zero gravity, force ground flag, and clear all the
+    // airborne / hookshot-falling state. Force his action to Player_Action_Idle
+    // so the engine treats him as a stationary grounded player — the aim
+    // subsystem (bow/hookshot first-person) only engages from idle-ish actions;
+    // FreeFall / HookshotFly etc. refuse to enter aim, which is why pressing
+    // the hookshot C-button did nothing while hanging.
+    extern void Player_Action_Idle(Player* this, PlayState* play);
+    extern s32 Player_SetupAction(PlayState* play, Player* this,
+                                  PlayerActionFunc actionFunc, s32 flags);
+
+    player->actor.velocity.x = 0.0f;
+    player->actor.velocity.y = 0.0f;
+    player->actor.velocity.z = 0.0f;
+    player->actor.speedXZ = 0.0f;
+    player->linearVelocity = 0.0f;
+    player->actor.gravity = 0.0f;
+    player->actor.bgCheckFlags |= 1;
+    player->stateFlags1 &= ~(PLAYER_STATE1_HOOKSHOT_FALLING | PLAYER_STATE1_JUMPING | PLAYER_STATE1_FREEFALL);
+    player->stateFlags3 &= ~(PLAYER_STATE3_FLYING_WITH_HOOKSHOT | PLAYER_STATE3_MIDAIR);
+    player->actor.world.pos = sClawshotBTAnchorPos;
+    player->actor.shape.rot.y = sClawshotBTLockedYaw;
+    player->yaw = sClawshotBTLockedYaw;
+
+    Player_SetupAction(play, player, Player_Action_Idle, 1);
+
+    // Spawn a real DynaPoly collision platform just below Link so the engine's
+    // own bg-check raycast finds a floor — that's the only way to keep aim
+    // engaged across frames (Actor_UpdateBgCheckInfo overwrites any manual
+    // bgCheckFlags forcing on each raycast). ACTOR_OBJ_HSBLOCK is the Stone
+    // Hookshot Target; we null its draw + update so it's an invisible static
+    // collider. Param value 0x0001 selects the SMALL variant (lower square),
+    // sized like a half-step Link can comfortably stand on.
+    //
+    // Gated on OBJECT_D_HSBLOCK being loaded in the current scene — Hsblock
+    // dereferences its object's collision pointers in Init, so spawning it
+    // without the object loaded crashes. Most overworld scenes don't have
+    // this object loaded; in those, we silently fall back to the flag-only
+    // approach (aim will still be flaky there until a future custom always-
+    // available platform actor lands).
+    if (sClawshotBTPlatform == NULL &&
+        Object_GetIndex(&play->objectCtx, OBJECT_D_HSBLOCK) >= 0) {
+        sClawshotBTPlatform = Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_HSBLOCK,
+                                          sClawshotBTAnchorPos.x,
+                                          sClawshotBTAnchorPos.y - CLAWSHOT_BT_PLATFORM_Y_OFFSET,
+                                          sClawshotBTAnchorPos.z,
+                                          0, 0, 0, 0x0001);
+        if (sClawshotBTPlatform != NULL) {
+            sClawshotBTPlatform->draw = NULL;
+            // Disable the actor's own update so its action machine (which
+            // expects scene-setup params, lift triggers, etc.) doesn't run
+            // and trip on the synthetic spawn.
+            sClawshotBTPlatform->update = NULL;
+        }
+    }
+
+    Audio_PlaySoundGeneral(NA_SE_SY_ATTENTION_ON, &player->actor.world.pos, 4,
+                           &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+    return 1;
+}
+
+static void ClawshotBT_End(Player* player) {
+    if (!sClawshotBTActive)
+        return;
+    sClawshotBTActive = 0;
+    // Despawn the invisible platform. Actor_Kill marks the actor for removal
+    // and the actor system frees it next frame; we clear the cached pointer
+    // so the next hang spawns a fresh one.
+    if (sClawshotBTPlatform != NULL) {
+        Actor_Kill(sClawshotBTPlatform);
+        sClawshotBTPlatform = NULL;
+    }
+    // Gravity self-restores via Player_UpdateCommon next frame — no need to
+    // pick a value here that might fight whatever state Link transitions to.
+}
+
+void ClawshotBT_Update(Player* player, PlayState* play) {
+    if (!sClawshotBTActive)
+        return;
+
+    Input* input = &play->state.input[0];
+
+    // Exit on A press (drop & fall). Other buttons (B / R / C-buttons /
+    // Z toggle) stay LIVE so Link can swing the sword, raise the shield,
+    // aim items, change C-button equipment, etc. without losing the hang.
+    // The hookshot specifically self-exits via ClawshotBT_NoteShotFired
+    // when a new shot leaves Link's hand.
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        ClawshotBT_End(player);
+        return;
+    }
+
+    // Safety: cutscene / damage / loading / etc.
+    u32 blockedFlags = PLAYER_STATE1_DEAD | PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_LOADING |
+                       PLAYER_STATE1_IN_ITEM_CS | PLAYER_STATE1_GETTING_ITEM | PLAYER_STATE1_DAMAGED;
+    if (player->stateFlags1 & blockedFlags) {
+        ClawshotBT_End(player);
+        return;
+    }
+
+    // Hang pin: lock position + zero physics every frame so Player_UpdateCommon's
+    // velocity writes from joystick / gravity / etc. don't drift Link off the
+    // anchor. Forcing bgCheckFlags|=1 plus clearing the airborne stateFlags
+    // keeps the engine in "Link is grounded" mode so the hookshot aim subsystem
+    // engages from the hanging position.
+    //
+    // We DON'T re-call Player_SetupAction(Idle) here — Idle naturally handles
+    // its own transitions (aim, sword, etc.). If the engine kicks Link out of
+    // Idle into FreeFall because the raycast finds no floor (which can happen
+    // since we don't have a real platform), we only reassert Idle when it's
+    // specifically a falling state — anything else (aim/READY_TO_FIRE,
+    // first-person, etc.) is exactly what the player wants and we leave alone.
+    player->actor.world.pos = sClawshotBTAnchorPos;
+    player->actor.velocity.x = 0.0f;
+    player->actor.velocity.y = 0.0f;
+    player->actor.velocity.z = 0.0f;
+    player->actor.speedXZ = 0.0f;
+    player->linearVelocity = 0.0f;
+    player->actor.gravity = 0.0f;
+    player->actor.bgCheckFlags |= 1;
+    player->stateFlags1 &= ~(PLAYER_STATE1_HOOKSHOT_FALLING | PLAYER_STATE1_JUMPING | PLAYER_STATE1_FREEFALL);
+    player->stateFlags3 &= ~(PLAYER_STATE3_FLYING_WITH_HOOKSHOT | PLAYER_STATE3_MIDAIR);
+
+    // For a wall hang, keep Link's back glued to the wall — let the upper-body
+    // aim (PLAYER_STATE1_READY_TO_FIRE rotates the upper limb only) handle the
+    // aim animation without rotating the whole body off the surface.
+    if (sClawshotBTLastHitKind == CLAWSHOT_BT_HIT_WALL) {
+        player->actor.shape.rot.y = sClawshotBTLockedYaw;
+        player->yaw = sClawshotBTLockedYaw;
+    }
 }
 
 void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {

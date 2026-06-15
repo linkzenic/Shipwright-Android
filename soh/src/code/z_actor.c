@@ -25,6 +25,11 @@
 // Shadow spell is active. Same hook semantics as Stone Mask: enemies can't detect Link.
 extern s32 Sw97_ShadowStealthActive(void);
 
+// SW97 per-actor blindness — Shadow ARROW and Shadow-element gustjar BLOW tag
+// individual enemies as "can't see Link" for ~10 sec. Returns nonzero while the
+// passed actor has an active blindness timer.
+extern s32 Sw97_IsBlinded(Actor* actor);
+
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -2733,8 +2738,11 @@ void Actor_UpdateAll(PlayState* play, ActorContext* actorCtx) {
                 // Stone Mask + SW97 Shadow Medallion: enemies and NPCs can't detect Link.
                 // Also covers hostile MISC actors like Leever (ACTORCAT_MISC) that would
                 // otherwise bypass the gate.
-                if ((MmMaskWear_IsStoneMaskActive() || Sw97_ShadowStealthActive()) &&
-                    (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC || (actor->flags & ACTOR_FLAG_HOSTILE))) {
+                // Sw97_IsBlinded is a per-actor gate (Shadow Arrow / Shadow gustjar
+                // tag specific targets) and fires regardless of category.
+                if (((MmMaskWear_IsStoneMaskActive() || Sw97_ShadowStealthActive()) &&
+                     (i == ACTORCAT_ENEMY || i == ACTORCAT_NPC || (actor->flags & ACTOR_FLAG_HOSTILE))) ||
+                    Sw97_IsBlinded(actor)) {
                     actor->xzDistToPlayer = 32000.0f;
                     actor->yDistToPlayer = 32000.0f;
                     actor->xyzDistToPlayerSq = SQ(32000.0f) + SQ(32000.0f);

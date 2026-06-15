@@ -367,6 +367,16 @@ void ArrowDark_Fly(ArrowDark* this, PlayState* play) {
         ArrowDark_SetupAction(this, ArrowDark_Hit);
         this->timer = 32;
         this->alpha = 255;
+        // Shadow arrow blinds the target — enemies / NPCs lose Link's position
+        // for ~10 sec. The hit actor lives on the arrow's collider.base.at
+        // (same pointer the Dark lifesteal hook reads).
+        Actor* hit = arrow->collider.base.at;
+        if (hit != NULL && hit->update != NULL &&
+            (hit->category == ACTORCAT_ENEMY || hit->category == ACTORCAT_NPC ||
+             (hit->flags & ACTOR_FLAG_HOSTILE))) {
+            extern void Sw97_TagBlinded(Actor*, s16);
+            Sw97_TagBlinded(hit, 300);
+        }
     } else if (arrow->timer < 34) {
         if (this->alpha < 35) {
             Actor_Kill(&this->actor);

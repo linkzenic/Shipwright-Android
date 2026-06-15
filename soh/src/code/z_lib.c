@@ -283,6 +283,15 @@ f32 Math_Vec3f_DiffY(Vec3f* a, Vec3f* b) {
 }
 
 s16 Math_Vec3f_Yaw(Vec3f* a, Vec3f* b) {
+    // Defensive null guard: Math_Vec3f_Yaw is called from
+    // Actor_WorldYawTowardActor and similar paths that can pass a stale or
+    // null actor world.pos pointer when pak_loader rebuilds the equipment
+    // OTR cache mid-frame, invalidating Vec3f addresses still held by the
+    // actor update loop. Returning 0 is a sane fallback (face north) and
+    // prevents the access violation in Math_GetAtan2Tbl.
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
     f32 dx = b->x - a->x;
     f32 dz = b->z - a->z;
 

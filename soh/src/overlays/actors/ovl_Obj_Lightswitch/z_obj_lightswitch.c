@@ -11,6 +11,7 @@
 #include "objects/object_lightswitch/object_lightswitch.h"
 #include "soh/OTRGlobals.h"
 #include "expansions/sw97/sw97_config.h"
+#include "mods/items/custom_items.h"
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -108,15 +109,28 @@ bool sunSwitchActivatedByLightArrow = false;
 bool sunLightArrowsEnabledOnSunSwitchLoad = false;
 bool sunSwitchSw97ModeOnLoad = false;
 
-// SW97 light arrows (bow ARROW_SW97_LIGHT, slingshot ARROW_SEED_LIGHT) always
-// activate sun switches even when the Sunlight Arrows cheat is off — they're
-// "premium" elemental items. Vanilla light arrows still need the cheat.
+// SW97 light arrows (bow ARROW_SW97_LIGHT, slingshot ARROW_SEED_LIGHT) and the
+// Light-medallion gustjar BLOW always activate sun switches even when the
+// Sunlight Arrows cheat is off — they're "premium" elemental items. Vanilla
+// light arrows still need the cheat.
+//
+// The gustjar arm of the check covers ac->id == ACTOR_PLAYER, since the
+// gustjar's AT collider is owned by Link's actor — `ac` for the lightswitch
+// is the player rather than an EnArrow.
 static u8 ObjLightswitch_IsSw97LightArrow(Actor* ac) {
-    if (ac == NULL || ac->id != ACTOR_EN_ARROW) {
+    if (ac == NULL) {
         return 0;
     }
-    s16 p = (s16)ac->params;
-    return p == ARROW_SW97_LIGHT || p == ARROW_SEED_LIGHT;
+    if (ac->id == ACTOR_EN_ARROW) {
+        s16 p = (s16)ac->params;
+        return p == ARROW_SW97_LIGHT || p == ARROW_SEED_LIGHT;
+    }
+    if (ac->id == ACTOR_PLAYER) {
+        return gCustomItemState.gustJarEquipped &&
+               gCustomItemState.gustJarMode == 3 /* GUST_MODE_BLOW */ &&
+               gCustomItemState.gustJarElement == 5 /* GUST_ELEMENT_LIGHT */;
+    }
+    return 0;
 }
 
 static CollisionCheckInfoInit sColChkInfoInit = { 0, 12, 60, MASS_IMMOVABLE };

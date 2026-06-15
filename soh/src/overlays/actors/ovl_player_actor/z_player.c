@@ -4154,7 +4154,13 @@ s32 func_80836AB8(Player* this, s32 arg1) {
  */
 void Player_UpdateZTargeting(Player* this, PlayState* play) {
     s32 ignoreLeash = false;
-    s32 zButtonHeld = CHECK_BTN_ALL(sControlInput->cur.button, BTN_Z);
+    // SM64 Mario: vanilla Z-targeting is driven by R (Z is Mario's crouch). Read R
+    // from the RAW input (play->state.input[0]) — the sControlInput copy (sp44) gets
+    // filtered/zeroed for transformed players, which would drop R. Everything else
+    // (lock-on to NPCs/enemies, reticle, camera) is the normal flow.
+    s32 sm64ZTarget = Sm64Mario_IsReady();
+    s32 zButtonHeld = sm64ZTarget ? CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_R)
+                                  : CHECK_BTN_ALL(sControlInput->cur.button, BTN_Z);
     Actor* nextLockOnActor;
     s32 pad;
     s32 usingHoldTargeting;
@@ -4206,7 +4212,8 @@ void Player_UpdateZTargeting(Player* this, PlayState* play) {
             if (!(this->stateFlags1 & PLAYER_STATE1_BOOMERANG_THROWN) &&
                 ((this->heldItemAction != PLAYER_IA_FISHING_POLE) || (this->unk_860 == 0)) &&
                 GameInteractor_Should(VB_TOGGLE_Z_TARGET_SWITCH_DIRECTION,
-                                      CHECK_BTN_ALL(sControlInput->press.button, BTN_Z))) {
+                                      sm64ZTarget ? CHECK_BTN_ALL(play->state.input[0].press.button, BTN_R)
+                                                  : CHECK_BTN_ALL(sControlInput->press.button, BTN_Z))) {
 
                 if (this->actor.category == ACTORCAT_PLAYER) {
                     // The next lock-on actor defaults to the actor Navi is hovering over.
@@ -4972,6 +4979,21 @@ s32 func_80837B18_modified(PlayState* play, Player* this, s32 damage, u8 modifie
     s32 modifiedDamage = damage;
     if (modified) {
         modifiedDamage *= (1 << CVarGetInteger(CVAR_ENHANCEMENT("DamageMult"), 0));
+    }
+
+    // MM-form "glass cannon" multiplier (e.g. Garo = 1.5x incoming). Apply only
+    // to HP loss (damage < 0); heals (damage > 0) are untouched. Layered AFTER
+    // the DamageMult CVar, so order is: damage * (1 << DamageMult) * formMult.
+    // Re-entrancy: this function is the chokepoint for every damage call, so a
+    // single AC hit gets multiplied exactly once. Multi-hit boss attacks fire
+    // this once per hit, so each hit receives the 1.5x penalty independently —
+    // that's intentional (glass cannon should suffer more per impact), not a
+    // compounding bug.
+    if (modifiedDamage < 0) {
+        f32 mult = MmForm_GetIncomingDamageMult();
+        if (mult != 1.0f) {
+            modifiedDamage = (s32)((f32)modifiedDamage * mult - 0.5f);
+        }
     }
 
     return Health_ChangeBy(play, modifiedDamage);
@@ -12113,13 +12135,6 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         ceilingCheckHeight = this->ageProperties->ceilingCheckHeight;
     }
 
-    // Minish tiny mode: radius/ceiling already come scaled from ageProperties,
-    // but the wall probe height is hardcoded — shrink it so tiny Link can walk
-    // under low openings instead of being stopped by walls above his head
-    if (MinishTiny_IsActive()) {
-        vWallCheckHeight = 4.0f;
-    }
-
     if (this->stateFlags1 & (PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_FLOOR_DISABLED)) {
         if (this->stateFlags1 & PLAYER_STATE1_FLOOR_DISABLED) {
             this->actor.bgCheckFlags &= ~1;
@@ -12146,10 +12161,13 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         this->stateFlags3 |= PLAYER_STATE3_CHECK_FLOOR_WATER_COLLISION;
     }
 
-    // Minish tiny mode: while squeezing through a crawlspace hole poly, drop the
-    // wall check (bit 1) for a few frames so tiny Link walks through the opening
+    // Minish tiny mode: while walking into a crawlspace hole, drop the wall check
+    // (bit 1) AND the ceiling check (bit 2) for a window so Link strolls straight
+    // through the opening instead of being stopped by the hole poly or pinned by
+    // the low tunnel ceiling (he never enters the vanilla crawl state —
+    // Player_TryEnteringCrawlspace is gated off while tiny).
     if (MinishTiny_CrawlspacePassthrough(this, play)) {
-        flags &= ~1;
+        flags &= ~(1 | 2);
     }
 
     Math_Vec3f_Copy(&unusedWorldPos, &this->actor.world.pos);
@@ -12231,6 +12249,16 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         yawDiff = this->actor.shape.rot.y - (s16)(this->actor.wallYaw + 0x8000);
 
         sTouchedWallFlags = func_80041DB8(&play->colCtx, this->actor.wallPoly, this->actor.wallBgId);
+
+        // Minish tiny mode: arm the crawlspace pass-through using the SAME flags
+        // vanilla reads for "Enter on A" (0x30 = crawlspace). The interact-wall
+        // probe here sees the hole poly; the movement wall check only sees the
+        // solid rock around it. MinishTiny_CrawlspacePassthrough (called just
+        // before Actor_UpdateBgCheckInfo) then drops the wall check so tiny Link
+        // strolls straight through instead of bonking it as a solid wall.
+        if ((sTouchedWallFlags & 0x30) && MinishTiny_IsActive()) {
+            MinishTiny_ArmCrawlspace();
+        }
 
         // conflicts arise from these two being enabled at once, and with ClimbEverything on, FixVineFall is redundant
         // anyway
@@ -12372,6 +12400,15 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         this->unk_880 = R_RUN_SPEED_LIMIT / 100.0f;
         this->ledgeClimbDelayTimer = 0;
         this->yDistToLedge = 0.0f;
+    }
+
+    // Minish tiny mode: the interact-wall probe uses a fixed 18-unit height, huge
+    // next to tiny Link's ~0.06-unit body, so he registers "near a wall" almost
+    // everywhere and the block above caps unk_880 (the speed cap) down toward 0.1.
+    // That pins linearVelocity near zero — the run anim plays but he doesn't move.
+    // Force the full run-speed cap while tiny so locomotion is never throttled.
+    if (MinishTiny_IsActive()) {
+        this->unk_880 = R_RUN_SPEED_LIMIT / 100.0f;
     }
 
     if (nextLedgeClimbType == this->ledgeClimbType) {
@@ -12922,17 +12959,6 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
 
             Actor_UpdateVelocityXZGravity(&this->actor);
 
-            // Minish tiny mode: scale the WORLD displacement (not linearVelocity).
-            // linearVelocity/speedXZ stay full-magnitude so OOT's run-state speed
-            // thresholds (3.6/4.0) still engage — otherwise the player bounces
-            // between idle and run-stop every frame and never moves. Only the
-            // applied velocity is reduced, giving ~20% travel speed.
-            if (MinishTiny_IsActive()) {
-                f32 tinySpeed = MinishTiny_GetSpeedFactor();
-                this->actor.velocity.x *= tinySpeed;
-                this->actor.velocity.z *= tinySpeed;
-            }
-
             if ((this->pushedSpeed != 0.0f) && !Player_InCsMode(play) &&
                 !(this->stateFlags1 &
                   (PLAYER_STATE1_HANGING_OFF_LEDGE | PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_CLIMBING_LADDER)) &&
@@ -13466,9 +13492,13 @@ void Player_Update(Actor* thisx, PlayState* play) {
     // needs its own explicit exemption here.
     extern u8 TransformMasks_IsTransformed(void);
     extern u8 TransformMasks_IsFDSkinMode(void);
+    // Minish tiny mode also owns actor.scale (0.001, re-applied every frame in
+    // MinishTiny_Update). Without this exemption, brushing a crawlspace / a brief
+    // cutscene flag fires the reset → tiny Link snaps back to 0.01 ("giant") and
+    // no longer fits through the hole.
     if ((this->stateFlags1 & PLAYER_STATE1_CLIMBING_LADDER || this->stateFlags1 & PLAYER_STATE1_IN_CUTSCENE ||
          this->stateFlags2 & PLAYER_STATE2_CRAWLING) &&
-        !TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode()) {
+        !TransformMasks_IsTransformed() && !TransformMasks_IsFDSkinMode() && !MinishTiny_IsActive()) {
         this->actor.scale.x = 0.01f;
         this->actor.scale.y = 0.01f;
         this->actor.scale.z = 0.01f;
@@ -13533,6 +13563,14 @@ void Player_Update(Actor* thisx, PlayState* play) {
     // SW97 Shadow Medallion heart→magic exchange — must run before the spell
     // cast pipeline aborts on zero magic, so it lives outside that gate.
     Sw97_TickShadowExchange(play, this);
+
+    // SW97 Shadow blindness — decrement per-actor stealth timers tagged by
+    // the Shadow Arrow and Shadow-element gustjar BLOW.
+    Sw97_TickBlindness();
+
+    // SW97 Cucco Mode — Soul Arrow + Cucco hit triggered transformation;
+    // 30-second timer counts down, then auto-exits.
+    Sw97_TickCuccoMode(play, this);
 
     // Spiritual stones: C-button hold tracker (summon/warp) + warp-prompt poll.
     SpiritualStone_TickHold(play, this);

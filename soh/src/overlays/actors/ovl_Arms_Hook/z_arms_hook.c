@@ -94,6 +94,12 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
         Actor_SetProjectileSpeed(&this->actor, 20.0f);
         this->actor.parent = &GET_PLAYER(play)->actor;
         this->timer = length;
+
+        // Clawshot Bullet Time — clear the "last hit was surface" flag at
+        // every new shot so the previous hit doesn't accidentally re-trigger
+        // bullet time on a miss.
+        extern void ClawshotBT_NoteShotFired(void);
+        ClawshotBT_NoteShotFired();
     }
 }
 
@@ -175,21 +181,38 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
     if ((this->timer != 0) && (this->collider.base.atFlags & AT_HIT) &&
         (this->collider.info.atHitInfo->elemType != ELEMTYPE_UNK4)) {
         touchedActor = this->collider.base.at;
-        if ((touchedActor->update != NULL) &&
-            (touchedActor->flags & (ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR | ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER))) {
-            if (this->collider.info.atHitInfo->bumperFlags & BUMP_HOOKABLE) {
+        // Twilight Upgrade — Clawshot mode: in clawshot mode we want to grab
+        // ANY hit actor (enemies, etc.) and drag it back to Link, not just
+        // ones flagged with HOOKSHOT_PULLS_*. Vanilla hookshot only stuns
+        // most enemies because they don't have either flag — so the attach
+        // never fires and the timer-0 dragback branch has nothing to move.
+        // Relax the flag gate when clawshot mode is on; the bumperFlags
+        // BUMP_HOOKABLE check is still required so only actually-hookshottable
+        // surfaces respond. Stun damage continues to apply via the collider
+        // path regardless.
+        extern u8 TwilightUpgrade_IsClawshotActive(void);
+        u8 clawshotInvert = TwilightUpgrade_IsClawshotActive();
+        u8 hasPullFlag = (touchedActor->flags & (ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR | ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER)) != 0;
+        u8 isHookable = (this->collider.info.atHitInfo->bumperFlags & BUMP_HOOKABLE) != 0;
+        if ((touchedActor->update != NULL) && (hasPullFlag || clawshotInvert)) {
+            // Vanilla requires BUMP_HOOKABLE on the bumper. In clawshot mode we
+            // also bypass that — many heavy enemies (Armos, Beamos, etc.) have
+            // BUMP_ON without BUMP_HOOKABLE, so the vanilla path leaves them
+            // un-attached and only stunned. Clawshot grabs them too.
+            if (isHookable || clawshotInvert) {
                 ArmsHook_AttachHookToActor(this, touchedActor);
-                // Twilight Upgrade — Clawshot mode: when active, INVERT the pull
-                // direction on actors that would normally pull Link (ACTOR_FLAG_
-                // HOOKSHOT_PULLS_PLAYER). Instead of attaching Link to the hook
-                // (which would yank Link forward), we leave the actor flagged
-                // ATTACHED so the standard "drag target back to Link" branch at
-                // the bottom of this function moves the target each frame —
-                // exactly the Twilight Princess clawshot grab. Surfaces (no
-                // touchedActor->update or no flag set) still pull Link normally
-                // so terrain grappling still works.
-                extern u8 TwilightUpgrade_IsClawshotActive(void);
-                u8 clawshotInvert = TwilightUpgrade_IsClawshotActive();
+                // Clawshot Bullet Time — this is an ACTOR hit, NOT a surface.
+                // Note it so arrival doesn't trigger bullet time for enemy
+                // pulls.
+                extern void ClawshotBT_NoteHitActor(void);
+                ClawshotBT_NoteHitActor();
+                // When active, INVERT the pull direction on actors that would
+                // normally pull Link (ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER). Instead
+                // of attaching Link to the hook (which would yank Link forward),
+                // we leave the actor flagged ATTACHED so the standard "drag
+                // target back to Link" branch at the bottom of this function
+                // moves the target each frame — exactly the Twilight Princess
+                // clawshot grab.
                 if (CHECK_FLAG_ALL(touchedActor->flags, ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER) && !clawshotInvert) {
                     ArmsHook_PullPlayer(this);
                 }
@@ -246,6 +269,20 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
                 Math_Vec3f_Sum(&player->unk_3C8, &newPos, &this->actor.world.pos);
                 if (grabbed != NULL) {
                     Math_Vec3f_Sum(&this->actor.world.pos, &this->grabbedDistDiff, &grabbed->world.pos);
+                    // Clawshot mode — force the grabbed actor's own velocity
+                    // to zero so its AI (gravity, walk, attack pursuit) can't
+                    // fight against the drag we're applying via world.pos.
+                    // Without this, enemies wobble in place or partially
+                    // resist being pulled. Vanilla grabbable targets (pots,
+                    // spider webs) are already inanimate so no harm there.
+                    extern u8 TwilightUpgrade_IsClawshotActive(void);
+                    if (TwilightUpgrade_IsClawshotActive()) {
+                        grabbed->velocity.x = 0.0f;
+                        grabbed->velocity.y = 0.0f;
+                        grabbed->velocity.z = 0.0f;
+                        grabbed->speedXZ = 0.0f;
+                        grabbed->gravity = 0.0f;
+                    }
                 }
             }
         } else {
@@ -260,7 +297,15 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
                 ArmsHook_SetupAction(this, ArmsHook_Wait);
                 if (ArmsHook_AttachToPlayer(this, player)) {
                     Math_Vec3f_Diff(&this->actor.world.pos, &player->actor.world.pos, &player->actor.velocity);
-                    player->actor.velocity.y -= 20.0f;
+                    // Clawshot Bullet Time — when the upgrade is active AND
+                    // the last hit was a surface (not an enemy), enter bullet
+                    // time at arrival. Skip the vanilla -20 downward kick so
+                    // Link doesn't immediately drop off the anchor; the bullet
+                    // time hold pins him in place. Returns 1 on entry.
+                    extern u8 ClawshotBT_TryStartOnArrival(Player* player, PlayState* play);
+                    if (!ClawshotBT_TryStartOnArrival(player, play)) {
+                        player->actor.velocity.y -= 20.0f;
+                    }
                 }
             }
         }
@@ -286,6 +331,16 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
             this->actor.world.pos.z += 10.0f * sp58;
             this->timer = 0;
             if (SurfaceType_IsHookshotSurface(&play->colCtx, poly, bgId)) {
+                // Clawshot Bullet Time — mark this hit as a surface so the
+                // arrival branch above (phi_f16 == 0.0f) can trigger bullet
+                // time. Pass the surface normal so bullet time can distinguish
+                // wall (|nY| < 0.5) from ceiling (nY < -0.5) and position Link
+                // accordingly: walls keep him at hook pos with back to wall;
+                // ceilings drop him ~70u below so he hangs from the anchor
+                // (TP-style) instead of being stuck inside the ceiling.
+                extern void ClawshotBT_NoteHitSurface(f32 nx, f32 ny, f32 nz);
+                f32 nY = COLPOLY_GET_NORMAL(poly->normal.y);
+                ClawshotBT_NoteHitSurface(sp5C, nY, sp58);
                 if (bgId != BGCHECK_SCENE) {
                     dynaPolyActor = DynaPoly_GetActor(&play->colCtx, bgId);
                     if (dynaPolyActor != NULL) {
@@ -366,7 +421,21 @@ void ArmsHook_Draw(Actor* thisx, PlayState* play) {
             Matrix_Scale(0.015f, 0.015f, sqrtf(SQ(sp78.y) + sp58) * 0.01f, MTXMODE_APPLY);
         }
         gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        gSPDisplayList(POLY_OPA_DISP++, gLinkAdultHookshotChainDL);
+        // Twilight Upgrade — Clawshot mode: swap chain DL to MM's gameplay_keep
+        // hookshot chain so the visual matches the body DL swap in z_player_lib.c.
+        // Fallback to OOT chain when mm.o2r isn't loaded.
+        {
+            extern u8 TwilightUpgrade_IsClawshotActive(void);
+            extern void* MmAssets_LoadHookshotChainDL(void);
+            Gfx* chainDL = gLinkAdultHookshotChainDL;
+            if (TwilightUpgrade_IsClawshotActive()) {
+                Gfx* mmChain = (Gfx*)MmAssets_LoadHookshotChainDL();
+                if (mmChain != NULL) {
+                    chainDL = mmChain;
+                }
+            }
+            gSPDisplayList(POLY_OPA_DISP++, chainDL);
+        }
 
         CLOSE_DISPS(play->state.gfxCtx);
     }

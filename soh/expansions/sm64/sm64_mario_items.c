@@ -760,6 +760,39 @@ void Sm64Mario_KillAllFireballs(void) {
     }
 }
 
+// --- Boss super-damage hooks (read by boss_super_damage / transformation_masks) -
+// A Fire Flower fireball in flight counts as an active "super attack", so the boss
+// super-damage system treats fire like FD's slash and lets it break/kill bosses.
+u8 Sm64Mario_FireballActive(void) {
+    s32 i;
+    for (i = 0; i < MARIO_FB_MAX; i++) {
+        if (sMarioFireballs[i].active) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// True if any in-flight fireball is within `range` (XYZ) of `pos`. Drives the
+// geometric boss-super-damage reach test so a part breaks when fire touches it.
+u8 Sm64Mario_FireballNear(Vec3f* pos, f32 range) {
+    s32 i;
+    if (pos == NULL) {
+        return 0;
+    }
+    for (i = 0; i < MARIO_FB_MAX; i++) {
+        if (sMarioFireballs[i].active) {
+            f32 dx = sMarioFireballs[i].pos.x - pos->x;
+            f32 dy = sMarioFireballs[i].pos.y - pos->y;
+            f32 dz = sMarioFireballs[i].pos.z - pos->z;
+            if ((dx * dx + dy * dy + dz * dz) < (range * range)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 // Fire Flower: launch a bouncing fireball on a fresh B press (Fire cap active).
 // Consumes the B press so the proximity grab / item handler don't fire on it,
 // but the punch still happens because Mario's punch reads in->cur (not press).
@@ -1183,6 +1216,7 @@ void Sm64Cappy_Update(PlayState* play) {
             sCappy.pos.x = mpos.x + Math_SinS(sCappy.orbitAng) * CAPPY_ORBIT_RADIUS;
             sCappy.pos.y = mpos.y + 26.0f;
             sCappy.pos.z = mpos.z + Math_CosS(sCappy.orbitAng) * CAPPY_ORBIT_RADIUS;
+            if (Sm64Cappy_TryBounce(play, &mpos, player)) break;
             if (--sCappy.timer <= 0) {
                 sCappy.phase = CAPPY_RETURN;
             }
@@ -1200,6 +1234,25 @@ void Sm64Cappy_Update(PlayState* play) {
             sCappy.pos.y += (dy / dist) * CAPPY_RETURN_SPEED;
             sCappy.pos.z += (dz / dist) * CAPPY_RETURN_SPEED;
             break;
+    }
+
+    // World floor collision (OUT/HOVER): keep the cap riding ABOVE the terrain so
+    // it follows up-slopes instead of phasing through them. Ray from above the cap
+    // so a fast/steep climb still catches the floor.
+    if (sCappy.phase == CAPPY_OUT || sCappy.phase == CAPPY_HOVER) {
+        CollisionPoly* fpoly = NULL;
+        Vec3f fq;
+        f32 fy;
+        fq.x = sCappy.pos.x;
+        fq.y = sCappy.pos.y + 60.0f;
+        fq.z = sCappy.pos.z;
+        fy = BgCheck_EntityRaycastFloor1(&play->colCtx, &fpoly, &fq);
+        if (fpoly != NULL && fy > BGCHECK_Y_MIN && sCappy.pos.y < fy + 10.0f) {
+            sCappy.pos.y = fy + 10.0f;        // hug the slope
+            if (sCappy.phase == CAPPY_OUT) {  // climbing into terrain -> settle/hover
+                sCappy.vel.y = 0.0f;
+            }
+        }
     }
 
     // Arm the stun collider at the cap each frame.

@@ -47,16 +47,40 @@ s32 MmBgm_IsAvailable(void);
 u16 MmBgm_GetSeqId(const char* mmBgmName);
 
 /**
- * Play an MM BGM on the fanfare channel (transient — for short cues like
- * Bremen March or Kamaro Dance). No-op if mm.o2r is unavailable or the
- * name is not registered.
+ * Play an MM BGM on the fanfare channel (transient — short cues that should
+ * not loop, e.g. Goron Lullaby fragment when an NPC plays it). Note: fanfare
+ * is a ONE-SHOT priority channel that gets preempted by item jingles (rupees,
+ * hearts). For ANYTHING that needs to loop and survive interruptions —
+ * including diegetic mask BGM like Bremen March / Kamaro Dance — use
+ * MmBgm_PlayLoop instead. No-op if mm.o2r is unavailable or the name is not
+ * registered.
  */
 void MmBgm_PlayFanfare(const char* mmBgmName);
 
 /**
  * Play an MM BGM on the main BGM channel (looping field/dungeon music).
+ * Does NOT snapshot the previous BGM — use MmBgm_PlayLoop for that.
  */
 void MmBgm_PlayMain(const char* mmBgmName);
+
+/**
+ * Play an MM BGM on the LOOPING main BGM channel — for diegetic mask BGMs
+ * (Bremen March, Kamaro Dance) that must persist while the mask is worn.
+ * Snapshots the current main BGM internally so MmBgm_RestorePreviousBgm()
+ * can resume the scene BGM when the mask is removed.
+ *
+ * Use this INSTEAD of MmBgm_PlayFanfare for any sequence that needs to loop
+ * and survive item-pickup jingles.
+ */
+void MmBgm_PlayLoop(const char* mmBgmName);
+
+/**
+ * Restore the scene BGM that was active before the last MmBgm_PlayLoop call.
+ * If no BGM was snapshotted, stops the main BGM channel. Pairs with
+ * MmBgm_PlayLoop. Call from every mask-removal / scene-transition / interrupt
+ * path so the scene's normal music resumes after Bremen/Kamaro.
+ */
+void MmBgm_RestorePreviousBgm(void);
 
 /**
  * Stop fanfare-channel BGM. Convenience wrapper around NA_BGM_STOP that

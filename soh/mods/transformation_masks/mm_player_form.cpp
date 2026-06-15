@@ -2129,8 +2129,14 @@ extern "C" FlexSkeletonHeader* GaroForm_LoadSkeleton(PlayState* play);
 // `extern "C"` declarations are illegal in C++.
 extern "C" void GaroForm_Update(PlayState* play, Player* player);
 extern "C" s32 GaroForm_TryDrawSmoothSkin(PlayState* play, Player* player);
+// Null-body SkelAnime pass — fires PostLimbDraw side effects (feetPos for
+// shadow tracking, leftHandPos, focus.pos at HEAD, etc.) without drawing
+// any geometry. Defined in garo_post_limb.cpp.
+extern "C" void GaroForm_DrawNullBody(PlayState* play, Player* player, s32 lod);
 // PlayerAnimation wrapper that works with garo.o2r (independent of mm.o2r).
 extern "C" LinkAnimationHeader* GaroForm_LoadAnimPublic(const char* path);
+extern "C" u8   GaroForm_GetPrevJumping(void);
+extern "C" void GaroForm_SetPrevJumping(u8 v);
 // Garo's draw path runs through z_player.c's O2rLoader hook
 // (GaroForm_TryDrawSmoothSkin), NOT through the MM form system — the
 // Garo Mask activates via ITEM_MM_MASK_GARO → O2rLoader_ForceModel("garo")
@@ -11013,13 +11019,25 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
         return;
     }
 
-    // Garo: PASSIVE MmForm. We deliberately do NOT call GaroForm_Update from
-    // here, do NOT set PAUSE_ACTION_FUNC, do NOT override modelAnimType. Link
-    // runs his normal gameplay 1:1 (items, swim, sword, jump). The Garo
-    // overrides (skin, slash-combo replacement, shuriken finisher) live in
-    // GaroForm_Update which is invoked from transformation_masks.c regardless
-    // of MmForm state.
+    // Garo: Goron-style MmForm with action-func dispatch. Most of the moveset
+    // (combo / parry / dash / banish / rod mode) lives in GaroForm_Update.
+    // Inside that function, only ACTIVE combat states set PAUSE_ACTION_FUNC —
+    // idle / walk / run leave Link's action func running 1:1 so items, swim,
+    // jump, etc. work vanilla. modelAnimType stays at PLAYER_ANIMTYPE_0 like
+    // other MM forms (no sword-grip anims; Garo uses bare-hand poses).
     if (gFormState.currentForm == MM_PLAYER_FORM_GARO) {
+        player->modelAnimType = PLAYER_ANIMTYPE_0;
+        GaroForm_Update(play, player);
+
+        // v9 design call: Garo keeps vanilla movement (run 1.0x, jump 1.0x).
+        // Earlier drafts scaled linearVelocity per frame, but Link's action
+        // funcs mix direct-assignment (Player_GetMovementSpeedAndYaw) and
+        // Math_AsymStepToF ramps — the ramped paths COMPOUND across frames
+        // (current = ramp(current, target, accel), then we multiply →
+        // current grows above target → next frame ramps from inflated
+        // current). User playtest: walk speed grew exponentially. Glass
+        // cannon stays via 2.0x incoming damage (MmForm_GetIncomingDamageMult);
+        // mobility tradeoff is dropped.
         return;
     }
 
@@ -14483,6 +14501,20 @@ MmPlayerTransformation MmForm_GetCurrentForm(void) {
     return (MmPlayerTransformation)gFormState.currentForm;
 }
 
+// Incoming-damage multiplier hook. Called from z_player.c func_80837B18_modified
+// at the single chokepoint that routes every damage-receive path into
+// Health_ChangeBy. Returns 1.5f for Garo (glass cannon) and 1.0f otherwise. The
+// helper is intentionally non-tunable here — any per-form override should land
+// in the switch so the chokepoint stays one site.
+extern "C" f32 MmForm_GetIncomingDamageMult(void) {
+    switch (gFormState.currentForm) {
+        case MM_PLAYER_FORM_GARO:
+            return 2.0f;  // glass cannon: double damage taken
+        default:
+            return 1.0f;
+    }
+}
+
 // Called from z_player.c func_80837948: override jump slash animations for transforms.
 // Returns form-specific animation for the given melee weapon animation phase, or NULL for default.
 LinkAnimationHeader* MmForm_GetJumpSlashAnim(s32 phase) {
@@ -15325,12 +15357,19 @@ void MmForm_Draw(PlayState* play, Player* player) {
         return;
     }
 
-    // Garo form: smooth-skin CPU-blended draw via garo_skin.cpp. Reads from
-    // player->skelAnime.jointTable — which Link's normal action funcs keep
-    // populated 1:1 (the Garo MmForm branch in MmForm_UpdateActive is passive
-    // so it doesn't override the jointTable). Works for both adult and child
-    // Link since they share the player skeleton format.
+    // Garo form: two-pass draw to get both the smooth-skin visual AND the
+    // PostLimbDraw side effects (feetPos for shadow tracking, bodyPartsPos,
+    // leftHandPos, focus.pos at HEAD, shieldMf — everything Goron/Zora get
+    // for free from SkelAnime_DrawFlexLod).
+    //   Pass 1: GaroForm_DrawNullBody → walks the player skeleton with all
+    //           limb DLs nulled. No geometry drawn, but the bone matrices
+    //           are computed and PostLimbDraw fires for each limb → feetPos
+    //           etc. update each frame → shadow tracks 1:1 with Link.
+    //   Pass 2: GaroForm_TryDrawSmoothSkin → renders the Garo body via
+    //           CPU-skinning (its own draw path, independent of SkelAnime).
+    //           Also drives the sword projectile draw + trail vertex feed.
     if (gFormState.skeletonLoaded && gFormState.currentForm == MM_PLAYER_FORM_GARO) {
+        GaroForm_DrawNullBody(play, player, 0);
         GaroForm_TryDrawSmoothSkin(play, player);
         return;
     }

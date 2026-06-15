@@ -1842,6 +1842,28 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
                 gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, 255);
             }
 
+            // Twilight Upgrade mode-name swap — applied per-frame (NOT only when
+            // cursor changes). The version at the cursor-change site only fires
+            // once per nav, so toggling clawshot/gale mode while staying on the
+            // slot left a stale vanilla name in nameSegment. Re-apply here so the
+            // displayed name always matches the current mode.
+            {
+                extern u8 TwilightUpgrade_IsClawshotActive(void);
+                extern u8 TwilightUpgrade_IsGaleBoomerangActive(void);
+                static const char sClawshotNameDraw[] = "__OTR__textures/item_name_custom/gClawshotNameTex";
+                static const char sGaleNameDraw[] = "__OTR__textures/item_name_custom/gGaleBoomerangNameTex";
+                const char* twilightOverrideDraw = NULL;
+                if ((pauseCtx->namedItem == ITEM_HOOKSHOT || pauseCtx->namedItem == ITEM_LONGSHOT) &&
+                    TwilightUpgrade_IsClawshotActive()) {
+                    twilightOverrideDraw = sClawshotNameDraw;
+                } else if (pauseCtx->namedItem == ITEM_BOOMERANG && TwilightUpgrade_IsGaleBoomerangActive()) {
+                    twilightOverrideDraw = sGaleNameDraw;
+                }
+                if (twilightOverrideDraw != NULL) {
+                    memcpy(pauseCtx->nameSegment, twilightOverrideDraw, strlen(twilightOverrideDraw) + 1);
+                }
+            }
+
             POLY_OPA_DISP = KaleidoScope_QuadTextureIA4(POLY_OPA_DISP, pauseCtx->nameSegment, 128, 16, 0);
         }
 
