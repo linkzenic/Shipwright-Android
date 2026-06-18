@@ -24,9 +24,10 @@
 #include <functional>
 #include <cstdint>
 #include <queue>
-#ifdef ENABLE_REMOTE_CONTROL
+// NEI: SDL_net is unconditional since upstream #6732 (it dropped ENABLE_REMOTE_CONTROL).
+// These were guarded by that flag; keep them UNCONDITIONAL so the class layout is identical
+// in every TU (a conditional member would be an ODR violation / crash).
 #include <SDL2/SDL_net.h>
-#endif
 
 class HarpoonWebSocket {
   public:
@@ -53,10 +54,8 @@ class HarpoonWebSocket {
     bool IsConnected() const { return connectedAndHandshakeDone_.load(); }
 
   private:
-#ifdef ENABLE_REMOTE_CONTROL
     IPaddress address_{};
     TCPsocket socket_ = nullptr;
-#endif
     std::string host_;
     uint16_t port_ = 0;
 

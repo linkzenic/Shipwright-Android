@@ -99,10 +99,23 @@ static OggType GetOggType(OggFileData* data) {
     VorbisReadCallback(buffer, 4096, 1, data);
     ogg_sync_wrote(&oy, 4096);
 
-    ogg_sync_pageout(&oy, &og);
+    // Guard: if the buffer isn't a valid Ogg stream, ogg_sync_pageout returns
+    // <= 0 and `og` is left empty — ogg_page_serialno(&og) would then deref a
+    // NULL header and crash (0xc0000005). Bail out cleanly instead.
+    if (ogg_sync_pageout(&oy, &og) != 1) {
+        ogg_sync_clear(&oy);
+        return OggType::None;
+    }
     ogg_stream_init(&os, ogg_page_serialno(&og));
     ogg_stream_pagein(&os, &og);
-    ogg_stream_packetout(&os, &op);
+
+    // Likewise, only inspect the packet if one was actually produced (and is
+    // long enough to compare), otherwise op.packet may be NULL/garbage.
+    if (ogg_stream_packetout(&os, &op) != 1 || op.packet == nullptr || op.bytes < 8) {
+        ogg_stream_clear(&os);
+        ogg_sync_clear(&oy);
+        return OggType::None;
+    }
 
     // Can't use strmp because op.packet isn't a null terminated string.
     if (memcmp((char*)op.packet, "\x01vorbis", 7) == 0) {
@@ -156,8 +169,18 @@ static void OggDecoderWorker(std::shared_ptr<SOH::AudioSample> audioSample, std:
             // assumes the file starts at 0
             fileData.pos = 0;
             int ret = ov_open_callbacks(&fileData, &vf, nullptr, 0, vorbisCallbacks);
+            if (ret != 0) {
+                SPDLOG_ERROR("Audio sample '{}' failed ov_open_callbacks ({}) — skipping (silent).",
+                             initData->Path, ret);
+                break;
+            }
 
             vorbis_info* vi = ov_info(&vf, -1);
+            if (vi == nullptr) {
+                SPDLOG_ERROR("Audio sample '{}' has no vorbis_info — skipping (silent).", initData->Path);
+                ov_clear(&vf);
+                break;
+            }
 
             uint64_t numFrames = ov_pcm_total(&vf, -1);
             uint64_t sampleRate = vi->rate;
@@ -181,9 +204,13 @@ static void OggDecoderWorker(std::shared_ptr<SOH::AudioSample> audioSample, std:
             break;
         }
         case OggType::None: {
-            char buff[2048];
-            snprintf(buff, 2048, "Ogg file %s is not Vorbis or OPUS", initData->Path.c_str());
-            throw std::runtime_error(buff);
+            // Do NOT throw here: OggDecoderWorker runs on a background thread, so
+            // an uncaught exception calls std::terminate and kills the whole game
+            // (with no CrashHandler entry). Log the offending resource path and
+            // leave the sample undecoded/silent instead.
+            SPDLOG_ERROR("Audio sample '{}' is not valid Vorbis or OPUS — skipping (silent). "
+                         "This resource is likely corrupt; remove the mod/pak that provides it.",
+                         initData->Path);
             break;
         }
     }

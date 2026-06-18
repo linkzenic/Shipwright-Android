@@ -4,6 +4,7 @@
 #include "TriforceThief/TriforceThief.h"
 
 #include <libultraship/libultraship.h>
+#include <fast/Fast3dGui.h>
 #include <spdlog/spdlog.h>
 
 namespace HarpoonHud {
@@ -29,7 +30,7 @@ void Window::DrawElement() {
 }
 
 void Register() {
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = Ship::Context::GetRawInstance()->GetWindow()->GetGui();
     if (gui == nullptr) return;
 
     static const char* kName = "HarpoonGamemodeHud";

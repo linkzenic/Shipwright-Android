@@ -15,6 +15,7 @@
  */
 
 #include "item_rod_fire.h"
+#include "item_rod_common.h"
 #include "../helpers/equip_helper.h"
 #include "../helpers/combat_helper.h"
 #include "../helpers/fx_helper.h"
@@ -35,6 +36,51 @@ static RodProjSet sFireProjSets[ROD_MAX_PROJ_SETS];
 
 static RodColor sFireRodColor = { FIRE_ROD_PRIM_R, FIRE_ROD_PRIM_G, FIRE_ROD_PRIM_B, FIRE_ROD_PRIM_A,
                                   FIRE_ROD_ENV_R,  FIRE_ROD_ENV_G,  FIRE_ROD_ENV_B,  FIRE_ROD_ENV_A };
+
+// Shared-core descriptor for the Fire Rod. Currently only .projSpeed is read
+// (by RodCommon_CalcVelocity); the remaining fields are filled in from the
+// FIRE_ROD_* constants so this doubles as the template for migrating the rest
+// of the shared rod code. Element-hook pointers are left NULL until those
+// functions are migrated into item_rod_common.c (nothing dereferences them yet).
+static const RodConfig sFireRodConfig = {
+    .projSpeed = FIRE_ROD_PROJ_SPEED,
+    .projLifetime = FIRE_ROD_PROJ_LIFETIME,
+    .singleTimerMax = 30, // Fire/Ice clamp single-shot timer to 30 (Light uses 25)
+    .slashRange = FIRE_ROD_SLASH_RANGE,
+    .slashSpreadDeg = FIRE_ROD_SLASH_SPREAD,
+    .projRotZStep = 5000,
+    .approachStep = 0.4f,
+
+    .magicSlash = FIRE_ROD_MAGIC_SLASH,
+    .magicStab = FIRE_ROD_MAGIC_STAB,
+    .magicJump = FIRE_ROD_MAGIC_JUMP,
+    .magicSpinSmall = FIRE_ROD_MAGIC_SPIN_SMALL,
+    .magicSpinBig = FIRE_ROD_MAGIC_SPIN_BIG,
+    .backfireSlash = FIRE_ROD_BACKFIRE_SLASH,
+    .backfireJump = FIRE_ROD_BACKFIRE_JUMP,
+    .backfireSpin = FIRE_ROD_BACKFIRE_SPIN,
+
+    .chargeRate = FIRE_ROD_CHARGE_RATE,
+    .chargeMin = FIRE_ROD_CHARGE_MIN,
+    .chargeBig = FIRE_ROD_CHARGE_BIG,
+    .chargeHoldFrames = FIRE_ROD_CHARGE_HOLD_FRAMES,
+
+    .spinSmallRadius = FIRE_ROD_SPIN_SMALL_RADIUS,
+    .spinBigRadius = FIRE_ROD_SPIN_BIG_RADIUS,
+
+    .color = { FIRE_ROD_PRIM_R, FIRE_ROD_PRIM_G, FIRE_ROD_PRIM_B, FIRE_ROD_PRIM_A, FIRE_ROD_ENV_R, FIRE_ROD_ENV_G,
+               FIRE_ROD_ENV_B, FIRE_ROD_ENV_A },
+    .reticleR = FIRE_ROD_RETICLE_R,
+    .reticleG = FIRE_ROD_RETICLE_G,
+    .reticleB = FIRE_ROD_RETICLE_B,
+
+    .projColInit = &sFireRodProjColInit,
+    .spinColInit = &sFireRodSpinColInit,
+
+    .onProjHit = NULL,
+    .updateCollider = NULL,
+    .spawnSparks = NULL,
+};
 
 extern int Player_IsZTargeting(Player* this);
 extern void func_80837948(PlayState* play, Player* player, s32 meleeWeaponAnim);
@@ -130,14 +176,8 @@ static void FireRod_InitSetColliders(RodProjSet* set, Player* p, PlayState* play
     set->collidersInited = 1;
 }
 
-static void FireRod_CalcVelocity(Vec3f* outVel, s16 yaw, s16 pitch) {
-    Vec3f localVel = { 0.0f, 0.0f, FIRE_ROD_PROJ_SPEED };
-    Matrix_Push();
-    Matrix_RotateY(BINANG_TO_RAD(yaw), MTXMODE_NEW);
-    Matrix_RotateX(BINANG_TO_RAD(pitch), MTXMODE_APPLY);
-    Matrix_MultVec3f(&localVel, outVel);
-    Matrix_Pop();
-}
+// FireRod_CalcVelocity was migrated to RodCommon_CalcVelocity(&sFireRodConfig, ...)
+// in item_rod_common.c. Call sites below were updated accordingly.
 
 // Spawns single projectile into a free set slot (stab, first-person)
 static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* startPos, s16 yaw, s16 pitch,
@@ -162,7 +202,7 @@ static void FireRod_InitSingleProjectile(Player* p, PlayState* play, Vec3f* star
 
     set->yaw = yaw;
     set->pitch = pitch;
-    FireRod_CalcVelocity(&set->vel[0], yaw, pitch);
+    RodCommon_CalcVelocity(&sFireRodConfig, &set->vel[0], yaw, pitch);
 }
 
 // Spawns 3 fireballs spread into a free set slot (slash attack)
@@ -186,17 +226,17 @@ static void FireRod_InitTripleProjectile(Player* p, PlayState* play, Vec3f* star
     set->pos[0] = *startPos;
     set->yaw = baseYaw;
     set->pitch = pitch;
-    FireRod_CalcVelocity(&set->vel[0], baseYaw, pitch);
+    RodCommon_CalcVelocity(&sFireRodConfig, &set->vel[0], baseYaw, pitch);
     for (s32 i = 0; i < 6; i++)
         set->trail[i] = *startPos;
 
     // Left fireball (-spread angle)
     set->pos[1] = *startPos;
-    FireRod_CalcVelocity(&set->vel[1], baseYaw - spreadAngle, pitch);
+    RodCommon_CalcVelocity(&sFireRodConfig, &set->vel[1], baseYaw - spreadAngle, pitch);
 
     // Right fireball (+spread angle)
     set->pos[2] = *startPos;
-    FireRod_CalcVelocity(&set->vel[2], baseYaw + spreadAngle, pitch);
+    RodCommon_CalcVelocity(&sFireRodConfig, &set->vel[2], baseYaw + spreadAngle, pitch);
 }
 
 static void FireRod_UpdateCollider(ColliderCylinder* col, Vec3f* pos, f32 scale, PlayState* play) {

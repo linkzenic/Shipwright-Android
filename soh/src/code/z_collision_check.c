@@ -3030,6 +3030,14 @@ void CollisionCheck_ApplyDamage(PlayState* play, CollisionCheckContext* colChkCt
         if (damage < 4)
             damage = 4; // Minimum 4 damage regardless of resistance
     }
+    // DMG_FIXED_DAMAGE (NEI transformation forms): use the toucher's damage
+    // value verbatim, discarding whatever the enemy's damage table produced.
+    // This makes a form's attack deal a CONSTANT amount regardless of the
+    // enemy table or Link's equipped sword class. Runs after the table lookup
+    // (and after the UNBLOCKABLE floor) so it has the final say.
+    if (info->acHitInfo->toucher.dmgFlags & DMG_FIXED_DAMAGE) {
+        damage = (f32)info->acHitInfo->toucher.damage;
+    }
     if (!(collider->acFlags & AC_HARD)) {
         collider->actor->colChkInfo.damage += damage;
     }

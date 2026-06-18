@@ -3,11 +3,11 @@
  *
  * Wires the OOT Gerudo Mask to the O2rLoader's "gerudo" model. When the
  * cheat `gMods.GerudoMaskTransform` is on and Link equips the mask, we call
- * `O2rLoader_ForceModel("gerudo")`, which swaps player->skelAnime to the
- * native GeldB skeleton at `__OTR__objects/object_geldb/gGerudoRedSkel`. The
- * draw path (z_player.c → GerudoForm_DrawNullBody + GerudoHybrid_Draw)
- * renders the gerudo body with Link's tunic color and Link's anims driving
- * the body bones (per-bone source split, see gerudo_hybrid_render.h).
+ * `O2rLoader_ForceModel("gerudo")`. Link keeps his own skeleton and anims;
+ * the gerudo look comes from a draw-time DL path-swap
+ * (GerudoForm_OverrideLimbDraw) that redirects vanilla Link DL references to
+ * the gerudo .o2r's `objects/gerudoPlayer/...` twins, tinted with Link's
+ * current tunic color (see gerudo_hybrid_render.h).
  *
  * Mask is removed → O2rLoader_ClearForcedModel → Link's vanilla skel/skin
  * returns. The toggle is edge-detected per-frame from an OnPlayerUpdate hook.
@@ -44,9 +44,10 @@ u8 GerudoForm_IsActive(void);
 // gerudo_hybrid_render.cpp::OverrideLimbDraw to tint the gerudo outfit.
 void GerudoForm_GetTunicColor(s32 tunic, Color_RGB8* out);
 
-// Entry point called from z_player.c Player_Draw after the null-body pass.
-// Routes to GerudoHybrid_Update + GerudoHybrid_Draw when "gerudo" is the
-// active O2rLoader model. Returns 1 if it drew, 0 if it was a no-op.
+// Retained no-op (always returns 0). The gerudo form now draws entirely
+// through Link's own Player_DrawImpl with a DL path-swap, so there is no
+// separate gerudo body pass to trigger here. Kept for ABI stability with any
+// surviving z_player.c callsite.
 s32 GerudoForm_TryDrawSmoothSkin(PlayState* play, Player* player);
 
 // Custom sword DLs for dual-wield. Adult Link gets Master-Sword-styled custom

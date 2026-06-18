@@ -34,6 +34,9 @@
 #include "item_rocscape.c"
 #include "item_dekuleaf.c"
 #include "item_spinner.c"
+// Shared magic-rod core (RodConfig + migrated RodCommon_* helpers). Must precede
+// the per-rod files so its declarations + RodProjSet definition are in scope.
+#include "item_rod_common.c"
 #include "item_rod_fire.c"
 #include "item_rod_ice.c"
 #include "item_rod_light.c"

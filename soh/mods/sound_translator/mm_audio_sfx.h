@@ -194,6 +194,7 @@ extern u8 gMmIsLargeSfxBank[7];
 extern u8 gMmChannelsPerBank[4][7];
 extern u8 gMmUsedChannelsPerBank[4][7];
 extern MmSfxParams* gMmSfxParams[7];
+extern size_t gMmSfxParamsCount[7]; // per-bank length of each gMmSfxParams[] table
 extern MmSfxBankEntry* gMmSfxBanks[7];
 extern u8 gMmSfxChannelLayout;
 extern MmActiveSfx gMmActiveSfx[7][3];

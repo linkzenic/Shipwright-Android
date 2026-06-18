@@ -729,12 +729,35 @@ typedef struct {
 static MarioFireball sMarioFireballs[MARIO_FB_MAX];
 static s16           sMarioFireballCooldown = 0;
 
+// Boss super-damage GRACE window. Bosses that key off a collider hit (BUMP_HIT,
+// e.g. King Dodongo) read that flag ONE frame after the fireball's AT set it —
+// but actors update in category order (PLAYER=2 before BOSS=9), so on that next
+// frame the fireball (updated inside the Player update) sees its own AT_HIT and
+// bursts/clears `active` BEFORE the boss updates. Result: BossSuperDamage_IsActive()
+// was already false when the boss looked, so the super hit was silently dropped —
+// the "fire sometimes doesn't damage the boss" bug survived even after the dmgFlags
+// fix made the hit register. This grace keeps FireballActive()/FireballNear()
+// reporting true for a few frames AT THE IMPACT POINT so the boss's deferred read
+// still sees the fire as active.
+static s16   sFireGraceTimer = 0;
+static Vec3f sFireGracePos = { 0.0f, 0.0f, 0.0f };
+#define MARIO_FB_GRACE 5
+
 // Fire AT collider — models sFireRodProjColInit (item_rod_fire.h): player-owned
-// AT, fire hit effect (0x01), DMG_FIRE so torches/cobwebs/enemies all react.
+// AT, fire hit effect (0x01). Toucher deals DMG_FIRE | DMG_SWORD:
+//   - DMG_FIRE keeps the fire reactions (torches light, cobwebs/enemies burn).
+//   - DMG_SWORD makes bosses REGISTER the hit (set BUMP_HIT). The boss-super-
+//     damage rework keys off BUMP_HIT (any accepted hit) + IsActive, NOT the
+//     vanilla damage value — exactly how FD's sword reliably triggers it. With
+//     DMG_FIRE alone the hit never registered on the (fire-immune) bosses, so
+//     the super-damage path never ran — that was the "fire sometimes doesn't
+//     damage the boss" inconsistency. DMG_SWORD is accepted by every boss's AC
+//     bumper (you can always sword them), so the fireball now lands on all of
+//     them. Radius bumped 13→22 so a thrown ball reliably overlaps a big boss.
 static ColliderCylinderInit sMarioFireballColInit = {
     { COLTYPE_NONE, AT_ON | AT_TYPE_PLAYER, AC_NONE, OC1_NONE, OC2_NONE, COLSHAPE_CYLINDER },
-    { ELEMTYPE_UNK2, { DMG_FIRE, 0x01, 8 }, { 0, 0, 0 }, TOUCH_ON | TOUCH_SFX_NORMAL, BUMP_NONE, OCELEM_NONE },
-    { 13, 22, -4, { 0, 0, 0 } }
+    { ELEMTYPE_UNK2, { DMG_FIRE | DMG_SWORD, 0x01, 8 }, { 0, 0, 0 }, TOUCH_ON | TOUCH_SFX_NORMAL, BUMP_NONE, OCELEM_NONE },
+    { 22, 30, -6, { 0, 0, 0 } }
 };
 
 static void Sm64Fireball_Kill(PlayState* play, MarioFireball* fb) {
@@ -765,6 +788,11 @@ void Sm64Mario_KillAllFireballs(void) {
 // super-damage system treats fire like FD's slash and lets it break/kill bosses.
 u8 Sm64Mario_FireballActive(void) {
     s32 i;
+    // Grace window after a recent impact (see sFireGraceTimer) so a boss reading
+    // BUMP_HIT one frame late still sees the fire as active.
+    if (sFireGraceTimer > 0) {
+        return 1;
+    }
     for (i = 0; i < MARIO_FB_MAX; i++) {
         if (sMarioFireballs[i].active) {
             return 1;
@@ -788,6 +816,16 @@ u8 Sm64Mario_FireballNear(Vec3f* pos, f32 range) {
             if ((dx * dx + dy * dy + dz * dz) < (range * range)) {
                 return 1;
             }
+        }
+    }
+    // Grace: a fireball impacted here within the last few frames (see
+    // sFireGraceTimer) — let the boss's deferred BUMP_HIT read still land.
+    if (sFireGraceTimer > 0) {
+        f32 dx = sFireGracePos.x - pos->x;
+        f32 dy = sFireGracePos.y - pos->y;
+        f32 dz = sFireGracePos.z - pos->z;
+        if ((dx * dx + dy * dy + dz * dz) < (range * range)) {
+            return 1;
         }
     }
     return 0;
@@ -862,6 +900,11 @@ void Sm64Mario_UpdateFireballs(PlayState* play) {
     if (play == NULL)
         return;
 
+    // Tick down the boss super-damage grace once per frame (set on impact below).
+    if (sFireGraceTimer > 0) {
+        sFireGraceTimer--;
+    }
+
     for (i = 0; i < MARIO_FB_MAX; i++) {
         MarioFireball* fb = &sMarioFireballs[i];
         CollisionPoly* poly;
@@ -880,6 +923,11 @@ void Sm64Mario_UpdateFireballs(PlayState* play) {
             Vec3f zero = { 0.0f, 0.0f, 0.0f };
             fb->col.base.atFlags &= ~AT_HIT;
             EffectSsBomb2_SpawnLayered(play, &fb->pos, &zero, &zero, 10, 5);
+            // Open the boss super-damage grace at the impact point so a boss that
+            // reads its BUMP_HIT one frame later (after this ball is gone) still
+            // sees the fire as active and applies the super hit.
+            sFireGraceTimer = MARIO_FB_GRACE;
+            sFireGracePos = fb->pos;
             Sm64Fireball_Kill(play, fb);
             continue;
         }

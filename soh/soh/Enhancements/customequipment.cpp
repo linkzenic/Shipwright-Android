@@ -94,6 +94,34 @@ static const char* GetShieldOnBackDL(s32 shield) {
     return nullptr;
 }
 
+// Hand/held shield model DL for the given shield value (Deku/Hylian/Mirror).
+static const char* GetCustomShieldDL(s32 shield) {
+    switch (shield) {
+        case PLAYER_SHIELD_DEKU:
+            return gCustomDekuShieldDL;
+        case PLAYER_SHIELD_HYLIAN:
+            return gCustomHylianShieldDL;
+        case PLAYER_SHIELD_MIRROR:
+            return gCustomMirrorShieldDL;
+    }
+    return nullptr;
+}
+
+// Allocates a small gfx buffer, emits up to two display lists (skipping null
+// ones), terminates it, and stores it in *dList. Callers guard with
+// "if (a || b)" so at least one is non-null. Mirrors the open-coded
+// Graph_Alloc + gSPDisplayList + gSPEndDisplayList sequence used throughout.
+static void EmitDLBuffer(PlayState* play, Gfx** dList, Gfx* a, Gfx* b) {
+    Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
+    Gfx* p = buf;
+    if (a)
+        gSPDisplayList(p++, a);
+    if (b)
+        gSPDisplayList(p++, b);
+    gSPEndDisplayList(p);
+    *dList = buf;
+}
+
 static const char* GetSwordInSheathDLForPlayer(Player* player, PlayState* play) {
     if (player == GET_PLAYER(play))
         return GetSwordInSheathDL(play);
@@ -210,11 +238,7 @@ static void RegisterCustomEquipment() {
                 if (isOcarina) {
                     Gfx* resolvedHand = LoadGfxByName(isAdult ? gLinkAdultLeftHandNearDL : gLinkChildLeftHandNearDL);
                     if (resolvedHand) {
-                        Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 2 * sizeof(Gfx));
-                        Gfx* p = buf;
-                        gSPDisplayList(p++, resolvedHand);
-                        gSPEndDisplayList(p);
-                        *dList = buf;
+                        EmitDLBuffer(play, dList, resolvedHand, nullptr);
                     }
                     break;
                 }
@@ -300,14 +324,7 @@ static void RegisterCustomEquipment() {
                     Gfx* resolvedFpsWeapon = LoadCustomGfx(fpsWeapon);
                     Gfx* resolvedFpsHand = LoadCustomGfx(fpsHand);
                     if (resolvedFpsWeapon || resolvedFpsHand) {
-                        Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
-                        Gfx* p = buf;
-                        if (resolvedFpsWeapon)
-                            gSPDisplayList(p++, resolvedFpsWeapon);
-                        if (resolvedFpsHand)
-                            gSPDisplayList(p++, resolvedFpsHand);
-                        gSPEndDisplayList(p);
-                        *dList = buf;
+                        EmitDLBuffer(play, dList, resolvedFpsWeapon, resolvedFpsHand);
                     }
                 } else {
                     bool useOpenHand = false;
@@ -324,17 +341,7 @@ static void RegisterCustomEquipment() {
                                            player->modelGroup == PLAYER_MODELGROUP_OCARINA ||
                                            player->modelGroup == PLAYER_MODELGROUP_OOT;
                     if (isShielding) {
-                        switch (player->currentShield) {
-                            case PLAYER_SHIELD_DEKU:
-                                customDL = gCustomDekuShieldDL;
-                                break;
-                            case PLAYER_SHIELD_HYLIAN:
-                                customDL = gCustomHylianShieldDL;
-                                break;
-                            case PLAYER_SHIELD_MIRROR:
-                                customDL = gCustomMirrorShieldDL;
-                                break;
-                        }
+                        customDL = GetCustomShieldDL(player->currentShield);
                     } else if (isOcarina) {
                         const bool isOoT = player->heldItemAction == PLAYER_IA_OCARINA_OF_TIME ||
                                            player->itemAction == PLAYER_IA_OCARINA_OF_TIME ||
@@ -345,17 +352,7 @@ static void RegisterCustomEquipment() {
                     } else {
                         switch ((u8)player->rightHandType) {
                             case PLAYER_MODELTYPE_RH_SHIELD:
-                                switch (player->currentShield) {
-                                    case PLAYER_SHIELD_DEKU:
-                                        customDL = gCustomDekuShieldDL;
-                                        break;
-                                    case PLAYER_SHIELD_HYLIAN:
-                                        customDL = gCustomHylianShieldDL;
-                                        break;
-                                    case PLAYER_SHIELD_MIRROR:
-                                        customDL = gCustomMirrorShieldDL;
-                                        break;
-                                }
+                                customDL = GetCustomShieldDL(player->currentShield);
                                 break;
                             case PLAYER_MODELTYPE_RH_BOW_SLINGSHOT:
                             case PLAYER_MODELTYPE_RH_BOW_SLINGSHOT_2:
@@ -436,14 +433,7 @@ static void RegisterCustomEquipment() {
                 Gfx* resolvedSword = LoadCustomGfx(swordPath);
                 Gfx* resolvedShield = LoadCustomGfx(shieldPath);
                 if (resolvedSword || resolvedShield) {
-                    Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
-                    Gfx* p = buf;
-                    if (resolvedSword)
-                        gSPDisplayList(p++, resolvedSword);
-                    if (resolvedShield)
-                        gSPDisplayList(p++, resolvedShield);
-                    gSPEndDisplayList(p);
-                    *dList = buf;
+                    EmitDLBuffer(play, dList, resolvedSword, resolvedShield);
                 }
                 break;
             }
@@ -496,12 +486,7 @@ static void RegisterCustomEquipment() {
                     Gfx* resolvedHand =
                         LoadGfxByName(isAdult ? gLinkAdultLeftHandClosedNearDL : gLinkChildLeftFistNearDL);
                     if (resolvedHand) {
-                        Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
-                        Gfx* p = buf;
-                        gSPDisplayList(p++, resolvedHand);
-                        gSPDisplayList(p++, resolvedCustom);
-                        gSPEndDisplayList(p);
-                        *dList = buf;
+                        EmitDLBuffer(play, dList, resolvedHand, resolvedCustom);
                     }
                 }
                 break;
@@ -509,29 +494,14 @@ static void RegisterCustomEquipment() {
 
             case PLAYER_LIMB_R_HAND: {
                 if (PauseGetLimbType(PLAYER_LIMB_R_HAND) == PLAYER_MODELTYPE_RH_SHIELD) {
-                    switch (CUR_EQUIP_VALUE(EQUIP_TYPE_SHIELD)) {
-                        case PLAYER_SHIELD_DEKU:
-                            customDL = gCustomDekuShieldDL;
-                            break;
-                        case PLAYER_SHIELD_HYLIAN:
-                            customDL = gCustomHylianShieldDL;
-                            break;
-                        case PLAYER_SHIELD_MIRROR:
-                            customDL = gCustomMirrorShieldDL;
-                            break;
-                    }
+                    customDL = GetCustomShieldDL(CUR_EQUIP_VALUE(EQUIP_TYPE_SHIELD));
                 }
                 Gfx* resolvedCustom = LoadCustomGfx(customDL);
                 if (resolvedCustom) {
                     Gfx* resolvedHand =
                         LoadGfxByName(isAdult ? gLinkAdultRightHandClosedNearDL : gLinkChildRightHandClosedNearDL);
                     if (resolvedHand) {
-                        Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
-                        Gfx* p = buf;
-                        gSPDisplayList(p++, resolvedHand);
-                        gSPDisplayList(p++, resolvedCustom);
-                        gSPEndDisplayList(p);
-                        *dList = buf;
+                        EmitDLBuffer(play, dList, resolvedHand, resolvedCustom);
                     }
                 }
                 break;
@@ -554,14 +524,7 @@ static void RegisterCustomEquipment() {
                 Gfx* resolvedSword = LoadCustomGfx(swordPath);
                 Gfx* resolvedShield = LoadCustomGfx(shieldPath);
                 if (resolvedSword || resolvedShield) {
-                    Gfx* buf = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
-                    Gfx* p = buf;
-                    if (resolvedSword)
-                        gSPDisplayList(p++, resolvedSword);
-                    if (resolvedShield)
-                        gSPDisplayList(p++, resolvedShield);
-                    gSPEndDisplayList(p);
-                    *dList = buf;
+                    EmitDLBuffer(play, dList, resolvedSword, resolvedShield);
                 }
                 break;
             }

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <exception>
 #include <vector> // was transitively via OTRGlobals.h before upstream #6636 cleanup
+#include <spdlog/spdlog.h> // SPDLOG_INFO — also transitive via OTRGlobals.h before #6636
 
 // C headers - NOT wrapped in extern "C" because they already have their own
 // __cplusplus guards internally, and wrapping them breaks Clang/GCC when
@@ -1406,7 +1407,7 @@ static void MmForm_PinFormResources(MmPlayerTransformation form) {
         return;
     }
 
-    auto resMgr = Ship::Context::GetInstance()->GetResourceManager();
+    auto resMgr = Ship::Context::GetRawInstance()->GetResourceManager();
     auto archiveManager = resMgr->GetArchiveManager();
     if (!archiveManager) {
         MMFORM_LOG("[MmForm] WARNING: No archive manager available for form %d", form);
@@ -1539,7 +1540,7 @@ static Gfx* MmForm_LoadAndValidateDL(const char* otrPath, std::vector<Gfx>& safe
         path += 7;
     }
 
-    auto resMgr = Ship::Context::GetInstance()->GetResourceManager();
+    auto resMgr = Ship::Context::GetRawInstance()->GetResourceManager();
     auto res = resMgr->LoadResourceProcess(path);
     if (!res) {
         MMFORM_LOG("[MmForm] Failed to load DL resource: %s", path);
@@ -1687,7 +1688,7 @@ static void MmForm_PreResolveDLHashes(Gfx* dl, const char* dlName, int depth) {
     if (dl == NULL || depth > 4)
         return;
 
-    auto resMgr = Ship::Context::GetInstance()->GetResourceManager();
+    auto resMgr = Ship::Context::GetRawInstance()->GetResourceManager();
     auto archMgr = resMgr->GetArchiveManager();
 
     // Walk the DL instructions, properly skipping 2-instruction expanded commands
@@ -2698,6 +2699,22 @@ static u8 MmForm_LoadFormSkeleton(PlayState* play, MmPlayerTransformation form) 
         // Pass NULL for jointTable/morphTable to let SkelAnime_InitLink allocate them.
         // This avoids the limbBufCount == limbCount assertion (flags=9 adds +1 for root).
         gFormState.formLimbCount = props->limbCount;
+
+        // Free any previously-allocated form jointTable/morphTable before SkelAnime_InitLink
+        // allocates new ones (it is called with NULL tables, so it always mallocs). Without
+        // this, every re-init leaked ~2x the table size of Zelda arena: not just on manual
+        // re-transforms but on EVERY scene transition while transformed (MmForm_SoftReload ->
+        // LoadFormSkeleton), so a long session progressively exhausts the arena and hard-crashes
+        // (fast on low-RAM "potato" hardware). gFormState is zero-initialized so the first call
+        // safely sees NULL and skips.
+        if (gFormState.formSkelAnime.jointTable != NULL) {
+            ZELDA_ARENA_FREE_DEBUG(gFormState.formSkelAnime.jointTable);
+            gFormState.formSkelAnime.jointTable = NULL;
+        }
+        if (gFormState.formSkelAnime.morphTable != NULL) {
+            ZELDA_ARENA_FREE_DEBUG(gFormState.formSkelAnime.morphTable);
+            gFormState.formSkelAnime.morphTable = NULL;
+        }
 
         SkelAnime_InitLink(play, &gFormState.formSkelAnime, skelHeader, gFormState.idleAnim, 9, NULL, NULL,
                            props->limbCount);
@@ -4480,11 +4497,7 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
             // Stop root motion and end the punch with the recovery anim.
             MmForm_DisablePunchQuad(player);
             MmForm_StopRootMotion();
-            if (gFormState.punchTrailActive) {
-                Effect_Delete(play, gFormState.punchTrailEffectIndex);
-                gFormState.punchTrailActive = 0;
-                gFormState.punchTrailEffectIndex = -1;
-            }
+            MmForm_KillTrail(play, &gFormState.punchTrailEffectIndex, &gFormState.punchTrailActive);
             gFormState.wallRecoilActive = 1;
             u8 lockedOn = (player->stateFlags1 & PLAYER_STATE1_HOSTILE_LOCK_ON) ? 1 : 0;
             LinkAnimationHeader* endAnim = MmForm_GetPunchEndAnim(step, lockedOn);
@@ -4618,11 +4631,7 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
             Input* boomIn = &play->state.input[0];
             if (CHECK_BTN_ALL(boomIn->cur.button, BTN_B)) {
                 MmForm_StopRootMotion();
-                if (gFormState.punchTrailActive) {
-                    Effect_Delete(play, gFormState.punchTrailEffectIndex);
-                    gFormState.punchTrailActive = 0;
-                    gFormState.punchTrailEffectIndex = -1;
-                }
+                MmForm_KillTrail(play, &gFormState.punchTrailEffectIndex, &gFormState.punchTrailActive);
                 Player_StartZoraBoomerang(player, play);
                 MmForm_SetAction(GORON_ACT_IDLE, play, gFormState.idleAnim, 1.0f, ANIMMODE_LOOP);
                 return;
@@ -4638,18 +4647,9 @@ static void MmForm_Action_Punch(Player* player, PlayState* play) {
         // Stop root motion (punch is over)
         MmForm_StopRootMotion();
 
-        // Clean up Zora punch trail / Gerudo L sword trail
-        if (gFormState.punchTrailActive) {
-            Effect_Delete(play, gFormState.punchTrailEffectIndex);
-            gFormState.punchTrailActive = 0;
-            gFormState.punchTrailEffectIndex = -1;
-        }
-        // Clean up Gerudo R sword trail
-        if (gFormState.punchTrailActiveR) {
-            Effect_Delete(play, gFormState.punchTrailEffectIndexR);
-            gFormState.punchTrailActiveR = 0;
-            gFormState.punchTrailEffectIndexR = -1;
-        }
+        // Clean up Zora punch / Gerudo L+R sword trails
+        MmForm_KillTrail(play, &gFormState.punchTrailEffectIndex, &gFormState.punchTrailActive);
+        MmForm_KillTrail(play, &gFormState.punchTrailEffectIndexR, &gFormState.punchTrailActiveR);
 
         if (endAnim != NULL) {
             MmForm_SetAction(GORON_ACT_PUNCH_END, play, endAnim, 1.0f, ANIMMODE_ONCE);
@@ -5081,18 +5081,9 @@ static u8 MmForm_CheckDamage(Player* player, PlayState* play) {
         Camera_ChangeMode(cam, CAM_MODE_NORMAL);
     }
 
-    // Clean up punch swing trail (Zora fin / Gerudo L sword)
-    if (gFormState.punchTrailActive) {
-        Effect_Delete(play, gFormState.punchTrailEffectIndex);
-        gFormState.punchTrailActive = 0;
-        gFormState.punchTrailEffectIndex = -1;
-    }
-    // Clean up Gerudo R sword trail
-    if (gFormState.punchTrailActiveR) {
-        Effect_Delete(play, gFormState.punchTrailEffectIndexR);
-        gFormState.punchTrailActiveR = 0;
-        gFormState.punchTrailEffectIndexR = -1;
-    }
+    // Clean up punch swing trail (Zora fin / Gerudo L+R sword)
+    MmForm_KillTrail(play, &gFormState.punchTrailEffectIndex, &gFormState.punchTrailActive);
+    MmForm_KillTrail(play, &gFormState.punchTrailEffectIndexR, &gFormState.punchTrailActiveR);
 
     // Clean up gakki (instrument) state — damage interrupts ocarina
     gFormState.gakkiActive = 0;
@@ -5922,16 +5913,8 @@ static void MmForm_GerudoActionPunch(Player* player, PlayState* play) {
 
         // === No chain → play recovery ===
         MmForm_StopRootMotion();
-        if (gFormState.punchTrailActive) {
-            Effect_Delete(play, gFormState.punchTrailEffectIndex);
-            gFormState.punchTrailActive = 0;
-            gFormState.punchTrailEffectIndex = -1;
-        }
-        if (gFormState.punchTrailActiveR) {
-            Effect_Delete(play, gFormState.punchTrailEffectIndexR);
-            gFormState.punchTrailActiveR = 0;
-            gFormState.punchTrailEffectIndexR = -1;
-        }
+        MmForm_KillTrail(play, &gFormState.punchTrailEffectIndex, &gFormState.punchTrailActive);
+        MmForm_KillTrail(play, &gFormState.punchTrailEffectIndexR, &gFormState.punchTrailActiveR);
         LinkAnimationHeader* endAnim = MmForm_GerudoGetEndAnim(step);
         if (endAnim != NULL) {
             MmForm_SetAction(GORON_ACT_PUNCH_END, play, endAnim, 0.7f, ANIMMODE_ONCE);
@@ -6583,6 +6566,10 @@ static void MmForm_Action_WaterVoidOut(Player* player, PlayState* play) {
             player->actor.velocity.y = 0.0f;
             player->actor.gravity = 0.0f;
             player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+            // MM void-out audio cue: form scream + "taken away" voice alongside the
+            // abyss sound (mm z_player.c:6182-6195). Without it Deku sank silently.
+            MmSfx_PlayAtPos(MM_NA_SE_VO_DEKU_DAMAGE_S, &player->actor.projectedPos);
+            MmSfx_PlayAtPos(MM_NA_SE_VO_DEKU_TAKEN_AWAY, &player->actor.projectedPos);
             Player_PlaySfx(&player->actor, NA_SE_OC_ABYSS);
             Play_TriggerVoidOut(play);
             gFormState.rollGroundPoundTimer = 100; // → waiting for fade
@@ -7447,18 +7434,19 @@ static void MmForm_Action_GoronRoll(Player* player, PlayState* play) {
             s16 prevRotX = player->actor.shape.rot.x;
             if ((player->actor.bgCheckFlags & 1) &&
                 (((s32)(gFormState.rollSpinRate + prevRotX) * (s32)prevRotX) <= 0)) {
-                // USER DECISION: in spike (max charge) mode, MM's CHG_ROLL sample picked from our
-                // SF0 doesn't match the right MM sound. Per user feedback "deja el de rolling normal
-                // y ya mejor no rolling charge", always play GORON_ROLL regardless of spike state.
-                // Also force-stop CHG_ROLL in case a prior code path started it.
-                MmSfx_PlayGoronRollWithFloor(&player->actor.projectedPos,
-                                              gFormState.rollBallSpeed, floorOff);
+                // MM (z_player.c:20379): spiked/max-charge rolling plays the CHARGED
+                // roll sample (CHG_ROLL 0x980 / ice CHG_ROLL_ICE 0x98F); normal roll
+                // otherwise. The old hand-map picked a wrong sample for CHG_ROLL so it
+                // was suppressed; the new mmsfx engine plays the real seq_0/SF0 sample,
+                // so restore the MM-accurate selection.
+                if (gFormState.rollSpikeActive > 0) {
+                    MmSfx_PlayGoronChgRollWithFloor(&player->actor.projectedPos,
+                                                    gFormState.rollBallSpeed, floorOff);
+                } else {
+                    MmSfx_PlayGoronRollWithFloor(&player->actor.projectedPos,
+                                                 gFormState.rollBallSpeed, floorOff);
+                }
             }
-        }
-        // Defensive: stop any CHG_ROLL loops if they're still playing from a prior path.
-        if (MmSfx_IsAvailable() && gFormState.rollSpikeActive > 0) {
-            MmSfx_Stop(MM_NA_SE_PL_GORON_CHG_ROLL);
-            MmSfx_Stop(MM_NA_SE_PL_GORON_CHG_ROLL_ICE);
         }
 
         // Dust + slip SFX (from 2Ship func_808576BC VERBATIM, line 19331-19351)
@@ -7682,11 +7670,7 @@ static void MmForm_Action_DekuSpin(Player* player, PlayState* play) {
         gFormState.dekuSpinActive = 0;
 
         // Stop the white sword trail (Deku spin uses ONE slot — HAT limb).
-        if (gFormState.punchTrailActive) {
-            Effect_Delete(play, gFormState.punchTrailEffectIndex);
-            gFormState.punchTrailActive = 0;
-            gFormState.punchTrailEffectIndex = -1;
-        }
+        MmForm_KillTrail(play, &gFormState.punchTrailEffectIndex, &gFormState.punchTrailActive);
 
         // Restore collider
         MmForm_ClearRollAttack(player);
@@ -11028,6 +11012,15 @@ static void MmForm_UpdateActive(Player* player, PlayState* play) {
     // other MM forms (no sword-grip anims; Garo uses bare-hand poses).
     if (gFormState.currentForm == MM_PLAYER_FORM_GARO) {
         player->modelAnimType = PLAYER_ANIMTYPE_0;
+        // v10.3: Garo OWNS its combat. Null out Link's sword + shield so
+        // OOT's actionFunc doesn't try to draw a weapon mid-form (the
+        // form's own quads via meleeWeaponQuads[0] are independent of
+        // heldItemAction). User spec: "ignorar la sword y todo el
+        // equipment" — form damage values are constant, not modulated
+        // by Link's equipped class.
+        player->heldItemAction = PLAYER_IA_NONE;
+        player->itemAction     = PLAYER_IA_NONE;
+        player->currentShield  = PLAYER_SHIELD_NONE;
         GaroForm_Update(play, player);
 
         // v9 design call: Garo keeps vanilla movement (run 1.0x, jump 1.0x).
@@ -13321,7 +13314,9 @@ extern "C" Vec3f sGetItemRefPos;
 // Mirrors OOT's D_80160000 system (z_player_lib.c:1340) which fills bodyPartsPos
 // sequentially during skeleton traversal. We use an explicit table instead.
 // -1 = no bodypart mapping (ROOT, LOWER, UPPER have no visible geometry).
-static const s8 sLimbToBodyPart[PLAYER_LIMB_MAX] = {
+// External linkage (declared in transformation_masks.h) so garo_post_limb.cpp
+// shares this one definition instead of keeping a byte-for-byte copy.
+extern "C" const s8 gPlayerLimbToBodyPart[PLAYER_LIMB_MAX] = {
     -1,                         // 0x00 PLAYER_LIMB_NONE
     -1,                         // 0x01 PLAYER_LIMB_ROOT
     PLAYER_BODYPART_WAIST,      // 0x02 PLAYER_LIMB_WAIST
@@ -13346,6 +13341,18 @@ static const s8 sLimbToBodyPart[PLAYER_LIMB_MAX] = {
     PLAYER_BODYPART_TORSO,      // 0x15 PLAYER_LIMB_TORSO
 };
 
+// Kill a punch/sword trail EffectBlure slot. Delete the effect if active, then
+// clear the active flag and reset the index to -1. No-op when already inactive.
+// Consolidates the trail-cleanup boilerplate repeated across the form action
+// handlers (and garo_form.cpp). Declared in transformation_masks.h.
+extern "C" void MmForm_KillTrail(PlayState* play, s32* effectIndex, u8* active) {
+    if (*active) {
+        Effect_Delete(play, *effectIndex);
+        *active = 0;
+        *effectIndex = -1;
+    }
+}
+
 static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* rot, void* thisx) {
     Player* player = (Player*)thisx;
     Vec3f zeroVec = { 0.0f, 0.0f, 0.0f };
@@ -13355,7 +13362,7 @@ static void MmForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec
     // OOT systems that use bodyPartsPos: cylinder height calculation (z_player.c:12391),
     // fire/ice body effects (z_effect_soft_sprite_old_init.c), water splashes, etc.
     if (limbIndex > 0 && limbIndex < PLAYER_LIMB_MAX) {
-        s8 bodyPart = sLimbToBodyPart[limbIndex];
+        s8 bodyPart = gPlayerLimbToBodyPart[limbIndex];
         if (bodyPart >= 0) {
             Matrix_MultVec3f(&zeroVec, &player->bodyPartsPos[bodyPart]);
         }
@@ -14173,7 +14180,6 @@ static u8 MmForm_SoftReload(PlayState* play, Player* player, MmPlayerTransformat
     gFormState.punchTrailEffectIndex = -1;
     gFormState.punchTrailActiveR = 0;
     gFormState.punchTrailEffectIndexR = -1;
-    gFormState.punchTrailEffectIndex = -1;
     gFormState.boomerangState = 0;
     gFormState.boomerangActorL = NULL;
     gFormState.boomerangActorR = NULL;
@@ -14182,6 +14188,18 @@ static u8 MmForm_SoftReload(PlayState* play, Player* player, MmPlayerTransformat
     gFormState.gakkiPlayAnim = NULL;
     gFormState.formDLsPinned = 0;
     gFormState.skeletonLoaded = 0;
+
+    // 2b. NULL the form skel tables BEFORE LoadFormSkeleton runs. They were
+    //     allocated from the OLD scene's Zelda arena, which was wiped on scene
+    //     unload — the pointers are dangling. LoadFormSkeleton's "free old +
+    //     reallocate" pattern (added for the in-scene re-transform arena leak)
+    //     assumes the previous alloc is still in a live arena; calling
+    //     ZELDA_ARENA_FREE on a dangling pointer double-frees and crashes the
+    //     first time we render after void-out / scene change. The actual
+    //     memory was already reclaimed by the arena reset — clear the
+    //     pointers so SkelAnime_InitLink just mallocs fresh.
+    gFormState.formSkelAnime.jointTable = NULL;
+    gFormState.formSkelAnime.morphTable = NULL;
 
     // 3. Yield to OOT's start mode action (walk-in, door, grotto, etc.).
     //    OOT's Player_StartMode_* already configured the player action and animation.
@@ -14817,6 +14835,9 @@ u8 MmForm_OnWaterSwimAttempt(PlayState* play, Player* player) {
         } else if (!(player->stateFlags1 & PLAYER_STATE1_GETTING_ITEM)) {
             // No hops left → void out (defer if getting item)
             if (gFormState.goronAction != MMFORM_ACT_WATER_VOID && gFormState.goronAction != MMFORM_ACT_HAZARD_VOID) {
+                // MM plays the "failed jump" cue when Deku runs out of water hops
+                // (z_player.c:9135/14686 — NA_SE_SY_DEKUNUTS_JUMP_FAILED).
+                MmSfx_PlayAtPos(MM_NA_SE_SY_DEKUNUTS_JUMP_FAILED, &player->actor.projectedPos);
                 gFormState.goronAction = MMFORM_ACT_WATER_VOID;
                 gFormState.actionTimer = 0;
                 gFormState.rollGroundPoundTimer = 0;
@@ -15141,6 +15162,14 @@ static void MmForm_FDSkinSpeedBoost(Player* player, PlayState* play) {
                                             16);
         }
     }
+}
+
+// Audio-thread query: is the game on the pause/kaleido screen? Used by the MM
+// audio mixer to silence MM SFX while paused (they don't belong to a seq player
+// SoH already pauses). Reading gPlayState from the audio thread is a benign race
+// (pointer + int). state != PAUSE_STATE_OFF(0) means a pause screen is up.
+extern "C" int MmSfx_IsGamePaused(void) {
+    return (gPlayState != NULL && gPlayState->pauseCtx.state != 0) ? 1 : 0;
 }
 
 void MmForm_Update(PlayState* play, Player* player) {
@@ -15771,8 +15800,17 @@ void MmForm_Draw(PlayState* play, Player* player) {
             }
 
             if (willCopyOoT) {
+                // The form jointTable was allocated by SkelAnime_InitLink for exactly
+                // formSkelAnime.limbCount entries (typically 22 for the Link rig), NOT
+                // PLAYER_LIMB_BUF_COUNT (24). Copying 24 overran the smaller dynamically
+                // allocated form table by 10 bytes EVERY frame -> heap corruption. Clamp
+                // to the form table size, and never read past the OOT source table.
+                s32 copyCount = gFormState.formSkelAnime.limbCount;
+                if (copyCount > PLAYER_LIMB_BUF_COUNT) {
+                    copyCount = PLAYER_LIMB_BUF_COUNT;
+                }
                 memcpy(gFormState.formSkelAnime.jointTable, player->skelAnime.jointTable,
-                       sizeof(Vec3s) * PLAYER_LIMB_BUF_COUNT);
+                       sizeof(Vec3s) * copyCount);
             }
 
             // Draw the MM form skeleton (with OOT or form-specific joints)

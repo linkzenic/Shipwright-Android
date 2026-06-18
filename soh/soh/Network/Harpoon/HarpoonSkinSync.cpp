@@ -33,6 +33,7 @@ extern "C" {
 #include <map>
 #include <memory>
 #include <set>
+#include <system_error>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -517,7 +518,7 @@ static bool LoadO2rOverride(const std::filesystem::path& o2rPath, O2rOverride& o
     auto allFiles = archive->ListFiles();
     if (!allFiles) return false;
 
-    auto resourceManager = Ship::Context::GetInstance()->GetResourceManager();
+    auto resourceManager = Ship::Context::GetRawInstance()->GetResourceManager();
     if (!resourceManager) return false;
     auto loader = resourceManager->GetResourceLoader();
     if (!loader) return false;
@@ -1134,6 +1135,16 @@ static Gfx* PatchDLForLocalArchive(Gfx* originalDL, size_t maxCmdCount, PatchCon
                 if (!vtxRes) break;
                 void* vtxBaseRaw = vres->GetRawPointer();
                 if (!vtxBaseRaw) break;
+                // SECURITY: vtxDataOff/vtxCnt come from an attacker-controllable
+                // downloaded skin .o2r. Reject any range that would read past the
+                // vertex resource — otherwise Fast3D performs an OOB GPU read.
+                // Leave the original command untouched so the DL stays valid.
+                size_t maxVtx = vres->GetPointerSize() / sizeof(Vtx);
+                if ((size_t)vtxDataOff + (size_t)vtxCnt > maxVtx) {
+                    HSS_LOG("Rejecting out-of-bounds G_VTX (filepath '%s'): off=%u cnt=%u max=%zu",
+                            pathKey.c_str(), vtxDataOff, vtxCnt, maxVtx);
+                    break;
+                }
                 uintptr_t vtxAddr = (uintptr_t)vtxBaseRaw + (uintptr_t)vtxDataOff * sizeof(Vtx);
                 cmd.words.w0 = ((uint32_t)G_VTX << 24)
                              | ((vtxCnt & 0xFFu) << 12)
@@ -1164,6 +1175,18 @@ static Gfx* PatchDLForLocalArchive(Gfx* originalDL, size_t maxCmdCount, PatchCon
                 if (!vtxRes) break;
                 void* vtxPtr = vres->GetRawPointer();
                 if (!vtxPtr) break;
+                // SECURITY: the vertex count is already encoded in the existing
+                // w0 (F3DEX2 G_VTX: bits 12-19 = n). w1 is rewritten to the
+                // resource base at index 0, so Fast3D reads vertices 0..n-1. A
+                // crafted skin .o2r could claim more vertices than the resource
+                // holds → OOB GPU read. Reject and leave the command untouched.
+                uint32_t hashVtxCnt = (uint32_t)((cmd.words.w0 >> 12) & 0xFFu);
+                size_t maxVtx = vres->GetPointerSize() / sizeof(Vtx);
+                if ((size_t)hashVtxCnt > maxVtx) {
+                    HSS_LOG("Rejecting out-of-bounds G_VTX (hash): cnt=%u max=%zu",
+                            hashVtxCnt, maxVtx);
+                    break;
+                }
                 cmd.words.w0 = (cmd.words.w0 & 0x00FFFFFFu) | ((uint32_t)G_VTX << 24);
                 cmd.words.w1 = (uintptr_t)vtxPtr;
                 dataCmd.words.w0 = (uint32_t)G_NOOP << 24;
@@ -1239,7 +1262,7 @@ static void CacheVanillaFromArchive(const std::string& archivePath) {
     auto allFiles = archive->ListFiles();
     if (!allFiles) return;
 
-    auto resourceManager = Ship::Context::GetInstance()->GetResourceManager();
+    auto resourceManager = Ship::Context::GetRawInstance()->GetResourceManager();
     if (!resourceManager) return;
     auto loader = resourceManager->GetResourceLoader();
     if (!loader) return;
@@ -1419,7 +1442,7 @@ static bool ExtractVanillaSkeletonFromArchive(Ship::Archive* archive, const std:
                                               std::shared_ptr<Ship::IResource>& outHolder,
                                               void**& outLimbTable, int& outDListCount) {
     if (!archive) return false;
-    auto resourceManager = Ship::Context::GetInstance()->GetResourceManager();
+    auto resourceManager = Ship::Context::GetRawInstance()->GetResourceManager();
     if (!resourceManager) return false;
     auto loader = resourceManager->GetResourceLoader();
     if (!loader) return false;
@@ -1672,11 +1695,44 @@ void InitO2rOverrides() {
     HSS_LOG("Scanning '%s' for .o2r/.otr overrides", syncPath.string().c_str());
 
     std::vector<std::filesystem::path> o2rFiles;
-    for (auto& entry : std::filesystem::recursive_directory_iterator(syncPath)) {
-        if (entry.is_directory()) continue;
-        std::string ext = entry.path().extension().string();
-        for (char& c : ext) c = (char)tolower((unsigned char)c);
-        if (ext == ".o2r" || ext == ".otr") o2rFiles.push_back(entry.path());
+    // This runs inside Harpoon::OnConnected() the instant a player joins. A
+    // symlink cycle, an unreadable subdir, or a file deleted mid-scan makes the
+    // throwing recursive_directory_iterator raise filesystem_error, which would
+    // escape the network callback and std::terminate the whole game. Use the
+    // non-throwing (error_code) overload AND wrap the body so any failure logs
+    // and degrades to an empty/partial registry instead of crashing.
+    {
+        std::error_code ec;
+        std::filesystem::recursive_directory_iterator it(
+            syncPath, std::filesystem::directory_options::skip_permission_denied, ec);
+        if (ec) {
+            HSS_LOG("Failed to open '%s' for scanning (%s); override registry empty",
+                    syncPath.string().c_str(), ec.message().c_str());
+        } else {
+            const std::filesystem::recursive_directory_iterator end;
+            for (; it != end; it.increment(ec)) {
+                if (ec) {
+                    // Could not advance (e.g. symlink cycle / vanished dir).
+                    // Stop walking but keep whatever we already collected.
+                    HSS_LOG("Stopped scanning '%s' early: %s",
+                            syncPath.string().c_str(), ec.message().c_str());
+                    break;
+                }
+                try {
+                    const auto& entry = *it;
+                    std::error_code isDirEc;
+                    if (entry.is_directory(isDirEc) || isDirEc) continue;
+                    std::string ext = entry.path().extension().string();
+                    for (char& c : ext) c = (char)tolower((unsigned char)c);
+                    if (ext == ".o2r" || ext == ".otr") o2rFiles.push_back(entry.path());
+                } catch (const std::exception& e) {
+                    // Defensive: any per-entry failure must not kill the join.
+                    HSS_LOG("Skipping unreadable entry under '%s': %s",
+                            syncPath.string().c_str(), e.what());
+                    continue;
+                }
+            }
+        }
     }
     HSS_LOG("Found %d archive files (.o2r/.otr)", (int)o2rFiles.size());
 

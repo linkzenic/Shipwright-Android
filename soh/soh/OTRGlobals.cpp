@@ -1208,6 +1208,19 @@ void OTRAudio_Init() {
     }
 }
 
+// Accessors so other translation units can lock the SAME audio.mutex the audio
+// thread holds during mixing (audio is file-static in OTRAudio.h, so each TU that
+// includes the header gets its own instance — only THIS TU owns the real one used
+// by OTRAudio_Thread). Used by the MM SFX game-thread mutators to serialize with
+// the mixer's AudioMmSfx_ProcessRequests/ProcessActiveSfx + MmDirectAudio reads.
+extern "C" void OTRAudio_LockMutex(void) {
+    audio.mutex.lock();
+}
+
+extern "C" void OTRAudio_UnlockMutex(void) {
+    audio.mutex.unlock();
+}
+
 // C->C++ Bridge
 extern "C" char** sequenceMap;
 extern "C" size_t sequenceMapSize;

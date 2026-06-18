@@ -52,6 +52,7 @@ extern u8 MmForm_IsPikachuActive(void);
 extern u8 MmForm_IsItemAllowed(s32 item);
 extern u8 MmForm_IsSlotAllowed(u8 slot);
 extern MmPlayerTransformation MmForm_GetCurrentForm(void);
+extern u8 MmForm_IsGoronRolling(void);
 extern u8 MmForm_OnWaterSwimAttempt(PlayState* play, Player* player);
 extern TransformMaskId MmForm_GetMaskType(s32 item);
 extern void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item);
@@ -80,6 +81,9 @@ extern void MmMaskWear_DeactivateChateauRomani(void);
 // Activated via O2rLoader_ForceModel("garo"); independent of MmForm.
 extern void GaroForm_Update(PlayState* play, Player* player);
 extern void GaroForm_DrawProjectiles(PlayState* play);
+// True when Link has a non-grab contextual A action pending (speak/open/etc.);
+// FilterB uses it to decide whether to strip A for the Garo moveset.
+extern u8 GaroForm_VanillaWantsAButton(Player* player);
 
 // gerudo_form.cpp combat state machine (slash combo + block-mirror).
 // Internal IsActive check makes this a no-op when Gerudo Form isn't the
@@ -229,6 +233,12 @@ u8 TransformMasks_TryPlayMmStepSfx(u16 ootStepSfxId, Vec3f* pos) {
     //   Zora   = 0x120 (mm z_player.c:992)
     //   Deku   = 0xF0  (mm z_player.c:1088)
     //   Human  = 0     (mm z_player.c:1184 — no offset, use OOT path)
+    // Goron ball-roll / ground-pound emits its own rolling SFX — no footsteps.
+    // Return "handled" so the caller skips OOT's step too (total silence).
+    if (MmForm_IsGoronRolling()) {
+        return 1;
+    }
+
     u16 mmOffset = 0;
     switch (MmForm_GetCurrentForm()) {
         case MM_PLAYER_FORM_FIERCE_DEITY: mmOffset = 0x80;  break;
@@ -284,31 +294,26 @@ void TransformMasks_FilterB(Input* input) {
         return;
     }
 
-    // Garo: B is reserved for the Garo combat moveset (Goron-style 3-slash
-    // combo + rod-mode aim on hold). A is conditionally reserved for Garo
-    // dash so it replaces Link's vanilla roll WITHOUT also clobbering
-    // sidehop / backflip — same model as Goron's A-roll, which only fires
-    // from idle / forward run and lets backwards or sideways A go through
-    // to vanilla evade actions.
+    // Garo: B is always reserved for the Garo combat moveset (3-slash combo +
+    // rod aim). A is reserved EXCEPT when Link has a non-grab contextual
+    // action pending (speak / read / open / enter / climb / mount) — then A
+    // passes through to vanilla so the player can still interact with the
+    // world. Grab is NOT a pass-through: Garo can't lift objects, and since
+    // the grab handler reads this same filtered input (sControlInput == sp44),
+    // stripping A here also suppresses the grab cleanly.
     //
-    //   Stick forward or neutral  → strip A (Garo dash takes over)
-    //   Stick pulled back         → let A through (vanilla backflip)
-    //   Stick strongly to a side  → let A through (vanilla sidehop)
-    //
-    // GaroForm_Update reads raw play->state.input[0] so the dash trigger
-    // there mirrors this same stick check before firing — keeps the two
-    // sides in sync. C-button items live on C and are unaffected.
+    // GaroForm_Update reads the raw play->state.input[0] (not this sp44 copy)
+    // so its A dispatcher still sees the press when we strip it here; it gates
+    // on the SAME predicate so it doesn't double-fire while vanilla owns A.
     if (MmForm_GetCurrentForm() == MM_PLAYER_FORM_GARO) {
-        // v10: Garo OWNS B and A entirely. The new IDLE dispatcher handles
-        // every A-press case (dash / shadow ball / sidehop / backflip /
-        // jump-attack / air-slash) with Garo-native anims; vanilla Link
-        // backflip/sidehop must NOT fire in parallel — they would race the
-        // form's anim driver and we'd see Link's vanilla anim playing
-        // instead of garo_jumpBack / garo_bounce. GaroForm_Update reads
-        // raw play->state.input[0] (not this sp44 copy) so its dispatcher
-        // still sees the press; only Link's actionFunc sees A=0.
-        input->cur.button   &= ~(BTN_B | BTN_A);
-        input->press.button &= ~(BTN_B | BTN_A);
+        input->cur.button   &= ~BTN_B;
+        input->press.button &= ~BTN_B;
+
+        Player* p = (gPlayState != NULL) ? GET_PLAYER(gPlayState) : NULL;
+        if (!GaroForm_VanillaWantsAButton(p)) {
+            input->cur.button   &= ~BTN_A;
+            input->press.button &= ~BTN_A;
+        }
     }
 
     // Gerudo Form: by default every action falls back to OoT vanilla — the only
@@ -633,6 +638,12 @@ f32 BossSuperDamage_FormAttackRange(PlayState* play) {
     player = GET_PLAYER(play);
     if (player == NULL) {
         return 0.0f;
+    }
+
+    // Fire Flower: while a fireball is in flight, give the long ranged reach so the
+    // "one attack breaks everything when close" bosses also fall to the fire.
+    if (Sm64Mario_FireballActive()) {
+        return BSD_REACH_RANGED;
     }
 
     // Pikachu Gigantamax: only while an attack action is live. Thunder = ranged.

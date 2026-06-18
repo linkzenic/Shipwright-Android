@@ -17,11 +17,11 @@
  *   - GerudoForm_GetTunicColor helper used by the hybrid render to recolor
  *     the gerudo outfit with Link's current tunic.
  *
- * The skeleton swap, null-body PostLimbDraw, and gerudo body draw are
- * handled by:
- *   - O2rLoader_SwapSkeleton / O2rLoader_RestoreSkeleton  (o2r_loader.cpp)
- *   - GerudoForm_DrawNullBody                              (gerudo_post_limb.cpp)
- *   - GerudoHybrid_Update / GerudoHybrid_Draw              (gerudo_hybrid_render.cpp)
+ * The gerudo look is a pure path-swap on Link's own draw — no separate
+ * skeleton, null-body pass, or gerudo SkelAnime. While the "gerudo" model is
+ * forced, GerudoForm_OverrideLimbDraw (gerudo_hybrid_render.cpp) rewrites the
+ * DL strings Player_DrawImpl emits from `objects/object_link_boy/...` to the
+ * gerudo .o2r's `objects/gerudoPlayer/object_link_boy/...` twins.
  *
  * Replaces the older skin-pack approach (alt/-pathed Link skeleton + idle
  * pose override on a sFormSkelAnime). That approach is now retired.
@@ -228,10 +228,11 @@ extern "C" u8 GerudoForm_IsActive(void) {
     return (cur != nullptr && std::strcmp(cur, "gerudo") == 0) ? 1 : 0;
 }
 
-// No-op now — the previous architecture used GerudoHybrid_Update/Draw to
-// render the gerudo body through a separate skel. Current pipeline uses a
-// Link-rigged gerudo skin so Player_DrawImpl handles everything. Kept so
-// z_player.c's older callsite (if any survives) still links cleanly.
+// No-op now — an earlier architecture rendered the gerudo body through a
+// separate skel/SkelAnime. Current pipeline uses a Link-rigged gerudo skin
+// (DL path-swap in GerudoForm_OverrideLimbDraw) so Player_DrawImpl handles
+// everything. Kept so z_player.c's older callsite (if any survives) still
+// links cleanly.
 extern "C" s32 GerudoForm_TryDrawSmoothSkin(PlayState* play, Player* player) {
     (void)play;
     (void)player;

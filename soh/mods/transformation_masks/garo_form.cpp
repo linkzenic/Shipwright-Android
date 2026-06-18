@@ -52,6 +52,17 @@
 #define BGCHECKFLAG_GROUND 0x0001
 #endif
 
+// OPEN_DISPS / CLOSE_DISPS (macros.h) declare these frame-interpolation hooks
+// INLINE inside the macro body. In a C++ TU, that block-scope declaration
+// gets C++ linkage UNLESS a prior extern "C" declaration is visible — which
+// matters for our `static` C++ draw helpers (e.g. GaroForm_DrawOneOrb) that
+// use OPEN_DISPS but aren't themselves `extern "C"`. Without this, the inline
+// decl mangles to a C++ symbol that doesn't match frame_interpolation.cpp's
+// extern "C" definition → LNK2001. File-scope extern "C" here makes every
+// OPEN_DISPS in this TU bind to the correct C-linkage symbol.
+extern "C" void FrameInterpolation_RecordOpenChild(const void* a, int b);
+extern "C" void FrameInterpolation_RecordCloseChild(void);
+
 // ============================================================================
 // Attack tuning
 // ============================================================================
@@ -167,9 +178,9 @@
 #define GARO_SWORD_DL_PATH      "__OTR__objects/object_jso/gGaroLeftSwordDL"
 
 // v10 A-button damage values
-#define GARO_SHADOW_BALL_DAMAGE 6   // appearDrawSwords frame-20 strike, master sword
-#define GARO_JUMP_ATTACK_DAMAGE 4   // Z+A+forward leap, mid-flight quad
-#define GARO_LAND_STRIKE_DAMAGE 8   // post-AIR_SLASH landing quad (frame 12+)
+#define GARO_SHADOW_BALL_DAMAGE 8   // appearDrawSwords frame-20 strike (master, equipment-independent)
+#define GARO_JUMP_ATTACK_DAMAGE 4   // Z+A+forward leap, mid-flight quad (unused — chain auto-routes to LAND_STRIKE)
+#define GARO_LAND_STRIKE_DAMAGE 8   // post-AIR_SLASH landing quad (frame 12+, equipment-independent)
 #define GARO_SHADOW_BALL_HIT_F  20  // elapsed frame at which SB quad fires
 #define GARO_LAND_STRIKE_HIT_F  12  // elapsed frame at which land-strike quad fires
 #define GARO_LAND_STRIKE_TAIL_F 3   // extra frames quad stays live after anim end
@@ -418,11 +429,7 @@ static LinkAnimationHeader* GaroForm_LoadAnim(const char* path) {
 // ============================================================================
 static void GaroAttack_SpawnTrail(PlayState* play) {
     // Kill any stale trail first — guards against re-entry without proper cleanup.
-    if (sGaroAttack.trailActive) {
-        Effect_Delete(play, sGaroAttack.trailEffectIndex);
-        sGaroAttack.trailActive = 0;
-        sGaroAttack.trailEffectIndex = -1;
-    }
+    MmForm_KillTrail(play, &sGaroAttack.trailEffectIndex, &sGaroAttack.trailActive);
 
     // Garo palette: dark violet → near-black fade. Distinct from Zora cyan.
     EffectBlureInit1 blure = {};
@@ -442,10 +449,7 @@ static void GaroAttack_SpawnTrail(PlayState* play) {
 }
 
 static void GaroAttack_KillTrail(PlayState* play) {
-    if (!sGaroAttack.trailActive) return;
-    Effect_Delete(play, sGaroAttack.trailEffectIndex);
-    sGaroAttack.trailActive = 0;
-    sGaroAttack.trailEffectIndex = -1;
+    MmForm_KillTrail(play, &sGaroAttack.trailEffectIndex, &sGaroAttack.trailActive);
 }
 
 // Public accessors so garo_post_limb.cpp can read trail state + feed vertices.
@@ -600,6 +604,26 @@ extern "C" void GaroForm_SetPrevJumping(u8 v) {
     sGaroAttack.prevJumping = v;
 }
 
+// v10.4: true when Link currently has a NON-GRAB contextual A action pending
+// (speak / check / read sign / open door / enter / climb / mount). Garo lets
+// A through to vanilla in these cases so the player can still interact with
+// the world; otherwise A is owned by the Garo moveset (dash / hops / shadow
+// ball / jump-attack). GRAB is deliberately excluded — Garo can't lift
+// objects, so a grabbable in range does NOT count as "vanilla wants A", and
+// the A-strip in TransformMasks_FilterB suppresses the grab handler (which
+// reads the same filtered input, sControlInput == the stripped sp44 copy).
+// Called from both FilterB (pre-UpdateCommon, 1-frame-stale fields — fine for
+// a "is an NPC/door in front of me" heuristic) and GaroForm_Update.
+extern "C" u8 GaroForm_VanillaWantsAButton(Player* player) {
+    if (player == NULL) return 0;
+    if (player->doorType != PLAYER_DOORTYPE_NONE) return 1;             // open / enter door
+    if ((player->stateFlags2 & PLAYER_STATE2_CAN_ACCEPT_TALK_OFFER) &&
+        (player->talkActor != NULL)) return 1;                          // speak / check / read
+    if (player->stateFlags2 & PLAYER_STATE2_DO_ACTION_CLIMB) return 1;  // climb wall / vine
+    if (player->stateFlags2 & PLAYER_STATE2_DO_ACTION_ENTER) return 1;  // enter crawlspace / transition
+    return 0;
+}
+
 // Forward decl: query MmForm's current active form. Allows the Garo skin draw
 // to fire when Garo is active as a proper MmForm transformation (not only via
 // the legacy O2rLoader skin-swap path).
@@ -736,10 +760,11 @@ static void GaroAttack_EnableSpinQuad(Player* player, PlayState* play) {
     Collider_SetQuadVertices(quad, &a, &b, &c, &d);
 
     quad->base.atFlags = AT_ON | AT_TYPE_PLAYER;
-    // v10: vanilla pattern is DMG_SLASH_MASTER (0x200) for spin/jump-attack
-    // and (0x100) for normal swings. Spin variant uses the jump-attack bit
-    // so enemies that filter on that bit (Iron Knuckle, etc.) accept it.
-    quad->info.toucher.dmgFlags = DMG_SLASH_MASTER | 0x00000100;
+    // v10: DMG_SLASH_MASTER keeps the AT/AC vulnerability match working
+    // (enemies are vulnerable to master sword). DMG_FIXED_DAMAGE makes the
+    // collision system use toucher.damage verbatim — constant damage
+    // regardless of enemy table or equipped sword class (v10.3 fix).
+    quad->info.toucher.dmgFlags = DMG_SLASH_MASTER | DMG_FIXED_DAMAGE;
     quad->info.toucher.damage = GARO_SPIN_DAMAGE;
     quad->info.toucherFlags = TOUCH_ON | TOUCH_NEAREST;
 
@@ -749,6 +774,14 @@ static void GaroAttack_EnableSpinQuad(Player* player, PlayState* play) {
 static void GaroAttack_DisableSpinQuad(Player* player) {
     player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
 }
+
+// NOTE (v10.3): the old GaroAttack_ApplyAOEDirectDamage helper was removed.
+// It set colChkInfo.health directly via Actor_ApplyDamage, which silently
+// dropped HP WITHOUT triggering an enemy's AC-gated death/reaction routine —
+// so enemies like Wolfos sat at 0 HP and only "died" when a later real
+// sword hit set their AC_HIT flag (the bug: damage appeared sword-dependent).
+// All Garo strikes now route through real AT quads (AC pipeline) carrying
+// DMG_FIXED_DAMAGE for constant, equipment-independent damage.
 
 // v10.1 cylinder-style AOE quad for the landing strike. Symmetric around
 // Garo's position (not forward-extending) so enemies in ANY direction
@@ -778,7 +811,7 @@ static void GaroAttack_EnableLandStrikeQuad(Player* player, PlayState* play) {
     Collider_SetQuadVertices(quad, &a, &b, &c, &d);
 
     quad->base.atFlags = AT_ON | AT_TYPE_PLAYER;
-    quad->info.toucher.dmgFlags = DMG_SLASH_MASTER | 0x00000100 | 0x00000200;
+    quad->info.toucher.dmgFlags = DMG_SLASH_MASTER | DMG_FIXED_DAMAGE;
     quad->info.toucher.damage = GARO_LAND_STRIKE_DAMAGE;
     quad->info.toucherFlags = TOUCH_ON | TOUCH_NEAREST;
 
@@ -824,12 +857,13 @@ static void GaroAttack_EnableSwingQuad(Player* player, PlayState* play) {
     Collider_SetQuadVertices(quad, &a, &b, &c, &d);
 
     quad->base.atFlags = AT_ON | AT_TYPE_PLAYER;
-    // v10: vanilla dmgFlags pattern. Bit 0x100 matches Link's 1H sword
-    // (D_80854488 table); ORing it onto DMG_SLASH_MASTER means restrictive
-    // enemy AC masks that check either bit accept Garo's hits identically
-    // to Link's. Damage value is overwritten per-state by the caller
-    // (combo=2, parry=4, banish=4, shadow_ball=6, land_strike=8, etc.).
-    quad->info.toucher.dmgFlags = DMG_SLASH_MASTER | 0x00000100;
+    // v10.3: DMG_SLASH_MASTER keeps the AT/AC vulnerability match (enemies
+    // are vulnerable to master sword). DMG_FIXED_DAMAGE makes the collision
+    // system use toucher.damage verbatim — CONSTANT damage independent of
+    // the enemy damage table AND of Link's equipped sword class. Damage value
+    // is overwritten per-state by the caller (combo=2, parry=4, banish=4,
+    // shadow_ball=8, land_strike=8, dash=4, etc.).
+    quad->info.toucher.dmgFlags = DMG_SLASH_MASTER | DMG_FIXED_DAMAGE;
     quad->info.toucher.damage = GARO_SWING_DAMAGE;
     quad->info.toucherFlags = TOUCH_ON | TOUCH_NEAREST;
 
@@ -1068,58 +1102,93 @@ static void GaroAttack_UpdateSwords(PlayState* play) {
     }
 }
 
-// Rod-orb tint colors per element. Indexed by GaroSword.rodElement.
-// 0=normal (white) 1=fire (red) 2=ice (cyan) 3=light (gold).
-static const u8 sRodOrbColors[4][3] = {
-    { 255, 255, 255 }, // normal
-    { 255, 128,  48 }, // fire
-    { 128, 224, 255 }, // ice
-    { 255, 224,  64 }, // light
+// v10.5 magic charge-ball visual. Uses the OOT-native "light orb" DLs
+// (ovl_Boss_Ganon2) — the same glowing-sphere material+model the boss
+// super-damage FHG flash already renders, so they're guaranteed present
+// (no mm.o2r dependency) and proven in this TU. Passed to gSPDisplayList
+// as OTR path strings cast to Gfx*; SoH resolves them by DL signature.
+//   - Material DL: binds the I8 glow texture + (PRIM-ENV)*TEXEL+ENV combiner
+//     + soft additive render mode. PRIM = bright core, ENV = surrounding glow.
+//   - Model DL: a ~14-unit centered billboard quad.
+#define GARO_ORB_MATERIAL_DL "__OTR__overlays/ovl_Boss_Ganon2/gGanonLightOrbMaterialDL"
+#define GARO_ORB_MODEL_DL    "__OTR__overlays/ovl_Boss_Ganon2/gGanonLightOrbModelDL"
+
+// Per-element {R,G,B}. prim = bright core, env = surrounding glow. Indexed by
+// GaroSword.rodElement / sGaroAttack.rodElement (0=normal 1=fire 2=ice 3=light).
+static const u8 sRodOrbPrim[4][3] = {
+    { 220, 230, 255 }, // normal — pale blue-white core
+    { 255, 240, 170 }, // fire   — warm white core
+    { 220, 245, 255 }, // ice    — cold white core
+    { 255, 245, 190 }, // light  — gold-white core
 };
+static const u8 sRodOrbEnv[4][3] = {
+    { 110, 140, 255 }, // normal — blue glow
+    { 255,  80,  20 }, // fire   — orange-red glow
+    {  70, 190, 255 }, // ice    — cyan glow
+    { 255, 205,  50 }, // light  — gold glow
+};
+
+// Draw one billboarded, element-tinted light orb at `pos` with `scale`.
+// Self-contained OPEN_DISPS — the GBI display-list macros (POLY_XLU_DISP →
+// __gfxCtx->polyXlu.p) need the __gfxCtx local that OPEN_DISPS declares, and
+// this is a standalone function (not inside the caller's OPEN_DISPS scope).
+// MUST NOT be called from inside another OPEN_DISPS block (no nesting).
+static void GaroForm_DrawOneOrb(PlayState* play, Vec3f pos, f32 scale, u8 element) {
+    u8 e = element & 0x3;
+    OPEN_DISPS(play->state.gfxCtx);
+    Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, sRodOrbPrim[e][0], sRodOrbPrim[e][1], sRodOrbPrim[e][2], 255);
+    gDPSetEnvColor(POLY_XLU_DISP++, sRodOrbEnv[e][0], sRodOrbEnv[e][1], sRodOrbEnv[e][2], 0);
+    gSPDisplayList(POLY_XLU_DISP++, (Gfx*)GARO_ORB_MATERIAL_DL);
+    Matrix_Translate(pos.x, pos.y, pos.z, MTXMODE_NEW);
+    Matrix_ReplaceRotation(&play->billboardMtxF);
+    Matrix_Scale(scale, scale, scale, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
+              G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, (Gfx*)GARO_ORB_MODEL_DL);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
 
 extern "C" void GaroForm_DrawProjectiles(PlayState* play) {
     if (!GaroForm_IsActive()) return;
+    Player* player = GET_PLAYER(play);
 
-    // Cache lookup of the sword DL. Refreshed every frame since the resource
-    // manager owns the lifetime of the underlying Gfx*.
+    // ── v10.5 charge ball — grows in Garo's hand while charging (ROD_AIM) ──
+    // Scale ramps 1.5 (no charge) → 4.5 (full); model quad ~14u → ~21..63u.
+    // A gentle sine pulse makes it "breathe." Tinted by the selected element.
+    // Each orb draw is self-contained (own OPEN_DISPS) so we call them
+    // OUTSIDE the knife OPEN_DISPS block below — no nesting.
+    if (sGaroAttack.state == GARO_ROD_AIM) {
+        Vec3f hand = GaroAttack_HandOrigin(player);
+        f32 t = (f32)sGaroAttack.rodChargeTimer / (f32)GARO_ROD_CHARGE_MAX;
+        if (t > 1.0f) t = 1.0f;
+        f32 scale = (1.5f + t * 3.0f) * (1.0f + 0.08f * Math_SinS(play->gameplayFrames * 0x1000));
+        GaroForm_DrawOneOrb(play, hand, scale, sGaroAttack.rodElement);
+    }
+
+    // Fired rod orbs: billboarded light orb, element-tinted, size by charge
+    // tier (a fully-charged shot fires a visibly bigger orb).
+    for (s32 i = 0; i < GARO_SWORD_MAX_ACTIVE; i++) {
+        GaroSword* sw = &sGaroAttack.swords[i];
+        if (sw->active && sw->kind == GARO_PROJ_ROD_ORB) {
+            f32 scale = 1.8f + (f32)sw->rodDamage * 0.7f;  // dmg1→2.5, dmg4→4.6
+            GaroForm_DrawOneOrb(play, sw->pos, scale, sw->rodElement);
+        }
+    }
+
+    // Knives: OPA sword mesh oriented along travel yaw. Separate pass with its
+    // own OPEN_DISPS (the orb draws above each manage their own).
     Gfx* swordDL = ResourceMgr_LoadGfxByName(GARO_SWORD_DL_PATH);
     if (swordDL == NULL) return;
 
     OPEN_DISPS(play->state.gfxCtx);
-
+    Gfx_SetupDL_25Opa(play->state.gfxCtx);
     for (s32 i = 0; i < GARO_SWORD_MAX_ACTIVE; i++) {
         GaroSword* sw = &sGaroAttack.swords[i];
-        if (!sw->active) continue;
-
-        // Rod orbs draw on XLU with element tint via PrimColor. Knives draw on
-        // OPA with default lighting. We toggle pipelines per-orb to keep the
-        // existing knife visuals byte-identical to v8.
-        if (sw->kind == GARO_PROJ_ROD_ORB) {
-            Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-            const u8* c = sRodOrbColors[sw->rodElement & 0x3];
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, c[0], c[1], c[2], 200);
-
-            Matrix_Push();
-            Matrix_Translate(sw->pos.x, sw->pos.y, sw->pos.z, MTXMODE_NEW);
-            Matrix_RotateY((f32)sw->yaw * (M_PI / 0x8000), MTXMODE_APPLY);
-            // Slight pulse so the orb reads as magical (not a static blade).
-            // GARO_SWORD_DRAW_SCALE * 1.5 so the orb visibly fills the AC quad.
-            f32 s = GARO_SWORD_DRAW_SCALE * 1.5f;
-            Matrix_Scale(s, s, s, MTXMODE_APPLY);
-
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, swordDL);
-
-            Matrix_Pop();
-            continue;
-        }
-
-        Gfx_SetupDL_25Opa(play->state.gfxCtx);
+        if (!sw->active || sw->kind == GARO_PROJ_ROD_ORB) continue;
 
         Matrix_Push();
         Matrix_Translate(sw->pos.x, sw->pos.y, sw->pos.z, MTXMODE_NEW);
-        // Rotate so the blade points along its yaw of travel.
         Matrix_RotateY((f32)sw->yaw * (M_PI / 0x8000), MTXMODE_APPLY);
         Matrix_Scale(GARO_SWORD_DRAW_SCALE, GARO_SWORD_DRAW_SCALE, GARO_SWORD_DRAW_SCALE, MTXMODE_APPLY);
 
@@ -1129,7 +1198,6 @@ extern "C" void GaroForm_DrawProjectiles(PlayState* play) {
 
         Matrix_Pop();
     }
-
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
@@ -1354,6 +1422,12 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
         zTarget = player->focusActor;
     }
     bool zEnemy = (zTarget != NULL) && (zTarget->category == ACTORCAT_ENEMY);
+    // v10.4: "Z engaged" = the player is committed to Z-targeting, EITHER by
+    // physically holding Z (hold-type lock-on) OR by being locked on via the
+    // toggle/switch lock-on setting (where Z isn't held after the lock). The
+    // Z+A move dispatch keys on this so hops/jump-attack/shadow-ball fire in
+    // both control schemes; the no-Z dash keys on its negation.
+    bool zEngaged = zHeld || Player_IsZTargeting(player);
 
     // ── State dispatch ───────────────────────────────────────────────────
     switch (sGaroAttack.state) {
@@ -1374,11 +1448,23 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
             bool stickSideL         = (stickDir == PLAYER_STICK_DIR_LEFT);
             bool stickSideR         = (stickDir == PLAYER_STICK_DIR_RIGHT);
             bool stickActive        = (stickDir != PLAYER_STICK_DIR_NONE);
-            // "stickForwardOk" for the existing FilterB-mirrored test (anything
-            // that isn't back / sideways → fine for Garo A overrides).
-            bool stickForwardOk = !stickBack && !stickSideL && !stickSideR;
             bool onGround = (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) != 0;
             bool movingFwd = (player->linearVelocity > 0.5f);
+
+            // v10.4: Garo can't lift/grab objects. Clear the grab DoAction
+            // icon + the grabbable target each idle frame so the "Grab"
+            // prompt never shows and the vanilla grab handler has no target.
+            // (The A-strip in FilterB is the primary guard — the grab
+            // handler reads the same filtered input — this is belt-and-
+            // suspenders + hides the prompt.)
+            player->stateFlags2 &= ~PLAYER_STATE2_DO_ACTION_GRAB;
+            player->interactRangeActor = NULL;
+
+            // v10.4: when Link has a non-grab contextual action pending
+            // (speak / read / open / enter / climb / mount), FilterB lets A
+            // through to vanilla — so the Garo A-moveset must NOT also fire
+            // off the same press. aForGaro is the A-press the form owns.
+            bool aForGaro = aPress && !GaroForm_VanillaWantsAButton(player);
 
             // R-press → parry guard. Gated on !bHold so a B-hold rod entry
             // doesn't immediately interrupt itself with a parry if R was
@@ -1415,14 +1501,15 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
                 break;
             }
 
-            // ─── v10 Z-targeted A dispatch (idle/back/side/forward) ──────
-            // Z held + A press → fan out to new states based on stick.
-            // Only fires when grounded; A-in-air is the air-slash branch
-            // above. Lock-on-enemy + stationary still routes to the
-            // legacy 4-state BANISH chain (cinematic teleport-behind);
-            // lock-on-empty stationary routes to the new SHADOW_BALL
-            // (in-place invuln-slash that ignores target).
-            if (aPress && zTarget != NULL && onGround &&
+            // ─── v10 Z-engaged A dispatch (idle/back/side/forward) ───────
+            // Z engaged + A press → fan out to new states based on stick.
+            // v10.4: gated on zEngaged (Z held OR locked-on via toggle), NOT
+            // raw Z-hold, so the moves work in both lock-on control schemes.
+            // Hops are evasive moves the player commits to by engaging Z —
+            // they fire whether or not an enemy is actually in range.
+            // SHADOW_BALL's BANISH chain handles a null target gracefully
+            // (travels 60u forward of facing, no teleport).
+            if (aForGaro && zEngaged && onGround &&
                 sGaroAttack.rodReleaseCD == 0) {
                 // Backflip — 2x distance. The engine reads linearVelocity
                 // along world.rot.y in Actor_MoveForward each frame, so
@@ -1519,7 +1606,11 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
             // target + dark palette instead of AOE ice. v10: gated on
             // !stickActive — back/side stick routes to the new sidehop /
             // backflip handlers above, forward+speed routes to JUMP_ATTACK.
-            if (aPress && zEnemy && sGaroAttack.banishCooldown == 0 &&
+            // v10.4: effectively superseded by the Z-engaged dispatch above
+            // (its !stickActive branch enters the same BANISH_VANISH chain).
+            // Kept as a fallback for the rodReleaseCD>0 window; gated on
+            // aForGaro so it never fires while vanilla owns A.
+            if (aForGaro && zEnemy && sGaroAttack.banishCooldown == 0 &&
                 onGround && !stickActive) {
                 LinkAnimationHeader* collapse = GaroForm_LoadAnim(GARO_COLLAPSE_PATH);
                 if (collapse != NULL) {
@@ -1574,12 +1665,12 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
             // backflip in vanilla anyway). Do NOT StartFormAnim here;
             // ANIMMODE_ONCE would freeze; DASH_ATTACK handler re-inits
             // with ANIMMODE_LOOP.
-            // v10.1: dash only when Z is NOT held. Holding Z without a
-            // locked target previously fell through to dash; that's
-            // confusing because the player visibly committed to "I want
-            // to lock something / evade" by holding Z. Now Z-held + A is
-            // a no-op when no target is acquired.
-            if (aPress && !zHeld && onGround &&
+            // v10.4: dash only when Z is NOT engaged (neither held nor
+            // toggle-locked). When Z is engaged, A is owned by the
+            // hop/shadow-ball/jump-attack dispatch above; when it's not,
+            // A is the Goron-roll-style dash. aForGaro ensures we don't
+            // dash when vanilla owns A (speak/open/etc.).
+            if (aForGaro && !zEngaged && onGround &&
                 sGaroAttack.rodReleaseCD == 0) {
                 GaroAttack_EnsureFormSkelAnime(play);
                 sGaroAttack.state = GARO_DASH_ATTACK;
@@ -2180,14 +2271,24 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
             // touched the flag.
             player->stateFlags2 &= ~PLAYER_STATE2_DISABLE_DRAW;
 
-            if (sGaroAttack.stateTimer == GARO_SHADOW_BALL_HIT_F &&
-                !sGaroAttack.shadowBallSlashFired) {
+            // v10.3: quad-based strike (NOT direct Actor_ApplyDamage). The
+            // direct path silently dropped HP without triggering the enemy's
+            // AC-gated death/reaction routine, so Wolfos & co. wouldn't die
+            // until a real sword hit landed (the bug the user saw). The
+            // swing quad goes through the AC pipeline → proper kill/flinch,
+            // and DMG_FIXED_DAMAGE (baked into EnableSwingQuad) makes it
+            // deal a constant 8 regardless of equipped sword. Quad stays
+            // live from the hit frame for a short window so it connects on
+            // the enemy Garo teleported behind.
+            if (sGaroAttack.stateTimer >= GARO_SHADOW_BALL_HIT_F &&
+                sGaroAttack.stateTimer <= GARO_SHADOW_BALL_HIT_F + 4) {
                 GaroAttack_EnableSwingQuad(player, play);
                 player->meleeWeaponQuads[0].info.toucher.damage = GARO_SHADOW_BALL_DAMAGE;
-                sGaroAttack.shadowBallSlashFired = 1;
-                Audio_PlayActorSound2(&player->actor, NA_SE_IT_SWORD_SWING_HARD);
-            } else if (sGaroAttack.shadowBallSlashFired &&
-                       sGaroAttack.stateTimer > GARO_SHADOW_BALL_HIT_F + 4) {
+                if (!sGaroAttack.shadowBallSlashFired) {
+                    sGaroAttack.shadowBallSlashFired = 1;
+                    Audio_PlayActorSound2(&player->actor, NA_SE_IT_SWORD_SWING_HARD);
+                }
+            } else {
                 player->meleeWeaponQuads[0].base.atFlags &= ~AT_ON;
             }
 
@@ -2336,9 +2437,12 @@ extern "C" void GaroForm_Update(PlayState* play, Player* player) {
             player->linearVelocity = 0;
 
             if (sGaroAttack.stateTimer >= GARO_LAND_STRIKE_HIT_F) {
-                // v10: dedicated big AOE quad (95u forward × 65u halfW)
-                // instead of the swing quad — landing strike needs the
-                // reach to clearly clip enemies in a planted-blow arc.
+                // v10.3: big cylinder AOE quad (NOT direct Actor_ApplyDamage).
+                // Goes through the AC pipeline so enemies actually die/react
+                // (the direct path left them at 0 HP without triggering their
+                // AC-gated death routine). DMG_FIXED_DAMAGE (baked into
+                // EnableLandStrikeQuad) makes it a constant 8 regardless of
+                // equipped sword. Quad live from frame 12 through anim end + tail.
                 GaroAttack_EnableLandStrikeQuad(player, play);
                 if (!sGaroAttack.landStrikeFired) {
                     sGaroAttack.landStrikeFired = 1;

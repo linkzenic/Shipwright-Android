@@ -5,8 +5,7 @@
 #include "soh/Enhancements/randomizer/rando_hash.h"
 #include "soh/Enhancements/randomizer/randomizerTypes.h"
 
-#include <fast/Fast3dGui.h>
-
+#include <libultraship/libultraship.h>
 #include <fast/Fast3dGui.h>
 
 std::map<uint32_t, ItemMapEntry> itemMapping = {
@@ -273,12 +272,12 @@ void RegisterImGuiItemIcons() {
 
     for (const auto& entry : customItemMapping) {
         // Custom item icons are in soh.o2r — skip if resource not found (OTR not regenerated yet)
-        auto res = Ship::Context::GetInstance()->GetResourceManager()->LoadResource(entry.second.texturePath, true);
+        auto res = Ship::Context::GetRawInstance()->GetResourceManager()->LoadResource(entry.second.texturePath, true);
         if (res) {
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->LoadGuiTexture(
-                entry.second.name, entry.second.texturePath, ImVec4(1, 1, 1, 1));
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->LoadGuiTexture(
-                entry.second.nameFaded, entry.second.texturePath, ImVec4(1, 1, 1, 0.3f));
+            std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())
+                ->LoadGuiTexture(entry.second.name, entry.second.texturePath, ImVec4(1, 1, 1, 1));
+            std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())
+                ->LoadGuiTexture(entry.second.nameFaded, entry.second.texturePath, ImVec4(1, 1, 1, 0.3f));
         }
     }
 

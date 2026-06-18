@@ -8024,6 +8024,21 @@ s32 Camera_ChangeDataIdx(Camera* camera, s32 camDataIdx) {
     if (!(camera->unk_14A & 0x40)) {
         newCameraSetting = Camera_GetCamDataSetting(camera, camDataIdx);
         camera->unk_14A |= 0x40;
+
+        // Minish tiny mode: skip the crawlspace camera setting (CAM_SET_CRAWLSPACE
+        // pulls the eye to distance 2 — an extreme zoom meant for crawling). Tiny
+        // Link walks the crawlspace floor poly normally and already has his own
+        // minish zoom (MinishTiny_AdjustCameraView), so the stacked crawlspace zoom
+        // is unwanted. Keep the current setting and just track the idx so the camera
+        // doesn't re-evaluate it every frame.
+        {
+            extern s32 MinishTiny_IsActive(void);
+            if (MinishTiny_IsActive() && newCameraSetting == CAM_SET_CRAWLSPACE) {
+                camera->camDataIdx = camDataIdx;
+                return 0x80000000 | camDataIdx;
+            }
+        }
+
         settingChangeSuccessful = Camera_ChangeSettingFlags(camera, newCameraSetting, 5) >= 0;
         if (settingChangeSuccessful || sCameraSettings[camera->setting].unk_00 & 0x80000000) {
             camera->camDataIdx = camDataIdx;

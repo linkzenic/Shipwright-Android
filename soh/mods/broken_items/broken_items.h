@@ -1,20 +1,17 @@
 /**
- * broken_items.h - "Broken Modes" pause subscreen (More Than Enough Items).
+ * broken_items.h - "Broken Modes" transform selector (More Than Enough Items).
  *
- * A native kaleido page that behaves like the Equipment subscreen, reached
- * from the Map page with the page-change button. You navigate the modes with
- * the analog stick and press A to equip one. Only two modes exist for now:
- *   - LINK MODE  (Ocarina)     -> normal Link (Mario off)
- *   - MARIO MODE (Mario Mask)  -> libsm64 Mario (sets gSm64Mario, same effect
- *                                 the old Mario-Mask C-Down toggle had)
+ * The form selector (LINK / MARIO / PIKACHU) is the 3rd page of the Equipment
+ * subscreen — the form icons sit in the grid where the swords/shields go and the
+ * form's item name shows in the usual name spot. Reached with the equipment-page
+ * change button (L / Z). Selecting a form sets the persistent mode CVars:
+ *   - LINK MODE  (Ocarina)     -> normal Link (Mario / Pikachu off)
+ *   - MARIO MODE (Mario Mask)  -> libsm64 Mario (gSm64Mario)
+ *   - PIKACHU MODE (Pokeball)  -> Pikachu (gPikachuMode)
  *
- * Gated by the CVar gBrokenItems.Enabled. The whole feature is English-only
- * (UI + code) on purpose: it is for players and devs.
- *
- * Integration lives in z_kaleido_scope_PAL.c:
- *   - KaleidoScope_Update routes input here while active / on entry.
- *   - BrokenItems_DrawOverlay is called at the end of the kaleido draw (after
- *     the info panel) to draw the whole overlay on top of everything.
+ * Gated by the CVar gBrokenItems.Enabled. This file owns the shared form data +
+ * toggle; the drawing/input lives in z_kaleido_equipment.c (it calls the
+ * accessors below). The old Map-page overlay was removed. English-only on purpose.
  */
 
 #ifndef BROKEN_ITEMS_H
@@ -26,28 +23,19 @@
 extern "C" {
 #endif
 
-// CVar gate ("gBrokenItems.Enabled"). 1 = the Map page can open Broken Modes.
+// CVar gate ("gBrokenItems.Enabled"). 1 = the transform selector is available.
 s32 BrokenItems_Enabled(void);
 
-// True while the Broken Modes page is the active subscreen.
-s32 BrokenItems_IsActive(void);
-
-// True on the frame the player asks to open Broken Modes (on the Map page,
-// feature enabled, page-change button pressed). Checked by KaleidoScope_Update.
-s32 BrokenItems_ShouldEnter(PlayState* play);
-
-// Enter / leave the Broken Modes page (plays the page-scroll SFX).
-void BrokenItems_Enter(PlayState* play);
-void BrokenItems_Exit(PlayState* play);
-
-// Per-frame input while active: stick = move cursor, A = equip the selected
-// mode, R = back to Map, B/START = let the pause close normally.
-void BrokenItems_Update(PlayState* play, Input* input);
-
-// Draws the WHOLE Broken Modes overlay (own dark backdrop + slot boxes + item
-// icons + cursor + names + control map) on top of everything. Call at the very
-// end of the kaleido draw (after the info panel) so it covers the cube/prompts.
-void BrokenItems_DrawOverlay(PlayState* play);
+// --- Equipment-page transform selector (z_kaleido_equipment.c) ---
+// The transform options are drawn IN the equipment grid (where swords/shields go)
+// as a 3rd equipment page; these expose the shared form data + toggle so there's
+// one source of truth (the Map overlay above is the deprecated path).
+s32 BrokenItems_FormCount(void);          // number of forms (Link / Mario / Pikachu)
+const char* BrokenItems_FormName(s32 i);  // "LINK MODE" etc.
+void* BrokenItems_FormIconTex(s32 i);     // grid icon texture for form i
+u16 BrokenItems_FormItem(s32 i);          // OOT item whose NAME texture labels form i
+s32 BrokenItems_CurrentForm(void);        // currently-equipped form index
+void BrokenItems_EquipForm(PlayState* play, s32 i); // equip form i (sets the CVars)
 
 #ifdef __cplusplus
 }

@@ -409,8 +409,39 @@ void ArmsHook_Draw(Actor* thisx, PlayState* play) {
             Matrix_Scale(0.8, 0.8, 0.8, MTXMODE_APPLY);
         }
         gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-        if (GameInteractor_Should(VB_DRAW_HOOKSHOT_TIP, true, player, play)) {
-            gSPDisplayList(POLY_OPA_DISP++, gLinkAdultHookshotTipDL);
+        // Twilight Upgrade — Clawshot mode: swap the tip DL to MM's claw
+        // (object_link_child_DL_01D960). MM's ArmsHook_Draw also calls this
+        // DL during held state, but MM additionally updates the actor's
+        // world.pos to track Link's hand — OOT doesn't, so during held state
+        // (Wait action) the actor sits at the LAST shoot/anchor position and
+        // any tip draw lands there instead of at the body's nose. So we
+        // skip the MM tip entirely when not actively shooting; the MM body
+        // DL (gLinkHumanRightHandHoldingHookshotDL drawn at the limb in
+        // z_player_lib.c) carries the model's silhouette on its own when
+        // held. During shoot the actor IS at the flying position, so the
+        // MM tip lines up correctly with the chain end.
+        {
+            extern u8 TwilightUpgrade_IsClawshotActive(void);
+            extern void* MmAssets_LoadHookshotTipDL(void);
+            u8 isShooting = (this->actionFunc == ArmsHook_Shoot) && (this->timer > 0);
+            if (GameInteractor_Should(VB_DRAW_HOOKSHOT_TIP, true, player, play)) {
+                Gfx* tipDL = gLinkAdultHookshotTipDL;
+                u8 useMmTip = TwilightUpgrade_IsClawshotActive();
+                if (useMmTip) {
+                    Gfx* mmTip = (Gfx*)MmAssets_LoadHookshotTipDL();
+                    if (mmTip != NULL) {
+                        tipDL = mmTip;
+                    }
+                }
+                // Skip the tip entirely when clawshot mode is held-not-shooting.
+                // Vanilla OOT keeps drawing its own tip here even when not
+                // shooting (the body DL is offset enough that they overlap
+                // unnoticeably), but the MM tip lands far from the body in
+                // that case and is jarring.
+                if (!(useMmTip && !isShooting)) {
+                    gSPDisplayList(POLY_OPA_DISP++, tipDL);
+                }
+            }
         }
         Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
         Math_Vec3f_Diff(&player->unk_3C8, &this->actor.world.pos, &sp78);

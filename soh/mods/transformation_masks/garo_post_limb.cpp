@@ -17,6 +17,7 @@
  */
 
 #include "garo_post_limb.h"
+#include "mods/transformation_masks/transformation_masks.h" // gPlayerLimbToBodyPart
 #include <cstring>
 
 extern "C" {
@@ -37,31 +38,9 @@ extern "C" s32 GaroAttack_GetTrailEffectIndex(void);
 // clipping the body during the tight slash arcs of last_hit_motion1.
 #define GARO_POST_LIMB_TRAIL_LENGTH 3200.0f
 
-// -1 = no bodypart mapping. Mirrors sLimbToBodyPart in mm_player_form.cpp.
-static const s8 sGaroLimbToBodyPart[PLAYER_LIMB_MAX] = {
-    -1,                         // 0x00 PLAYER_LIMB_NONE
-    -1,                         // 0x01 PLAYER_LIMB_ROOT
-    PLAYER_BODYPART_WAIST,      // 0x02 PLAYER_LIMB_WAIST
-    -1,                         // 0x03 PLAYER_LIMB_LOWER
-    PLAYER_BODYPART_R_THIGH,    // 0x04 PLAYER_LIMB_R_THIGH
-    PLAYER_BODYPART_R_SHIN,     // 0x05 PLAYER_LIMB_R_SHIN
-    PLAYER_BODYPART_R_FOOT,     // 0x06 PLAYER_LIMB_R_FOOT
-    PLAYER_BODYPART_L_THIGH,    // 0x07 PLAYER_LIMB_L_THIGH
-    PLAYER_BODYPART_L_SHIN,     // 0x08 PLAYER_LIMB_L_SHIN
-    PLAYER_BODYPART_L_FOOT,     // 0x09 PLAYER_LIMB_L_FOOT
-    -1,                         // 0x0A PLAYER_LIMB_UPPER
-    PLAYER_BODYPART_HEAD,       // 0x0B PLAYER_LIMB_HEAD
-    PLAYER_BODYPART_HAT,        // 0x0C PLAYER_LIMB_HAT
-    PLAYER_BODYPART_COLLAR,     // 0x0D PLAYER_LIMB_COLLAR
-    PLAYER_BODYPART_L_SHOULDER, // 0x0E PLAYER_LIMB_L_SHOULDER
-    PLAYER_BODYPART_L_FOREARM,  // 0x0F PLAYER_LIMB_L_FOREARM
-    PLAYER_BODYPART_L_HAND,     // 0x10 PLAYER_LIMB_L_HAND
-    PLAYER_BODYPART_R_SHOULDER, // 0x11 PLAYER_LIMB_R_SHOULDER
-    PLAYER_BODYPART_R_FOREARM,  // 0x12 PLAYER_LIMB_R_FOREARM
-    PLAYER_BODYPART_R_HAND,     // 0x13 PLAYER_LIMB_R_HAND
-    PLAYER_BODYPART_SHEATH,     // 0x14 PLAYER_LIMB_SHEATH
-    PLAYER_BODYPART_TORSO,      // 0x15 PLAYER_LIMB_TORSO
-};
+// Limb→bodypart mapping is shared with mm_player_form.cpp via
+// gPlayerLimbToBodyPart (declared in transformation_masks.h) — Garo uses
+// Link's rig, so the same table applies. (Was a byte-for-byte local copy.)
 
 // Returning 0 with *dList = NULL lets SkelAnime push the matrix and call
 // PostLimbDraw, but skips the actual gSPDisplayList for this limb.
@@ -83,7 +62,7 @@ static void GaroForm_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, V
 
     // === 1. bodyPartsPos[] per limb ===
     if (limbIndex > 0 && limbIndex < PLAYER_LIMB_MAX) {
-        s8 bodyPart = sGaroLimbToBodyPart[limbIndex];
+        s8 bodyPart = gPlayerLimbToBodyPart[limbIndex];
         if (bodyPart >= 0) {
             Matrix_MultVec3f(&zeroVec, &player->bodyPartsPos[bodyPart]);
         }

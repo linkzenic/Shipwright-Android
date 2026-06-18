@@ -145,6 +145,14 @@ uint32_t Ship_GetInterpolationFrameCount();
 extern "C" {
 #endif
 uint64_t GetUnixTimestamp();
+// Lock/unlock the audio thread's mutex (the SAME `audio.mutex` instance held in
+// OTRAudio_Thread while AudioMgr_CreateNextAudioBuffer runs the mixer). Game-thread
+// code that mutates state the mixer reads (e.g. the MM SFX bank engine) must hold
+// this for the duration of the mutation. Declared extern "C" so BOTH C and C++ mod
+// TUs can call it. Do NOT call from the audio thread / mixer (it already holds the
+// lock — re-locking a std::mutex is undefined / self-deadlock).
+void OTRAudio_LockMutex(void);
+void OTRAudio_UnlockMutex(void);
 #ifdef __cplusplus
 };
 #endif

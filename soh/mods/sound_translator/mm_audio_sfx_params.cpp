@@ -99,3 +99,15 @@ MmSfxParams* gMmSfxParams[7] = {
     sMmPlayerBankParams, sMmItemBankParams,    sMmEnvBankParams,    sMmEnemyBankParams,
     sMmSystemBankParams, sMmOcarinaBankParams, sMmVoiceBankParams,
 };
+
+// Per-bank entry count for each table above, in the SAME bank order as
+// gMmSfxParams. Used by mm_audio_sfx.cpp to bounds-check SFX_INDEX(sfxId)
+// before indexing gMmSfxParams[bank][index] — a malformed sfxId's 0x3FF index
+// field can exceed a bank's table length and read OOB otherwise.
+#define MM_ARRAY_COUNT(x) ((size_t)(sizeof(x) / sizeof((x)[0])))
+size_t gMmSfxParamsCount[7] = {
+    MM_ARRAY_COUNT(sMmPlayerBankParams), MM_ARRAY_COUNT(sMmItemBankParams),
+    MM_ARRAY_COUNT(sMmEnvBankParams),    MM_ARRAY_COUNT(sMmEnemyBankParams),
+    MM_ARRAY_COUNT(sMmSystemBankParams), MM_ARRAY_COUNT(sMmOcarinaBankParams),
+    MM_ARRAY_COUNT(sMmVoiceBankParams),
+};

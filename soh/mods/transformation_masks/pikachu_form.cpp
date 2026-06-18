@@ -495,6 +495,18 @@ static inline f32 PikaBin_RdF(const u8* p) {
     return v;
 }
 
+// Null out the master table entries [0, upTo) that a failed/partial load already
+// filled, so no slot in pikachu_ssbb_all_anims[] is left pointing into the blob we
+// are about to free (consumers read this table directly without a "loaded" flag).
+static void PikaAnims_ResetMasterTable(u32 upTo) {
+    if (upTo > PIKA_ANIM_MAX) {
+        upTo = PIKA_ANIM_MAX;
+    }
+    for (u32 j = 0; j < upTo; j++) {
+        pikachu_ssbb_all_anims[j] = NULL;
+    }
+}
+
 static u8 PikaAnims_EnsureLoaded(void) {
     if (sPikaAnimsLoaded) {
         return 1;
@@ -541,21 +553,84 @@ static u8 PikaAnims_EnsureLoaded(void) {
         return 0;
     }
 
+    // A magic-valid but truncated/corrupt file would otherwise turn the header
+    // offsets (entriesOff/namesOff/framesOff) and the per-entry nameOff/framesByte
+    // into raw pointers past the end of the buffer: out-of-bounds read here at load
+    // and dangling SSBBAnim::frames/name pointers that crash on first playback.
+    // Validate every offset+span against the real file size before forming pointers.
+    // All arithmetic in size_t to avoid 32-bit wraparound on the offsets.
+    const size_t fileSz = (size_t)fileSize; // already >= 32 (header) and fully read
+    const size_t kEntryStride = 20;         // <IHHfII per apps/ssbb_anim_bin.py (C ignores trailing float_count)
+    const size_t kBoneFrameSz = sizeof(SSBBBoneFrame); // 9 f32 = 36 bytes
+
+    // Entry table must lie fully inside the file: entriesOff + count*stride <= fileSz.
+    if (entriesOff > fileSz || (size_t)count * kEntryStride > fileSz - entriesOff) {
+        lusprintf(__FILE__, __LINE__, 2,
+                  "PikaAnims: corrupt .bin (entry table OOB): entriesOff=%u count=%u fileSize=%zu\n",
+                  entriesOff, count, fileSz);
+        sPikaAnimBlob.clear();
+        return 0;
+    }
+    // Table base offsets for names/frames must themselves be inside the file.
+    if (namesOff > fileSz || framesOff > fileSz) {
+        lusprintf(__FILE__, __LINE__, 2,
+                  "PikaAnims: corrupt .bin (table base OOB): namesOff=%u framesOff=%u fileSize=%zu\n",
+                  namesOff, framesOff, fileSz);
+        sPikaAnimBlob.clear();
+        return 0;
+    }
+
     sPikaAnimHeaders.resize(count);
     for (u32 i = 0; i < count; i++) {
-        const u8* e = b + entriesOff + (size_t)i * 20; // entry stride = 20 bytes
+        const u8* e = b + entriesOff + (size_t)i * kEntryStride; // entry stride = 20 bytes
         u32 nameOff = PikaBin_Rd32(e + 0);
         u16 numFrames = PikaBin_Rd16(e + 4);
         u16 numBones = PikaBin_Rd16(e + 6);
         f32 frameRate = PikaBin_RdF(e + 8);
         u32 framesByte = PikaBin_Rd32(e + 12);
 
+        // Name: NUL-terminated string at namesOff+nameOff. Require the start to be
+        // strictly inside the file and a NUL terminator to exist before EOF, so
+        // a->name is a usable C string (no run-off-the-end strlen at playback).
+        size_t nameStart = (size_t)namesOff + nameOff;
+        if (nameStart >= fileSz) {
+            lusprintf(__FILE__, __LINE__, 2,
+                      "PikaAnims: corrupt .bin (name OOB) entry=%u nameOff=%u fileSize=%zu\n",
+                      i, nameOff, fileSz);
+            PikaAnims_ResetMasterTable(i);
+            sPikaAnimHeaders.clear();
+            sPikaAnimBlob.clear();
+            return 0;
+        }
+        if (memchr(b + nameStart, '\0', fileSz - nameStart) == NULL) {
+            lusprintf(__FILE__, __LINE__, 2,
+                      "PikaAnims: corrupt .bin (name not NUL-terminated) entry=%u nameOff=%u\n", i, nameOff);
+            PikaAnims_ResetMasterTable(i);
+            sPikaAnimHeaders.clear();
+            sPikaAnimBlob.clear();
+            return 0;
+        }
+
+        // Frames: [numFrames * numBones] SSBBBoneFrame at framesOff+framesByte.
+        // Bound the full span the playback path can index (frames[f*numBones + bone]).
+        size_t frameSpan = (size_t)numFrames * (size_t)numBones * kBoneFrameSz;
+        size_t framesStart = (size_t)framesOff + framesByte;
+        if (framesStart > fileSz || frameSpan > fileSz - framesStart) {
+            lusprintf(__FILE__, __LINE__, 2,
+                      "PikaAnims: corrupt .bin (frames OOB) entry=%u framesByte=%u span=%zu fileSize=%zu\n",
+                      i, framesByte, frameSpan, fileSz);
+            PikaAnims_ResetMasterTable(i);
+            sPikaAnimHeaders.clear();
+            sPikaAnimBlob.clear();
+            return 0;
+        }
+
         struct SSBBAnim* a = &sPikaAnimHeaders[i];
-        a->name = (const char*)(b + namesOff + nameOff);
+        a->name = (const char*)(b + nameStart);
         a->numFrames = numFrames;
         a->numBones = numBones;
         a->frameRate = frameRate;
-        a->frames = (const SSBBBoneFrame*)(b + framesOff + framesByte);
+        a->frames = (const SSBBBoneFrame*)(b + framesStart);
         pikachu_ssbb_all_anims[i] = a; // fill the master table consumed by SSBBAction_GetAnim
     }
     sPikaAnimsLoaded = 1;

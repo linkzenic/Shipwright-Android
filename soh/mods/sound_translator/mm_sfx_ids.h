@@ -181,6 +181,7 @@ extern "C" {
 // System Bank SFX (systembank_table.h)
 // =============================================================================
 
+#define MM_NA_SE_SY_DEKUNUTS_JUMP_FAILED 0x484D // /* 0x484D */ Deku out of water hops (failed jump)
 #define MM_NA_SE_SY_TRANSFORM_MASK_FLASH 0x484F // /* 0x484F */ Mask flash during transform
 
 // =============================================================================

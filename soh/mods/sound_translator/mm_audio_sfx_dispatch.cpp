@@ -40,6 +40,46 @@ s32 MmSfxBridge_IsActive(u16 mmSfxId);
 void MmSfxBridge_RefreshProperties(u16 mmSfxId, Vec3f* pos, f32 freqScale);
 }
 
+// ---- Ruta B: isolated MM SFX synth (real Sequence_0 dispatch) -------------
+// When CVar gMods.MmSfxNewEngine is set, dispatch goes to the new engine via
+// channel IO (mirroring MM AUDIOCMD_CHANNEL_SET_IO) instead of MmDirectAudio.
+extern "C" {
+void MmSfxSynth_WriteChannelIO(int channelIndex, int ioPort, signed char value);
+int MmSfxSynth_ReadChannelIO(int channelIndex, int ioPort);
+void MmSfxSynth_SetChannelState(int channelIndex, float volume, float freqScale,
+                                signed char panSigned, signed char stereoBits);
+int MmSfxSynth_IsReady(void);
+}
+
+// The isolated mmsfx engine (real MM Sequence_0 synthesis) is now THE SFX path.
+// Use it whenever it's booted; the old MmDirectAudio hand-map path below is dead.
+static inline bool MmSfx_UseNewEngine(void) {
+    return MmSfxSynth_IsReady();
+}
+
+// Mirror MM sfx.c:645-668 — write the SFX-sequence channel IO ports so seq_0
+// triggers a note-on with the right sample/freq. `firstTrigger` issues the
+// enable + sfxId ports; refresh-only updates the freq/stereo state.
+static void MmSfx_DriveNewEngine(MmSfxBankEntry* entry, u8 channelIndex, f32 freqScale, bool firstTrigger) {
+    static int sDriveLog = 0;
+    if (sDriveLog < 12) {
+        sDriveLog++;
+        MMSFX_LOG("[MmSfxSynth] DriveNewEngine sfx=0x%X ch=%d first=%d freq=%.3f", entry->sfxId, channelIndex,
+                  (int)firstTrigger, freqScale);
+    }
+    // Per-channel freq/stereo state that the seq's 0xBE custom function reads.
+    // Volume left at unity here; spatial attenuation is TODO (needs listener pos).
+    MmSfxSynth_SetChannelState(channelIndex, 1.0f, freqScale, 0x40, 0);
+    if (firstTrigger) {
+        u16 sfxId = entry->sfxId;
+        MmSfxSynth_WriteChannelIO(channelIndex, 0, 1);                 // enable
+        MmSfxSynth_WriteChannelIO(channelIndex, 2, 0x7F);              // volume (full; TODO spatial)
+        MmSfxSynth_WriteChannelIO(channelIndex, 4, (signed char)(sfxId & 0xFF)); // sfxId low
+        u8 hi = (u8)(((sfxId & 0x300) >> 7) + ((sfxId & 0xFF) >> 7));  // sfx.c:660 (large-bank bits)
+        MmSfxSynth_WriteChannelIO(channelIndex, 5, (signed char)hi);   // sfxId high bits
+    }
+}
+
 extern "C" {
 
 // Compute the spatial frequency scale for an entry, including random-freq raise.
@@ -61,6 +101,10 @@ void MmSfxDispatch_PlayEntry(u8 bankId, MmSfxBankEntry* entry, u8 channelIndex) 
     }
     Vec3f* pos = (Vec3f*)entry->posX;
     f32 freqScale = ComputeEntryFreqScale(entry);
+    if (MmSfx_UseNewEngine()) {
+        MmSfx_DriveNewEngine(entry, channelIndex, freqScale, /*firstTrigger=*/true);
+        return;
+    }
     MmSfxBridge_Play(entry->sfxId, freqScale, pos);
 }
 
@@ -78,6 +122,10 @@ void MmSfxDispatch_RefreshEntry(u8 bankId, MmSfxBankEntry* entry, u8 channelInde
     }
     Vec3f* pos = (Vec3f*)entry->posX;
     f32 freqScale = ComputeEntryFreqScale(entry);
+    if (MmSfx_UseNewEngine()) {
+        MmSfx_DriveNewEngine(entry, channelIndex, freqScale, /*firstTrigger=*/false);
+        return;
+    }
     MmSfxBridge_RefreshProperties(entry->sfxId, pos, freqScale);
 }
 
@@ -85,6 +133,15 @@ void MmSfxDispatch_RefreshEntry(u8 bankId, MmSfxBankEntry* entry, u8 channelInde
 // Used by the bank engine to clean up entries whose sample has finished.
 s32 MmSfxDispatch_IsEntryActive(u8 bankId, MmSfxBankEntry* entry) {
     if (entry == nullptr) return 0;
+    if (MmSfx_UseNewEngine()) {
+        // MM (sfx.c:678): the SFX is finished when seq_0 writes SEQ_IO_VAL_NONE
+        // (-1 / 0xFF) to the channel's ioPort 1. Until then it's still active.
+        // Reading the OLD MmDirectAudio state here made every continuous SFX look
+        // "inactive" -> the bank engine removed+re-added it every frame, which the
+        // seq saw as a fresh note-on -> piled-up, never-stopping notes.
+        int v = MmSfxSynth_ReadChannelIO(entry->channelIndex, 1);
+        return ((u8)v == 0xFFu) ? 0 : 1;
+    }
     return MmSfxBridge_IsActive(entry->sfxId);
 }
 
@@ -110,6 +167,11 @@ void MmSfxDispatch_StopEntry(u8 bankId, MmSfxBankEntry* entry, u8 channelIndex) 
     // BEFORE the game stops calling PlaySfx (e.g. importance eviction), the
     // sound will briefly hang in the mixer until its lastRefreshFrame timeout
     // (~60ms). Acceptable trade-off.
+    if (MmSfx_UseNewEngine()) {
+        // MM sfx.c: write 0 to ioPort 0 — seq stops re-triggering on this
+        // channel; the already-started note finishes via its envelope release.
+        MmSfxSynth_WriteChannelIO(channelIndex, 0, 0);
+    }
     (void)bankId;
     (void)entry;
     (void)channelIndex;

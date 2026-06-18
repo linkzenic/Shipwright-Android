@@ -66,7 +66,7 @@ void Player_AnimPlayLoop(PlayState* play, Player* this, LinkAnimationHeader* ani
 // ============================================================================
 #include "mods/transformation_masks/transformation_masks.h"
 #include "mods/transformation_masks/mm_mask_wear.h"
-#include "mods/transformation_masks/mm_router.c" // All MM code in one router
+#include "mods/transformation_masks/transformation_masks.c" // MM transformation-mask router (all MM code)
 
 // ============================================================================
 // PAK LOADER - ModLoader64 .pak custom player model support
@@ -1887,13 +1887,21 @@ void Player_PlayFloorSfxByAge(Player* this, u16 sfxId) {
 void Player_PlaySteppingSfx(Player* this, f32 pitchAdjustment) {
     s32 sfxId;
 
-    if (this->currentBoots == PLAYER_BOOTS_IRON) {
-        sfxId = NA_SE_PL_WALK_HEAVYBOOTS;
+    // MM transformation masks: each transformed form has its own footstep SFX
+    // (NA_SE_PL_WALK_GROUND + floor offset + per-form offset: Deku +0xF0,
+    // Zora +0x120, Goron +0x150, FD +0x80). Play that instead of Link's walk.
+    // Returns 0 for Human/Garo/Gerudo/Pikachu so OOT's footstep still plays.
+    if (TransformMasks_TryPlayMmStepSfx(Player_ApplyFloorSfxOffset(this, NA_SE_PL_WALK_GROUND),
+                                        &this->actor.projectedPos)) {
+        // form footstep played; fall through to the stats counter below
     } else {
-        sfxId = Player_ApplyFloorAndAgeSfxOffsets(this, NA_SE_PL_WALK_GROUND);
+        if (this->currentBoots == PLAYER_BOOTS_IRON) {
+            sfxId = NA_SE_PL_WALK_HEAVYBOOTS;
+        } else {
+            sfxId = Player_ApplyFloorAndAgeSfxOffsets(this, NA_SE_PL_WALK_GROUND);
+        }
+        func_800F4010(&this->actor.projectedPos, sfxId, pitchAdjustment);
     }
-
-    func_800F4010(&this->actor.projectedPos, sfxId, pitchAdjustment);
     // Gameplay stats: Count footsteps
     // Only count while game isn't complete and don't count Link's idle animations or crawling in crawlspaces
     if (!gSaveContext.ship.stats.gameComplete && !(this->stateFlags2 & PLAYER_STATE2_IDLE_FIDGET) &&
@@ -12173,6 +12181,26 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
     Math_Vec3f_Copy(&unusedWorldPos, &this->actor.world.pos);
     Actor_UpdateBgCheckInfo(play, &this->actor, vWallCheckHeight, vWallCheckRadius, ceilingCheckHeight, flags);
 
+    // Clawshot Hang — when active AND the raycast above DID find a floor (our
+    // invisible Obj_Hsblock platform), force the ground flag back on. The
+    // raycast itself may set bgCheckFlags &= ~1 even with a valid floorPoly
+    // if Link's pinned Y sits exactly at the platform surface (no penetration
+    // = engine considers him airborne by a hair). Forcing the flag with a
+    // valid floorPoly is safe; without one the downstream code at line ~12457
+    // dereferences floorPoly->normal.x and crashes — that's why we gate on
+    // floorPoly != NULL. If there's no platform (scene didn't have
+    // OBJECT_D_HSBLOCK loaded), aim will still glitch but the game won't
+    // crash.
+    {
+        extern u8 ClawshotBT_IsActive(void);
+        if (ClawshotBT_IsActive() && this->actor.floorPoly != NULL) {
+            this->actor.bgCheckFlags |= 1;        // on floor
+            this->actor.bgCheckFlags &= ~0x10;     // not bonking ceiling
+            this->actor.floorHeight = this->actor.world.pos.y - 5.0f;
+            this->actor.velocity.y = 0.0f;
+        }
+    }
+
     if (this->actor.bgCheckFlags & 0x10) {
         this->actor.velocity.y = 0.0f;
     }
@@ -12420,7 +12448,12 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         this->ledgeClimbDelayTimer = 0;
     }
 
-    if (this->actor.bgCheckFlags & 1) {
+    // Guard floorPoly != NULL: the engine (or a hookshot/clawshot hang on an
+    // Obj_Hsblock platform that gets invalidated a frame later) can leave the
+    // "on floor" flag (bit 1) set while floorPoly is already NULL. The floor-
+    // pitch math below dereferences floorPoly->normal.x and crashes (0xc0000005)
+    // on that null. Vanilla assumes flag-set => valid floorPoly; we enforce it.
+    if ((this->actor.bgCheckFlags & 1) && (floorPoly != NULL)) {
         if (GameInteractor_Should(VB_SET_STATIC_FLOOR_TYPE, true, this)) {
             sFloorType = func_80041D4C(&play->colCtx, floorPoly, this->actor.floorBgId);
         }
@@ -13389,6 +13422,34 @@ void Player_Update(Actor* thisx, PlayState* play) {
         //  - the multi-frame DOOR + entrance/exit WALK-THROUGH, detected by
         //    action-func identity (Player_Action_80845EF8/80845CA4). doorType is
         //    nulled at 13089 before the walk, so only the action func persists.
+        // #6 Mario first-person free-look: on a C-Up press (grounded, not already
+        // first-person / scripted), drop straight into OOT's native first-person
+        // LOOK action (Player_Action_8084B1D8, the no-item C-Up look). Because
+        // Sm64Mario_OotIsScriptingPlayer reports FIRST_PERSON as OOT-owned, the
+        // pause below is skipped (OOT runs the look + camera) while libsm64 parks
+        // Mario in place — he isn't visible from his own eyes anyway. The look
+        // action exits on its own (C-Up release / B), clearing the flag, and Mario
+        // resumes. Mario doesn't have aimable items, so this is pure free-look.
+        if (Sm64Mario_IsReady() && Sm64Mario_IsGrounded() &&
+            !(this->stateFlags1 & PLAYER_STATE1_FIRST_PERSON) &&
+            !Sm64Mario_OotIsScriptingPlayer(play, this) &&
+            CHECK_BTN_ALL(play->state.input[0].press.button, BTN_CUP)) {
+            // unk_6AD = 1 is the no-item LOOK state. Player_Action_8084B1D8 exits
+            // instantly if unk_6AD == 0, and it calls func_8083AD4C itself to put
+            // the camera in CAM_MODE_FIRSTPERSON — so we just hand it the right
+            // state. Consume the entering C-Up press from sp44 (the action's input)
+            // so its own "C-Up exits" check doesn't fire on the same frame and bail
+            // immediately. The player exits by pressing C-Up again / A / B / etc.
+            this->unk_6AD = 1;
+            func_8083B010(this);
+            Player_SetupAction(play, this, Player_Action_8084B1D8, 1);
+            this->av2.actionVar2 = 13;
+            this->stateFlags1 |= PLAYER_STATE1_FIRST_PERSON;
+            Player_ZeroSpeedXZ(this);
+            Sfx_PlaySfxCentered(NA_SE_SY_CAMERA_ZOOM_UP);
+            sp44.press.button &= ~BTN_CUP;
+        }
+
         // The SAME predicate is what Sm64Mario_Update parks on, so the pause gate
         // and the libsm64 park never disagree. Letting the action func run is what
         // makes doors/void/cutscene/exit COMPLETE instead of freezing (softlock).

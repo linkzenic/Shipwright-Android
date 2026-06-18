@@ -149,18 +149,8 @@ static const s8 sLinkLimbToHybridJt[22] = {
 #define HYBRID_JT_L_THIGH 17
 #define HYBRID_JT_L_FOOT  19
 
-// Garo Master sword DLs — swapped into L_SWORD / R_SWORD slots at draw
-// time so Garo wields Master's sharper blades instead of his own. The DLs
-// share their attachment point (jointPos = (688, 0, 0)) so no skel patch
-// is needed. Cached on first lookup.
-#define MASTER_L_SWORD_OTR "__OTR__objects/object_jso/gGaroMasterLeftSwordDL"
-#define MASTER_R_SWORD_OTR "__OTR__objects/object_jso/gGaroMasterRightSwordDL"
-static Gfx* sMasterLSwordDL = nullptr;
-static Gfx* sMasterRSwordDL = nullptr;
-
 // Forward declarations
 static void GaroHybrid_LoadAnim(PlayState* play, const char* otrPath, bool loop);
-static void GaroHybrid_PopulateFromLink(Player* player);
 static s32  GaroHybrid_OverrideLimbDraw(PlayState* play, s32 limbIndex,
                                         Gfx** dList, Vec3f* pos, Vec3s* rot,
                                         void* arg);
@@ -300,13 +290,10 @@ static s32 GaroHybrid_OverrideLimbDraw(PlayState* play, s32 limbIndex,
     } else if (limbIndex == HYBRID_JT_R_FOOT || limbIndex == HYBRID_JT_L_FOOT) {
         Matrix_Scale(1.0f, LEG_THICK_INV, LEG_THICK_INV, MTXMODE_APPLY);
     }
-    // Master sword swap disabled — both .o2r-level overrides and runtime
-    // dList swaps crashed in gfx_vtx_hash_handler_custom because the master
-    // sword DL's vertex hashes aren't resolving in this load context.
-    // Needs investigation (likely needs pre-touching the master vertex
-    // resources at startup to seed the hash registry, or a different
-    // approach). For now Garo wields his native blades.
-    (void)sMasterLSwordDL; (void)sMasterRSwordDL;
+    // TODO: Garo Master-sword DL swap stays disabled — both .o2r-level overrides
+    // and runtime dList swaps crashed in gfx_vtx_hash_handler_custom (master
+    // sword DL vertex hashes don't resolve in this load context). Garo wields
+    // his native blades for now.
     return 0;
 }
 
@@ -330,31 +317,4 @@ static void GaroHybrid_LoadAnim(PlayState* play, const char* otrPath, bool loop)
     } else {
         Animation_PlayOnce(&sSkelAnime, anim);
     }
-}
-
-static void GaroHybrid_PopulateFromLink(Player* player) {
-    if (player->skelAnime.jointTable == nullptr) return;
-    Vec3s* link = player->skelAnime.jointTable;
-
-    // Root translation (jointTable[0]) — copy directly from Link.
-    sJointTable[0] = link[0];
-
-    // Default every hybrid limb rotation to rest pose (zero) so any bone
-    // without a Link counterpart stays neutral.
-    for (s32 i = 1; i <= HYBRID_LIMB_COUNT; i++) {
-        sJointTable[i].x = 0;
-        sJointTable[i].y = 0;
-        sJointTable[i].z = 0;
-    }
-
-    // For each PLAYER_LIMB with a counterpart, copy Link's rotation across.
-    for (s32 pl = 1; pl < 22; pl++) {
-        s8 hjt = sLinkLimbToHybridJt[pl];
-        if (hjt < 0) continue;
-        sJointTable[hjt] = link[pl];
-    }
-    // Cloak bones (hybrid jt[7..11] = ROBE_TOP/BACK/LEFT/RIGHT/FRONT) have no
-    // Link counterpart — they stay at rest pose. To animate the cloak even
-    // when source is LINK_RETARGET, an enhancement would overlay Garo's
-    // idle anim values for those bones; deferred.
 }

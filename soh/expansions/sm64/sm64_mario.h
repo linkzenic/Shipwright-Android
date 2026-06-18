@@ -43,6 +43,30 @@ void Sm64Mario_TickTransitionSuspend(PlayState* play, Player* player);
 // (re)created — otherwise the hook would hide Link with nothing to replace it.
 u8 Sm64Mario_IsReady(void);
 
+// True when Mario is ready AND grounded (not airborne). Gates the C-Up first-person
+// entry (#6) so it can't trigger mid-jump.
+u8 Sm64Mario_IsGrounded(void);
+
+// Remote sync (Harpoon): when the local player is an active Mario, returns 1 and
+// fills the libsm64 anim pose (animID + animFrame) for broadcast so peers render
+// the same animation on their per-remote Mario instance. Returns 0 otherwise.
+u8 Sm64Mario_GetSyncState(s32* outAnimId, s16* outAnimFrame);
+
+// --- Remote-Mario puppet renderer (Harpoon) ---
+// True only when this client can render a remote player as a libsm64 Mario: the
+// sm64.dll is loaded, libsm64 is globally initialized (sm64.n64 ROM present), and
+// the puppet entry points resolved. Harpoon gates remote-Mario rendering on this;
+// when false the remote's dummy stays a normal Link.
+u8 Sm64Remote_CanRender(void);
+
+// Draw a remote player's Mario at OOT world (x,y,z) facing faceYaw (OOT binary
+// angle), posed to the network-synced libsm64 animId/animFrame, with Mario's red
+// (cap + shirt) recolored to (tintR,tintG,tintB). Returns 1 on success, 0 if it
+// couldn't render (caller should then draw the normal Link dummy). Uses a single
+// shared libsm64 renderer instance, re-posed per call (no physics).
+u8 Sm64Remote_DrawPuppet(PlayState* play, f32 x, f32 y, f32 z, s16 faceYaw, s32 animId,
+                         s16 animFrame, u8 tintR, u8 tintG, u8 tintB);
+
 // True only while the Vanish Cap is worn. Forces NoClip (z_bgcheck.c) so Mario
 // phases walls but floor-based loading zones still trigger.
 u8 Sm64Mario_IsVanishActive(void);
@@ -56,6 +80,12 @@ u8 Sm64Mario_IsSuperAttacking(void);
 // Mario's independent health as a 0..8 wedge count (SM64 power-meter segments).
 // Read by the HUD HP dial. 8 hits to die; decoupled from Link's heart count.
 s32 Sm64Mario_GetHealthWedges(void);
+
+// Hook from OOT's Health_ChangeBy: forwards a positive health change (in quarter-
+// hearts) to Mario's libsm64 health so hearts / heart containers / fairies /
+// potions heal Mario. Queued and applied in Sm64Mario_Update. No-op when Mario
+// mode is off, or for non-positive changes.
+void Sm64Mario_QueueOotHeal(s16 healthChangeQuarters);
 
 // Stricter gate for the draw path: true only when Mario is ready AND the
 // mesh buffer has triangles. Prevents the "both invisible" state where

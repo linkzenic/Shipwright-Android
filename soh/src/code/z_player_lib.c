@@ -1752,25 +1752,58 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
             }
         }
 
-        // Twilight Upgrade — Clawshot mode: swap the right-hand hookshot
-        // body DL with MM's hookshot held-DL from mm.o2r so the visual
-        // matches Twilight Princess / MM 1:1. Falls through to vanilla
-        // when mm.o2r isn't loaded or the path doesn't resolve. Chain/tip
-        // are swapped separately in ovl_Arms_Hook.
+        // Twilight Upgrade — Clawshot mode: replace the right-hand hookshot
+        // DL with a 2-call compound — OOT's closed-hand DL followed by MM's
+        // hookshot-only body DL. This keeps Link's hand looking like OOT
+        // (the "RightHandHoldingHookshot" MM variant we used before swapped
+        // his hand to MM's style, which the player noticed). Falls through
+        // to vanilla when mm.o2r isn't loaded.
         if (!gerudoHandled && limbIndex == PLAYER_LIMB_R_HAND && this->actor.scale.y >= 0.0f &&
             sRightHandType == PLAYER_MODELTYPE_RH_HOOKSHOT) {
             extern u8 TwilightUpgrade_IsClawshotActive(void);
             extern void* MmAssets_LoadHookshotBodyDL(void);
             if (TwilightUpgrade_IsClawshotActive()) {
-                Gfx* mmBody = (Gfx*)MmAssets_LoadHookshotBodyDL();
+                void* mmBody = MmAssets_LoadHookshotBodyDL();
                 if (mmBody != NULL) {
-                    *dList = mmBody;
+                    // Static buffer rebuilt only when the resolved OOT hand
+                    // or MM body pointer changes (e.g. on scene swap or LOD
+                    // flip). Holds two SP_DisplayList calls + EndDisplayList.
+                    static Gfx sClawshotHandBodyDL[3];
+                    static void* sLastOotHand = NULL;
+                    static void* sLastMmBody = NULL;
+                    void* ootHand = (sDListsLodOffset == 0) ? gLinkAdultRightHandClosedNearDL
+                                                            : gLinkAdultRightHandClosedFarDL;
+                    if (sLastOotHand != ootHand || sLastMmBody != mmBody) {
+                        Gfx* dl = sClawshotHandBodyDL;
+                        gSPDisplayList(dl++, ootHand);
+                        gSPDisplayList(dl++, mmBody);
+                        gSPEndDisplayList(dl);
+                        sLastOotHand = ootHand;
+                        sLastMmBody = mmBody;
+                    }
+                    *dList = sClawshotHandBodyDL;
                 }
             }
         }
     }
 
     GameInteractor_Should(VB_PLAYER_OVERRIDE_LIMB_DRAW, true, limbIndex, dList, thisx, play);
+
+    // PAK Loader equipment mix must outrank CustomEquipment's VB_PLAYER_OVERRIDE_LIMB_DRAW
+    // hook. Upstream #6708 added that hook at the END of this function — after our equipment
+    // override at the top — so a per-slot pak selection got silently repainted by any active
+    // equipment o2r mod. Re-apply the pak's DL here, but only when it actually provides one for
+    // this limb: limbs without a per-slot/equipment-pack override keep the hook's result, so
+    // o2r equipment still shows where there's no mix selection (the two coexist, as before).
+    if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
+                                       limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
+        Gfx* pakReDL = PakLoader_GetEquipDL(this, limbIndex);
+        if (pakReDL == PAK_DL_STUB) {
+            *dList = NULL;
+        } else if (pakReDL != NULL) {
+            *dList = pakReDL;
+        }
+    }
 
     if (GameInteractor_InvisibleLinkActive()) {
         this->actor.shape.shadowDraw = NULL;
@@ -1821,16 +1854,30 @@ s32 Player_OverrideLimbDrawGameplayFirstPerson(PlayState* play, s32 limbIndex, G
             }
             *dList = Player_HoldsHookshot(this) ? gLinkAdultRightHandHoldingHookshotFarDL
                                                 : sFirstPersonRightHandHoldingWeaponDLs[firstPersonWeaponIndex];
-            // Twilight Upgrade — Clawshot mode: swap to MM hookshot body DL
-            // in first-person view too. Same fallback rule as gameplay path
-            // — only overrides when mm.o2r is loaded and the DL resolves.
+            // Twilight Upgrade — Clawshot mode: same OOT-hand + MM-body
+            // compound DL as the gameplay-view path above. Falls through to
+            // vanilla when mm.o2r isn't loaded.
             if (Player_HoldsHookshot(this)) {
                 extern u8 TwilightUpgrade_IsClawshotActive(void);
                 extern void* MmAssets_LoadHookshotBodyDL(void);
                 if (TwilightUpgrade_IsClawshotActive()) {
-                    Gfx* mmBody = (Gfx*)MmAssets_LoadHookshotBodyDL();
+                    void* mmBody = MmAssets_LoadHookshotBodyDL();
                     if (mmBody != NULL) {
-                        *dList = mmBody;
+                        static Gfx sClawshotHandBodyFP[3];
+                        static void* sLastOotHandFP = NULL;
+                        static void* sLastMmBodyFP = NULL;
+                        // First-person uses the FAR LOD hand to match the
+                        // FAR LOD held-hookshot it would otherwise pick.
+                        void* ootHand = gLinkAdultRightHandClosedFarDL;
+                        if (sLastOotHandFP != ootHand || sLastMmBodyFP != mmBody) {
+                            Gfx* dl = sClawshotHandBodyFP;
+                            gSPDisplayList(dl++, ootHand);
+                            gSPDisplayList(dl++, mmBody);
+                            gSPEndDisplayList(dl);
+                            sLastOotHandFP = ootHand;
+                            sLastMmBodyFP = mmBody;
+                        }
+                        *dList = sClawshotHandBodyFP;
                     }
                 }
             }
@@ -2529,6 +2576,12 @@ s32 Player_OverrideLimbDrawPause(PlayState* play, s32 limbIndex, Gfx** dList, Ve
     dLists = &sPlayerDListGroups[type][gSaveContext.linkAge];
     *dList = dLists[dListOffset];
 
+    // Run CustomEquipment's hook FIRST (upstream #6708 had it last), so the pak
+    // override below outranks any active equipment o2r mod in the kaleido preview
+    // too. The pak block's else-branch leaves *dList untouched, so where there's
+    // no per-slot override the hook's result (o2r) survives.
+    GameInteractor_Should(VB_PLAYER_OVERRIDE_LIMB_DRAW_PAUSE, true, limbIndex, dList, GET_PLAYER(play), play);
+
     // PakLoader override for the pause-menu equipment subscreen draw. The
     // gameplay path (Player_OverrideLimbDrawGameplayDefault) already consults
     // PakLoader_GetEquipDL — without this mirror here, slot mixes and the main
@@ -2565,10 +2618,8 @@ s32 Player_OverrideLimbDrawPause(PlayState* play, s32 limbIndex, Gfx** dList, Ve
         } else if (pakDL != NULL) {
             *dList = pakDL;
         }
-        // pakDL == NULL → keep the vanilla *dList we wrote above
+        // pakDL == NULL → keep the o2r/vanilla *dList from the hook above
     }
-
-    GameInteractor_Should(VB_PLAYER_OVERRIDE_LIMB_DRAW_PAUSE, true, limbIndex, dList, GET_PLAYER(play), play);
 
     return 0;
 }

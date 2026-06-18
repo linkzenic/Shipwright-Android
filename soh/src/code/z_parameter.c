@@ -2935,6 +2935,10 @@ void Interface_LoadActionLabelB(PlayState* play, u16 action) {
 // depend on a separate .cpp registration file being in the build.
 extern void Breastplate_OnHealthChangeBefore(int16_t* amount);
 
+// SM64 Mario: route OOT heals to Mario's independent libsm64 health (defined in
+// expansions/sm64/sm64_mario.c, #included into z_player.c). No-op when Mario off.
+extern void Sm64Mario_QueueOotHeal(s16 healthChangeQuarters);
+
 s32 Health_ChangeBy(PlayState* play, s16 healthChange) {
     u16 heartCount;
     u16 healthLevel;
@@ -2944,6 +2948,12 @@ s32 Health_ChangeBy(PlayState* play, s16 healthChange) {
     Breastplate_OnHealthChangeBefore(&healthChange);
     if (healthChange == 0) {
         return 1;
+    }
+
+    // SM64 Mario: forward positive heals (recovery hearts, heart containers,
+    // fairies, potions) to Mario so they restore his power-meter segments too.
+    if (healthChange > 0) {
+        Sm64Mario_QueueOotHeal(healthChange);
     }
 
     // "＊＊＊＊＊ Fluctuation=%d (now=%d, max=%d) ＊＊＊"

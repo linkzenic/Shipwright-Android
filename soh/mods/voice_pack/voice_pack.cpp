@@ -40,6 +40,8 @@
 #include "voice_pack.h"
 #include "z64.h"
 #include "soh/OTRGlobals.h"
+#include <libultraship/bridge.h> // CVarGet*/CVarSet* — was transitive via OTRGlobals.h before upstream #6636
+#include <libultraship/libultraship.h> // full Ship::Window (GetGui) — was transitive via OTRGlobals.h before #6636
 
 // ============================================================================
 // Logging
@@ -571,9 +573,12 @@ extern "C" u8 VoicePack_PlayIfMatch(u16 sfxId, Vec3f* /*pos*/) {
         }
     }
     if (freeSlot < 0) {
-        // All slots busy — steal slot 0 (oldest assumption)
-        freeSlot = 0;
-        sSlots[0].playing.store(0, std::memory_order_release);
+        // All slots busy — skip triggering this voice instead of stealing slot 0.
+        // Stealing here (store playing=0 then overwrite data/len/step) raced the
+        // mixer mid-read of that slot on the audio thread → use-after-free / OOB
+        // read of the previous sample's freed pcm. Dropping the new voice fully
+        // removes the race with no locking; the worst case is one missed line.
+        return 0;
     }
 
     VoiceSlot& slot = sSlots[freeSlot];
@@ -647,7 +652,7 @@ extern "C" void VoicePack_Select(s32 index) {
 extern "C" void VoicePack_Init(void) {
     if (sInitialized)
         return;
-    if (!Ship::Context::GetInstance())
+    if (!Ship::Context::GetRawInstance())
         return;
 
     sInitialized = 1;
@@ -687,7 +692,7 @@ extern "C" void VoicePack_Init(void) {
     s32 saved = CVarGetInteger("gMods.VoicePack.Selection", -1);
     if (saved >= (s32)sPacks.size()) {
         CVarSetInteger("gMods.VoicePack.Selection", -1);
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     // Lazy-select if enabled at startup
     if (CVarGetInteger("gMods.VoicePack.Enabled", 0)) {

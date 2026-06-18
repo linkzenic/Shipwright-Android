@@ -377,6 +377,17 @@ typedef enum {
 #define DMG_HAMMER_JUMP  (1 << 0x1E)
 #define DMG_UNKNOWN_2    (1 << 0x1F)
 
+// NEI: repurposes the unused bit 0x1F. When an AT toucher carries this flag,
+// CollisionCheck_ApplyDamage uses `toucher.damage` VERBATIM and discards the
+// enemy's damage-table result — a CONSTANT damage value independent of the
+// enemy's per-flag table AND of Link's equipped weapon class. Used by
+// transformation forms (e.g. Garo) whose attacks must deal a fixed amount
+// regardless of what sword the player has equipped. Distinct from
+// DMG_UNBLOCKABLE (which only sets a damage FLOOR and is owned by Pikachu
+// Gigantamax) so the two don't interfere. Always pair it with a real weapon
+// bit (e.g. DMG_SLASH_MASTER) so the AT/AC vulnerability match still passes.
+#define DMG_FIXED_DAMAGE (1 << 0x1F)
+
 #define DMG_SLASH (DMG_SLASH_KOKIRI | DMG_SLASH_MASTER | DMG_SLASH_GIANT)
 #define DMG_SPIN_ATTACK (DMG_SPIN_KOKIRI | DMG_SPIN_MASTER | DMG_SPIN_GIANT)
 #define DMG_JUMP_SLASH (DMG_JUMP_KOKIRI | DMG_JUMP_MASTER | DMG_JUMP_GIANT)

@@ -7,6 +7,7 @@
 #include "../Harpoon.h"
 
 #include <libultraship/libultraship.h>
+#include <fast/Fast3dGui.h>
 #include <spdlog/spdlog.h>
 #include <imgui.h>
 
@@ -54,9 +55,9 @@ s32  sTTStickDebounce  = 0;
 bool sTTHasVoted       = false;
 
 void SafeLoadTexture(const char* name, const char* path) {
-    auto archMgr = Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager();
+    auto archMgr = Ship::Context::GetRawInstance()->GetResourceManager()->GetArchiveManager();
     if (!archMgr->HasFile(path)) return;
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
     gui->LoadTextureFromRawImage(name, path);
 }
 
@@ -97,7 +98,7 @@ class TriforceThiefMapSelectWindow final : public Ship::GuiWindow {
 
         if (!sTTTexturesLoaded) LoadTTTextures();
 
-        auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+        auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
         auto vp = ImGui::GetMainViewport();
         float vpW = vp->Size.x, vpH = vp->Size.y;
         float vpX = vp->Pos.x,  vpY = vp->Pos.y;
@@ -350,7 +351,7 @@ std::shared_ptr<TriforceThiefMapSelectWindow> sTTWindow;
 namespace HarpoonTriforceThief {
 
 void RegisterMapSelectWindow() {
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = Ship::Context::GetRawInstance()->GetWindow()->GetGui();
     if (gui == nullptr) return;
     static const char* kName = "TriforceThiefMapSelect";
     if (gui->GetGuiWindow(kName) != nullptr) return;

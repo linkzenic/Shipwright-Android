@@ -28,6 +28,8 @@
 
 #include "gerudo_voice.h"
 #include "z64.h"
+#include <libultraship/bridge.h> // CVarGet*/CVarSet* — was transitive via OTRGlobals.h before upstream #6636
+#include <libultraship/libultraship.h> // full Ship::ResourceManager (GetArchiveManager) — was transitive via OTRGlobals.h before #6636
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 #include <ship/Context.h>
@@ -183,7 +185,7 @@ static bool ParseSfxIdFromPath(const std::string& path, uint16_t* outId) {
 // ============================================================================
 
 static void DoInit() {
-    auto ctx = Ship::Context::GetInstance();
+    auto ctx = Ship::Context::GetRawInstance();
     if (!ctx) return;
     auto rm = ctx->GetResourceManager();
     if (!rm) return;
@@ -254,7 +256,7 @@ extern "C" u8 GerudoVoice_PlayIfMatch(u16 sfxId, Vec3f* /*pos*/) {
     std::uniform_int_distribution<size_t> dist(0, variants.size() - 1);
     const GerudoSample& chosen = variants[dist(sRng)];
 
-    // Find free slot, else steal slot 0
+    // Find a free slot; if none, skip this voice (do NOT steal slot 0).
     int freeSlot = -1;
     for (int i = 0; i < GV_SLOT_COUNT; i++) {
         if (sSlots[i].playing.load(std::memory_order_acquire) == 0) {
@@ -263,8 +265,11 @@ extern "C" u8 GerudoVoice_PlayIfMatch(u16 sfxId, Vec3f* /*pos*/) {
         }
     }
     if (freeSlot < 0) {
-        freeSlot = 0;
-        sSlots[0].playing.store(0, std::memory_order_release);
+        // All slots busy — skip instead of stealing. Stealing slot 0 (store
+        // playing=0 then overwrite data/len/step) raced the mixer mid-read on the
+        // audio thread → use-after-free / OOB of the previous sample's pcm.
+        // Dropping the new voice removes the race with no locking.
+        return 0;
     }
 
     GVoiceSlot& s = sSlots[freeSlot];

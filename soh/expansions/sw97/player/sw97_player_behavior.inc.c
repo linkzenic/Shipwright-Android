@@ -284,8 +284,12 @@ void Sw97_TickBlindness(void) {
  * spawner) can query without threading through a parameter.
  */
 #define CUCCO_MODE_FRAMES   1800  // 30 sec @ 60fps tick
-#define CUCCO_FLAP_VELOCITY 10.0f  // upward burst per A press (Flappy Bird)
-#define CUCCO_GRAVITY      -0.8f   // reduced from vanilla -2 / -4 for slow fall
+#define CUCCO_FLAP_VELOCITY 8.0f   // upward burst per A press (Flappy Bird)
+#define CUCCO_GRAVITY      -0.7f   // soft fall — gets countered by flap
+#define CUCCO_HOVER         5.0f   // floor clamp margin (same as HGRACE_FAIRY_HOVER)
+#define CUCCO_SPEED         5.0f
+#define CUCCO_SPRINT_MULT   2.0f
+#define CUCCO_MAX_VY_DOWN  -6.0f
 
 s32 gSw97CuccoModeActive  = 0;
 s32 gSw97CuccoModeTimer   = 0;
@@ -295,24 +299,33 @@ Actor* gSw97CuccoPuppet = NULL;
 // Saved player draw — restored on exit. NULL'd while active so Link is
 // invisible (the puppet provides the visual).
 void* gSw97CuccoSavedDraw = NULL;
+// Authoritative cucco position — saved at end of each tick, restored at the
+// start of the next so Actor_UpdateBgCheckInfo can't displace Link out of
+// our custom movement. Direct port of sFairyPos/sFairyPosValid from HGrace.
+Vec3f gSw97CuccoPos = { 0.0f, 0.0f, 0.0f };
+u8    gSw97CuccoPosValid = 0;
+Vec3f gSw97CuccoVel = { 0.0f, 0.0f, 0.0f };
 
 void Sw97_StartCuccoMode(void) {
     if (gSw97CuccoModeActive) return; // idempotent
     gSw97CuccoModeActive = 1;
     gSw97CuccoModeTimer  = CUCCO_MODE_FRAMES;
-    // Puppet spawn deferred to first tick — needs PlayState which we don't
-    // have here. Same for draw swap (needs Player*).
+    gSw97CuccoPosValid   = 0;
+    gSw97CuccoVel.x = gSw97CuccoVel.y = gSw97CuccoVel.z = 0.0f;
+    // Puppet spawn + flag setup deferred to first tick — needs PlayState/Player.
 }
 
 void Sw97_EndCuccoMode(void) {
     if (!gSw97CuccoModeActive) return;
     gSw97CuccoModeActive = 0;
     gSw97CuccoModeTimer  = 0;
+    gSw97CuccoPosValid   = 0;
     if (gSw97CuccoPuppet != NULL && gSw97CuccoPuppet->update != NULL) {
         Actor_Kill(gSw97CuccoPuppet);
     }
     gSw97CuccoPuppet = NULL;
-    // Player draw restored next tick when the active flag is off.
+    // Player flag cleanup + draw restoration happens in the inactive branch
+    // of Sw97_TickCuccoMode on the next frame.
 }
 
 s32 Sw97_IsCuccoModeActive(void) {
@@ -321,13 +334,25 @@ s32 Sw97_IsCuccoModeActive(void) {
 
 #include "overlays/actors/ovl_En_Niw/z_en_niw.h"
 
+// Scene tracking — clear stale puppet pointer when the scene changes,
+// otherwise the next tick reads through a freed actor pointer → crash.
+static s32 gSw97CuccoLastScene = -1;
+
 void Sw97_TickCuccoMode(PlayState* play, Player* player) {
+    // ─── INACTIVE: restore Link cleanly ─────────────────────────────────
     if (!gSw97CuccoModeActive) {
-        // Off — restore Link's draw if it was swapped.
         if (gSw97CuccoSavedDraw != NULL && player != NULL) {
             player->actor.draw = (ActorFunc)gSw97CuccoSavedDraw;
             gSw97CuccoSavedDraw = NULL;
+            player->cylinder.base.atFlags  |= AT_ON;
+            player->cylinder.base.acFlags  |= AC_ON;
+            player->cylinder.base.ocFlags1 |= OC1_ON;
+            player->stateFlags1 &= ~PLAYER_STATE1_INPUT_DISABLED;
+            player->invincibilityTimer = 20;
+            Audio_PlayActorSound2(&player->actor, NA_SE_EV_CHICKEN_CRY_M);
+            func_800AA000(200.0f, 150, 20, 80);
         }
+        gSw97CuccoLastScene = -1;
         return;
     }
 
@@ -338,11 +363,20 @@ void Sw97_TickCuccoMode(PlayState* play, Player* player) {
 
     if (player == NULL || play == NULL) return;
 
-    // ─── Lazy puppet spawn ─────────────────────────────────────────────
-    // params 0xE: cucco with no AI (mass=0, ATTENTION disabled). We re-pin
-    // its position every frame and disable its OC so it can't push Link.
-    // First spawn also configures the camera and plays a flash/sound — same
-    // entry polish Hylia's Grace uses when entering fairy mode.
+    // Scene change → puppet memory is gone, force-reset our state cleanly.
+    if (gSw97CuccoLastScene >= 0 && gSw97CuccoLastScene != play->sceneNum) {
+        gSw97CuccoPuppet   = NULL;
+        gSw97CuccoPosValid = 0;
+        gSw97CuccoVel.x = gSw97CuccoVel.y = gSw97CuccoVel.z = 0.0f;
+    }
+    gSw97CuccoLastScene = play->sceneNum;
+
+    // ─── Restore authoritative position FIRST (HGrace pattern) ──────────
+    if (gSw97CuccoPosValid) {
+        player->actor.world.pos = gSw97CuccoPos;
+    }
+
+    // ─── First-frame setup ──────────────────────────────────────────────
     if (gSw97CuccoPuppet == NULL || gSw97CuccoPuppet->update == NULL) {
         gSw97CuccoPuppet = Actor_Spawn(&play->actorCtx, play, ACTOR_EN_NIW,
                                        player->actor.world.pos.x,
@@ -352,21 +386,109 @@ void Sw97_TickCuccoMode(PlayState* play, Player* player) {
         if (gSw97CuccoPuppet != NULL && gSw97CuccoSavedDraw == NULL) {
             gSw97CuccoSavedDraw = (void*)player->actor.draw;
             player->actor.draw = NULL;
-            // Camera back to the default chase setting so it follows the
-            // (invisible) Player actor smoothly — the puppet is pinned to
-            // Link so the framing reads naturally.
             Camera_ChangeSetting(Play_GetCamera(play, 0), CAM_SET_NORMAL0);
-            // Entry SFX + flash (HGrace pattern).
             Audio_PlayActorSound2(&player->actor, NA_SE_EV_CHICKEN_CRY_M);
             func_800AA000(200.0f, 150, 20, 80);
         }
     }
 
-    // ─── Mirror Link's transform on the puppet, neutralize its collider ─
+    // ─── HGrace pattern: input disabled, custom movement ───────────────
+    player->stateFlags1 |= PLAYER_STATE1_INPUT_DISABLED;
+    player->stateFlags1 &= ~PLAYER_STATE1_IN_ITEM_CS;
+
+    player->actor.focus.pos.x = player->actor.world.pos.x;
+    player->actor.focus.pos.y = player->actor.world.pos.y + 20.0f;
+    player->actor.focus.pos.z = player->actor.world.pos.z;
+
+    player->invincibilityTimer = -1;
+
+    player->linearVelocity = 0.0f;
+    player->actor.speedXZ = 0.0f;
+    player->actor.velocity.x = player->actor.velocity.y = player->actor.velocity.z = 0.0f;
+
+    player->cylinder.base.atFlags  &= ~AT_ON;
+    player->cylinder.base.acFlags  &= ~AC_ON;
+    player->cylinder.base.ocFlags1 &= ~OC1_ON;
+
+    // ─── Read input (raw, HGrace pattern) ───────────────────────────────
+    u8 aPress = CHECK_BTN_ALL(play->state.input[0].press.button, BTN_A);
+    u8 lBtn   = CHECK_BTN_ALL(play->state.input[0].cur.button, BTN_L);
+
+    f32 stickMag;
+    s16 stickAngle;
+    func_80077D10(&stickMag, &stickAngle, &play->state.input[0]);
+    s16 worldYaw = Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)) + stickAngle;
+
+    f32 speed = CUCCO_SPEED;
+    if (lBtn) speed *= CUCCO_SPRINT_MULT;
+
+    f32 targetVX = 0.0f, targetVZ = 0.0f;
+    if (stickMag > 10.0f) {
+        f32 normMag = stickMag / 60.0f;
+        if (normMag > 1.0f) normMag = 1.0f;
+        targetVX = Math_SinS(worldYaw) * speed * normMag;
+        targetVZ = Math_CosS(worldYaw) * speed * normMag;
+    }
+
+    // Smooth XZ (same coefficients as HGrace).
+    f32 maxStep = speed * 0.5f;
+    Math_SmoothStepToF(&gSw97CuccoVel.x, targetVX, 0.3f, maxStep, 0.01f);
+    Math_SmoothStepToF(&gSw97CuccoVel.z, targetVZ, 0.3f, maxStep, 0.01f);
+
+    // Flappy Bird Y: A press = upward burst, otherwise integrate soft gravity.
+    if (aPress) {
+        gSw97CuccoVel.y = CUCCO_FLAP_VELOCITY;
+        Audio_PlayActorSound2(&player->actor, NA_SE_EV_CHICKEN_CRY_A);
+        if (gSw97CuccoPuppet != NULL) {
+            ((EnNiw*)gSw97CuccoPuppet)->unk_2A6 = 2;
+        }
+    } else {
+        gSw97CuccoVel.y += CUCCO_GRAVITY;
+        if (gSw97CuccoVel.y < CUCCO_MAX_VY_DOWN) gSw97CuccoVel.y = CUCCO_MAX_VY_DOWN;
+    }
+
+    // Face movement direction.
+    if (fabsf(gSw97CuccoVel.x) > 0.5f || fabsf(gSw97CuccoVel.z) > 0.5f) {
+        s16 moveYaw = Math_Atan2S(gSw97CuccoVel.x, gSw97CuccoVel.z);
+        Math_SmoothStepToS(&player->actor.shape.rot.y, moveYaw, 5, 0x1000, 0x100);
+        player->actor.world.rot.y = player->actor.shape.rot.y;
+    }
+
+    // ─── Position application + floor clamp (HGrace verbatim) ───────────
+    Vec3f desiredPos;
+    desiredPos.x = player->actor.world.pos.x + gSw97CuccoVel.x;
+    desiredPos.y = player->actor.world.pos.y + gSw97CuccoVel.y;
+    desiredPos.z = player->actor.world.pos.z + gSw97CuccoVel.z;
+
+    CollisionPoly* floorPoly = NULL;
+    s32 floorBgId;
+    f32 floor = BgCheck_EntityRaycastFloor5(play, &play->colCtx, &floorPoly, &floorBgId,
+                                            &player->actor, &desiredPos);
+    if (floor > BGCHECK_Y_MIN && desiredPos.y < floor + CUCCO_HOVER) {
+        desiredPos.y = floor + CUCCO_HOVER;
+        if (gSw97CuccoVel.y < 0.0f) gSw97CuccoVel.y = 0.0f;
+    }
+
+    player->actor.world.pos = desiredPos;
+    gSw97CuccoPos = desiredPos;
+    gSw97CuccoPosValid = 1;
+
+    // ─── Auto-exit on loading zone (mirrors HGrace's exit detection) ────
+    // Stepping onto a floor polygon with an exit index ends cucco mode
+    // cleanly so the puppet is killed before scene transition runs —
+    // otherwise the EnNiw pointer dangles into the next scene and the
+    // tick crashes when it derefs it.
+    if (floorPoly != NULL && play->transitionTrigger == TRANS_TRIGGER_OFF) {
+        s32 exitIndex = SurfaceType_GetSceneExitIndex(&play->colCtx, floorPoly, floorBgId);
+        if (exitIndex != 0) {
+            Sw97_EndCuccoMode();
+            return;
+        }
+    }
+
+    // ─── Mirror puppet + animate ────────────────────────────────────────
     if (gSw97CuccoPuppet != NULL) {
-        gSw97CuccoPuppet->world.pos.x = player->actor.world.pos.x;
-        gSw97CuccoPuppet->world.pos.y = player->actor.world.pos.y;
-        gSw97CuccoPuppet->world.pos.z = player->actor.world.pos.z;
+        gSw97CuccoPuppet->world.pos = desiredPos;
         gSw97CuccoPuppet->shape.rot.y = player->actor.shape.rot.y;
         gSw97CuccoPuppet->world.rot.y = player->actor.shape.rot.y;
         gSw97CuccoPuppet->flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
@@ -375,64 +497,15 @@ void Sw97_TickCuccoMode(PlayState* play, Player* player) {
         gSw97CuccoPuppet->velocity.z = 0.0f;
         gSw97CuccoPuppet->gravity = 0.0f;
         gSw97CuccoPuppet->speedXZ = 0.0f;
-        // Disable the puppet's collider so it can't OC-push Link nor be
-        // grabbed via Actor_OfferCarry.
         EnNiw* niw = (EnNiw*)gSw97CuccoPuppet;
         niw->collider.base.atFlags  = 0;
         niw->collider.base.acFlags  = 0;
         niw->collider.base.ocFlags1 = 0;
         niw->collider.info.ocElemFlags = 0;
-        // Speed up the cucco's idle animation when Link is moving so it reads
-        // as "walking". When idle/airborne the default 1.0× playback gives the
-        // usual bobbing. Tied to linearVelocity rather than ground-state so
-        // the wing-flap also ramps up while gliding.
-        f32 speed = fabsf(player->linearVelocity);
-        f32 animRate = 1.0f + (speed * 0.15f); // 1.0 at rest → ~2.5 at run
+        f32 speedMag = sqrtf(SQ(gSw97CuccoVel.x) + SQ(gSw97CuccoVel.z));
+        f32 animRate = 1.0f + speedMag * 0.2f;
         if (animRate > 3.0f) animRate = 3.0f;
         niw->skelAnime.playSpeed = animRate;
-        // Advance the cucco's animation manually — the EnNiw update doesn't
-        // call SkelAnime_Update itself, so without this the body never
-        // animates while we're piloting the puppet.
         SkelAnime_Update(&niw->skelAnime);
-    }
-
-    // ─── Camera focus tracking ─────────────────────────────────────────
-    // Keep the chase camera framed on Link's body — the cucco puppet sits at
-    // Link's pos so the same focus point reads correctly for both. Pattern
-    // copied from Hylia's Grace HGRACE_STATE_FAIRY.
-    player->actor.focus.pos.x = player->actor.world.pos.x;
-    player->actor.focus.pos.y = player->actor.world.pos.y + 20.0f;
-    player->actor.focus.pos.z = player->actor.world.pos.z;
-
-    // ─── Isolate Link from collision pushback ──────────────────────────
-    // Mirror Hylia's Grace fairy mode: disable Link's own AT/AC/OC so
-    // nothing in the world (puppet cucco included) wobbles him around.
-    // Permanent invincibility while transformed — Cucco mode is empowering.
-    player->cylinder.base.atFlags  &= ~AT_ON;
-    player->cylinder.base.acFlags  &= ~AC_ON;
-    player->cylinder.base.ocFlags1 &= ~OC1_ON;
-    if (player->invincibilityTimer > -100) {
-        player->invincibilityTimer = -1;
-    }
-
-    // ─── Flap mechanic (Flappy Bird) ───────────────────────────────────
-    // A press while airborne gives an upward burst, then engine gravity is
-    // softened so the descent feels weightless until the next flap. Each
-    // flap triggers the EnNiw feather burst (its unk_2A6 flag) so the visual
-    // matches the action — using the cucco's own particle system.
-    Input* input = &play->state.input[0];
-    if (CHECK_BTN_ALL(input->press.button, BTN_A) &&
-        !(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
-        player->actor.velocity.y = CUCCO_FLAP_VELOCITY;
-        Audio_PlayActorSound2(&player->actor, NA_SE_EV_CHICKEN_CRY_A);
-        if (gSw97CuccoPuppet != NULL) {
-            EnNiw* niw = (EnNiw*)gSw97CuccoPuppet;
-            niw->unk_2A6 = 2; // 4-feather burst (vs 20 on death)
-        }
-    }
-    if (!(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) &&
-        player->actor.velocity.y < 0.0f) {
-        player->actor.velocity.y *= 0.85f;
-        if (player->actor.velocity.y < -6.0f) player->actor.velocity.y = -6.0f;
     }
 }

@@ -66,13 +66,27 @@ s32 FindByName(const char* name) {
     return -1;
 }
 
+// Sanity gate, ported from pak_loader's IsValidLinkSkel. ResourceMgr_LoadSkeletonByName
+// can return a non-NULL pointer to an UNRELATED resource when the requested path does
+// not actually ship a Flex skeleton (e.g. the .o2r is missing/mismatched). Reading
+// limbCount/segment off that gives garbage, and swapping the player skeleton to it is a
+// guaranteed crash inside the flex walker (SkelAnime_DrawFlexLod). A real OOT-Link skel
+// has limbCount in [1, 32] and a non-NULL segment (the limb/dList pointer table).
+bool IsValidLinkSkel(SkeletonHeader* hdr) {
+    if (hdr == nullptr) return false;
+    if (hdr->limbCount == 0 || hdr->limbCount > 32) return false;
+    if (hdr->segment == nullptr) return false;
+    return true;
+}
+
 // Attempt to resolve the skeleton resource. Returns true on success.
 bool LazyLoad(O2rEntry& e) {
     if (e.loaded) return true;
     SkeletonHeader* hdr = ResourceMgr_LoadSkeletonByName(e.skelOtrPath, nullptr);
-    if (hdr == nullptr) {
-        O2R_LOG("LazyLoad FAIL: '{}' could not resolve '{}' (is the .o2r in nei/?)",
-                e.name, e.skelOtrPath);
+    if (!IsValidLinkSkel(hdr)) {
+        O2R_LOG("LazyLoad FAIL: '{}' could not resolve a valid Link skel at '{}' "
+                "(hdr={}, limbCount={}) — falling back to vanilla Link, no swap",
+                e.name, e.skelOtrPath, (void*)hdr, hdr ? hdr->limbCount : -1);
         return false;
     }
     e.skel = (FlexSkeletonHeader*)hdr;
@@ -140,7 +154,9 @@ extern "C" const char* O2rLoader_GetForcedName(void) {
 extern "C" void O2rLoader_SwapSkeleton(Player* player) {
     if (!O2rLoader_HasActiveModel() || !player) return;
     FlexSkeletonHeader* flex = sModels[sForcedIdx].skel;
-    if (!flex || !flex->sh.segment) return;
+    // Re-validate before writing into player->skelAnime. Skipping the swap here
+    // leaves Link's vanilla skeleton intact instead of crashing the flex walker.
+    if (!flex || !IsValidLinkSkel(&flex->sh)) return;
 
     sSavedSkeleton = player->skelAnime.skeleton;
     sSavedDListCount = player->skelAnime.dListCount;

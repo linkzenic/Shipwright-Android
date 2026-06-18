@@ -21,6 +21,8 @@ static void O2rUpdateMounts(void);
 #include "global.h"
 #include "z64.h"
 #include "soh/OTRGlobals.h"
+#include <libultraship/bridge.h> // CVarGet*/CVarSet* — was transitive via OTRGlobals.h before upstream #6636
+#include <libultraship/libultraship.h> // full Ship::Window (GetGui) — was transitive via OTRGlobals.h before #6636
 
 // Used for scene-change detection to invalidate stale OTR pointers in the equipment cache.
 extern PlayState* gPlayState;
@@ -35,7 +37,16 @@ extern PlayState* gPlayState;
 #include <map>
 #include <memory>
 #include <algorithm>
+#include <cstdint>
 #include <zlib.h>
+
+// Upper bound for an estimated zobj decompression buffer. A player .zobj is a
+// few hundred KB at most; 64 MB is generously safe and stops a crafted DEFL
+// header (compSize * 8) from requesting a multi-GB / overflowing allocation.
+// uLongf is 32-bit on Windows and 64-bit on linux/mac, so the cap is applied in
+// 64-bit math before narrowing to uLongf to keep the behaviour identical across
+// platforms.
+static constexpr uint64_t kMaxZobjDecompSize = 64ULL * 1024ULL * 1024ULL;
 
 // .o2r archives for equipment-mix entries. Each .o2r dropped into mods/ shows
 // up as a selectable PakModel; its DLs flow through the same equipDLs map the
@@ -319,7 +330,11 @@ static bool PakParser_Parse(const std::string& pakPath, std::vector<PakEntry>& e
             u32 dataStart = BE_U32(data.data() + pos + 8);
             u32 dataEnd = BE_U32(data.data() + pos + 12);
 
-            if (nameOff < (u32)fileSize && dataStart < (u32)fileSize && dataEnd <= (u32)fileSize) {
+            // Reject malformed ranges. dataStart > dataEnd would make
+            // (dataEnd - dataStart) wrap to ~4GB as an unsigned size later, so the
+            // ordering check is mandatory here (the old `dataEnd <= fileSize` guard
+            // alone let a wrapped compSize through and caused a ~4GB OOB read).
+            if (nameOff < (u32)fileSize && dataStart <= dataEnd && dataEnd <= (u32)fileSize) {
                 rawEntries.push_back({ nameOff, dataStart, dataEnd, isDefl });
             }
         } else {
@@ -1887,7 +1902,7 @@ static bool LoadO2rEquipment(PakModel& model) {
     // We open our own standalone Archive instance below to pull the DLs we
     // want into the equipment cache. Removing the global mount means the .o2r
     // is now ONLY active when the user explicitly selects it in the dropdown.
-    auto rm = Ship::Context::GetInstance()->GetResourceManager();
+    auto rm = Ship::Context::GetRawInstance()->GetResourceManager();
     if (!rm) return false;
     auto archiveManager = rm->GetArchiveManager();
     if (archiveManager) {
@@ -2189,15 +2204,24 @@ static bool LoadPakModel(PakModel& model) {
                 if (entry.name.find(equipFile) == std::string::npos)
                     continue;
 
-                u32 compSize = entry.dataEnd - entry.dataStart;
-                if (compSize == 0 || entry.dataStart + compSize > (u32)fileSize)
+                // 64-bit math so the size never wraps, and validate the byte range
+                // against the actual buffer before any malloc/uncompress/memcpy.
+                if (entry.dataStart > entry.dataEnd || entry.dataEnd > (uint64_t)pakData.size())
                     continue;
+                uint64_t compSize64 = (uint64_t)entry.dataEnd - (uint64_t)entry.dataStart;
+                if (compSize64 == 0 || (uint64_t)entry.dataStart + compSize64 > (uint64_t)pakData.size())
+                    continue;
+                u32 compSize = (u32)compSize64;
 
                 u8* zobjData = NULL;
                 u32 zobjSize = 0;
 
                 if (entry.compressed) {
-                    uLongf decompSize = compSize * 8;
+                    // Cap the decompressed estimate to a sane bound. uLongf is 32-bit
+                    // on Windows but 64-bit on linux/mac, so compute in 64-bit and
+                    // clamp before narrowing to avoid a platform-divergent overflow.
+                    uint64_t decompSize64 = std::min<uint64_t>(compSize64 * 8ULL, kMaxZobjDecompSize);
+                    uLongf decompSize = (uLongf)decompSize64;
                     zobjData = (u8*)malloc(decompSize);
                     if (!zobjData)
                         continue;
@@ -2255,14 +2279,22 @@ static bool LoadPakModel(PakModel& model) {
         for (auto& entry : entries) {
             // Match by filename (entries may have path prefix like "N64_Kafei/xxx.zobj")
             if (entry.name.find(zobjName) != std::string::npos) {
-                u32 compSize = entry.dataEnd - entry.dataStart;
-                if (compSize == 0 || entry.dataStart + compSize > (u32)fileSize)
+                // 64-bit math so the size never wraps, and validate the byte range
+                // against the actual buffer before any malloc/uncompress/memcpy.
+                if (entry.dataStart > entry.dataEnd || entry.dataEnd > (uint64_t)pakData.size())
                     return false;
+                uint64_t compSize64 = (uint64_t)entry.dataEnd - (uint64_t)entry.dataStart;
+                if (compSize64 == 0 || (uint64_t)entry.dataStart + compSize64 > (uint64_t)pakData.size())
+                    return false;
+                u32 compSize = (u32)compSize64;
 
                 if (entry.compressed) {
                     // DEFL: decompress with zlib
-                    // Estimate max decompressed size (zobj rarely > 4x compressed)
-                    uLongf decompSize = compSize * 8;
+                    // Estimate max decompressed size (zobj rarely > 4x compressed),
+                    // capped to a sane bound. uLongf is 32-bit on Windows / 64-bit on
+                    // linux/mac, so compute in 64-bit and clamp before narrowing.
+                    uint64_t decompSize64 = std::min<uint64_t>(compSize64 * 8ULL, kMaxZobjDecompSize);
+                    uLongf decompSize = (uLongf)decompSize64;
                     u8* decompBuf = (u8*)malloc(decompSize);
                     if (!decompBuf)
                         return false;
@@ -2355,7 +2387,7 @@ static s32 sSavedDListCount = 0;
 static bool MountO2rArchive(PakModel& model) {
     if (model.source != PAK_SOURCE_O2R) return false;
     if (model.o2rArchiveMounted) return true;
-    auto rm = Ship::Context::GetInstance()->GetResourceManager();
+    auto rm = Ship::Context::GetRawInstance()->GetResourceManager();
     if (!rm) return false;
     auto am = rm->GetArchiveManager();
     if (!am) return false;
@@ -3382,24 +3414,31 @@ extern "C" Gfx* PakLoader_GetEquipDL(Player* player, s32 limbIndex) {
         s32 hasSword = (sheathType == PLAYER_MODELTYPE_SHEATH_16 || sheathType == PLAYER_MODELTYPE_SHEATH_18);
 
         if (hasSword && hasShieldOnBack && shield > 0) {
-            // Sword sheathed + shield on back.
+            // Sword sheathed + shield on back. Dispatch by the EQUIPPED sword.
             // New Z64O format (0x55xx): shield-first ordering, built by combo from pieces.
-            // Old zzplayas format (0x54xx): sword-first ordering, loaded directly from body pak LUT.
-            //   sword1+shield: 0x5400-0x5410, sword2(Master)+shield: 0x5418-0x5428, sword3+shield: 0x5430-0x5440
-            // Try both orderings — they produce identical visuals.
-            // DO NOT fall back to sword-only (0x53D0): that suppresses the shield.
-            static const u32 sNew55[] = { 0x55C0, 0x55C8, 0x55D0 };    // new: Deku/Hylian/Mirror + any sword
-            static const u32 sOld54_s2[] = { 0x5418, 0x5420, 0x5428 }; // old: Master Sword + D/H/M
-            static const u32 sOld54_s1[] = { 0x5400, 0x5408, 0x5410 }; // old: Kokiri Sword + D/H/M
-            static const u32 sOld54_s3[] = { 0x5430, 0x5438, 0x5440 }; // old: Biggoron + D/H/M
+            // Old zzplayas format (0x54xx): sword-first ordering, from the body pak LUT.
+            // Both are indexed [swordRow][shield(Deku/Hylian/Mirror)].
+            // BUG (fixed): the old code tried the Kokiri row (0x55C0/C8/D0) FIRST
+            // unconditionally, so Adult+Master sheathed-with-shield rendered the
+            // Kokiri sword whenever the pak shipped the Kokiri combo (it usually does).
+            // DO NOT fall back to a DIFFERENT sword's combo, and not to sword-only
+            // (0x53D0, which suppresses the shield) — NULL → vanilla draws both.
+            static const u32 sNew55[3][3] = {
+                { 0x55C0, 0x55C8, 0x55D0 }, // Kokiri  + Deku/Hylian/Mirror
+                { 0x55D8, 0x55E0, 0x55E8 }, // Master  + Deku/Hylian/Mirror
+                { 0x55F0, 0x55F8, 0x5600 }, // Biggoron + Deku/Hylian/Mirror
+            };
+            static const u32 sOld54[3][3] = {
+                { 0x5400, 0x5408, 0x5410 }, // Kokiri  + Deku/Hylian/Mirror
+                { 0x5418, 0x5420, 0x5428 }, // Master  + Deku/Hylian/Mirror
+                { 0x5430, 0x5438, 0x5440 }, // Biggoron + Deku/Hylian/Mirror
+            };
+            u8 item = gSaveContext.equips.buttonItems[0];
+            s32 row = (item == ITEM_SWORD_MASTER) ? 1 : (item == ITEM_SWORD_BGS) ? 2 : 0;
             s32 si = shield - 1;
-            result = FindEquip(eq, sNew55[si]);
+            result = FindEquip(eq, sNew55[row][si]);
             if (!result)
-                result = FindEquip(eq, sOld54_s2[si]);
-            if (!result)
-                result = FindEquip(eq, sOld54_s1[si]);
-            if (!result)
-                result = FindEquip(eq, sOld54_s3[si]);
+                result = FindEquip(eq, sOld54[row][si]);
             // NULL → fall through to vanilla (which draws both sword+shield correctly)
         } else if (hasSword) {
             // Sword sheathed on back, no shield. Vanilla picks the sheathed-combo
@@ -3999,7 +4038,7 @@ extern "C" void PakLoader_Init(void) {
         return;
 
     // Don't try to init until Context is ready
-    if (!Ship::Context::GetInstance())
+    if (!Ship::Context::GetRawInstance())
         return;
 
     sInitialized = 1;
@@ -4125,7 +4164,7 @@ extern "C" void PakLoader_Init(void) {
         dirty = true;
     }
     if (dirty) {
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
 
     // Apply persisted CVar selections immediately so the player doesn't have to
@@ -4762,14 +4801,34 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
     PAK_LOG("harpoon/skins: scanning '%s'", syncPath.string().c_str());
 
     std::vector<std::filesystem::path> pakFiles;
-    for (auto& entry : std::filesystem::recursive_directory_iterator(syncPath)) {
-        if (entry.is_directory()) continue;
-        std::string ext = entry.path().extension().string();
-        for (char& c : ext) c = (char)tolower((unsigned char)c);
-        if (ext == ".pak") pakFiles.push_back(entry.path());
-        // .o2r files in this folder are NOT pak_loader's concern — they are
-        // handled by the Harpoon skin sync subsystem, which scans the same
-        // folder independently and applies overrides to remote dummy actors.
+    // Non-throwing walk: a symlink cycle / unreadable subdir / file vanishing mid-scan must
+    // NOT throw out of this function — it runs from the Harpoon network callback on connect,
+    // and an uncaught filesystem_error would std::terminate the whole game. (.o2r files here
+    // are the Harpoon skin-sync subsystem's concern, not pak_loader's.)
+    {
+        std::error_code walkEc;
+        auto it = std::filesystem::recursive_directory_iterator(
+            syncPath, std::filesystem::directory_options::skip_permission_denied, walkEc);
+        if (walkEc) {
+            PAK_LOG("harpoon/skins: cannot open for scan: %s", walkEc.message().c_str());
+        } else {
+            std::filesystem::recursive_directory_iterator end;
+            for (; it != end; it.increment(walkEc)) {
+                if (walkEc) {
+                    PAK_LOG("harpoon/skins: scan aborted (symlink cycle / vanished dir): %s",
+                            walkEc.message().c_str());
+                    break;
+                }
+                try {
+                    if (it->is_directory()) continue;
+                    std::string ext = it->path().extension().string();
+                    for (char& c : ext) c = (char)tolower((unsigned char)c);
+                    if (ext == ".pak") pakFiles.push_back(it->path());
+                } catch (const std::exception&) {
+                    continue;
+                }
+            }
+        }
     }
 
     PAK_LOG("harpoon/skins: found %d .pak", (int)pakFiles.size());

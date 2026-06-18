@@ -203,6 +203,14 @@ void* MmAssets_LoadHookshotChainDL(void);
 void* MmAssets_LoadHookshotReticleDL(void);
 
 /**
+ * Load MM hookshot tip DL — the claw that flies through the air during
+ * a shot. Distinct from the body DL (which stays in Link's hand).
+ * Path: __OTR__objects/object_lbfshot/object_lbfshot_DL_000228
+ * @return Gfx* (cast to void*), or NULL if not in mm.o2r
+ */
+void* MmAssets_LoadHookshotTipDL(void);
+
+/**
  * Load form-specific B-button icon (mask icon for each transformation)
  * @param form MM_PLAYER_FORM_* enum (0=FD, 1=Goron, 2=Zora, 3=Deku)
  * @return Pointer to 32x32 RGBA icon texture, or NULL if not found

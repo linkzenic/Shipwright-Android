@@ -24,6 +24,7 @@ extern "C" {
 #include "mods/items/custom_items.h"
 #include "mods/actors/somaria_cubes.h"
 #include "mods/pak_loader/pak_loader.h"
+#include "expansions/sm64/sm64_mario.h" // Sm64Remote_CanRender / Sm64Remote_DrawPuppet
 extern PlayState* gPlayState;
 
 void Player_UseItem(PlayState* play, Player* player, s32 item);
@@ -742,11 +743,28 @@ void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play) {
         if (drew) return;  // prop rendered, skip vanilla skel
     }
 
+    // SM64 Mario (transformation == HARPOON_MODELTYPE_MARIO): if THIS client has
+    // the libsm64 runtime ready (sm64.dll + sm64.n64 present, puppet export
+    // available), render the remote as a real libsm64 Mario mesh — recolored from
+    // red to their Harpoon color and posed to their network-synced animation
+    // (marioAnimId/marioAnimFrame). CONDITIONAL: if we can't render Mario (missing
+    // DLL/ROM, or an older sm64.dll), drew is false and we fall through to the
+    // normal Link draw so the dummy stays visible. A dedicated shared renderer
+    // instance is used (not the local Mario singleton), so this works whether or
+    // not the local player is themselves Mario.
+    if (client.transformation == HARPOON_MODELTYPE_MARIO && Sm64Remote_CanRender()) {
+        bool drew = Sm64Remote_DrawPuppet(play, actor->world.pos.x, actor->world.pos.y,
+                                          actor->world.pos.z, actor->shape.rot.y,
+                                          client.marioAnimId, client.marioAnimFrame,
+                                          client.color.r, client.color.g, client.color.b);
+        if (drew) return;  // remote rendered as Mario, skip the Link draw
+    }
+
     // MM transformations 1=Goron, 2=Zora, 3=Deku, 4=FierceDeity → custom MM
-    // skeleton draw. Anything else (Pikachu=5 with SSBB skin, Mario via libsm64,
-    // future forms) falls through to OOT Link draw as a Phase A placeholder so
-    // the dummy is at least visible — the local renderers for those forms
-    // (PikachuForm_Draw, Sm64Mario_Draw) read singleton state that can't be
+    // skeleton draw. Anything else (Pikachu=5 with SSBB skin, a Mario we couldn't
+    // render above, future forms) falls through to OOT Link draw as a Phase A
+    // placeholder so the dummy is at least visible — the local renderers for those
+    // forms (PikachuForm_Draw, Sm64Mario_Draw) read singleton state that can't be
     // safely shared with a remote dummy without per-instance forks.
     if (client.transformation >= 1 && client.transformation <= 4) {
         HarpoonDummyPlayer_DrawMmForm(actor, play, client);

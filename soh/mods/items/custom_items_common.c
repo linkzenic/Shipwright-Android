@@ -16,6 +16,7 @@
 #include "helpers/fx_helper.h"
 #include "helpers/camera_helper.h"
 #include "logic/item_postman_hat.h"
+#include "../extended_inventory.h" // ExtInv_GetItemSlot — custom items must NOT use vanilla SLOT()/INV_CONTENT()
 #include "overlays/actors/ovl_En_Boom/z_en_boom.h" // EnBoom struct for Gale Boomerang multi-target override
 
 // Forward declarations for items included after this file in unity build
@@ -298,9 +299,13 @@ void CustomItems_Update(Player* p, PlayState* play) {
         extern u8 TwilightUpgrade_HasBombArrows(void);
         u8 autoGrant = CVarGetInteger("gMods.BombArrows.AutoGrantOnBag", 0) != 0;
         u8 twilightGrant = TwilightUpgrade_HasBombArrows();
-        if ((autoGrant || twilightGrant) && CUR_UPG_VALUE(UPG_BOMB_BAG) > 0 &&
-            INV_CONTENT(ITEM_BOMB_ARROWS) == ITEM_NONE) {
-            INV_CONTENT(ITEM_BOMB_ARROWS) = ITEM_BOMB_ARROWS;
+        // ITEM_BOMB_ARROWS is a NEI custom item (0xAE) and is NOT a valid index into
+        // gItemSlots[56]; INV_CONTENT()/SLOT() would read OOB and corrupt SaveContext.
+        // Resolve the real extended-inventory slot (returns SLOT_BOMB_ARROWS == 27).
+        u8 baSlot = ExtInv_GetItemSlot(ITEM_BOMB_ARROWS);
+        if ((autoGrant || twilightGrant) && CUR_UPG_VALUE(UPG_BOMB_BAG) > 0 && baSlot != 0xFF &&
+            gSaveContext.inventory.items[baSlot] == ITEM_NONE) {
+            gSaveContext.inventory.items[baSlot] = ITEM_BOMB_ARROWS;
         }
     }
 
@@ -823,14 +828,6 @@ static u8  sClawshotBTLastHitKind = CLAWSHOT_BT_HIT_NONE;
 static Vec3f sClawshotBTLastHitNormal = { 0.0f, 0.0f, 0.0f };
 static s16 sClawshotBTLockedYaw = 0;
 static Vec3f sClawshotBTAnchorPos = { 0.0f, 0.0f, 0.0f };
-// Invisible platform actor (Obj_Hsblock w/ draw nulled). Spawned at arrival
-// so Actor_UpdateBgCheckInfo's raycast hits real geometry and Link is
-// treated as grounded — that's what unblocks the first-person aim subsystem
-// (which refuses to engage if no floor is detected, even if we manually
-// force bgCheckFlags |= 1 since the engine re-raycasts every frame).
-static Actor* sClawshotBTPlatform = NULL;
-// Position offset of the platform from Link — placed slightly below his feet.
-#define CLAWSHOT_BT_PLATFORM_Y_OFFSET 5.0f
 
 // TP ceiling hang: Link's hands grip the anchor, body dangles below. ~70u
 // is roughly Link's torso+upper-body height (matches the visual where his
@@ -935,38 +932,23 @@ u8 ClawshotBT_TryStartOnArrival(Player* player, PlayState* play) {
     player->actor.world.pos = sClawshotBTAnchorPos;
     player->actor.shape.rot.y = sClawshotBTLockedYaw;
     player->yaw = sClawshotBTLockedYaw;
+    // The hookshot reel-in writes a pitch into shape.rot.x to align Link with
+    // the chain (Math_Atan2S on bodyDistDiffVec.y vs xz dist at z_arms_hook.c
+    // ~line 257) — if the anchor is above Link he ends up tilted upward when
+    // the pull completes. Zero ONLY shape.rot.x (the user specifically asked
+    // for X only; rot.z left alone). Aim look-up/down lives on upperLimbRot,
+    // not the body rotation, so zeroing here is safe.
+    player->actor.shape.rot.x = 0;
 
-    Player_SetupAction(play, player, Player_Action_Idle, 1);
-
-    // Spawn a real DynaPoly collision platform just below Link so the engine's
-    // own bg-check raycast finds a floor — that's the only way to keep aim
-    // engaged across frames (Actor_UpdateBgCheckInfo overwrites any manual
-    // bgCheckFlags forcing on each raycast). ACTOR_OBJ_HSBLOCK is the Stone
-    // Hookshot Target; we null its draw + update so it's an invisible static
-    // collider. Param value 0x0001 selects the SMALL variant (lower square),
-    // sized like a half-step Link can comfortably stand on.
-    //
-    // Gated on OBJECT_D_HSBLOCK being loaded in the current scene — Hsblock
-    // dereferences its object's collision pointers in Init, so spawning it
-    // without the object loaded crashes. Most overworld scenes don't have
-    // this object loaded; in those, we silently fall back to the flag-only
-    // approach (aim will still be flaky there until a future custom always-
-    // available platform actor lands).
-    if (sClawshotBTPlatform == NULL &&
-        Object_GetIndex(&play->objectCtx, OBJECT_D_HSBLOCK) >= 0) {
-        sClawshotBTPlatform = Actor_Spawn(&play->actorCtx, play, ACTOR_OBJ_HSBLOCK,
-                                          sClawshotBTAnchorPos.x,
-                                          sClawshotBTAnchorPos.y - CLAWSHOT_BT_PLATFORM_Y_OFFSET,
-                                          sClawshotBTAnchorPos.z,
-                                          0, 0, 0, 0x0001);
-        if (sClawshotBTPlatform != NULL) {
-            sClawshotBTPlatform->draw = NULL;
-            // Disable the actor's own update so its action machine (which
-            // expects scene-setup params, lift triggers, etc.) doesn't run
-            // and trip on the synthetic spawn.
-            sClawshotBTPlatform->update = NULL;
-        }
-    }
+    // No platform actor spawn — Setting Obj_Hsblock's draw=NULL after spawn
+    // didn't actually suppress its rendering (the hookshottable-target square
+    // was still visible below Link's feet), and most scenes do have a real
+    // scene-collision floor somewhere below the wall anchor, which the
+    // bgCheck raycast in Player_ProcessSceneCollision finds. That non-NULL
+    // floorPoly is enough for our hook there to safely force the ground flag
+    // and unblock the first-person aim subsystem. In pure-pit scenes (no
+    // floor at all below Link) aim will still glitch, but at least we don't
+    // visually spawn the target actor.
 
     Audio_PlaySoundGeneral(NA_SE_SY_ATTENTION_ON, &player->actor.world.pos, 4,
                            &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
@@ -977,13 +959,6 @@ static void ClawshotBT_End(Player* player) {
     if (!sClawshotBTActive)
         return;
     sClawshotBTActive = 0;
-    // Despawn the invisible platform. Actor_Kill marks the actor for removal
-    // and the actor system frees it next frame; we clear the cached pointer
-    // so the next hang spawns a fresh one.
-    if (sClawshotBTPlatform != NULL) {
-        Actor_Kill(sClawshotBTPlatform);
-        sClawshotBTPlatform = NULL;
-    }
     // Gravity self-restores via Player_UpdateCommon next frame — no need to
     // pick a value here that might fight whatever state Link transitions to.
 }
@@ -1035,333 +1010,206 @@ void ClawshotBT_Update(Player* player, PlayState* play) {
     player->stateFlags1 &= ~(PLAYER_STATE1_HOOKSHOT_FALLING | PLAYER_STATE1_JUMPING | PLAYER_STATE1_FREEFALL);
     player->stateFlags3 &= ~(PLAYER_STATE3_FLYING_WITH_HOOKSHOT | PLAYER_STATE3_MIDAIR);
 
-    // For a wall hang, keep Link's back glued to the wall — let the upper-body
-    // aim (PLAYER_STATE1_READY_TO_FIRE rotates the upper limb only) handle the
-    // aim animation without rotating the whole body off the surface.
-    if (sClawshotBTLastHitKind == CLAWSHOT_BT_HIT_WALL) {
+    // For a wall hang, keep Link's back glued to the wall WHILE IDLE — but
+    // once he enters first-person aim / ready-to-fire, release the yaw lock
+    // so the player can rotate freely to look at new targets. Otherwise the
+    // pin glues the body to the original facing and the user can't sweep
+    // the camera during aim.
+    u8 isAiming = (player->stateFlags1 &
+                   (PLAYER_STATE1_FIRST_PERSON | PLAYER_STATE1_READY_TO_FIRE)) != 0;
+    if (sClawshotBTLastHitKind == CLAWSHOT_BT_HIT_WALL && !isAiming) {
         player->actor.shape.rot.y = sClawshotBTLockedYaw;
         player->yaw = sClawshotBTLockedYaw;
     }
+    // Keep Link upright across the entire hang — shape.rot.x picks up tilt
+    // from the reel-in chain alignment and the engine occasionally re-asserts
+    // it during transitions. ONLY rot.x is zeroed (per user request — rot.z
+    // stays untouched). Aim look-up/down lives on upperLimbRot, not the body
+    // rotation, so zeroing here is safe.
+    player->actor.shape.rot.x = 0;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// VisualSync field lists (single source of truth shared by Build & Apply)
+//
+// These X-macro lists drive both CustomItems_BuildVisualSync (sender) and
+// CustomItems_ApplyVisualSync (receiver) so the two directions can no longer
+// drift apart. They intentionally do NOT redeclare the CustomItemVisualSync
+// struct or the CI_FLAG_* bits — those are referenced by name/value from the
+// networking layer (Harpoon.cpp / HarpoonDummyPlayer.cpp) and are kept as the
+// authoritative hand-written definitions in custom_items.h.
+//
+// CI_VISUAL_SCALARS / CI_VISUAL_ARRAYS: plain value copies that are symmetric
+// in both directions (Build: out->x = s->x; Apply: s->x = sync->x).
+//
+// CI_VISUAL_FLAGS(F): one entry per activeFlags bit. Each entry carries its
+// complete two-way logic so it stays in sync:
+//   F(flag, buildCond, buildExtra, applyStmts)
+//     buildCond  — expression; when true the flag bit is OR'd into activeFlags
+//     buildExtra — extra Build-only statements (e.g. value copies whose Apply
+//                  is gated by the flag); empty (0) when none
+//     applyStmts — statements run by Apply for this flag; empty (0) when none
+// ─────────────────────────────────────────────────────────────────────────
+
+// clang-format off
+#define CI_VISUAL_SCALARS(F)        \
+    F(dekuLeafGliding)              \
+    F(dekuLeafBlowing)              \
+    F(dekuLeafAnimTimer)            \
+    F(gustJarElement)               \
+    F(gustJarBlowActive)            \
+    F(gustJarHeatTimer)             \
+    F(timer2)                       \
+    F(sharedProjectilePos)          \
+    F(beetleState)                  \
+    F(beetlePos)                    \
+    F(beetleRot)                    \
+    F(beetleWingScale)              \
+    F(fireRodProjActive)            \
+    F(fireRodProjCount)             \
+    F(fireRodProjType)              \
+    F(fireRodProjPos)               \
+    F(fireRodProjPos2)              \
+    F(fireRodProjPos3)              \
+    F(fireRodProjScale)             \
+    F(fireRodMatrix)                \
+    F(fireRodMatrixValid)           \
+    F(iceRodProjActive)             \
+    F(iceRodProjCount)              \
+    F(iceRodProjPos)                \
+    F(iceRodProjPos2)               \
+    F(iceRodProjPos3)               \
+    F(iceRodProjScale)              \
+    F(iceRodMatrix)                 \
+    F(iceRodMatrixValid)            \
+    F(lightRodProjActive)           \
+    F(lightRodProjCount)            \
+    F(lightRodProjPos)              \
+    F(lightRodProjPos2)             \
+    F(lightRodProjPos3)             \
+    F(lightRodMatrix)               \
+    F(lightRodMatrixValid)          \
+    F(dominionRodState)             \
+    F(dominionRodOrbPos)            \
+    F(whipState)                    \
+    F(whipTipPos)                   \
+    F(whipAttachPos)                \
+    F(whipAttachNormal)             \
+    F(timeGateItemVisible)          \
+    F(timeGatePortalActive)         \
+    F(timeGatePortalAlpha)          \
+    F(timeGatePortalScale)          \
+    F(switchHookState)              \
+    F(switchHookProjPos)            \
+    F(rocsJumpCount)                \
+    F(rocsMmAnimTimer)              \
+    F(bombArrowState)               \
+    F(hyliasGraceState)             \
+    F(hyliasGraceSubPhase)          \
+    F(hyliasGraceTimer)             \
+    F(hyliasGraceForcedBySpell)     \
+    F(zonaiPermafrostState)         \
+    F(zonaiPermafrostSubPhase)      \
+    F(zonaiPermafrostTimer)         \
+    F(lanternFireType)              \
+    F(lanternSwinging)              \
+    F(lanternEquipped)              \
+    F(lanternSwingFrame)            \
+    F(minishCapWarpMode)            \
+    F(minishCapShrinking)           \
+    F(minishCapGrowing)             \
+    F(postmanHatDashing)            \
+    F(postmanHatArriving)           \
+    F(postmanHatTransitionTimer)    \
+    F(desireSensorState)            \
+    F(desireSensorTimer)            \
+    F(desireSensorResult)
+
+#define CI_VISUAL_ARRAYS(F)         \
+    F(fireRodProjTrail)             \
+    F(iceRodProjTrail)
+
+#define CI_VISUAL_FLAGS(F)                                                                                   \
+    F(CI_FLAG_SPINNER,            s->spinnerActive,                          0, s->spinnerActive = present;)  \
+    F(CI_FLAG_GUSTJAR,            s->gustJarMode > 0,    out->gustJarMode = s->gustJarMode;,                  \
+                                                         s->gustJarMode = present ? sync->gustJarMode : 0;)  \
+    F(CI_FLAG_BALLCHAIN,          s->ballAndChainThrown, out->ballAndChainThrown = s->ballAndChainThrown;,   \
+                                                         s->ballAndChainThrown = present;)                   \
+    F(CI_FLAG_SHOVEL,             s->shovelAnimating,    out->shovelAnimating = s->shovelAnimating;,          \
+                                                         s->shovelAnimating = present ? sync->shovelAnimating : 0; \
+                                                         s->shovelActive = present;)                         \
+    F(CI_FLAG_BEETLE,             s->beetleActive,                           0, s->beetleActive = present;)  \
+    F(CI_FLAG_DOMINION_ROD,       s->dominionRodActive,                      0, s->dominionRodActive = present;) \
+    F(CI_FLAG_SOMARIA,            s->somariaActive,                          0, s->somariaActive = present;) \
+    F(CI_FLAG_MOGMA_MITTS,        s->mogmaMittsActive,                       0, s->mogmaMittsActive = present;) \
+    F(CI_FLAG_WHIP,               s->whipActive,                             0, s->whipActive = present;)    \
+    F(CI_FLAG_TIME_GATE,          s->timeGateActive,                         0, s->timeGateActive = present;) \
+    F(CI_FLAG_SWITCH_HOOK,        s->switchHookActive,                       0, s->switchHookActive = present;) \
+    F(CI_FLAG_DEKU_LEAF,          s->dekuLeafGliding || s->dekuLeafBlowing,  0, 0)                           \
+    F(CI_FLAG_FIRE_ROD,           s->fireRodActive,                          0, s->fireRodActive = present;) \
+    F(CI_FLAG_ICE_ROD,            s->iceRodActive,                           0, s->iceRodActive = present;)  \
+    F(CI_FLAG_LIGHT_ROD,          s->lightRodActive,                         0, s->lightRodActive = present;) \
+    F(CI_FLAG_ROCS_FEATHER,       s->rocsFeatherJumpActive,                                                       \
+                                  out->rocsFeatherJumpActive = s->rocsFeatherJumpActive;,                        \
+                                                         s->rocsFeatherJumpActive = present;)                    \
+    F(CI_FLAG_BOMB_ARROW,         s->bombArrowActive,                        0, s->bombArrowActive = present;) \
+    F(CI_FLAG_DEMISE_DESTRUCTION, s->demiseDestructionActive,                0, s->demiseDestructionActive = present;) \
+    F(CI_FLAG_HYLIAS_GRACE,       s->hyliasGraceActive,                      0, s->hyliasGraceActive = present;) \
+    F(CI_FLAG_ZONAI_PERMAFROST,   s->zonaiPermafrostActive,                  0, s->zonaiPermafrostActive = present;) \
+    F(CI_FLAG_LANTERN,            s->lanternEquipped || s->lanternSwinging,  0, 0)                           \
+    F(CI_FLAG_MINISH_CAP,         s->minishCapShrinking || s->minishCapGrowing || s->minishCapWarpMode ||    \
+                                  s->minishTinyActive || s->minishTinyAnim,  0, 0)                           \
+    F(CI_FLAG_POSTMAN_HAT,        s->postmanHatDashing || s->postmanHatArriving, 0, 0)                       \
+    F(CI_FLAG_DESIRE_SENSOR,      s->desireSensorActive,                     0, s->desireSensorActive = present;)
+// clang-format on
 
 void CustomItems_BuildVisualSync(CustomItemVisualSync* out) {
     CustomItemState* s = &gCustomItemState;
     memset(out, 0, sizeof(CustomItemVisualSync));
 
-    // Build active flags bitfield
+    // Build active flags bitfield + any flag-gated value copies
     u32 flags = 0;
-    if (s->spinnerActive)
-        flags |= CI_FLAG_SPINNER;
-    if (s->gustJarMode > 0)
-        flags |= CI_FLAG_GUSTJAR;
-    if (s->ballAndChainThrown)
-        flags |= CI_FLAG_BALLCHAIN;
-    if (s->shovelAnimating)
-        flags |= CI_FLAG_SHOVEL;
-    if (s->beetleActive)
-        flags |= CI_FLAG_BEETLE;
-    if (s->dominionRodActive)
-        flags |= CI_FLAG_DOMINION_ROD;
-    if (s->somariaActive)
-        flags |= CI_FLAG_SOMARIA;
-    if (s->mogmaMittsActive)
-        flags |= CI_FLAG_MOGMA_MITTS;
-    if (s->whipActive)
-        flags |= CI_FLAG_WHIP;
-    if (s->timeGateActive)
-        flags |= CI_FLAG_TIME_GATE;
-    if (s->switchHookActive)
-        flags |= CI_FLAG_SWITCH_HOOK;
-    if (s->dekuLeafGliding || s->dekuLeafBlowing)
-        flags |= CI_FLAG_DEKU_LEAF;
-    if (s->fireRodActive)
-        flags |= CI_FLAG_FIRE_ROD;
-    if (s->iceRodActive)
-        flags |= CI_FLAG_ICE_ROD;
-    if (s->lightRodActive)
-        flags |= CI_FLAG_LIGHT_ROD;
-    // Phase 1 additions
-    if (s->rocsFeatherJumpActive)
-        flags |= CI_FLAG_ROCS_FEATHER;
-    if (s->bombArrowActive)
-        flags |= CI_FLAG_BOMB_ARROW;
-    if (s->demiseDestructionActive)
-        flags |= CI_FLAG_DEMISE_DESTRUCTION;
-    if (s->hyliasGraceActive)
-        flags |= CI_FLAG_HYLIAS_GRACE;
-    if (s->zonaiPermafrostActive)
-        flags |= CI_FLAG_ZONAI_PERMAFROST;
-    if (s->lanternEquipped || s->lanternSwinging)
-        flags |= CI_FLAG_LANTERN;
-    if (s->minishCapShrinking || s->minishCapGrowing || s->minishCapWarpMode || s->minishTinyActive ||
-        s->minishTinyAnim)
-        flags |= CI_FLAG_MINISH_CAP;
-    if (s->postmanHatDashing || s->postmanHatArriving)
-        flags |= CI_FLAG_POSTMAN_HAT;
-    if (s->desireSensorActive)
-        flags |= CI_FLAG_DESIRE_SENSOR;
+#define CI_BUILD_FLAG(flag, buildCond, buildExtra, applyStmts) \
+    if (buildCond)                                             \
+        flags |= (flag);                                       \
+    buildExtra;
+    CI_VISUAL_FLAGS(CI_BUILD_FLAG)
+#undef CI_BUILD_FLAG
     out->activeFlags = flags;
 
-    // Deku Leaf
-    out->dekuLeafGliding = s->dekuLeafGliding;
-    out->dekuLeafBlowing = s->dekuLeafBlowing;
-    out->dekuLeafAnimTimer = s->dekuLeafAnimTimer;
+    // Plain symmetric value copies
+#define CI_BUILD_SCALAR(name) out->name = s->name;
+    CI_VISUAL_SCALARS(CI_BUILD_SCALAR)
+#undef CI_BUILD_SCALAR
 
-    // Gust Jar
-    out->gustJarMode = s->gustJarMode;
-    out->gustJarElement = s->gustJarElement;
-    out->gustJarBlowActive = s->gustJarBlowActive;
-    out->gustJarHeatTimer = s->gustJarHeatTimer;
-
-    // Ball and Chain
-    out->ballAndChainThrown = s->ballAndChainThrown;
-    out->timer2 = s->timer2;
-    out->sharedProjectilePos = s->sharedProjectilePos;
-
-    // Shovel
-    out->shovelAnimating = s->shovelAnimating;
-
-    // Beetle
-    out->beetleState = s->beetleState;
-    out->beetlePos = s->beetlePos;
-    out->beetleRot = s->beetleRot;
-    out->beetleWingScale = s->beetleWingScale;
-
-    // Fire Rod
-    out->fireRodProjActive = s->fireRodProjActive;
-    out->fireRodProjCount = s->fireRodProjCount;
-    out->fireRodProjType = s->fireRodProjType;
-    out->fireRodProjPos = s->fireRodProjPos;
-    out->fireRodProjPos2 = s->fireRodProjPos2;
-    out->fireRodProjPos3 = s->fireRodProjPos3;
-    memcpy(out->fireRodProjTrail, s->fireRodProjTrail, sizeof(s->fireRodProjTrail));
-    out->fireRodProjScale = s->fireRodProjScale;
-    out->fireRodMatrix = s->fireRodMatrix;
-    out->fireRodMatrixValid = s->fireRodMatrixValid;
-
-    // Ice Rod
-    out->iceRodProjActive = s->iceRodProjActive;
-    out->iceRodProjCount = s->iceRodProjCount;
-    out->iceRodProjPos = s->iceRodProjPos;
-    out->iceRodProjPos2 = s->iceRodProjPos2;
-    out->iceRodProjPos3 = s->iceRodProjPos3;
-    memcpy(out->iceRodProjTrail, s->iceRodProjTrail, sizeof(s->iceRodProjTrail));
-    out->iceRodProjScale = s->iceRodProjScale;
-    out->iceRodMatrix = s->iceRodMatrix;
-    out->iceRodMatrixValid = s->iceRodMatrixValid;
-
-    // Light Rod
-    out->lightRodProjActive = s->lightRodProjActive;
-    out->lightRodProjCount = s->lightRodProjCount;
-    out->lightRodProjPos = s->lightRodProjPos;
-    out->lightRodProjPos2 = s->lightRodProjPos2;
-    out->lightRodProjPos3 = s->lightRodProjPos3;
-    out->lightRodMatrix = s->lightRodMatrix;
-    out->lightRodMatrixValid = s->lightRodMatrixValid;
-
-    // Dominion Rod
-    out->dominionRodState = s->dominionRodState;
-    out->dominionRodOrbPos = s->dominionRodOrbPos;
-
-    // Whip
-    out->whipState = s->whipState;
-    out->whipTipPos = s->whipTipPos;
-    out->whipAttachPos = s->whipAttachPos;
-    out->whipAttachNormal = s->whipAttachNormal;
-
-    // Time Gate
-    out->timeGateItemVisible = s->timeGateItemVisible;
-    out->timeGatePortalActive = s->timeGatePortalActive;
-    out->timeGatePortalAlpha = s->timeGatePortalAlpha;
-    out->timeGatePortalScale = s->timeGatePortalScale;
-
-    // Switch Hook
-    out->switchHookState = s->switchHookState;
-    out->switchHookProjPos = s->switchHookProjPos;
-
-    // ── Phase 1 additions ──────────────────────────────────────────────
-    // Roc's Feather / Cape
-    out->rocsFeatherJumpActive = s->rocsFeatherJumpActive;
-    out->rocsJumpCount = s->rocsJumpCount;
-    out->rocsMmAnimTimer = s->rocsMmAnimTimer;
-
-    // Bomb Arrows
-    out->bombArrowState = s->bombArrowState;
-
-    // Hylia's Grace
-    out->hyliasGraceState = s->hyliasGraceState;
-    out->hyliasGraceSubPhase = s->hyliasGraceSubPhase;
-    out->hyliasGraceTimer = s->hyliasGraceTimer;
-    out->hyliasGraceForcedBySpell = s->hyliasGraceForcedBySpell;
-
-    // Zonai Permafrost
-    out->zonaiPermafrostState = s->zonaiPermafrostState;
-    out->zonaiPermafrostSubPhase = s->zonaiPermafrostSubPhase;
-    out->zonaiPermafrostTimer = s->zonaiPermafrostTimer;
-
-    // Lantern
-    out->lanternFireType = s->lanternFireType;
-    out->lanternSwinging = s->lanternSwinging;
-    out->lanternEquipped = s->lanternEquipped;
-    out->lanternSwingFrame = s->lanternSwingFrame;
-
-    // Minish Cap
-    out->minishCapWarpMode = s->minishCapWarpMode;
-    out->minishCapShrinking = s->minishCapShrinking;
-    out->minishCapGrowing = s->minishCapGrowing;
-
-    // Postman Hat
-    out->postmanHatDashing = s->postmanHatDashing;
-    out->postmanHatArriving = s->postmanHatArriving;
-    out->postmanHatTransitionTimer = s->postmanHatTransitionTimer;
-
-    // Desire Sensor
-    out->desireSensorState = s->desireSensorState;
-    out->desireSensorTimer = s->desireSensorTimer;
-    out->desireSensorResult = s->desireSensorResult;
+    // Array copies
+#define CI_BUILD_ARRAY(name) memcpy(out->name, s->name, sizeof(s->name));
+    CI_VISUAL_ARRAYS(CI_BUILD_ARRAY)
+#undef CI_BUILD_ARRAY
 }
 
 void CustomItems_ApplyVisualSync(const CustomItemVisualSync* sync) {
     CustomItemState* s = &gCustomItemState;
 
-    // Set active flags from bitfield
-    s->spinnerActive = (sync->activeFlags & CI_FLAG_SPINNER) ? 1 : 0;
-    s->gustJarMode = (sync->activeFlags & CI_FLAG_GUSTJAR) ? sync->gustJarMode : 0;
-    s->ballAndChainThrown = (sync->activeFlags & CI_FLAG_BALLCHAIN) ? 1 : 0;
-    s->shovelAnimating = (sync->activeFlags & CI_FLAG_SHOVEL) ? sync->shovelAnimating : 0;
-    s->beetleActive = (sync->activeFlags & CI_FLAG_BEETLE) ? 1 : 0;
-    s->dominionRodActive = (sync->activeFlags & CI_FLAG_DOMINION_ROD) ? 1 : 0;
-    s->somariaActive = (sync->activeFlags & CI_FLAG_SOMARIA) ? 1 : 0;
-    s->mogmaMittsActive = (sync->activeFlags & CI_FLAG_MOGMA_MITTS) ? 1 : 0;
-    s->whipActive = (sync->activeFlags & CI_FLAG_WHIP) ? 1 : 0;
-    s->timeGateActive = (sync->activeFlags & CI_FLAG_TIME_GATE) ? 1 : 0;
-    s->switchHookActive = (sync->activeFlags & CI_FLAG_SWITCH_HOOK) ? 1 : 0;
-    s->fireRodActive = (sync->activeFlags & CI_FLAG_FIRE_ROD) ? 1 : 0;
-    s->iceRodActive = (sync->activeFlags & CI_FLAG_ICE_ROD) ? 1 : 0;
-    s->lightRodActive = (sync->activeFlags & CI_FLAG_LIGHT_ROD) ? 1 : 0;
+    // Apply active flags from bitfield (+ flag-gated value restores)
+#define CI_APPLY_FLAG(flag, buildCond, buildExtra, applyStmts) \
+    {                                                          \
+        u32 present = (sync->activeFlags & (flag)) ? 1 : 0;    \
+        (void)present;                                         \
+        applyStmts;                                            \
+    }
+    CI_VISUAL_FLAGS(CI_APPLY_FLAG)
+#undef CI_APPLY_FLAG
 
-    // Deku Leaf
-    s->dekuLeafGliding = sync->dekuLeafGliding;
-    s->dekuLeafBlowing = sync->dekuLeafBlowing;
-    s->dekuLeafAnimTimer = sync->dekuLeafAnimTimer;
+    // Plain symmetric value copies
+#define CI_APPLY_SCALAR(name) s->name = sync->name;
+    CI_VISUAL_SCALARS(CI_APPLY_SCALAR)
+#undef CI_APPLY_SCALAR
 
-    // Gust Jar
-    s->gustJarElement = sync->gustJarElement;
-    s->gustJarBlowActive = sync->gustJarBlowActive;
-    s->gustJarHeatTimer = sync->gustJarHeatTimer;
-
-    // Ball and Chain
-    s->timer2 = sync->timer2;
-    s->sharedProjectilePos = sync->sharedProjectilePos;
-
-    // Shovel
-    s->shovelActive = (sync->activeFlags & CI_FLAG_SHOVEL) ? 1 : 0;
-
-    // Beetle
-    s->beetleState = sync->beetleState;
-    s->beetlePos = sync->beetlePos;
-    s->beetleRot = sync->beetleRot;
-    s->beetleWingScale = sync->beetleWingScale;
-
-    // Fire Rod
-    s->fireRodProjActive = sync->fireRodProjActive;
-    s->fireRodProjCount = sync->fireRodProjCount;
-    s->fireRodProjType = sync->fireRodProjType;
-    s->fireRodProjPos = sync->fireRodProjPos;
-    s->fireRodProjPos2 = sync->fireRodProjPos2;
-    s->fireRodProjPos3 = sync->fireRodProjPos3;
-    memcpy(s->fireRodProjTrail, sync->fireRodProjTrail, sizeof(s->fireRodProjTrail));
-    s->fireRodProjScale = sync->fireRodProjScale;
-    s->fireRodMatrix = sync->fireRodMatrix;
-    s->fireRodMatrixValid = sync->fireRodMatrixValid;
-
-    // Ice Rod
-    s->iceRodProjActive = sync->iceRodProjActive;
-    s->iceRodProjCount = sync->iceRodProjCount;
-    s->iceRodProjPos = sync->iceRodProjPos;
-    s->iceRodProjPos2 = sync->iceRodProjPos2;
-    s->iceRodProjPos3 = sync->iceRodProjPos3;
-    memcpy(s->iceRodProjTrail, sync->iceRodProjTrail, sizeof(s->iceRodProjTrail));
-    s->iceRodProjScale = sync->iceRodProjScale;
-    s->iceRodMatrix = sync->iceRodMatrix;
-    s->iceRodMatrixValid = sync->iceRodMatrixValid;
-
-    // Light Rod
-    s->lightRodProjActive = sync->lightRodProjActive;
-    s->lightRodProjCount = sync->lightRodProjCount;
-    s->lightRodProjPos = sync->lightRodProjPos;
-    s->lightRodProjPos2 = sync->lightRodProjPos2;
-    s->lightRodProjPos3 = sync->lightRodProjPos3;
-    s->lightRodMatrix = sync->lightRodMatrix;
-    s->lightRodMatrixValid = sync->lightRodMatrixValid;
-
-    // Dominion Rod
-    s->dominionRodState = sync->dominionRodState;
-    s->dominionRodOrbPos = sync->dominionRodOrbPos;
-
-    // Whip
-    s->whipState = sync->whipState;
-    s->whipTipPos = sync->whipTipPos;
-    s->whipAttachPos = sync->whipAttachPos;
-    s->whipAttachNormal = sync->whipAttachNormal;
-
-    // Time Gate
-    s->timeGateItemVisible = sync->timeGateItemVisible;
-    s->timeGatePortalActive = sync->timeGatePortalActive;
-    s->timeGatePortalAlpha = sync->timeGatePortalAlpha;
-    s->timeGatePortalScale = sync->timeGatePortalScale;
-
-    // Switch Hook
-    s->switchHookState = sync->switchHookState;
-    s->switchHookProjPos = sync->switchHookProjPos;
-
-    // ── Phase 1 additions ──────────────────────────────────────────────
-    // Roc's Feather / Cape
-    s->rocsFeatherJumpActive = (sync->activeFlags & CI_FLAG_ROCS_FEATHER) ? 1 : 0;
-    s->rocsJumpCount = sync->rocsJumpCount;
-    s->rocsMmAnimTimer = sync->rocsMmAnimTimer;
-
-    // Bomb Arrows
-    s->bombArrowActive = (sync->activeFlags & CI_FLAG_BOMB_ARROW) ? 1 : 0;
-    s->bombArrowState = sync->bombArrowState;
-
-    // Demise Destruction
-    s->demiseDestructionActive = (sync->activeFlags & CI_FLAG_DEMISE_DESTRUCTION) ? 1 : 0;
-
-    // Hylia's Grace
-    s->hyliasGraceActive = (sync->activeFlags & CI_FLAG_HYLIAS_GRACE) ? 1 : 0;
-    s->hyliasGraceState = sync->hyliasGraceState;
-    s->hyliasGraceSubPhase = sync->hyliasGraceSubPhase;
-    s->hyliasGraceTimer = sync->hyliasGraceTimer;
-    s->hyliasGraceForcedBySpell = sync->hyliasGraceForcedBySpell;
-
-    // Zonai Permafrost
-    s->zonaiPermafrostActive = (sync->activeFlags & CI_FLAG_ZONAI_PERMAFROST) ? 1 : 0;
-    s->zonaiPermafrostState = sync->zonaiPermafrostState;
-    s->zonaiPermafrostSubPhase = sync->zonaiPermafrostSubPhase;
-    s->zonaiPermafrostTimer = sync->zonaiPermafrostTimer;
-
-    // Lantern
-    s->lanternFireType = sync->lanternFireType;
-    s->lanternSwinging = sync->lanternSwinging;
-    s->lanternEquipped = sync->lanternEquipped;
-    s->lanternSwingFrame = sync->lanternSwingFrame;
-
-    // Minish Cap
-    s->minishCapWarpMode = sync->minishCapWarpMode;
-    s->minishCapShrinking = sync->minishCapShrinking;
-    s->minishCapGrowing = sync->minishCapGrowing;
-
-    // Postman Hat
-    s->postmanHatDashing = sync->postmanHatDashing;
-    s->postmanHatArriving = sync->postmanHatArriving;
-    s->postmanHatTransitionTimer = sync->postmanHatTransitionTimer;
-
-    // Desire Sensor
-    s->desireSensorActive = (sync->activeFlags & CI_FLAG_DESIRE_SENSOR) ? 1 : 0;
-    s->desireSensorState = sync->desireSensorState;
-    s->desireSensorTimer = sync->desireSensorTimer;
-    s->desireSensorResult = sync->desireSensorResult;
+    // Array copies
+#define CI_APPLY_ARRAY(name) memcpy(s->name, sync->name, sizeof(s->name));
+    CI_VISUAL_ARRAYS(CI_APPLY_ARRAY)
+#undef CI_APPLY_ARRAY
 
     // Disable first-person reticles (never draw for remote players)
     s->bombArrowFirstPersonActive = 0;

@@ -3262,10 +3262,6 @@ void KaleidoScope_Draw(PlayState* play) {
         if (!((pauseCtx->state >= 8) && (pauseCtx->state <= 0x11))) {
             KaleidoScope_DrawInfoPanel(play);
         }
-
-        // Broken Modes: full custom overlay on top of everything (cube, prompts,
-        // info panel) when active. No-op otherwise.
-        BrokenItems_DrawOverlay(play);
     }
 
     if ((pauseCtx->state >= 0xB) && (pauseCtx->state <= 0x11)) {
@@ -3592,15 +3588,10 @@ void KaleidoScope_Update(PlayState* play) {
             pauseCtx->stickRelX = input->rel.stick_x;
             pauseCtx->stickRelY = input->rel.stick_y;
             KaleidoScope_UpdateCursorSize(&play->pauseCtx);
-            // Broken Modes page: opened from the Map page with the page-change
-            // button, navigated here instead of the normal page rotation.
-            if (BrokenItems_IsActive()) {
-                BrokenItems_Update(play, input);
-            } else if (BrokenItems_ShouldEnter(play)) {
-                BrokenItems_Enter(play);
-            } else {
-                KaleidoScope_HandlePageToggles(pauseCtx, input);
-            }
+            // Broken Modes / transform selection now lives on the Equipment page's
+            // 3rd page (z_kaleido_equipment.c), so the Map page just does the normal
+            // page rotation again.
+            KaleidoScope_HandlePageToggles(pauseCtx, input);
         } else if ((pauseCtx->pageIndex == PAUSE_QUEST) && ((pauseCtx->unk_1E4 < 3) || (pauseCtx->unk_1E4 == 5))) {
             KaleidoScope_UpdateCursorSize(&play->pauseCtx);
         }

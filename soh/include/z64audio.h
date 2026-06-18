@@ -1147,6 +1147,10 @@ typedef struct {
     uint8_t cachePolicy;
     int32_t numFonts;
     uint8_t fonts[16];
+    // Full-width resolved soundfont index for streamed custom songs (lifts the
+    // 256-soundfont cap that truncates in the u8 fonts[]). -1 = use fonts[].
+    // MUST stay layout-identical to SOH::Sequence (AudioSequence.h).
+    int32_t resolvedFont;
 } SequenceData;
 
 void Audio_SetGameVolume(int player_id, f32 volume);

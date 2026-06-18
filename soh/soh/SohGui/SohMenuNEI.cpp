@@ -94,7 +94,7 @@ std::map<std::string, LinkAnimationHeader> sMhrWrappers;
 
 void MhrScanAnims() {
     sMhrAnims.clear();
-    auto archiveManager = Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager();
+    auto archiveManager = Ship::Context::GetRawInstance()->GetResourceManager()->GetArchiveManager();
     if (archiveManager == nullptr) {
         return;
     }
@@ -356,14 +356,14 @@ void MhrAnimNotesWidget(WidgetInfo& info) {
     bool enabled = CVarGetInteger("gMods.MhrMoveset.Enabled", 0) != 0;
     if (ImGui::Checkbox("Enable MHR Moveset Bindings", &enabled)) {
         CVarSetInteger("gMods.MhrMoveset.Enabled", enabled ? 1 : 0);
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     ImGui::SameLine();
     int scope = CVarGetInteger("gMods.MhrMoveset.Scope", 0);
     ImGui::SetNextItemWidth(160.0f);
     if (ImGui::Combo("Scope", &scope, "Gerudo form only\0Always\0")) {
         CVarSetInteger("gMods.MhrMoveset.Scope", scope);
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
     }
     ImGui::SameLine();
     if (ImGui::Button("Reload Bindings")) {
@@ -723,7 +723,7 @@ void SohMenu::AddMenuNEI() {
         .PostFunc([](WidgetInfo& info) {
             CVarSetInteger(CVAR_RANDOMIZER_SETTING("SW97Spells"),
                            CVarGetInteger("gEnhancements.SkijerNEI.SW97Medallions", 0));
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Equip quest medallions to C-buttons from Quest Status.\n"
@@ -815,7 +815,7 @@ void SohMenu::AddMenuNEI() {
             if (on) {
                 CVarSetInteger("gMods.TransformMasks.Enabled", 1);
             }
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Adds a 3rd inventory page with all 24 MM masks AND enables each mask's\n"
@@ -1140,7 +1140,7 @@ void SohMenu::AddMenuNEI() {
             // Mirror to the runtime CVar that gates page-2 visibility in the pause menu.
             CVarSetInteger("gMods.CustomItems.Enabled",
                            CVarGetInteger(CVAR_RANDOMIZER_SETTING("SkijerCustomItems"), 0));
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
         .Options(CheckboxOptions().Tooltip("Enables the 24 custom items on the second inventory page (seed-locked rando setting).\n"
                                            "When enabled, these items are also added to the randomizer pool and gated logic paths.\n"
@@ -1164,7 +1164,7 @@ void SohMenu::AddMenuNEI() {
         .PostFunc([](WidgetInfo& info) {
             if (CVarGetInteger(CVAR_RANDOMIZER_SETTING("MmMasksAll"), 0)) {
                 CVarSetInteger(CVAR_RANDOMIZER_SETTING("MmMasksTransform"), 0);
-                Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+                Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
             }
         })
         .Options(CheckboxOptions().Tooltip("Adds all 24 MM masks to the randomizer item pool.\n"
@@ -1203,7 +1203,7 @@ void SohMenu::AddMenuNEI() {
         .PostFunc([](WidgetInfo& info) {
             CVarSetInteger("gCheats.ExtEquip.Enabled",
                            CVarGetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 0));
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
         .Options(CheckboxOptions().Tooltip(
             "Adds the 12 extended equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots) to the randomizer pool.\n"
@@ -1245,7 +1245,7 @@ void SohMenu::AddMenuNEI() {
                 CVarSetInteger(cvarName, -1);
                 PakLoader_SetSlotMix(i, -1);
             }
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
         .Options(ButtonOptions().Size(Sizes::Inline)
                                 .Tooltip("Clear every per-slot override at once."));

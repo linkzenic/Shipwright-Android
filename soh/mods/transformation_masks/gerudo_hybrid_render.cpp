@@ -162,14 +162,3 @@ extern "C" s32 GerudoForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx**
 extern "C" void GerudoForm_SetChainedOverride(void* fn) {
     sChainedOverride = (OverrideLimbDrawOpaFn)fn;
 }
-
-// ---------------------------------------------------------------------------
-// Legacy hybrid-render stubs — kept so the vcxproj entries link cleanly and
-// any leftover references compile. The hybrid SkelAnime approach was retired
-// when we switched to the path-swap override path above.
-// ---------------------------------------------------------------------------
-extern "C" s32  GerudoHybrid_Setup(PlayState* play) { (void)play; return 0; }
-extern "C" void GerudoHybrid_Teardown(void) {}
-extern "C" void GerudoHybrid_Update(PlayState* play, Player* player) { (void)play; (void)player; }
-extern "C" void GerudoHybrid_Draw  (PlayState* play, Player* player) { (void)play; (void)player; }
-extern "C" void GerudoHybrid_SetAnim(PlayState* play, const char* otrPath) { (void)play; (void)otrPath; }

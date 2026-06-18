@@ -218,6 +218,18 @@ void AudioMmSfx_PlaySfx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vo
     MmSfxRequest* reqWrite;
     MmSfxRequest* reqRead;
 
+    // Bounds guard: the bank nibble (SFX_BANK_SHIFT = (sfxId >> 12) & 0xFF) indexes
+    // every [7]-sized bank array below. A malformed sfxId (bits 12+ >= 7) would
+    // read OOB starting with sMmSfxBankMuted[] on the very next line. Reject it.
+    if ((s32)SFX_BANK_SHIFT(sfxId) >= ARRAY_COUNT(gMmSfxBanks)) {
+        return;
+    }
+    // Per-bank index guard: the index field (0x3FF) can exceed this bank's param
+    // table length; gMmSfxParams[bank][SFX_INDEX] is read in ProcessRequest.
+    if ((size_t)SFX_INDEX(sfxId) >= gMmSfxParamsCount[SFX_BANK_SHIFT(sfxId)]) {
+        return;
+    }
+
     if (!sMmSfxBankMuted[SFX_BANK_SHIFT(sfxId)]) {
         reqWrite = &sMmSfxRequests[sMmSfxRequestWriteIndex];
 
@@ -317,6 +329,15 @@ static void AudioMmSfx_ProcessRequest(void) {
     // stale same-frame request from resurrecting a just-stopped continuous SFX
     // (Goron BALL_CHARGE leak after spike activation).
     if (MmStopGuard_Contains(req->sfxId)) {
+        return;
+    }
+    // Bounds guard (defense in depth — PlaySfx already rejects bad ids, but a
+    // request could in principle be queued by another path). SFX_BANK indexes
+    // the [7]-sized bank arrays; SFX_INDEX indexes the per-bank param table.
+    if ((s32)SFX_BANK(req->sfxId) >= ARRAY_COUNT(gMmSfxBanks)) {
+        return;
+    }
+    if ((size_t)SFX_INDEX(req->sfxId) >= gMmSfxParamsCount[SFX_BANK(req->sfxId)]) {
         return;
     }
     bankId = SFX_BANK(req->sfxId);

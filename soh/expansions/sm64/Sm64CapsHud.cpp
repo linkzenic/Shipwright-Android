@@ -34,6 +34,8 @@
 #include <ship/window/gui/Gui.h>
 #include <ship/window/gui/GuiWindow.h>
 #include <libultraship/bridge/consolevariablebridge.h>
+#include <libultraship/libultraship.h>
+#include <fast/Fast3dGui.h>
 
 extern "C" {
 #include "z64.h"
@@ -54,6 +56,10 @@ int32_t  Sm64MarioCaps_GetActiveIndex(void);
 
 // Mario's independent health as 0..8 wedges (SM64 power-meter segments).
 int32_t  Sm64Mario_GetHealthWedges(void);
+
+// Resource existence check (used to fall back to a shipped button texture when
+// the user's d-right.png hasn't been packed into the o2r yet).
+uint8_t ResourceMgr_FileExists(const char* resName);
 }
 
 namespace {
@@ -68,16 +74,30 @@ struct CapSlot {
     const char* texName;   // GUI texture registration name
     const char* resPath;   // OTR resource path
     const char* bind;      // D-pad bind label (literal button text)
+    int rot;               // d-right.png CW quarter-turns to point at this cap's D-pad dir
 };
 
 // Slot order Wing, Metal, Vanish, Fire. Binds: Wing=D-Down, Metal=D-Left,
 // Vanish=D-Right, Fire=D-Up (see Sm64Mario_HandleCapDpad in sm64_mario_items.c).
+// rot: the base button texture (d-right.png) points RIGHT; rotate it CW to face
+// each cap's D-pad direction. Down=1 (90°), Left=2 (180°), Right=0, Up=3 (270°).
 const CapSlot kSlots[kSlotCount] = {
-    { "Sm64Cap_Wing",   "textures/icon_item_custom/gItemIconWingCapTex",   "D-Down" },
-    { "Sm64Cap_Metal",  "textures/icon_item_custom/gItemIconMetalCapTex",  "D-Left" },
-    { "Sm64Cap_Vanish", "textures/icon_item_custom/gItemIconVanishCapTex", "D-Right" },
-    { "Sm64Cap_Fire",   "textures/icon_item_custom/gItemIconFireFlowerTex", "D-Up" },
+    { "Sm64Cap_Wing",   "textures/icon_item_custom/gItemIconWingCapTex",   "D-Down",  1 },
+    { "Sm64Cap_Metal",  "textures/icon_item_custom/gItemIconMetalCapTex",  "D-Left",  2 },
+    { "Sm64Cap_Vanish", "textures/icon_item_custom/gItemIconVanishCapTex", "D-Right", 0 },
+    { "Sm64Cap_Fire",   "textures/icon_item_custom/gItemIconFireFlowerTex", "D-Up",   3 },
 };
+
+// Button indicators are raw PNGs (textures/buttons/), loaded via the InputViewer's
+// LoadTextureFromRawImage path (NOT LoadGuiTexture, which is for compiled textures).
+// d-right.png is rotated per-cap; CDown.png labels the C-Down item row.
+const char* kDpadBtnTexName  = "Sm64DPadBtn";   // textures/buttons/d-right.png
+const char* kCDownBtnTexName = "Sm64CDownBtn";  // textures/buttons/CDown.png
+
+// HUD display order (top -> bottom). Swaps Wing and Fire visually (panel position
+// only — bindings/timers stay tied to their real slot). Real slots: 0=Wing,
+// 1=Metal, 2=Vanish, 3=Fire. Here: Fire(3) on top, Wing(0) at the bottom.
+const int kDisplayOrder[kSlotCount] = { 3, 1, 2, 0 };
 
 const char* kMaskTexName = "Sm64Cap_Mask";
 const char* kMaskResPath = "textures/icon_item_custom/gItemIconMarioMaskTex";
@@ -88,7 +108,7 @@ void EnsureTextures() {
     if (sTexturesLoaded) {
         return;
     }
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
     for (const auto& slot : kSlots) {
         gui->LoadGuiTexture(slot.texName, slot.resPath, ImVec4(1, 1, 1, 1));
     }
@@ -99,7 +119,32 @@ void EnsureTextures() {
         std::string path = "textures/mario_hp/gMarioHP" + std::to_string(n) + "Tex";
         gui->LoadGuiTexture(name, path, ImVec4(1, 1, 1, 1));
     }
+    // Button indicators (raw PNGs). Use the user's d-right.png if it's been packed
+    // into the o2r; otherwise fall back to the always-shipped DPadRight.png (same
+    // RIGHT-pointing orientation, so the per-cap rotation still works). The guard
+    // matters because LoadTextureFromResource dereferences a NULL resource (crash)
+    // — never feed it a path that isn't in the archive.
+    const char* dpadPath = ResourceMgr_FileExists("textures/buttons/d-right.png")
+                               ? "textures/buttons/d-right.png"
+                               : "textures/buttons/DPadRight.png";
+    gui->LoadTextureFromRawImage(kDpadBtnTexName, dpadPath);
+    gui->LoadTextureFromRawImage(kCDownBtnTexName, "textures/buttons/CDown.png");
     sTexturesLoaded = true;
+}
+
+// Draws a texture rotated CW by `rotQuarters` * 90° (0=right, 1=down, 2=left,
+// 3=up for d-right.png). Keeps the screen square fixed and rotates the UVs:
+// screen corner k samples texture corner (k - rot) mod 4 (TL,TR,BR,BL order).
+void DrawRotatedImage(ImDrawList* dl, ImTextureID tex, ImVec2 center, float size, int rotQuarters, ImU32 col) {
+    float h = size * 0.5f;
+    ImVec2 p1(center.x - h, center.y - h); // screen TL
+    ImVec2 p2(center.x + h, center.y - h); // screen TR
+    ImVec2 p3(center.x + h, center.y + h); // screen BR
+    ImVec2 p4(center.x - h, center.y + h); // screen BL
+    const ImVec2 uv[4] = { ImVec2(0, 0), ImVec2(1, 0), ImVec2(1, 1), ImVec2(0, 1) };
+    int r = ((rotQuarters % 4) + 4) % 4;
+    dl->AddImageQuad(tex, p1, p2, p3, p4, uv[(0 - r + 4) % 4], uv[(1 - r + 4) % 4], uv[(2 - r + 4) % 4],
+                     uv[(3 - r + 4) % 4], col);
 }
 
 ImU32 ChargeColor(int phase, float charge) {
@@ -134,7 +179,7 @@ void Sm64CapsHudWindow::Draw() {
     if (gPlayState == nullptr || gPlayState->pauseCtx.state != 0) {
         return; // hide while paused / in the subscreen
     }
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
     if (gui->GetMenuOrMenubarVisible()) {
         return; // don't draw over the port menu
     }
@@ -167,14 +212,16 @@ void Sm64CapsHudWindow::Draw() {
         s = 0.6f;
     }
 
-    const float diameter = 54.0f * s;
+    const float diameter = 48.0f * s;
     const float radius = diameter * 0.5f;
     const float ringThick = 5.0f * s;
     const float iconSize = diameter * 0.60f;
-    const float pitch = diameter + 20.0f * s;
+    const float pitch = diameter + 7.0f * s;  // tighter: rings nearly touch (was +20)
     const float rightMargin = 26.0f * s;
-    const float topY = 64.0f * s;
+    const float topY = 56.0f * s;
     const float timerFontSize = 15.0f * s;
+    const float btnSize = 22.0f * s;          // D-pad / C-Down indicator size
+    const float btnGap = 7.0f * s;            // gap between ring and its button
 
     const float centerX = disp.x - rightMargin - radius;
 
@@ -243,9 +290,10 @@ void Sm64CapsHudWindow::Draw() {
     int activeIdx = Sm64MarioCaps_GetActiveIndex();
 
     for (int i = 0; i < kSlotCount; i++) {
-        int phase = Sm64MarioCaps_GetPhase(i);
-        float charge = Sm64MarioCaps_GetCharge(i);
-        bool isActive = (i == activeIdx);
+        int slot = kDisplayOrder[i]; // panel position i shows this real cap slot
+        int phase = Sm64MarioCaps_GetPhase(slot);
+        float charge = Sm64MarioCaps_GetCharge(slot);
+        bool isActive = (slot == activeIdx);
 
         float cy = topY + i * pitch + radius;
         ImVec2 center(centerX, cy);
@@ -262,7 +310,7 @@ void Sm64CapsHudWindow::Draw() {
         }
 
         // Icon (or Mario mask while ACTIVE). Dimmed while recharging.
-        const char* texName = isActive ? kMaskTexName : kSlots[i].texName;
+        const char* texName = isActive ? kMaskTexName : kSlots[slot].texName;
         ImTextureID tex = gui->GetTextureByName(texName);
         if (tex != (ImTextureID)0) {
             ImU32 tint = (phase == kPhaseCooldown) ? IM_COL32(120, 120, 120, 255) : IM_COL32(255, 255, 255, 255);
@@ -271,9 +319,18 @@ void Sm64CapsHudWindow::Draw() {
             dl->AddImage(tex, iconMin, iconMax, ImVec2(0, 0), ImVec2(1, 1), tint);
         }
 
+        // D-pad activation button (d-right.png rotated to this cap's direction),
+        // to the LEFT of the ring — Genshin-style "press this to use it" cue.
+        ImTextureID dpadTex = gui->GetTextureByName(kDpadBtnTexName);
+        if (dpadTex != (ImTextureID)0) {
+            ImVec2 btnCenter(center.x - radius - btnGap - btnSize * 0.5f, center.y);
+            ImU32 btnTint = (phase == kPhaseCooldown) ? IM_COL32(150, 150, 150, 210) : IM_COL32(255, 255, 255, 255);
+            DrawRotatedImage(dl, dpadTex, btnCenter, btnSize, kSlots[slot].rot, btnTint);
+        }
+
         // Timer badge — seconds remaining, only while ACTIVE or COOLDOWN.
         if (phase != kPhaseReady) {
-            int secs = Sm64MarioCaps_GetRemainingSeconds(i);
+            int secs = Sm64MarioCaps_GetRemainingSeconds(slot);
             std::string txt = std::to_string(secs);
             ImVec2 tsz = font->CalcTextSizeA(timerFontSize, FLT_MAX, 0.0f, txt.c_str());
             ImVec2 badgeCenter(center.x + radius * 0.78f, center.y + radius * 0.78f);
@@ -291,6 +348,22 @@ void Sm64CapsHudWindow::Draw() {
                         IM_COL32(255, 255, 255, 255), txt.c_str());
         }
     }
+
+    // 5th row: the C-Down ITEM slot, BELOW the 4 caps in the same column. The item
+    // (bomb / bombchu / deku nut / ocarina) is assigned + filled in by the C-Down
+    // item system (#5, pending); for now this lays out the slot ring + the C-Down
+    // button so the position is locked in. When #5 lands, its icon draws in the ring.
+    {
+        float cy = topY + kSlotCount * pitch + radius;
+        ImVec2 center(centerX, cy);
+        dl->AddCircle(center, radius, IM_COL32(0, 0, 0, 130), 64, ringThick);
+        ImTextureID cdTex = gui->GetTextureByName(kCDownBtnTexName);
+        if (cdTex != (ImTextureID)0) {
+            ImVec2 btnCenter(center.x - radius - btnGap - btnSize * 0.5f, center.y);
+            dl->AddImage(cdTex, ImVec2(btnCenter.x - btnSize * 0.5f, btnCenter.y - btnSize * 0.5f),
+                         ImVec2(btnCenter.x + btnSize * 0.5f, btnCenter.y + btnSize * 0.5f));
+        }
+    }
 }
 
 std::shared_ptr<Sm64CapsHudWindow> sHudWindow = nullptr;
@@ -304,7 +377,7 @@ extern "C" void Sm64CapsHud_DrawImGui(void) {
     if (sHudWindow != nullptr) {
         return;
     }
-    auto ctx = Ship::Context::GetInstance();
+    auto ctx = Ship::Context::GetRawInstance();
     if (ctx == nullptr) {
         return;
     }

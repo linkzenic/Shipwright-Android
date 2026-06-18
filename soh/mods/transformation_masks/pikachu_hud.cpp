@@ -33,6 +33,8 @@
 #include <ship/resource/ResourceManager.h>
 #include <ship/resource/archive/ArchiveManager.h>
 #include <libultraship/bridge/consolevariablebridge.h>
+#include <libultraship/libultraship.h>
+#include <fast/Fast3dGui.h>
 
 extern "C" {
 #include "z64.h"
@@ -109,10 +111,10 @@ void EnsureTextures() {
     // missing — e.g. soh.o2r not yet repacked with the pikachu icons. Check the
     // virtual filesystem first and simply skip absent icons: the HUD then draws
     // its panels/shapes without images instead of crashing the game.
-    auto ctx = Ship::Context::GetInstance();
+    auto ctx = Ship::Context::GetRawInstance();
     auto rm = ctx ? ctx->GetResourceManager() : nullptr;
     auto am = rm ? rm->GetArchiveManager() : nullptr;
-    auto gui = ctx->GetWindow()->GetGui();
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(ctx->GetWindow()->GetGui());
     for (int i = 0; i < ICON_COUNT; i++) {
         sIconAvailable[i] = (am != nullptr) && am->HasFile(std::string(kIcons[i].resPath));
         if (sIconAvailable[i]) {
@@ -126,7 +128,7 @@ ImTextureID IconTex(int idx) {
     if (!sIconAvailable[idx]) {
         return 0; // icon not in soh.o2r (repack pending) — draw without image
     }
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
     return gui->GetTextureByName(kIcons[idx].name);
 }
 
@@ -201,7 +203,7 @@ void PikachuHudWindow::Draw() {
     // buttons by Interface_Draw (PikaMode_ButtonIcon) — here we only add the
     // status card. Style 1: full corner HUD (clusters + LB/RB pills too).
     bool cornerStyle = CVarGetInteger("gPikaHud.Style", 0) == 1;
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = Ship::Context::GetRawInstance()->GetWindow()->GetGui();
     if (gui->GetMenuOrMenubarVisible()) {
         return;
     }
@@ -393,7 +395,7 @@ std::shared_ptr<PikachuControlsWindow> sControlsWindow = nullptr;
 // Opens (registering on first use) the Pikachu control-assignment window.
 // Called from the "Pikachu Controls" button in SohMenuNEI.cpp.
 extern "C" void PikachuControls_OpenWindow(void) {
-    auto ctx = Ship::Context::GetInstance();
+    auto ctx = Ship::Context::GetRawInstance();
     if (ctx == nullptr || ctx->GetWindow() == nullptr) {
         return;
     }
@@ -416,7 +418,7 @@ extern "C" void PikachuHud_DrawImGui(void) {
     if (sHudWindow != nullptr) {
         return;
     }
-    auto ctx = Ship::Context::GetInstance();
+    auto ctx = Ship::Context::GetRawInstance();
     if (ctx == nullptr) {
         return;
     }

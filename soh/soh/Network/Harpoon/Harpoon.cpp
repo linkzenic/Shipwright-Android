@@ -24,6 +24,7 @@ extern "C" {
 #include "mods/actors/somaria_cubes.h"
 #include "mods/pak_loader/pak_loader.h"
 #include "soh/Network/Harpoon/HarpoonBridge.h"
+#include "expansions/sm64/sm64_mario.h" // Sm64Mario_GetSyncState (remote Mario sync)
 extern PlayState* gPlayState;
 }
 #include "soh/Enhancements/mod_menu.h"
@@ -620,8 +621,19 @@ void Harpoon::SendPacket_PlayerUpdate() {
     payload["actionVar1"] = player->av1.actionVar1;
 
     // Transformation data (read from TransformMasks system)
-    // modelType: 0=human, 1=Goron, 2=Zora, 3=Deku, 4=FD — matches HarpoonDummyPlayer cache mapping
-    payload["transformation"] = modelType;
+    // modelType: 0=human, 1=Goron, 2=Zora, 3=Deku, 4=FD — matches HarpoonDummyPlayer cache mapping.
+    // SM64 Mario isn't an MM form (GetModelType returns 0), so override the broadcast
+    // value to HARPOON_MODELTYPE_MARIO and ship its libsm64 anim pose so peers can
+    // render + animate a per-remote Mario instance. (MM-joint copy above is untouched.)
+    s32 marioAnimId = 0;
+    s16 marioAnimFrame = 0;
+    u8 txValue = modelType;
+    if (Sm64Mario_GetSyncState(&marioAnimId, &marioAnimFrame)) {
+        txValue = HARPOON_MODELTYPE_MARIO;
+    }
+    payload["transformation"] = txValue;
+    payload["marioAnimId"] = marioAnimId;
+    payload["marioAnimFrame"] = marioAnimFrame;
     payload["cylRadius"] = player->cylinder.dim.radius;
     payload["cylHeight"] = player->cylinder.dim.height;
     payload["cylYShift"] = player->cylinder.dim.yShift;
@@ -1026,6 +1038,9 @@ void Harpoon::HandlePacket_PlayerUpdate(nlohmann::json payload) {
 
     // Transformation data
     client.transformation = payload.value("transformation", (u8)0);
+    // SM64 Mario remote pose (only present/meaningful when transformation == MARIO)
+    client.marioAnimId = payload.value("marioAnimId", (s32)0);
+    client.marioAnimFrame = payload.value("marioAnimFrame", (s16)0);
     client.cylRadius = payload.value("cylRadius", (s16)30);
     client.cylHeight = payload.value("cylHeight", (s16)60);
     client.cylYShift = payload.value("cylYShift", (s16)0);
@@ -2985,6 +3000,8 @@ void Harpoon::HandlePacket_PlayerTransformation(nlohmann::json payload) {
     auto* c = _LookupClient(payload);
     if (!c) return;
     c->transformation = payload.value("transformation", c->transformation);
+    c->marioAnimId = payload.value("marioAnimId", c->marioAnimId);
+    c->marioAnimFrame = payload.value("marioAnimFrame", c->marioAnimFrame);
     c->cylRadius = payload.value("cylRadius", c->cylRadius);
     c->cylHeight = payload.value("cylHeight", c->cylHeight);
     c->cylYShift = payload.value("cylYShift", c->cylYShift);
@@ -3245,7 +3262,16 @@ void Harpoon::SendPacket_PlayerTransformation() {
     nlohmann::json payload;
     payload["type"] = HPN_PLAYER_TRANSFORMATION;
     u8 modelType = TransformMasks_GetModelType();
+    // Keep this event packet consistent with the per-frame one: broadcast MARIO
+    // (+ anim pose) so it can't momentarily clobber c->transformation back to 0.
+    s32 marioAnimId = 0;
+    s16 marioAnimFrame = 0;
+    if (Sm64Mario_GetSyncState(&marioAnimId, &marioAnimFrame)) {
+        modelType = HARPOON_MODELTYPE_MARIO;
+    }
     payload["transformation"] = modelType;
+    payload["marioAnimId"] = marioAnimId;
+    payload["marioAnimFrame"] = marioAnimFrame;
     payload["cylRadius"] = player->cylinder.dim.radius;
     payload["cylHeight"] = player->cylinder.dim.height;
     payload["cylYShift"] = player->cylinder.dim.yShift;

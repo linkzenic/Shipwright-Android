@@ -72,7 +72,7 @@ bool ContainsCaseInsensitive(const std::string& haystack, const std::string& nee
 void PerformAnimationSearch() {
     sAnimList.clear();
 
-    auto archiveManager = Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager();
+    auto archiveManager = Ship::Context::GetRawInstance()->GetResourceManager()->GetArchiveManager();
     if (archiveManager == nullptr) {
         return;
     }
@@ -241,7 +241,7 @@ void AnimationViewerWindow::DrawElement() {
         auto selection =
             pfd::open_file("Select an .o2r archive", ".", { "Shipwright archives", "*.o2r *.zip" }).result();
         if (!selection.empty()) {
-            auto archiveManager = Ship::Context::GetInstance()->GetResourceManager()->GetArchiveManager();
+            auto archiveManager = Ship::Context::GetRawInstance()->GetResourceManager()->GetArchiveManager();
             if (archiveManager != nullptr) {
                 auto archive = archiveManager->AddArchive(selection[0]);
                 if (archive != nullptr) {

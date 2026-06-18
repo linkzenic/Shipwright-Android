@@ -8,36 +8,38 @@ extern "C" {
 #endif
 
 /**
- * Hybrid Gerudo render — uses the OOT Gerudo Fighter (GeldB) native 23-bone
- * skeleton (`__OTR__objects/object_geldb/gGerudoRedSkel`) with its own
- * SkelAnime running gerudo native anims.
+ * Gerudo form render — path-swap override (NOT a separate skeleton).
  *
- * Per-bone source split (always merged, no mode CVar):
- *   - Body bones (TORSO, HEAD, UPPER_ARMs, FOREARMs, HANDs, THIGHs, SHINs,
- *     FEET) get Link's anim values via runtime retarget — so climb/swim/
- *     walk/run/item-poses drive the gerudo body just like Link's.
- *   - NECK, PONYTAIL, VEIL, WRISTs, SWORDs, WAIST stay at gerudo's native
- *     anim values (default: gGerudoRedNeutralAnim), so the head accents and
- *     swords swing independently of Link's body anim.
- *   - PONYTAIL gets an additional velocity-driven inertia sway on top —
- *     lags behind body motion, smooth restore when stopping.
+ * The gerudo form is purely visual: Link keeps his own skeleton, anims, and
+ * Player_DrawImpl walk. The gerudo .o2r (nei/gerudo.o2r) ships a complete,
+ * Link-rigged gerudo mesh under a parallel namespace
+ *   `objects/gerudoPlayer/object_link_boy/X`  (and .../object_link_child/X)
+ * mirroring the vanilla
+ *   `objects/object_link_boy/X`
+ * leaf-for-leaf — every body part, item DL, sword/shield hold, etc. has a
+ * gerudo twin at the same name.
  *
- * Tunic tinting: OverrideLimbDraw intercepts TORSO/clothing limbs and emits
- * `gDPSetEnvColor` using Link's current tunic color (Kokiri / Goron / Zora,
- * with cosmetic CVar override support).
+ * GerudoForm_OverrideLimbDraw wraps Link's normal limb-draw override
+ * (Player_OverrideLimbDrawGameplayDefault, passed in via
+ * GerudoForm_SetChainedOverride). For each limb it:
+ *   1. snapshots the limb's own DL,
+ *   2. runs the chained vanilla override (which may overwrite *dList with a
+ *      hardcoded vanilla `__OTR__objects/object_link_boy/...` path),
+ *   3. if a gerudo-native DL was present, restores it; otherwise rewrites the
+ *      vanilla prefix to the `objects/gerudoPlayer/...` prefix so the gerudo
+ *      resource resolves instead.
+ * The rewritten path is allocated from the gfx frame arena (Graph_Alloc),
+ * valid for the rest of the frame.
  *
- * To switch the gerudo native anim (e.g. play gGerudoRedSlashAnim during a
- * sword swing), call:
- *   GerudoHybrid_SetAnim(play, "__OTR__objects/object_geldb/gGerudoRedSlashAnim");
- * (Use NULL to reset to the default neutral idle.)
+ * The swap is gated on the gerudo form being active (mask equipped via
+ * O2rLoader). When not transformed the wrapper still runs but every path
+ * stays vanilla, so Link looks normal. There is no separate gerudo SkelAnime,
+ * no null-body pass, and no native GeldB skeleton in this path — the form is
+ * driven entirely by Link's own draw with DL strings swapped underneath it.
+ *
+ * Tunic tinting (Kokiri / Goron / Zora, with cosmetic CVar overrides) is
+ * resolved by GerudoForm_GetTunicColor (gerudo_form.cpp).
  */
-s32  GerudoHybrid_Setup(PlayState* play);
-void GerudoHybrid_Teardown(void);
-void GerudoHybrid_Update(PlayState* play, Player* player);
-void GerudoHybrid_Draw  (PlayState* play, Player* player);
-
-/** Select a specific gerudo native animation by OTR path. NULL = restore neutral. */
-void GerudoHybrid_SetAnim(PlayState* play, const char* otrPath);
 
 /**
  * Wrapper around Player_OverrideLimbDrawGameplayDefault (or any chained

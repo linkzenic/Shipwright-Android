@@ -1485,7 +1485,10 @@ static void ArrowWheel_Build(void) {
             sArrowWheelEntries[sArrowWheelAvailCount++] = (u8)i;
         }
     }
-    if (INV_CONTENT(ITEM_BOMB_ARROWS) != ITEM_NONE) {
+    // ITEM_BOMB_ARROWS is a NEI custom item (0xAE); INV_CONTENT()/SLOT() would index
+    // gItemSlots[56] out of bounds. Resolve the real extended-inventory slot instead.
+    u8 baSlot = ExtInv_GetItemSlot(ITEM_BOMB_ARROWS);
+    if (baSlot != 0xFF && gSaveContext.inventory.items[baSlot] != ITEM_NONE) {
         sArrowWheelEntries[sArrowWheelAvailCount++] = ARROW_WHEEL_ENTRY_BOMB;
     }
     if (sArrowWheelCursor >= sArrowWheelAvailCount) {
@@ -2236,6 +2239,17 @@ void KaleidoScope_SetupItemEquip(PlayState* play, u16 item, u16 slot, s16 animX,
         } else if (CHECK_BTN_ALL(input->press.button, BTN_DRIGHT)) {
             pauseCtx->equipTargetCBtn = 6;
         }
+    }
+
+    // SM64 Mario mode: C-Left / C-Right and the whole D-pad are reserved for
+    // Mario's moves (Cappy / Roll / power-up caps), so block equipping OOT items
+    // onto them — only C-Down (equipTargetCBtn == 1) stays free (it becomes
+    // Mario's item slot). The real equips are never cleared (just hidden while
+    // Mario), so they reappear on Link; this only stops NEW assignments.
+    if (CVarGetInteger("gSm64Mario", 0) != 0 && pauseCtx->equipTargetCBtn != 1) {
+        Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
     }
 
     pauseCtx->equipTargetItem = item;

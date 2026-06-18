@@ -32,6 +32,8 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/fmt.h>
 #include <imgui.h>
+#include <libultraship/libultraship.h>
+#include <fast/Fast3dGui.h>
 #include <array>
 #include <map>
 #include <string>
@@ -161,7 +163,7 @@ void DrawUpgradeIconForTemplate(HarpoonTemplates::Template* t,
     if (item != ITEM_NONE) {
         const ItemMapEntry& slotEntry = itemMapping[item];
         if (ImGui::ImageButton((slotEntry.name + "##remoteUpgBtn").c_str(),
-                               Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(slotEntry.name),
+                               std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(slotEntry.name),
                                ImVec2(48.0f, 48.0f), ImVec2(0, 0), ImVec2(1, 1))) {
             ImGui::OpenPopup(upgradePopupPicker);
         }
@@ -189,7 +191,7 @@ void DrawUpgradeIconForTemplate(HarpoonTemplates::Template* t,
                 const ItemMapEntry& slotEntry = itemMapping[items[pickerIndex]];
                 bool ret = ImGui::ImageButton(
                     (slotEntry.name + "##remoteUpgPick").c_str(),
-                    Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(slotEntry.name),
+                    std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(slotEntry.name),
                     ImVec2(48.0f, 48.0f), ImVec2(0, 0), ImVec2(1, 1));
                 if (ret) {
                     TplSetUpgValue(t, categoryId, (s32)pickerIndex);
@@ -546,7 +548,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
                     const ItemMapEntry& slotEntry = *slotEntryPtr;
                     if (ImGui::ImageButton(
                             slotEntry.name.c_str(),
-                            Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(slotEntry.name),
+                            std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(slotEntry.name),
                             ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1))) {
                         sSelectedIndex = index;
                         ImGui::OpenPopup(itemPopupPicker);
@@ -593,7 +595,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
                     PushStyleButton(Colors::DarkGray);
                     bool ret = ImGui::ImageButton(
                         slotEntry.name.c_str(),
-                        Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(slotEntry.name),
+                        std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(slotEntry.name),
                         ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
                     PopStyleButton();
                     if (ret) {
@@ -621,7 +623,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
         ImGui::BeginGroup();
         auto mapIt = itemMapping.find(item);
         if (mapIt != itemMapping.end()) {
-            ImGui::Image(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(mapIt->second.name),
+            ImGui::Image(std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(mapIt->second.name),
                          ImVec2(kInvImageSize, kInvImageSize));
         }
         PushStyleInput(THEME_COLOR);
@@ -661,7 +663,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
                     auto it = customItemMapping.find(item);
                     if (it != customItemMapping.end()) {
                         const ItemMapEntry& slotEntry = it->second;
-                        auto tex = Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(slotEntry.name);
+                        auto tex = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(slotEntry.name);
                         if (tex) {
                             clicked = ImGui::ImageButton(slotEntry.name.c_str(), tex,
                                                           ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
@@ -713,7 +715,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
                         bool ret = false;
                         if (it != customItemMapping.end()) {
                             const ItemMapEntry& entry = it->second;
-                            auto tex = Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(entry.name);
+                            auto tex = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(entry.name);
                             if (tex) {
                                 ret = ImGui::ImageButton(entry.name.c_str(), tex,
                                                           ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
@@ -744,7 +746,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
                         bool ret = false;
                         if (it != customItemMapping.end()) {
                             const ItemMapEntry& entry = it->second;
-                            auto tex = Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(entry.name);
+                            auto tex = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(entry.name);
                             if (tex) {
                                 ret = ImGui::ImageButton(entry.name.c_str(), tex,
                                                           ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
@@ -812,7 +814,7 @@ void DrawInventoryTab(HarpoonTemplates::Template* t) {
                 uint8_t item = t->items[slotIndex];
                 const char* maskName = sMmMaskNames[visualIndex];
                 bool hasItem = (item != ITEM_NONE);
-                auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+                auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
                 auto tex = gui->GetTextureByName(maskName);
                 if (tex) {
                     PushStyleButton(Colors::DarkGray);
@@ -1073,7 +1075,7 @@ void DrawEquipmentTab(HarpoonTemplates::Template* t) {
             PushStyleButton(Colors::DarkGray);
             bool ret = ImGui::ImageButton(
                 (entry.name + "##eqR").c_str(),
-                Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(
+                std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(
                     hasEquip ? entry.name : entry.nameFaded),
                 ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
             PopStyleButton();
@@ -1156,7 +1158,7 @@ void DrawQuestItemButtonForTemplate(HarpoonTemplates::Template* t, uint32_t item
     PushStyleButton(Colors::DarkGray);
     bool ret = ImGui::ImageButton(
         (entry.name + "##qR").c_str(),
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(
+        std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(
             hasQuestItem ? entry.name : entry.nameFaded),
         ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
     if (ret) {
@@ -1177,7 +1179,7 @@ void DrawDungeonItemButtonForTemplate(HarpoonTemplates::Template* t,
     PushStyleButton(Colors::DarkGray);
     bool ret = ImGui::ImageButton(
         (entry.name + "##dR").c_str(),
-        Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(
+        std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(
             hasItem ? entry.name : entry.nameFaded),
         ImVec2(kInvImageSize, kInvImageSize), ImVec2(0, 0), ImVec2(1, 1));
     if (ret) {
@@ -1213,7 +1215,7 @@ void DrawQuestStatusTab(HarpoonTemplates::Template* t) {
         PushStyleButton(Colors::DarkGray);
         bool ret = ImGui::ImageButton(
             (entry.name + "##qsR").c_str(),
-            Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(
+            std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(
                 hasQuestItem ? entry.name : entry.nameFaded),
             ImVec2(32.0f, 48.0f), ImVec2(0, 0), ImVec2(1, 1));
         PopStyleButton();
@@ -1276,7 +1278,7 @@ void DrawQuestStatusTab(HarpoonTemplates::Template* t) {
             float lineHeight = ImGui::GetTextLineHeightWithSpacing();
             auto keyMap = itemMapping.find(ITEM_KEY_SMALL);
             if (keyMap != itemMapping.end()) {
-                ImGui::Image(Ship::Context::GetInstance()->GetWindow()->GetGui()->GetTextureByName(keyMap->second.name),
+                ImGui::Image(std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui())->GetTextureByName(keyMap->second.name),
                              ImVec2(lineHeight, lineHeight));
             }
             ImGui::SameLine();
@@ -1367,7 +1369,7 @@ void ResetBaseOptions() {}  // matches vanilla's no-op pattern between tabs
 void OpenForPeer(uint32_t targetClientId) {
     sTargetCid = targetClientId;
     RequestPeek(targetClientId);
-    auto gui = Ship::Context::GetInstance()->GetWindow()->GetGui();
+    auto gui = Ship::Context::GetRawInstance()->GetWindow()->GetGui();
     if (gui != nullptr) {
         auto w = gui->GetGuiWindow("Remote Save Editor");
         if (w != nullptr) w->Show();

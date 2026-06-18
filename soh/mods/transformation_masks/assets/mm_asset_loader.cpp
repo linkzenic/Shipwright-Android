@@ -217,7 +217,13 @@ static bool LoadMmO2r() {
                         nullptr);
                     MMASSETS_LOG("[MM Assets] Incompatible mm.o2r (got 0x%08X, required 0x%08X)",
                                  mmVer, MM_NTSC_US_10);
-                    exit(1);
+                    // Don't kill the whole app (was exit(1), which also skipped SDL/graphics
+                    // teardown). Remove the incompatible archive so it can't shadow OOT
+                    // resources and assertion-crash, then decline MM features and let the
+                    // game boot normally with OOT only.
+                    archiveManager->RemoveArchive(sMmO2rPath);
+                    sMmO2rLoaded = false;
+                    return false;
                 }
             }
             sMmO2rLoaded = true;
@@ -3096,24 +3102,13 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                 sPlayingSounds[i].volume = vol;
                 sPlayingSounds[i].pan = pan;
                 sPlayingSounds[i].lastRefreshFrame = sMmAudioFrame;
-                // MM verbatim re-attack semantics for the Deku flower propeller
-                // hum (0x1851 ONLY): MM's Audio_PlaySfx_AtPosWithTimer fires a
-                // fresh note-on every cadence pulse, which re-runs the channel's
-                // portamento opcode and re-sweeps D3→D2. Without this re-trigger
-                // SOH plays the porta sweep ONCE on the first hit then sits at
-                // the end pitch (flat D2 hum) for the rest of the dive.
-                //
-                // SCOPED to 0x1851. Other continuous SFX with porta config
-                // (Goron ball-charge 0x08EB, Zora swim 0x08ED, Goron slip
-                // 0x09AD, Deku bubble breath 0x09A1, etc.) are NOT re-attacked
-                // by MM — their porta is a one-shot ramp that holds at the end
-                // pitch and the per-frame refresh only updates vol/pan. Re-
-                // setting porta state for those would make them restart the
-                // ramp every refresh and sound broken.
-                if (mmSfxId == 0x1851 && sPlayingSounds[i].portaRate > 0.0f) {
-                    sPlayingSounds[i].portaProgress = 0.0f;
-                    sPlayingSounds[i].advance = sPlayingSounds[i].portaStartAdv;
-                }
+                // NO porta-reset on continuous refresh for any SFX. User-confirmed
+                // that resetting porta on each cadence pulse (was scoped to 0x1851
+                // FLOWER_ROLL) produced an audible click/glitch — each pulse forced
+                // a sudden D2→D3 pitch jump on the already-playing slot.
+                // MM's effective propeller character (5-tick notes barely letting
+                // porta complete) is closer to "sustain at end pitch" than to
+                // "re-sweep every pulse" in our 12x-faster sweep timebase.
                 anyFound = true;
             }
         }
@@ -3444,7 +3439,22 @@ static s32 MmDirectAudio_Play(u16 mmSfxId, f32 freqScale, Vec3f* pos) {
                             portaEffNote = 127;
                         f32 portaStartPitch = powf(2.0f, ((f32)portaEffNote - 60.0f) / 12.0f);
                         f32 portaStartAdv = sound->tuning * portaStartPitch * freqScale;
-                        f32 durationSamples = (f32)portaSpeed * 16.0f;
+                        // MM verbatim porta-time scale (seqplayer.c:950):
+                        //   speed = 0x20000 / (portaTime * updatesPerFrame)   ; updatesPerFrame=4
+                        // For portaTime=255 → speed=128 per audio update at 240Hz tick rate, sweep
+                        // completes in ~1.05s. SOH's default `portaSpeed*16.0f` = 85ms for the same
+                        // input = 12.4x too fast. Most porta-using SFX in our bank are tuned around
+                        // the 85ms timing and sound right, so we keep that as the default. Per-SFX
+                        // overrides bring specific cases back to MM verbatim timing:
+                        //   0x09A1 BUBLE_BREATH — AF2→A3 sweep in MM is a slow swell tied to the
+                        //                          envelope C018 charge-up. At 85ms our sweep
+                        //                          spikes the pitch up too sharp (user-reported
+                        //                          "demasiado agudo / vibrato fuera de control").
+                        f32 portaTimeScale = 16.0f;
+                        if (mmSfxId == 0x09A1) {
+                            portaTimeScale = 200.0f; // ~12x slower → matches MM ~1.05s sweep
+                        }
+                        f32 durationSamples = (f32)portaSpeed * portaTimeScale;
                         // Portamento direction: MM modes 0x82, 0x84 (or our portaModeInv=1)
                         // glide INVERSE (target→start) instead of normal start→target.
                         f32 effStart = portaStartAdv;
@@ -3621,6 +3631,23 @@ static SoundFont* MmGakki_LoadFormFont(s32 form, u8* outInstIdx) {
 // A=D4(62), CDown=F4(65), CRight=A4(69), CLeft=B4(71), CUp=D5(74)
 static const u8 sOcarinaButtonToMidi[5] = { 62, 65, 69, 71, 74 };
 
+// RAII scoped lock over the audio thread's mutex (via OTRGlobals accessors). Held by
+// the MM SFX game-thread entry points while they mutate state the mixer reads on the
+// audio thread. The mixer runs inside AudioMgr_CreateNextAudioBuffer while
+// OTRAudio_Thread holds this same mutex, so taking it here serializes the two sides.
+// These entry points run ONLY on the game thread and never call back into the mixer,
+// so there is no re-entrancy or lock-ordering cycle. (Defined here, before first use.)
+struct MmAudioScopedLock {
+    MmAudioScopedLock() {
+        OTRAudio_LockMutex();
+    }
+    ~MmAudioScopedLock() {
+        OTRAudio_UnlockMutex();
+    }
+    MmAudioScopedLock(const MmAudioScopedLock&) = delete;
+    MmAudioScopedLock& operator=(const MmAudioScopedLock&) = delete;
+};
+
 // Forward declaration (defined later in file)
 static void MmDirectAudio_StopById(u16 mmSfxId);
 
@@ -3629,6 +3656,13 @@ static void MmDirectAudio_StopById(u16 mmSfxId);
 // buttonIndex: 0=A, 1=CDown, 2=CRight, 3=CLeft, 4=CUp (from OOT sCurOcarinaBtnIdx / lastOcaNoteIdx)
 // pos: world position for spatial audio
 void MmGakki_PlayNote(s32 form, u8 buttonIndex, Vec3f* pos) {
+    // Serialize sPlayingSounds mutation against the mixer (MmDirectAudio_MixInto,
+    // audio thread). The whole body is locked so the stop+start happen atomically
+    // w.r.t. the mixer; the resource-manager calls below (LoadFormFont /
+    // GetInstrumentSoundDirect) do NOT take this mutex, so there is no lock-order
+    // cycle. Ocarina notes are user-paced, so the brief hold is harmless.
+    MmAudioScopedLock audioLock;
+
     // Stop previous gakki note before playing new one
     MmDirectAudio_StopById(MM_GAKKI_SFXID);
 
@@ -3672,7 +3706,23 @@ extern "C" void AudioMmSfx_ProcessActiveSfx(void);
 
 // Mix all active MM sounds into the output buffer (called from audio thread)
 // outBuf: interleaved stereo s16 [L0,R0,L1,R1,...], numSamples = stereo pairs
+// ---- Ruta B: isolated MM SFX synth bridge --------------------------------
+// Expose MmDirectAudio's proven whole-sample VADPCM decoder to the new engine's
+// backend (mm_sfx_synth_backend.cpp), and pull in its audio-thread render entry.
+extern "C" short* MmSfxDecode_Sample(void* sample, unsigned int* outLen) {
+    return MmDirectAudio_DecodeADPCM((SoundFontSample*)sample, (u32*)outLen);
+}
+extern "C" void MmSfxSynth_RenderInto(short* outBuf, unsigned int numSamples);
+extern "C" int MmSfx_IsGamePaused(void); // mm_player_form.cpp
+
 void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
+    // Silence ALL MM SFX (old MmDirectAudio bank + new mmsfx engine) while the
+    // pause/kaleido screen is up — they kept playing because they don't run on a
+    // SoH seq player that SoH's own pause handling would stop.
+    if (MmSfx_IsGamePaused()) {
+        return;
+    }
+
     sMmAudioFrame++;
 
     // Drive the MM SFX bank engine each audio callback. Equivalent to 2Ship's
@@ -3681,6 +3731,11 @@ void MmDirectAudio_MixInto(s16* outBuf, u32 numSamples) {
     // tick for freshness/eviction timing.
     AudioMmSfx_ProcessRequests();
     AudioMmSfx_ProcessActiveSfx();
+
+    // Ruta B: render the isolated MM SFX sequence engine on top of the output.
+    // No-op until MmSfxSynth_Init() has loaded Sequence_0/Soundfont_0/1 (lazy,
+    // triggered from the game thread in MmSfx_PlayAtPos).
+    MmSfxSynth_RenderInto(outBuf, numSamples);
 
     // Apply SoH master volume (gSettings.Volume.Master, 0-100, default 40)
     f32 masterVol = (f32)CVarGetInteger("gSettings.Volume.Master", 40) / 100.0f;
@@ -3897,6 +3952,8 @@ s32 MmSfx_PlayAtPos(u16 sfxId, Vec3f* pos) {
     return MmSfx_PlayEx(sfxId, pos, 4, nullptr, nullptr, nullptr);
 }
 
+extern "C" int MmSfxSynth_Init(void); // mm_sfx_synth_loader.cpp (Ruta B)
+
 s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* reverbAdd) {
     static s32 sDiagDone = 0;
 
@@ -3907,6 +3964,12 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
         }
         return 0;
     }
+
+    // Boot the isolated MM SFX engine on the GAME thread (loads Sequence_0 +
+    // Soundfont_0/1 via ResourceMgr — must NOT run on the audio thread).
+    // Idempotent; once ready it becomes the sole SFX path (the old MmDirectAudio
+    // hand-map is dead). No CVar — the new engine is the default and only path.
+    MmSfxSynth_Init();
 
     // One-time diagnostic: enumerate mm.o2r audio resources and verify Soundfont_0
     if (!sDiagDone) {
@@ -4078,15 +4141,22 @@ s32 MmSfx_PlayEx(u16 sfxId, Vec3f* pos, u8 token, f32* freqScale, f32* vol, s8* 
     // dispatcher bridge once a channel is allocated.
     extern void AudioMmSfx_PlaySfx(u16, Vec3f*, u8, f32*, f32*, s8*);
     extern void AudioMmSfx_Reset(void);
-    static s32 sMmSfxEngineInitDone = 0;
-    if (!sMmSfxEngineInitDone) {
-        AudioMmSfx_Reset();
-        sMmSfxEngineInitDone = 1;
-    }
     // Use the static default pos if caller passed NULL — MM's request queue
     // requires a non-NULL Vec3f for the dedup compare (&req->pos->x).
     Vec3f* effectivePos = pos ? pos : &gMmSfxDefaultPos;
-    AudioMmSfx_PlaySfx(sfxId, effectivePos, token, freqScale, vol, reverbAdd);
+    {
+        // Serialize the bank-engine state mutation against the audio thread's
+        // mixer (which drains AudioMmSfx_ProcessRequests/ProcessActiveSfx). The
+        // one-time diagnostics + font load above intentionally run OUTSIDE this
+        // lock so we don't hold the audio mutex across ResourceManager I/O.
+        MmAudioScopedLock audioLock;
+        static s32 sMmSfxEngineInitDone = 0;
+        if (!sMmSfxEngineInitDone) {
+            AudioMmSfx_Reset();
+            sMmSfxEngineInitDone = 1;
+        }
+        AudioMmSfx_PlaySfx(sfxId, effectivePos, token, freqScale, vol, reverbAdd);
+    }
     return 1;
 }
 
@@ -4098,6 +4168,11 @@ void MmSfx_Stop(u16 sfxId) {
     // Symptom: Goron BALL_CHARGE keeps humming after spike activation because
     // the bank engine kept refreshing it even though MmDirectAudio faded it.
     extern void AudioMmSfx_StopById(u32 sfxId);
+    // Serialize against the mixer: AudioMmSfx_StopById mutates the bank/request
+    // ring + stop-guard that AudioMmSfx_ProcessRequests reads, and
+    // MmDirectAudio_StopById mutates sPlayingSounds that MmDirectAudio_MixInto
+    // reads — both on the audio thread under this same mutex.
+    MmAudioScopedLock audioLock;
     AudioMmSfx_StopById((u32)sfxId);
     MmDirectAudio_StopById(sfxId);
 }
@@ -4399,13 +4474,13 @@ void* MmAssets_LoadFDSwordIcon(void) {
 }
 
 // =============================================================================
-// MM Hookshot assets (icon + held body DL + chain DL + reticle DL)
+// MM Hookshot assets (icon + held body DL + chain DL + reticle DL + tip DL)
 //
 // Used by the Clawshot mode (Twilight Upgrade) to render Link wielding MM's
-// hookshot 1:1 instead of the OOT graphics. MM's hookshot tip has no separate
-// DL (the body DL covers it), so the OOT tip stays as-is. Cached on first
-// load; each loader returns NULL when mm.o2r isn't present and callers fall
-// back to vanilla.
+// hookshot 1:1 instead of the OOT graphics. The MM tip lives in object_lbfshot
+// ("link_boy_fshot" — MM's hookshot tip object). Cached on first load; each
+// loader returns NULL when mm.o2r isn't present and callers fall back to
+// vanilla.
 // =============================================================================
 
 static void* sCachedMmHookshotIcon = nullptr;
@@ -4435,12 +4510,44 @@ void* MmAssets_LoadHookshotBodyDL(void) {
         return sCachedMmHookshotBodyDL;
 
     sMmHookshotBodyDLLoaded = true;
+    // gLinkHumanHookshotDL = hookshot body geometry only (no hand sub-DL,
+    // unlike the "RightHandHolding" wrapper which prepends MM's closed-fist
+    // hand and changes Link's visible hand style). z_player_lib.c builds a
+    // compound DL that prepends OOT's hand DL before this one, so Link
+    // keeps his OOT hand silhouette and only the hookshot model is MM.
     sCachedMmHookshotBodyDL =
-        MmAssets_LoadResource("__OTR__objects/object_link_child/gLinkHumanRightHandHoldingHookshotDL");
+        MmAssets_LoadResource("__OTR__objects/object_link_child/gLinkHumanHookshotDL");
     if (sCachedMmHookshotBodyDL) {
-        MMASSETS_LOG("[MM Assets] Loaded MM hookshot body DL");
+        MMASSETS_LOG("[MM Assets] Loaded MM hookshot body DL (no hand)");
     }
     return sCachedMmHookshotBodyDL;
+}
+
+static void* sCachedMmHookshotTipDL = nullptr;
+static bool sMmHookshotTipDLLoaded = false;
+
+void* MmAssets_LoadHookshotTipDL(void) {
+    if (!MmAssets_IsAvailable())
+        return nullptr;
+    if (sMmHookshotTipDLLoaded)
+        return sCachedMmHookshotTipDL;
+
+    sMmHookshotTipDLLoaded = true;
+    // MM's hookshot tip (the claw drawn at the END of the body) lives in
+    // object_link_child at offset 0x1D960. Verified against MM decomp's
+    // ArmsHook_Draw (src/overlays/actors/ovl_Arms_Hook/z_arms_hook.c) which
+    // calls `gSPDisplayList(POLY_OPA_DISP++, object_link_child_DL_01D960)`
+    // every frame the hookshot actor exists and the player has RH_HOOKSHOT —
+    // so this DL renders both when held (chain's tip-end aligns with the
+    // body's nose) AND while flying (chain extended). The previous path
+    // `object_lbfshot/object_lbfshot_DL_000228` was actually MM's wall
+    // anchor/target geometry (the Bg_Lbfshot actor), not the held tip.
+    sCachedMmHookshotTipDL =
+        MmAssets_LoadResource("__OTR__objects/object_link_child/object_link_child_DL_01D960");
+    if (sCachedMmHookshotTipDL) {
+        MMASSETS_LOG("[MM Assets] Loaded MM hookshot tip DL");
+    }
+    return sCachedMmHookshotTipDL;
 }
 
 static void* sCachedMmHookshotChainDL = nullptr;

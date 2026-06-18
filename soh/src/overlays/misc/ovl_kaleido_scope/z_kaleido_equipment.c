@@ -5,6 +5,7 @@
 #include "soh/Enhancements/enhancementTypes.h"
 #include "mods/extended_inventory.h"
 #include "mods/extended_equipment.h"
+#include "mods/broken_items/broken_items.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
 static u8 sChildUpgrades[] = { UPG_BULLET_BAG, UPG_BOMB_BAG, UPG_STRENGTH, UPG_SCALE };
@@ -168,6 +169,77 @@ void KaleidoScope_DrawPlayerWork(PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// =============================================================================
+// Transform page (B1): a 3rd equipment page that shows the Broken-Modes form
+// selector (Link / Mario / Pikachu) IN the equipment grid — the form icons sit
+// where the swords/shields go and the form's item NAME shows where the equipment
+// item name normally appears. Reuses broken_items.c for the form data + toggle.
+// =============================================================================
+static s16 sBrokenTransformPage = 0; // 1 = equipment screen is showing the form selector
+static s16 sTransformCursor = 0;     // highlighted form index (0..count-1)
+static s16 sTransformCooldown = 0;   // stick-move debounce
+
+// Per-frame input on the transform page: stick/D-pad moves the cursor over the
+// forms, A equips the highlighted one, the freed shoulder button exits back to
+// the normal equipment page. Also drives the name + cursor position so the shared
+// kaleido draw shows the form's item name + the green selection cursor.
+static void KaleidoEquip_TransformInput(PlayState* play, Input* input) {
+    PauseContext* pauseCtx = &play->pauseCtx;
+    s32 count = BrokenItems_FormCount();
+    bool dpad = CVarGetInteger(CVAR_SETTING("DPadOnPause"), 0);
+    bool ngc = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
+    s16 freedBtn = ngc ? BTN_Z : BTN_L;
+    s16 sx = pauseCtx->stickRelX;
+
+    if (sTransformCooldown > 0) {
+        sTransformCooldown--;
+    }
+    if (sTransformCursor >= count) {
+        sTransformCursor = count - 1;
+    }
+
+    // Freed shoulder button → leave the transform page (back to equipment).
+    if (CHECK_BTN_ALL(input->press.button, freedBtn)) {
+        sBrokenTransformPage = 0;
+        sTransformCooldown = 6;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    // Stick / D-pad left-right over the forms.
+    s32 left = (sx < -30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DLEFT));
+    s32 right = (sx > 30) || (dpad && CHECK_BTN_ALL(input->press.button, BTN_DRIGHT));
+    if ((sTransformCooldown == 0) && (left || right)) {
+        if (left && (sTransformCursor > 0)) {
+            sTransformCursor--;
+            sTransformCooldown = 8;
+            Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        } else if (right && (sTransformCursor < count - 1)) {
+            sTransformCursor++;
+            sTransformCooldown = 8;
+            Audio_PlaySoundGeneral(NA_SE_SY_CURSOR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        }
+    }
+    if (ABS(sx) < 10) {
+        sTransformCooldown = 0;
+    }
+
+    // A → equip the highlighted form (sets gSm64Mario / gPikachuMode).
+    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+        BrokenItems_EquipForm(play, sTransformCursor);
+    }
+
+    // Name (item-name texture) + green cursor on the form. Forms occupy row 0
+    // cols 1..count (the same slots the swords use), so slot = cursor + 1.
+    pauseCtx->cursorItem[PAUSE_EQUIP] = BrokenItems_FormItem(sTransformCursor);
+    pauseCtx->cursorSlot[PAUSE_EQUIP] = sTransformCursor + 1;
+    pauseCtx->cursorColorSet = 8;
+    KaleidoScope_SetCursorVtx(pauseCtx, (sTransformCursor + 1) * 4, pauseCtx->equipVtx);
+}
+
 void KaleidoScope_DrawEquipment(PlayState* play) {
     // Suppress ext equipment icon overrides so vanilla sword/shield icons show on equip screen
     gExtEquipSuppressIconOverride = 1;
@@ -190,6 +262,48 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
     s16 cursorY;
     s16 oldCursorPoint;
     u8 extEquipPage;
+
+    // #B1 Transform page: the equipment screen shows the Broken-Modes form selector
+    // (Link / Mario / Pikachu) in the grid where the swords go, with the form's item
+    // name in the usual name spot. Fully self-contained — its OWN OPEN/CLOSE_DISPS +
+    // early return, so the normal equipment path below is completely untouched (and
+    // there's exactly one OPEN_DISPS/CLOSE_DISPS pair per code path). The 3rd-page
+    // toggle lives in the freed-button handler further down.
+    if (sBrokenTransformPage) {
+        OPEN_DISPS(play->state.gfxCtx);
+        if ((pauseCtx->state == 6) && (pauseCtx->unk_1E4 == 0) && (pauseCtx->pageIndex == PAUSE_EQUIP)) {
+            KaleidoEquip_TransformInput(play, input);
+        }
+
+        // Form icons in the top grid row (slots 1..count = where the swords sit).
+        Gfx_SetupDL_42Opa(play->state.gfxCtx);
+        gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATEIA_PRIM, G_CC_MODULATEIA_PRIM);
+        gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
+        gSPVertex(POLY_OPA_DISP++, &pauseCtx->equipVtx[0], 16, 0);
+        for (i = 0; i < BrokenItems_FormCount(); i++) {
+            void* formTex = BrokenItems_FormIconTex(i);
+            if (formTex != NULL) {
+                KaleidoScope_DrawQuadTextureRGBA32(play->state.gfxCtx, formTex, 32, 32, (i + 1) * 4);
+            }
+        }
+
+        // Render the spinning player (B2 will make it the chosen form) + blit it and
+        // bind the name segment so the form's item-name texture shows.
+        KaleidoScope_DrawPlayerWork(play);
+        gSPInvalidateTexCache(POLY_OPA_DISP++, pauseCtx->iconItemSegment);
+        gSPInvalidateTexCache(POLY_OPA_DISP++, pauseCtx->nameSegment);
+        gSPSegment(POLY_OPA_DISP++, 0x08, pauseCtx->iconItemSegment);
+        gSPSegment(POLY_OPA_DISP++, 0x09, pauseCtx->iconItem24Segment);
+        gSPSegment(POLY_OPA_DISP++, 0x0A, pauseCtx->nameSegment);
+        gSPSegment(POLY_OPA_DISP++, 0x0B, play->interfaceCtx.mapSegment);
+        Gfx_SetupDL_42Opa(play->state.gfxCtx);
+        KaleidoScope_DrawEquipmentImage(play, pauseCtx->playerSegment, PAUSE_EQUIP_PLAYER_WIDTH,
+                                        PAUSE_EQUIP_PLAYER_HEIGHT);
+
+        CLOSE_DISPS(play->state.gfxCtx);
+        gExtEquipSuppressIconOverride = 0;
+        return;
+    }
 
     OPEN_DISPS(play->state.gfxCtx);
 
@@ -236,11 +350,33 @@ void KaleidoScope_DrawEquipment(PlayState* play) {
         // kaleido tab switching (the freed button — see NGCKaleidoSwitcher).
         bool ngcModeEq = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
         s16 freedBtnEq = ngcModeEq ? BTN_Z : BTN_L;
-        if (CHECK_BTN_ALL(input->press.button, freedBtnEq) && ExtEquip_IsEnabled() && ExtEquip_CanSwitch()) {
-            ExtEquip_SwitchPage();
-            extEquipPage = (ExtEquip_GetPage() == 1);
-            Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        // Page cycle with the freed shoulder button: vanilla → ext (if ExtEquip on)
+        // → transform (if Broken Modes on) → vanilla. Works even when ExtEquip is
+        // off (then it's just vanilla ↔ transform). Entering the transform page is
+        // handled here; leaving it is handled in KaleidoEquip_TransformInput.
+        if (CHECK_BTN_ALL(input->press.button, freedBtnEq) && ExtEquip_CanSwitch()) {
+            bool switched = false;
+            if (ExtEquip_IsEnabled() && ExtEquip_GetPage() == 0) {
+                ExtEquip_SwitchPage(); // vanilla → ext
+                extEquipPage = (ExtEquip_GetPage() == 1);
+                switched = true;
+            } else if (BrokenItems_Enabled()) {
+                if (ExtEquip_IsEnabled()) {
+                    ExtEquip_SwitchPage(); // drop ext back to vanilla underneath the transform page
+                    extEquipPage = (ExtEquip_GetPage() == 1);
+                }
+                sBrokenTransformPage = 1;
+                sTransformCursor = BrokenItems_CurrentForm();
+                switched = true;
+            } else if (ExtEquip_IsEnabled()) {
+                ExtEquip_SwitchPage(); // ext → vanilla (no transform page available)
+                extEquipPage = (ExtEquip_GetPage() == 1);
+                switched = true;
+            }
+            if (switched) {
+                Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            }
         }
 
         // On extended page, cursor can land on any equipment slot (all owned)

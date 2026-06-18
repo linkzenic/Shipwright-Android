@@ -145,7 +145,8 @@ static inline void Sm64Render_SampleChrome(const f32* nrm, u8* outR, u8* outG, u
 //   combiner kills the alpha-cutout halo.
 static void emitTrisSingle(PlayState* play, struct SM64MarioGeometryBuffers* buffers,
                            float ox, float oy, float oz, u8 vAlpha, u8 useXlu,
-                           u8 metalActive, u8 wingCapActive, u8 fireActive) {
+                           u8 metalActive, u8 wingCapActive, u8 fireActive,
+                           u8 recolor, u8 tintR, u8 tintG, u8 tintB) {
     u16 numTris = buffers->numTrianglesUsed;
     float* pos = buffers->position;
     float* nrm = buffers->normal;
@@ -204,6 +205,18 @@ static void emitTrisSingle(PlayState* play, struct SM64MarioGeometryBuffers* buf
                         g = b / 6;
                         b = b / 6; // pure blue (overalls) → shaded red
                     }
+                } else if (recolor) {
+                    // Remote Mario (Harpoon): recolor Mario's RED identity (cap +
+                    // shirt) to the remote player's chosen Harpoon color. Same
+                    // pure-red test as Fire; the red channel's intensity is reused
+                    // as a shading multiplier so the tinted cloth keeps its baked
+                    // light/shadow. Overalls/skin/gloves/shoes are left untouched.
+                    if (r > 50 && g * 3 < r && b * 3 < r) {
+                        u32 rr = r;
+                        r = (u32)tintR * rr / 255;
+                        g = (u32)tintG * rr / 255;
+                        b = (u32)tintB * rr / 255;
+                    }
                 }
                 u32 ar = (r * SM64_BODY_BRIGHTNESS_NUM / SM64_BODY_BRIGHTNESS_DEN);
                 u32 ag = (g * SM64_BODY_BRIGHTNESS_NUM / SM64_BODY_BRIGHTNESS_DEN);
@@ -255,7 +268,7 @@ static void emitTrisSingle(PlayState* play, struct SM64MarioGeometryBuffers* buf
 
 void Sm64Render_DrawMarioMesh(PlayState* play, struct SM64MarioGeometryBuffers* buffers,
                                float cx, float cy, float cz, u8 translucent, u8 metalTint, u8 wingCap,
-                               u8 fireActive) {
+                               u8 fireActive, u8 recolor, u8 tintR, u8 tintG, u8 tintB) {
     // Single-pass for all states. Standard combiner mix(SHADE, TEXEL0, T0_A).
     // emitTrisSingle decides what SHADE encodes per vertex:
     //   Normal: libsm64 baked lighting (red overalls / skin / blue shirt).
@@ -341,5 +354,6 @@ void Sm64Render_DrawMarioMesh(PlayState* play, struct SM64MarioGeometryBuffers* 
     CLOSE_DISPS(play->state.gfxCtx);
 
     u8 vAlpha = translucent ? 100 : 255;
-    emitTrisSingle(play, buffers, cx, cy, cz, vAlpha, useXluForMario, metalTint, wingCap, fireActive);
+    emitTrisSingle(play, buffers, cx, cy, cz, vAlpha, useXluForMario, metalTint, wingCap, fireActive,
+                   recolor, tintR, tintG, tintB);
 }

@@ -1,3 +1,10 @@
+// NEI: re-enable the SDL_net transport (see HarpoonMenu.cpp). Upstream #6732 dropped the
+// ENABLE_REMOTE_CONTROL flag but SDL2_net is now unconditional, so keep the real impl compiled
+// (without this the WebSocket falls back to empty stubs and Harpoon networking is dead).
+#ifndef ENABLE_REMOTE_CONTROL
+#define ENABLE_REMOTE_CONTROL
+#endif
+
 #include "HarpoonWebSocket.h"
 
 #include <spdlog/spdlog.h>

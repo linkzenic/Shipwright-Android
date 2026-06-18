@@ -262,6 +262,18 @@ void GaroForm_OnReset(void);
 // non-Garo forms. Applied inside z_player.c func_80837B18_modified.
 f32 MmForm_GetIncomingDamageMult(void);
 
+// Mapping from PLAYER_LIMB index to PLAYER_BODYPART index (-1 = no bodypart).
+// Mirrors OOT's D_80160000 system (z_player_lib.c) which fills bodyPartsPos
+// sequentially during skeleton traversal; we use an explicit table instead.
+// Defined once in mm_player_form.cpp; used by both MmForm_PostLimbDraw and
+// garo_post_limb.cpp's GaroForm_PostLimbDraw (same Link rig, same mapping).
+extern const s8 gPlayerLimbToBodyPart[PLAYER_LIMB_MAX];
+
+// Kills a punch/sword trail EffectBlure slot if active: deletes the effect,
+// clears the active flag, and resets the index to -1. No-op when inactive.
+// Shared by the form action handlers (mm_player_form.cpp) and garo_form.cpp.
+void MmForm_KillTrail(PlayState* play, s32* effectIndex, u8* active);
+
 // MM player voice action codes (subset). Confirmed against mm_decomp
 // sPlayerVoiceSfxOffsets at voicebank_table.h (NA_SE_VO_LI_*).
 //   ATTACK : NA_SE_VO_LI_SWORD_N   = 0x6800 + 0x00 (sword swing grunt)

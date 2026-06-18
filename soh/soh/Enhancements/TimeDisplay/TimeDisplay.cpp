@@ -6,8 +6,7 @@
 #include "assets/soh_assets.h"
 #include "soh/SohGui/ImGuiUtils.h"
 
-#include <fast/Fast3dGui.h>
-
+#include <libultraship/libultraship.h>
 #include <fast/Fast3dGui.h>
 
 extern "C" {
@@ -87,21 +86,17 @@ static void TimeDisplayGetTimer(uint32_t timeID) {
     Player* player = GET_PLAYER(gPlayState);
     uint32_t timer1 = gSaveContext.timerSeconds;
 
-    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(
-        std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui()));
+    auto gui = std::dynamic_pointer_cast<Fast::Fast3dGui>(Ship::Context::GetRawInstance()->GetWindow()->GetGui());
 
     switch (timeID) {
         case DISPLAY_IN_GAME_TIMER:
-            textureDisplay = gui->GetTextureByName("GAMEPLAY_TIMER");
             textureDisplay = gui->GetTextureByName("GAMEPLAY_TIMER");
             timeDisplayTime = formatTimeDisplay(GAMEPLAYSTAT_TOTAL_TIME).c_str();
             break;
         case DISPLAY_TIME_OF_DAY:
             if (gSaveContext.dayTime >= DAY_BEGINS && gSaveContext.dayTime < NIGHT_BEGINS) {
                 textureDisplay = gui->GetTextureByName("DAY_TIME_TIMER");
-                textureDisplay = gui->GetTextureByName("DAY_TIME_TIMER");
             } else {
-                textureDisplay = gui->GetTextureByName("NIGHT_TIME_TIMER");
                 textureDisplay = gui->GetTextureByName("NIGHT_TIME_TIMER");
             }
             timeDisplayTime = convertDayTime(gSaveContext.dayTime).c_str();
@@ -119,17 +114,11 @@ static void TimeDisplayGetTimer(uint32_t timeID) {
                         gui->GetTextureByName(gPlayState->roomCtx.curRoom.behaviorType2 == ROOM_BEHAVIOR_TYPE2_3
                                                   ? itemMapping[ITEM_TUNIC_GORON].name
                                                   : itemMapping[ITEM_TUNIC_ZORA].name);
-                    textureDisplay =
-                        gui->GetTextureByName(gPlayState->roomCtx.curRoom.behaviorType2 == ROOM_BEHAVIOR_TYPE2_3
-                                                  ? itemMapping[ITEM_TUNIC_GORON].name
-                                                  : itemMapping[ITEM_TUNIC_ZORA].name);
                 }
                 if (gSaveContext.timerState >= TIMER_STATE_DOWN_PREVIEW) {
                     textureDisplay = gui->GetTextureByName(itemMapping[ITEM_SWORD_MASTER].name);
-                    textureDisplay = gui->GetTextureByName(itemMapping[ITEM_SWORD_MASTER].name);
                 }
             } else {
-                textureDisplay = gui->GetTextureByName(itemMapping[ITEM_TUNIC_KOKIRI].name);
                 textureDisplay = gui->GetTextureByName(itemMapping[ITEM_TUNIC_KOKIRI].name);
                 timeDisplayTime = "-:--";
             }
@@ -144,7 +133,6 @@ static void TimeDisplayGetTimer(uint32_t timeID) {
                 timeDisplayTime = convertNaviTime(NAVI_COOLDOWN - gSaveContext.naviTimer).c_str();
                 textColor = COLOR_GREY;
             }
-            textureDisplay = gui->GetTextureByName("NAVI_TIMER");
             textureDisplay = gui->GetTextureByName("NAVI_TIMER");
             break;
         default:

@@ -9,6 +9,7 @@
 #include "twilight_upgrade.h"
 #include "macros.h"
 #include "functions.h"
+#include "../../extended_inventory.h" // ExtInv_GetItemSlot — custom items must NOT use vanilla SLOT()/INV_CONTENT()
 
 u8 TwilightUpgrade_HasClawshot(void) {
     return (gSaveContext.ship.twilightUpgrade & TWILIGHT_UPGRADE_CLAWSHOT) != 0;
@@ -71,7 +72,10 @@ u8 TwilightUpgrade_BombArrowsAvailable(void) {
     if (TwilightUpgrade_HasBombArrows()) {
         return 1;
     }
-    return INV_CONTENT(ITEM_BOMB_ARROWS) == ITEM_BOMB_ARROWS;
+    // ITEM_BOMB_ARROWS is a NEI custom item (0xAE); INV_CONTENT()/SLOT() would index
+    // gItemSlots[56] out of bounds. Resolve the real extended-inventory slot instead.
+    u8 baSlot = ExtInv_GetItemSlot(ITEM_BOMB_ARROWS);
+    return (baSlot != 0xFF) && (gSaveContext.inventory.items[baSlot] == ITEM_BOMB_ARROWS);
 }
 
 u8 TwilightUpgrade_GaleBoomerangAvailable(void) {

@@ -30,6 +30,7 @@ ResourceFactoryBinaryAudioSequenceV2::ReadResource(std::shared_ptr<Ship::File> f
     audioSequence->sequence.seqNumber = reader->ReadUByte();
     audioSequence->sequence.medium = reader->ReadUByte();
     audioSequence->sequence.cachePolicy = reader->ReadUByte();
+    audioSequence->sequence.resolvedFont = -1; // set only for resolved streamed seqs in AudioLoad_Init
 
     audioSequence->sequence.numFonts = reader->ReadUInt32();
     for (int32_t i = 0; i < 16; i++) {
@@ -326,6 +327,7 @@ ResourceFactoryXMLAudioSequenceV0::ReadResource(std::shared_ptr<Ship::File> file
         ResourceFactoryXMLSoundFontV0::CachePolicyToInt(child->Attribute("CachePolicy"), initData->Path.c_str());
     sequence->sequence.seqDataSize = child->IntAttribute("Size");
     sequence->sequence.seqNumber = child->IntAttribute("Index");
+    sequence->sequence.resolvedFont = -1; // set only for resolved streamed seqs in AudioLoad_Init
     bool streamed = child->BoolAttribute("Streamed");
 
     memset(sequence->sequence.fonts, 0, sizeof(sequence->sequence.fonts));

@@ -544,6 +544,22 @@ static void ExtEquip_LoadMmShieldDLs(void) {
     sCachedMmShieldBackDL = (Gfx*)TransformMasks_LoadMmDL("objects/object_link_child/gLinkHumanMirrorShieldDL");
 }
 
+// Shared draw for the cached MM Mirror Shield DLs (hand + back differ only in
+// which cached DL is passed). Drawn on XLU to avoid corrupting the OPA pipeline
+// (prevents black tint on the tunic).
+static void DrawCachedShieldDL(void* playVoid, Gfx* dl) {
+    PlayState* play = (PlayState*)playVoid;
+
+    OPEN_DISPS(play->state.gfxCtx);
+
+    Matrix_Push();
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, dl);
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void ExtEquip_DrawShieldDL(void* playVoid) {
     if (!ExtEquip_IsEnabled() || gExtEquipState.currentExtShield != 3)
         return;
@@ -552,17 +568,7 @@ void ExtEquip_DrawShieldDL(void* playVoid) {
     if (sCachedMmShieldHandDL == NULL)
         return;
 
-    PlayState* play = (PlayState*)playVoid;
-
-    OPEN_DISPS(play->state.gfxCtx);
-
-    // Draw on XLU to avoid corrupting OPA pipeline (prevents black tint on tunic)
-    Matrix_Push();
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, sCachedMmShieldHandDL);
-    Matrix_Pop();
-
-    CLOSE_DISPS(play->state.gfxCtx);
+    DrawCachedShieldDL(playVoid, sCachedMmShieldHandDL);
 }
 
 // Draw MM Mirror Shield on Link's back (sheath position)
@@ -574,63 +580,45 @@ void ExtEquip_DrawShieldBackDL(void* playVoid) {
     if (sCachedMmShieldBackDL == NULL)
         return;
 
-    PlayState* play = (PlayState*)playVoid;
-
-    OPEN_DISPS(play->state.gfxCtx);
-
-    // Draw on XLU to avoid corrupting OPA pipeline
-    Matrix_Push();
-    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPDisplayList(POLY_XLU_DISP++, sCachedMmShieldBackDL);
-    Matrix_Pop();
-
-    CLOSE_DISPS(play->state.gfxCtx);
+    DrawCachedShieldDL(playVoid, sCachedMmShieldBackDL);
 }
 
+// Common prologue for the per-piece dispatch wrappers below: bail out unless
+// the cheat is enabled AND the given slot is currently equipped with `index`.
+// (ExtEquip_GetCurrent returns the same field these used to read directly.)
+#define EXT_EQUIP_REQUIRE(type, index)                                      \
+    if (!ExtEquip_IsEnabled() || ExtEquip_GetCurrent(type) != (index))      \
+    return
+
 void ExtEquip_DrawWaistScale(void* playVoid) {
-    if (!ExtEquip_IsEnabled())
-        return;
-    if (gExtEquipState.currentExtBoots != 3)
-        return;
+    EXT_EQUIP_REQUIRE(EQUIP_TYPE_BOOTS, 3);
 
     PlayState* play = (PlayState*)playVoid;
     DScale_DrawWaistScale(play);
 }
 
 void ExtEquip_DrawAnklet(void* playVoid, s32 isRightFoot) {
-    if (!ExtEquip_IsEnabled())
-        return;
-    if (gExtEquipState.currentExtBoots != 1)
-        return;
+    EXT_EQUIP_REQUIRE(EQUIP_TYPE_BOOTS, 1);
 
     PlayState* play = (PlayState*)playVoid;
     Pegasus_DrawAnklet(play, isRightFoot);
 }
 
 void ExtEquip_UpdateAnkletPhysics(void* playerVoid) {
-    if (!ExtEquip_IsEnabled())
-        return;
-    if (gExtEquipState.currentExtBoots != 1)
-        return;
+    EXT_EQUIP_REQUIRE(EQUIP_TYPE_BOOTS, 1);
 
     Player* player = (Player*)playerVoid;
     Pegasus_UpdateWingPhysics(player);
 }
 
 void ExtEquip_CaptureCapeShoulderPos(s32 limbIndex) {
-    if (!ExtEquip_IsEnabled())
-        return;
-    if (gExtEquipState.currentExtTunic != 1)
-        return;
+    EXT_EQUIP_REQUIRE(EQUIP_TYPE_TUNIC, 1);
 
     MagicCape_CaptureShoulderPos(limbIndex);
 }
 
 void ExtEquip_DrawBreastplate(void* playVoid) {
-    if (!ExtEquip_IsEnabled())
-        return;
-    if (gExtEquipState.currentExtTunic != 2)
-        return;
+    EXT_EQUIP_REQUIRE(EQUIP_TYPE_TUNIC, 2);
 
     PlayState* play = (PlayState*)playVoid;
     Breastplate_Draw(play);

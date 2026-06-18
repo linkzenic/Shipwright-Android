@@ -20,6 +20,10 @@ void HarpoonDummyPlayer_Init(Actor* actor, PlayState* play);
 void HarpoonDummyPlayer_Update(Actor* actor, PlayState* play);
 void HarpoonDummyPlayer_Draw(Actor* actor, PlayState* play);
 void HarpoonDummyPlayer_Destroy(Actor* actor, PlayState* play);
+
+// transformation values 0=human, 1=Goron, 2=Zora, 3=Deku, 4=FierceDeity (MM forms,
+// from MmForm_GetModelType). SM64 Mario (libsm64) uses its own value:
+#define HARPOON_MODELTYPE_MARIO 6
 // Drop the per-clientId diagnostic memo maps used inside dummy update/draw.
 // Called from Harpoon::OnDisconnected and on room-left so entries don't
 // accumulate one-per-cid across long sessions.
@@ -119,7 +123,10 @@ typedef struct {
     s8 actionVar1;
 
     // Transformation data
-    u8 transformation; // MM_PLAYER_FORM_GORON, etc. (0 = human/no transform)
+    u8 transformation; // MM_PLAYER_FORM_GORON, etc. (0 = human/no transform).
+                       // HARPOON_MODELTYPE_MARIO (6) = SM64 Mario via libsm64.
+    s32 marioAnimId;   // libsm64 anim ID  (only meaningful when transformation==MARIO)
+    s16 marioAnimFrame; // libsm64 anim frame
     s16 cylRadius;     // Form-specific collider radius
     s16 cylHeight;     // Form-specific collider height
     s16 cylYShift;     // Form-specific collider Y offset

@@ -130,6 +130,30 @@ static const ItemDescEntry sMedallionDescs[] = {
     { ITEM_MEDALLION_LIGHT, TEXT_DESC_MEDALLION_LIGHT, "Light spell. 24 MP.&L to switch to arrow mode." },
 };
 
+// Vanilla OOT usable items (shown on the ITEM page when no custom item matches).
+static const ItemDescEntry sVanillaItemDescs[] = {
+    { ITEM_STICK, TEXT_DESC_V_STICK, "Deku Stick. Melee weapon that&lights from fire. Burns up fast." },
+    { ITEM_NUT, TEXT_DESC_V_NUT, "Deku Nut. Throw to stun enemies&and flash-blind nearby foes." },
+    { ITEM_BOMB, TEXT_DESC_V_BOMB, "Throw to blow up walls, enemies&and obstacles. Short fuse." },
+    { ITEM_BOW, TEXT_DESC_V_BOW, "Fire arrows. Hold C to aim.&Buy more arrows in shops." },
+    { ITEM_ARROW_FIRE, TEXT_DESC_V_ARROW_FIRE, "Fire Arrow. Burns enemies and&lights torches. Costs magic." },
+    { ITEM_DINS_FIRE, TEXT_DESC_V_DINS_FIRE, "Ring of flame around you. Burns&foes and lights torches. 6 MP." },
+    { ITEM_SLINGSHOT, TEXT_DESC_V_SLINGSHOT, "Child ranged weapon. Fires Deku&Seeds. Hold C to aim." },
+    { ITEM_OCARINA_FAIRY, TEXT_DESC_V_OCARINA_FAIRY, "Play songs to trigger magic.&Saria's Fairy Ocarina." },
+    { ITEM_OCARINA_TIME, TEXT_DESC_V_OCARINA_TIME, "Play songs to trigger magic.&The royal Ocarina of Time." },
+    { ITEM_BOMBCHU, TEXT_DESC_V_BOMBCHU, "Wind-up bomb that crawls along&floors and walls, then explodes." },
+    { ITEM_HOOKSHOT, TEXT_DESC_V_HOOKSHOT, "Fire to grab targets and pull&yourself in, or items to you." },
+    { ITEM_LONGSHOT, TEXT_DESC_V_LONGSHOT, "Like the Hookshot but with&twice the reach." },
+    { ITEM_ARROW_ICE, TEXT_DESC_V_ARROW_ICE, "Ice Arrow. Freezes enemies&solid. Costs magic per shot." },
+    { ITEM_FARORES_WIND, TEXT_DESC_V_FARORES_WIND, "Set a warp point, then teleport&back to it later. 6 MP." },
+    { ITEM_BOOMERANG, TEXT_DESC_V_BOOMERANG, "Throw to stun foes and grab&distant items. Returns to you." },
+    { ITEM_LENS, TEXT_DESC_V_LENS, "Lens of Truth. Reveals hidden&things and invisible foes. Drains MP." },
+    { ITEM_BEAN, TEXT_DESC_V_BEAN, "Magic Bean. Plant in soft soil&to grow a ride. 10 total." },
+    { ITEM_HAMMER, TEXT_DESC_V_HAMMER, "Megaton Hammer. Smash rusty&switches, posts and armor." },
+    { ITEM_ARROW_LIGHT, TEXT_DESC_V_ARROW_LIGHT, "Light Arrow. Devastating holy&damage. High magic cost." },
+    { ITEM_NAYRUS_LOVE, TEXT_DESC_V_NAYRUS_LOVE, "Protective barrier that blocks&all damage for a time. 12 MP." },
+};
+
 // ---------------------------------------------------------------------------
 // Lookup: item ID + page -> text ID (or 0)
 // ---------------------------------------------------------------------------
@@ -148,6 +172,10 @@ extern "C" u16 PauseItemDesc_GetTextId(u16 cursorItem, s32 pageIndex) {
         for (size_t i = 0; i < ARRAY_COUNT(sSw97ArrowDescs); i++) {
             if (sSw97ArrowDescs[i].itemId == cursorItem)
                 return sSw97ArrowDescs[i].textId;
+        }
+        for (size_t i = 0; i < ARRAY_COUNT(sVanillaItemDescs); i++) {
+            if (sVanillaItemDescs[i].itemId == cursorItem)
+                return sVanillaItemDescs[i].textId;
         }
     }
 
@@ -183,11 +211,11 @@ static void BuildDescMessage(const char* desc, uint16_t* textId, bool* loadFromM
 
 // All description tables for single-hook lookup
 static const ItemDescEntry* sAllDescs[] = {
-    sCustomItemDescs, sMaskDescs, sSw97ArrowDescs, sExtEquipDescs, sMedallionDescs,
+    sCustomItemDescs, sMaskDescs, sSw97ArrowDescs, sExtEquipDescs, sMedallionDescs, sVanillaItemDescs,
 };
 static const size_t sAllDescCounts[] = {
     ARRAY_COUNT(sCustomItemDescs), ARRAY_COUNT(sMaskDescs),      ARRAY_COUNT(sSw97ArrowDescs),
-    ARRAY_COUNT(sExtEquipDescs),   ARRAY_COUNT(sMedallionDescs),
+    ARRAY_COUNT(sExtEquipDescs),   ARRAY_COUNT(sMedallionDescs), ARRAY_COUNT(sVanillaItemDescs),
 };
 
 // Single hook for all descriptions: fires on ANY OnOpenText, checks if textId matches

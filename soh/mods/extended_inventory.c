@@ -235,6 +235,59 @@ uint8_t ExtInv_GetEquipAgeReq(uint8_t row, uint8_t col) {
 extern void* MmMasks_LoadNameTex(uint16_t itemId);
 extern const char* MmMasks_GetNamePath(uint16_t itemId);
 
+// Single source of truth for page-2 custom item icon + name-texture art.
+// Both ExtInv_GetItemIcon and ExtInv_GetCustomItemNameTex index this table so
+// the two associations can no longer drift apart.
+//   icon == NULL  -> the icon getter falls through to its own special handling
+//                    (used by ITEM_LANTERN, whose icon depends on fire type).
+// Items needing dynamic/path-based art (Chateau Romani, MM masks, prop-hunt,
+// SW97 medallions/arrows) are intentionally NOT in this table and stay handled
+// by the surrounding special-case logic in each getter.
+typedef struct {
+    uint16_t itemId;
+    void* icon;
+    void* nameTex;
+} CustomItemAsset;
+
+static const CustomItemAsset sCustomItemAssets[] = {
+    { ITEM_ROCS_FEATHER_SKIJER, (void*)gItemIconRocsFeatherTex,       (void*)gRocsFeatherNameTex },       // 0x9D
+    { ITEM_ROCS_CAPE,           (void*)gItemIconRocsCapeTex,          (void*)gRocsCapeNameTex },          // 0x9E
+    { ITEM_DESIRE_SENSOR,       (void*)gItemIconDesireSensorTex,      (void*)gDesireSensorNameTex },      // 0x9F
+    { ITEM_HYLIAS_GRACE,        (void*)gItemIconHyliaGraceTex,        (void*)gHyliaGraceNameTex },        // 0xA0
+    { ITEM_ZONAI_PERMAFROST,    (void*)gItemIconZonaiPermafrostTex,   (void*)gZonaiPermafrostNameTex },   // 0xA1
+    { ITEM_DEMISE_DESTRUCTION,  (void*)gItemIconDemiseDestructionTex, (void*)gDemiseDestructionNameTex }, // 0xA2
+    { ITEM_DEKU_LEAF,           (void*)gItemIconDekuLeafTex,          (void*)gDekuLeafNameTex },          // 0xA3
+    { ITEM_SWITCH_HOOK,         (void*)gItemIconSwitchHookTex,        (void*)gSwitchHookNameTex },        // 0xA4
+    { ITEM_MOGMA_MITTS,         (void*)gItemIconMogmaMittsTex,        (void*)gMogmaMittsNameTex },        // 0xA5
+    { ITEM_GUST_JAR,            (void*)gItemIconGustJarTex,           (void*)gGustJarNameTex },           // 0xA6
+    { ITEM_BALL_AND_CHAIN,      (void*)gItemIconBallAndChainTex,      (void*)gBallAndChainNameTex },      // 0xA7
+    { ITEM_WHIP,                (void*)gItemIconWhipTex,              (void*)gWhipNameTex },              // 0xA8
+    { ITEM_SPINNER,             (void*)gItemIconSpinnerTex,           (void*)gSpinnerNameTex },           // 0xA9
+    { ITEM_CANE_OF_SOMARIA,     (void*)gItemIconCaneOfSomariaTex,     (void*)gCaneOfSomariaNameTex },     // 0xAA
+    { ITEM_DOMINION_ROD,        (void*)gItemIconDominionRodTex,       (void*)gDominionRodNameTex },       // 0xAB
+    { ITEM_TIME_GATE,           (void*)gItemIconTimeGateTex,          (void*)gTimeGateNameTex },          // 0xAC
+    { ITEM_BOMB_ARROWS,         (void*)gItemIconBombArrowsTex,        (void*)gBombArrowsNameTex },        // 0xAD
+    { ITEM_ROD_FIRE,            (void*)gItemIconFireRodTex,           (void*)gFireRodNameTex },           // 0xAE
+    { ITEM_ROD_ICE,             (void*)gItemIconIceRodTex,            (void*)gIceRodNameTex },            // 0xAF
+    { ITEM_ROD_LIGHT,           (void*)gItemIconLightRodTex,          (void*)gLightRodNameTex },          // 0xB0
+    { ITEM_BEETLE,              (void*)gItemIconBeetleTex,            (void*)gBeetleNameTex },            // 0xB1
+    { ITEM_SHOVEL,              (void*)gItemIconShovelTex,            (void*)gShovelNameTex },            // 0xB2
+    { ITEM_MINISH_CAP,          (void*)gItemIconMinishCapTex,         (void*)gMinishCapNameTex },         // 0xB3
+    // Lantern: name texture is constant, but the icon is chosen dynamically by
+    // fire type -> icon left NULL so the icon getter handles it below.
+    { ITEM_LANTERN,             NULL,                                 (void*)gLanternNameTex },           // 0xB4
+    { ITEM_POKEBALL,            (void*)gItemIconPokeballTex,          (void*)gPokeballNameTex },
+};
+
+static const CustomItemAsset* ExtInv_FindCustomItemAsset(uint16_t itemId) {
+    for (size_t i = 0; i < sizeof(sCustomItemAssets) / sizeof(sCustomItemAssets[0]); i++) {
+        if (sCustomItemAssets[i].itemId == itemId) {
+            return &sCustomItemAssets[i];
+        }
+    }
+    return NULL;
+}
+
 void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     // MM Mask items: return OTR path string so the RSP resolves actual texture
     // dimensions from resource metadata (HD mod textures render at native resolution).
@@ -250,60 +303,12 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
             return (void*)"__OTR__item_name_static/gItemNameChateauRomaniENGTex";
         return NULL;
     }
-    switch (itemId) {
-        case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
-            return (void*)gRocsFeatherNameTex;
-        case ITEM_ROCS_CAPE: // 0x9E
-            return (void*)gRocsCapeNameTex;
-        case ITEM_DESIRE_SENSOR: // 0x9F
-            return (void*)gDesireSensorNameTex;
-        case ITEM_HYLIAS_GRACE: // 0xA0
-            return (void*)gHyliaGraceNameTex;
-        case ITEM_ZONAI_PERMAFROST: // 0xA1
-            return (void*)gZonaiPermafrostNameTex;
-        case ITEM_DEMISE_DESTRUCTION: // 0xA2
-            return (void*)gDemiseDestructionNameTex;
-        case ITEM_DEKU_LEAF: // 0xA3
-            return (void*)gDekuLeafNameTex;
-        case ITEM_SWITCH_HOOK: // 0xA4
-            return (void*)gSwitchHookNameTex;
-        case ITEM_MOGMA_MITTS: // 0xA5
-            return (void*)gMogmaMittsNameTex;
-        case ITEM_GUST_JAR: // 0xA6
-            return (void*)gGustJarNameTex;
-        case ITEM_BALL_AND_CHAIN: // 0xA7
-            return (void*)gBallAndChainNameTex;
-        case ITEM_WHIP: // 0xA8
-            return (void*)gWhipNameTex;
-        case ITEM_SPINNER: // 0xA9
-            return (void*)gSpinnerNameTex;
-        case ITEM_CANE_OF_SOMARIA: // 0xAA
-            return (void*)gCaneOfSomariaNameTex;
-        case ITEM_DOMINION_ROD: // 0xAB
-            return (void*)gDominionRodNameTex;
-        case ITEM_TIME_GATE: // 0xAC
-            return (void*)gTimeGateNameTex;
-        case ITEM_BOMB_ARROWS: // 0xAD
-            return (void*)gBombArrowsNameTex;
-        case ITEM_ROD_FIRE: // 0xAE
-            return (void*)gFireRodNameTex;
-        case ITEM_ROD_ICE: // 0xAF
-            return (void*)gIceRodNameTex;
-        case ITEM_ROD_LIGHT: // 0xB0
-            return (void*)gLightRodNameTex;
-        case ITEM_BEETLE: // 0xB1
-            return (void*)gBeetleNameTex;
-        case ITEM_SHOVEL: // 0xB2
-            return (void*)gShovelNameTex;
-        case ITEM_MINISH_CAP: // 0xB3
-            return (void*)gMinishCapNameTex;
-        case ITEM_LANTERN: // 0xB4
-            return (void*)gLanternNameTex;
-        case ITEM_POKEBALL:
-            return (void*)gPokeballNameTex;
-        default:
-            return NULL;
+    // All page-2 custom item name textures live in the shared asset table.
+    const CustomItemAsset* asset = ExtInv_FindCustomItemAsset(itemId);
+    if (asset) {
+        return asset->nameTex;
     }
+    return NULL;
 }
 extern void* MmMasks_LoadIcon(uint16_t itemId);
 extern const char* MmMasks_GetIconPath(uint16_t itemId);
@@ -407,6 +412,15 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return (void*)path;
         return gItemIcons[0]; // Fallback
     }
+    // Page-2 custom items with a constant icon live in the shared asset table.
+    // (ITEM_LANTERN has a NULL icon entry there because its icon is dynamic;
+    // it falls through to the dedicated case in the switch below.)
+    {
+        const CustomItemAsset* asset = ExtInv_FindCustomItemAsset(itemId);
+        if (asset && asset->icon) {
+            return asset->icon;
+        }
+    }
     switch (itemId) {
         // Prop Hunt button icons (0xD7-0xDC). Shown only while a hider is
         // in "prop mode" — the C-buttons + D-pad display these cycling/
@@ -418,52 +432,6 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
         case ITEM_PH_ICON_PREV:   return (void*)gItemIconPropHuntPrevTex;
         case ITEM_PH_ICON_NEXT:   return (void*)gItemIconPropHuntNextTex;
 
-        case ITEM_ROCS_FEATHER_SKIJER: // 0x9D
-            return (void*)gItemIconRocsFeatherTex;
-        case ITEM_ROCS_CAPE: // 0x9E
-            return (void*)gItemIconRocsCapeTex;
-        case ITEM_DESIRE_SENSOR: // 0x9F
-            return (void*)gItemIconDesireSensorTex;
-        case ITEM_HYLIAS_GRACE: // 0xA0
-            return (void*)gItemIconHyliaGraceTex;
-        case ITEM_ZONAI_PERMAFROST: // 0xA1
-            return (void*)gItemIconZonaiPermafrostTex;
-        case ITEM_DEMISE_DESTRUCTION: // 0xA2
-            return (void*)gItemIconDemiseDestructionTex;
-        case ITEM_DEKU_LEAF: // 0xA3
-            return (void*)gItemIconDekuLeafTex;
-        case ITEM_SWITCH_HOOK: // 0xA4
-            return (void*)gItemIconSwitchHookTex;
-        case ITEM_MOGMA_MITTS: // 0xA5
-            return (void*)gItemIconMogmaMittsTex;
-        case ITEM_GUST_JAR: // 0xA6
-            return (void*)gItemIconGustJarTex;
-        case ITEM_BALL_AND_CHAIN: // 0xA7
-            return (void*)gItemIconBallAndChainTex;
-        case ITEM_WHIP: // 0xA8
-            return (void*)gItemIconWhipTex;
-        case ITEM_SPINNER: // 0xA9
-            return (void*)gItemIconSpinnerTex;
-        case ITEM_CANE_OF_SOMARIA: // 0xAA
-            return (void*)gItemIconCaneOfSomariaTex;
-        case ITEM_DOMINION_ROD: // 0xAB
-            return (void*)gItemIconDominionRodTex;
-        case ITEM_TIME_GATE: // 0xAC
-            return (void*)gItemIconTimeGateTex;
-        case ITEM_BOMB_ARROWS: // 0xAD
-            return (void*)gItemIconBombArrowsTex;
-        case ITEM_ROD_FIRE: // 0xAE
-            return (void*)gItemIconFireRodTex;
-        case ITEM_ROD_ICE: // 0xAF
-            return (void*)gItemIconIceRodTex;
-        case ITEM_ROD_LIGHT: // 0xB0
-            return (void*)gItemIconLightRodTex;
-        case ITEM_BEETLE: // 0xB1
-            return (void*)gItemIconBeetleTex;
-        case ITEM_SHOVEL: // 0xB2
-            return (void*)gItemIconShovelTex;
-        case ITEM_MINISH_CAP: // 0xB3
-            return (void*)gItemIconMinishCapTex;
         case ITEM_LANTERN: { // 0xB4
             extern u8 Lantern_GetFireType(void);
             switch (Lantern_GetFireType()) {
