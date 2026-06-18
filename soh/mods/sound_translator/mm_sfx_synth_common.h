@@ -8,6 +8,11 @@
 #ifndef MM_SFX_SYNTH_COMMON_H
 #define MM_SFX_SYNTH_COMMON_H
 
+// NULL / size_t: MSVC pulls these in transitively, but g++/clang (Linux/macOS CI)
+// do not, so the MM SFX TUs that use NULL fail to build without these. Include
+// here since this header is pulled in by every ported MM lib TU.
+#include <cstddef>
+
 #include "mm_sfx_synth_types.h"
 
 namespace mmsfx {
