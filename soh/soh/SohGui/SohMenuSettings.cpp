@@ -506,22 +506,42 @@ void SohMenu::AddMenuSettings() {
     path.column = SECTION_COLUMN_2;
     AddWidget(path, "Advanced Graphics Options", WIDGET_SEPARATOR_TEXT);
 
-    // Every Toon Lighting slider is shown only while the effect is enabled.
-    auto hideUnlessToonEnabled = [](WidgetInfo& info) {
-        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 0);
+    // Cel Shading — a dedicated Settings page that gathers every control (sliders + debug) in one place.
+    // The CVar keys keep their internal "ToonLighting" names so existing settings/saves are unaffected;
+    // only the user-facing wording is "Cel Shading".
+    auto hideUnlessCelEnabled = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1);
     };
-    AddWidget(path, "Toon Lighting", WIDGET_SEPARATOR_TEXT);
-    AddWidget(path, "Enable Toon Lighting", WIDGET_CVAR_CHECKBOX)
+    path.sidebarName = "Cel Shading";
+    path.column = SECTION_COLUMN_1;
+    // 3 columns with the controls kept in column 1 (like the Audio page) so the sliders sit in a narrow
+    // left strip and the game stays visible behind the menu while you tune the values.
+    AddSidebarEntry("Settings", "Cel Shading", 3);
+    AddWidget(path, "Enable Cel Shading", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip(
-            "Re-lights actors/objects with a single dominant light and a soft Wind Waker-style ramp "
-            "(cel shading). Only affects objects, not the static scene. Pairs well with cel-shaded "
-            "texture packs."));
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Re-lights actors and objects with a single dominant light and a soft Wind Waker-style ramp. "
+            "Only affects objects, not the static scene. Pairs well with cel-shaded texture packs."));
+    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessCelEnabled);
+    AddWidget(path, "Reset All to Defaults", WIDGET_BUTTON)
+        .PreFunc(hideUnlessCelEnabled)
+        .Callback([](WidgetInfo& info) {
+            // Clearing each CVar drops it back to the slider's DefaultValue (the same value the renderer
+            // falls back to), so this restores the default look without hardcoding the numbers twice.
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.RampCenter"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.RampSoftness"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.HighlightIntensity"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.ShadowIntensity"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.PointLightRange"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.TransitionTime"));
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        })
+        .Options(ButtonOptions().Tooltip("Resets all the Cel Shading sliders below to their default values."));
     AddWidget(path, "Ramp Center", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.RampCenter"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessToonEnabled)
+        .PreFunc(hideUnlessCelEnabled)
         .Options(FloatSliderOptions()
                      .Tooltip("Where the dark-to-light transition sits. Higher = more of the surface "
                               "stays in shadow.")
@@ -532,17 +552,18 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Ramp Softness", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.RampSoftness"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessToonEnabled)
+        .PreFunc(hideUnlessCelEnabled)
         .Options(FloatSliderOptions()
                      .Tooltip("Width of the transition band. Low = a hard cel edge; high = a softer "
                               "gradient.")
+                     .Format("%.2f") // 2 decimals; the 0.01 step makes the drag land on hundredths (no snap)
                      .Min(0.01f)
                      .Max(0.2f)
                      .DefaultValue(0.02f));
     AddWidget(path, "Highlight Intensity", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.HighlightIntensity"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessToonEnabled)
+        .PreFunc(hideUnlessCelEnabled)
         .Options(FloatSliderOptions()
                      .Tooltip("Brightness of the lit side. Higher = brighter highlights.")
                      .Min(0.0f)
@@ -552,7 +573,7 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Shadow Intensity", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.ShadowIntensity"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessToonEnabled)
+        .PreFunc(hideUnlessCelEnabled)
         .Options(FloatSliderOptions()
                      .Tooltip("How dark the shadow side gets. 0% = no shadow (flat), 100% = full "
                               "shadow down to ambient.")
@@ -563,7 +584,7 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Point Light Range", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.PointLightRange"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessToonEnabled)
+        .PreFunc(hideUnlessCelEnabled)
         .Options(FloatSliderOptions()
                      .Tooltip("Extends how far a point light can remain an object's key light, as a "
                               "multiplier on its actual radius (key selection only — the game's real "
@@ -576,7 +597,7 @@ void SohMenu::AddMenuSettings() {
     AddWidget(path, "Transition Time", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.TransitionTime"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessToonEnabled)
+        .PreFunc(hideUnlessCelEnabled)
         .Options(FloatSliderOptions()
                      .Tooltip("How long the key light takes to ease from one source to another. Higher "
                               "= slower, more deliberate travel between the sun and a fairy/torch.")
@@ -584,6 +605,21 @@ void SohMenu::AddMenuSettings() {
                      .Min(0.1f)
                      .Max(6.0f)
                      .DefaultValue(1.0f));
+    AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessCelEnabled);
+    AddWidget(path, "Light Source Viewer", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_DEVELOPER_TOOLS("ToonLighting.ShowDebug"))
+        .PreFunc(hideUnlessCelEnabled)
+        .Options(CheckboxOptions().Tooltip(
+            "Draws a debug ray from each actor for every candidate light (coloured by the light, longer "
+            "when stronger), a cyan range ring around each point light, and a bold magenta needle down "
+            "the chosen key light, so you can see which light is winning and where the key points."));
+    AddWidget(path, "Highlight Lit Objects", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_DEVELOPER_TOOLS("ToonLighting.HighlightBands"))
+        .PreFunc(hideUnlessCelEnabled)
+        .Options(CheckboxOptions().Tooltip(
+            "Renders every cel-shaded object as flat white on the lit side and flat black in shadow (the "
+            "texture is discarded), so it is obvious which draws are being relit — handy for confirming "
+            "whether large surfaces like water or lava are getting relit."));
 
     // Controls
     path.sidebarName = "Controls";

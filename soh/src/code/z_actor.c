@@ -2869,7 +2869,7 @@ void Actor_Draw(PlayState* play, Actor* actor) {
     // SOH [Enhancement] Toon lighting: let the enhancement choose and emit this actor's key light
     // (selection/easing live in soh/soh/Enhancements/Graphics/ToonLighting.cpp). Guarded so the hook
     // is never invoked per-actor when the feature is off.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 0)) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
         GameInteractor_ExecuteOnActorDraw(actor);
     }
 
@@ -3177,7 +3177,7 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
 
     // SOH [Enhancement] Toon lighting: mark all actor draws so the renderer applies the toon ramp to
     // objects only (the static scene is never bracketed). Gated by the CVar so it is a no-op when off.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 0)) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
         gSPToon(POLY_OPA_DISP++, true);
         gSPToon(POLY_XLU_DISP++, true);
     }
@@ -3261,7 +3261,7 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
     }
 
     // SOH [Enhancement] Toon lighting: end the actor bracket before effects/lens/UI are drawn.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 0)) {
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
         gSPToon(POLY_OPA_DISP++, false);
         gSPToon(POLY_XLU_DISP++, false);
     }

@@ -499,7 +499,7 @@ static void HandleActorDestroy(void* actorPtr) {
 }
 
 void RegisterToonLighting() {
-    bool enabled = CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 0);
+    bool enabled = CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1);
     // Only hook while enabled, so a disabled feature adds no per-frame or per-actor work.
     COND_HOOK(OnGameFrameUpdate, enabled, OnToonFrameUpdate);
     COND_HOOK(OnActorDraw, enabled, HandleActorDraw);
