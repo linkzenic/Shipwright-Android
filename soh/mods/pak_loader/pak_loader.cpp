@@ -393,26 +393,44 @@ static std::string JsonFindString(const std::string& json, const std::string& ke
     return json.substr(pos, end - pos);
 }
 
-// Find the "file" value inside a model array entry like: [{"file": "xxx.zobj", "name": "yyy"}]
+// Resolve a model file reference for a given key (e.g. "adult_model"). Handles
+// both manifest shapes seen in the wild:
+//   old:  "adult_model": [{"file": "xxx.zobj", "name": "yyy"}]
+//   new:  "adult_model": "skinAdult.zobj"   (zzplayas core block, direct string)
 static std::string JsonFindModelFile(const std::string& json, const std::string& modelKey) {
     // Find the model key (e.g., "adult_model")
     size_t pos = json.find("\"" + modelKey + "\"");
     if (pos == std::string::npos)
         return "";
 
-    // Find the array start
-    pos = json.find("[", pos);
+    // Move to the colon and skip whitespace to find the value's first char.
+    pos = json.find(":", pos);
     if (pos == std::string::npos)
         return "";
-
-    // Find "file" within this array section
-    size_t arrayEnd = json.find("]", pos);
-    if (arrayEnd == std::string::npos)
+    pos++;
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r'))
+        pos++;
+    if (pos >= json.size())
         return "";
 
-    std::string arraySection = json.substr(pos, arrayEnd - pos);
+    if (json[pos] == '[') {
+        // Old format: array of {"file": "..."} objects.
+        size_t arrayEnd = json.find("]", pos);
+        if (arrayEnd == std::string::npos)
+            return "";
+        std::string arraySection = json.substr(pos, arrayEnd - pos);
+        return JsonFindString(arraySection, "file");
+    }
 
-    return JsonFindString(arraySection, "file");
+    if (json[pos] == '"') {
+        // New zzplayas format: direct string value, e.g. "skinAdult.zobj".
+        size_t end = json.find('"', pos + 1);
+        if (end == std::string::npos)
+            return "";
+        return json.substr(pos + 1, end - pos - 1);
+    }
+
+    return "";
 }
 
 // ============================================================================
@@ -4050,24 +4068,28 @@ extern "C" void PakLoader_Init(void) {
     std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
     PAK_LOG("Mods path: %s", modsPath.c_str());
 
-    // .pak / .zobj are scanned at the TOP LEVEL of mods/ only — subfolders are
-    // intentionally ignored so users keep a flat layout. .o2r files are
-    // intentionally NOT scanned: community .o2r packs embed OTR vertex paths
-    // that don't resolve through pak_loader's standalone Archive instance,
-    // and the unguarded gfx_vtx_otr_filepath_handler_custom in libultraship's
-    // Fast3D interpreter crashes the first frame the .o2r's DLs are drawn.
-    // libultraship's own ArchiveManager auto-mounts mods/*.o2r at startup as
-    // a global override (its native intended behaviour) — pak_loader stays
-    // out of that path.
+    // .pak / .zobj are scanned RECURSIVELY under mods/ so users can organise
+    // skins into subfolders. .o2r files are intentionally NOT scanned:
+    // community .o2r packs embed OTR vertex paths that don't resolve through
+    // pak_loader's standalone Archive instance, and the unguarded
+    // gfx_vtx_otr_filepath_handler_custom in libultraship's Fast3D interpreter
+    // crashes the first frame the .o2r's DLs are drawn. libultraship's own
+    // ArchiveManager auto-mounts mods/*.o2r at startup as a global override
+    // (its native intended behaviour) — pak_loader stays out of that path.
     std::vector<std::string> rawZobjFiles;
 
     if (!modsPath.empty() && std::filesystem::exists(modsPath) && std::filesystem::is_directory(modsPath)) {
-        for (auto& entry : std::filesystem::directory_iterator(modsPath)) {
-            if (entry.is_directory())
+        std::error_code ec;
+        std::filesystem::recursive_directory_iterator it(
+            modsPath, std::filesystem::directory_options::skip_permission_denied, ec);
+        std::filesystem::recursive_directory_iterator end;
+        for (; it != end; it.increment(ec)) {
+            if (ec) break;
+            if (it->is_directory(ec))
                 continue;
-            std::string ext = entry.path().extension().string();
+            std::string ext = it->path().extension().string();
             for (char& c : ext) c = (char)tolower((unsigned char)c);
-            std::string p = entry.path().string();
+            std::string p = it->path().string();
             if (ext == ".pak") {
                 pakFiles.push_back(p);
                 PAK_LOG("Found pak: %s", p.c_str());
