@@ -389,11 +389,21 @@ void SohMenu::AddMenuWindWakerStyle() {
             "Hide the original game's actor shadows (Link's feet, the NPC/enemy circles, the horse shadow, "
             "the sign and snake-statue texture shadows) so only the new shape shadows show. Turn off to draw "
             "both."));
+    AddWidget(path, "Shadows on Walkable Actors", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WorldShadows.ReceiverActors"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessShadowsEnabled)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Let shadows fall on a few \"floors\" that the game spawns as actors instead of room geometry — the "
+            "castle-town drawbridge, the Gerudo Valley bridge, and some dungeon platforms. They are drawn just "
+            "before the shadows so the shadows land on them like normal ground. Off = those surfaces show no "
+            "shadow (the original behaviour)."));
     AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessShadowsEnabled);
     AddWidget(path, "Reset All to Defaults", WIDGET_BUTTON)
         .PreFunc(hideUnlessShadowsEnabled)
         .Callback([](WidgetInfo& info) {
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.ReceiverActors"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.Opacity"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.Length"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.SlabDepth"));

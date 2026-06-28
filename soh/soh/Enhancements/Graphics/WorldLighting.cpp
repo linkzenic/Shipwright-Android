@@ -7,9 +7,9 @@
 // scoping of that feature.
 //
 // This module owns the OoT-specific policy: which lights exist, where they are in the world, and how the
-// light volume (an icosphere) is sized/rotated. It runs from Play_Draw via the OnPlayDrawWorldLights
-// hook, after the room is drawn and before the actor loop, so the pools land on the world and under the
-// actors.
+// light volume (an icosphere) is sized/rotated. It runs via the OnPlayDrawWorldLights hook, which fires from
+// the actor draw loop (func_800315AC) just after the walkable-floor receiver pre-pass and before the rest of
+// the actors — so the pools land on the world AND those floor actors, but stay under the remaining actors.
 //
 // Each pool is drawn with the stencil light-volume technique: two z-fail mask passes mark the world
 // surfaces inside the icosphere, then a self-clearing composite tints those pixels with the light colour
@@ -453,7 +453,7 @@ static u8 WorldLightAlpha(f32 intensity) {
 }
 
 // OnPlayDrawWorldLights handler: walk the frame's active point lights and cast a pool from each. Runs
-// once per frame inside Play_Draw's display-list scope (after the room, before actors).
+// once per frame from the actor draw loop (after the room + receiver pre-pass, before the rest of the actors).
 static void DrawWorldLights(void* playPtr) {
     PlayState* play = (PlayState*)playPtr;
     if (play == NULL) {
