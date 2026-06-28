@@ -94,10 +94,53 @@ static bool ToonShadowDeepRooted(Actor* actor) {
     return actor->id == ACTOR_EN_KANBAN; // wooden signposts
 }
 
+// Walkable "floor" actors: scenery the player stands on that the game spawns as actors rather than baking
+// into the room mesh (the castle-town drawbridge, the Gerudo Valley bridge, some dungeon platforms). Because
+// they are actors they are normally drawn AFTER the shadow-volume flush and so receive no shadow. The actor
+// draw loop (func_800315AC) special-cases this set: it draws them BEFORE the flush so their surfaces are in
+// the depth buffer and catch shadows like the static scene. Curated by id on purpose — only flat, broadly
+// static, genuinely-walked-on pieces belong here (a moving platform would show the shadow's one-frame lag).
+// Extend cautiously and verify per actor; candidates to try next are noted inline.
+static bool ToonShadowReceiver(Actor* actor) {
+    switch (actor->id) {
+        case ACTOR_BG_SPOT00_HANEBASI: // Hyrule Field <-> Castle Town drawbridge (the planks you cross)
+        case ACTOR_BG_SPOT09_OBJ:      // Gerudo Valley rope bridge
+        case ACTOR_BG_MORI_BIGST:      // Forest Temple falling platform (Stalfos room); static until it drops
+        case ACTOR_BG_HAKA_MEGANEBG:   // Shadow Temple lens-revealed stone platforms (static)
+        case ACTOR_BG_MENKURI_KAITEN:  // Large rotating stone ring (Gerudo Training Ground + Forest Temple).
+                                       // Genuinely rotates while ridden, so the shadow shows a one-frame lag
+                                       // during motion — the test case for whether moving receivers look OK.
+            return true;
+        case ACTOR_BG_HAKA_GATE: {
+            // Shadow Temple. One overlay drives four different things; the variant is the low byte of params
+            // (the high byte is a switch flag the actor's Init strips). The overlay's own enum is
+            // STATUE=0, FLOOR=1, GATE=2, SKULL=3. The walkable surfaces are the round opening trap FLOOR (1) and
+            // the truth-spinner STATUE disc (0) you stand on — both should catch shadows + light; verified in
+            // the trap-floor room. GATE (2) and SKULL (3) stay non-receivers so the skull posts around it keep
+            // casting their own shadows.
+            u16 type = actor->params & 0xFF;
+            return type == 0 || type == 1;
+        }
+        // Further candidates (enable + test individually; some move, so watch the one-frame lag):
+        //   ACTOR_BG_HIDAN_SIMA (Fire Temple stone platform), ACTOR_BG_DDAN_JD (Dodongo rising platform),
+        //   ACTOR_BG_JYA_KANAAMI (Spirit grating bridge).
+        default:
+            return false;
+    }
+}
+
 // Actors that keep cel relight but should NOT cast a drop shadow (unlike ToonActorExcluded, which drops both).
 // Small cuttable grass (En_Kusa) is everywhere and tiny, so a blob under every tuft reads wrong and is wasteful.
+// Shadow receivers are excluded too: a walkable floor casting its own silhouette down into the void below reads
+// wrong, and (now that it sits in the depth buffer at flush time) could self-shadow.
 static bool ToonShadowExcluded(Actor* actor) {
-    return actor->id == ACTOR_EN_KUSA;
+    return actor->id == ACTOR_EN_KUSA || ToonShadowReceiver(actor);
+}
+
+// C-callable export (see ToonLighting.h): lets the decompiled actor draw loop reorder receivers ahead of the
+// shadow flush without pulling the curated id list into the game code.
+extern "C" int ToonLighting_IsShadowReceiver(Actor* actor) {
+    return (actor != nullptr && ToonShadowReceiver(actor)) ? 1 : 0;
 }
 
 // Tracks whether the toon (cel-relight) bracket is currently ON in the display-list stream. The actor-loop
@@ -682,20 +725,12 @@ static void HandleActorDestroy(void* actorPtr) {
     sToonKeyStates.erase((Actor*)actorPtr);
 }
 
-// Runs at the pre-actor draw point (after the room is drawn, before the actor loop — the same hook the light
-// pools use). Tells the renderer to draw the frame's accumulated actor-shadow volumes now, so they land ONLY
-// on the environment (actors aren't in the depth buffer yet → no self-shadow, no shadowing other actors). The
-// volumes are this frame's captures from the previous frame's actor loop, so the shadow lags one frame —
-// imperceptible for a ground shadow.
-static void EmitShadowVolumeFlush(void* playPtr) {
-    PlayState* play = (PlayState*)playPtr;
-    if (play == NULL) {
-        return;
-    }
-    OPEN_DISPS(play->state.gfxCtx);
-    gSPToonShadowFlush(POLY_OPA_DISP++);
-    CLOSE_DISPS(play->state.gfxCtx);
-}
+// The actor-shadow volumes are flushed by gSPToonShadowFlush emitted directly in the game's actor draw loop
+// (soh/src/code/z_actor.c, func_800315AC) — after the room and the walkable-floor receiver pre-pass, before
+// the remaining actors. That placement is why it lives in the draw loop rather than a hook here: it has to sit
+// between the two actor passes. The volumes are the previous frame's captures, so the shadow lags one frame
+// (imperceptible for a ground shadow). The receiver whitelist it consults is ToonShadowReceiver above, exposed
+// to C via ToonLighting_IsShadowReceiver.
 
 void RegisterToonLighting() {
     bool celEnabled = CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1);
@@ -707,8 +742,10 @@ void RegisterToonLighting() {
     COND_HOOK(OnGameFrameUpdate, active, OnToonFrameUpdate);
     COND_HOOK(OnActorDraw, active, HandleActorDraw);
     COND_HOOK(OnActorDestroy, active, HandleActorDestroy);
-    // Render the accumulated shadow volumes pre-actor so they only fall on the environment.
-    COND_HOOK(OnPlayDrawWorldLights, shadowsEnabled, EmitShadowVolumeFlush);
+    // The accumulated shadow volumes are flushed from inside the actor draw loop (func_800315AC) now, not a
+    // hook: it sits after the room and the walkable-floor receiver pre-pass but before the rest of the actors,
+    // so shadows fall on the environment + receivers and never on the casting actors. See gSPToonShadowFlush
+    // there, gated on the same WorldShadows.Enabled CVar.
     // Drop the key-dedup state so the first actor after a (re-)enable always emits, before the
     // end-of-frame OnToonFrameUpdate reset has had a chance to run.
     sHaveLastKey = false;
