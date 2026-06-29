@@ -154,6 +154,11 @@ void SohMenu::AddMenuWindWakerStyle() {
         info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.Enabled"), 0) ||
                         !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"), 0);
     };
+    // The Deku stick's cast-size slider needs Light Casting and the Deku Stick toggle on.
+    auto hideUnlessDekuStickCast = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.Enabled"), 0) ||
+                        !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.DekuStickLight"), 1);
+    };
     // Rotation Speed / Size Flicker sit with the cast-pool controls, but hide entirely while "Use Wind Waker
     // default movement" is on (the renderer pins them to the authentic 1x).
     auto hideUnlessCustomMovement = [](WidgetInfo& info) {
@@ -161,10 +166,10 @@ void SohMenu::AddMenuWindWakerStyle() {
                         CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.WWDefaultMovement"), 1);
     };
     path.sidebarName = "Lights";
-    path.column = SECTION_COLUMN_1;
-    AddSidebarEntry("Wind Waker Style", "Lights", 2); // Misc in column 1, Light Casting in column 2
+    AddSidebarEntry("Wind Waker Style", "Lights", 2); // Light Casting in column 1, Misc in column 2
 
-    // --- Misc: scene-wide tweaks, independent of the cast pools ---
+    // --- Misc: scene-wide tweaks, independent of the cast pools (right column) ---
+    path.column = SECTION_COLUMN_2;
     AddWidget(path, "Misc", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Hide Vanilla Torch Glow", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.HideVanillaGlow"))
@@ -246,8 +251,10 @@ void SohMenu::AddMenuWindWakerStyle() {
             }
         });
     };
-    // Light Casting fills the second column, beside the Misc section.
-    path.column = SECTION_COLUMN_2;
+    // Light Casting fills the LEFT column now (Misc moved to the right). Grouped per light source — each
+    // group is [enable] + its cast size/intensity, divided by a separator; the global pool-movement controls
+    // sit at the end.
+    path.column = SECTION_COLUMN_1;
     AddWidget(path, "Light Casting", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Enable Light Casting", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.Enabled"))
@@ -256,21 +263,7 @@ void SohMenu::AddMenuWindWakerStyle() {
             "Casts a pool of light from each point light (torch, fairy, ...) onto the surrounding world "
             "geometry, Wind Waker-style. Affects only the static world, not actors/objects (lit by Cel "
             "Shading)."));
-    AddWidget(path, "Enable Navi Light Casting", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.UseNaviLight"))
-        .RaceDisable(false)
-        .PreFunc(hideUnlessLightCastEnabled)
-        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "Also cast a pool from Link's fairy (Navi). Navi darts around quickly, so her pool moves a lot."));
-    AddWidget(path, "Other Fairies Emit Light", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"))
-        .RaceDisable(false)
-        .PreFunc(hideUnlessLightCastEnabled)
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Makes non-Navi fairies emit light (they don't in vanilla): the fairies that drift around places "
-            "like Kokiri Forest, and the healing fairies found out in the world (the magic one casts a wider "
-            "pool). Since it turns them into real light sources, they then cast light pools AND can light nearby "
-            "objects via Cel Shading, the same as Navi. A cluster of them can make the lighting busy."));
+    // Pool movement (global) sits right under the master toggle.
     AddWidget(path, "Use Wind Waker default movement", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.WWDefaultMovement"))
         .RaceDisable(false)
@@ -305,15 +298,36 @@ void SohMenu::AddMenuWindWakerStyle() {
                        "%.2fx", false, hideUnlessLightCastEnabled,
                        "Size of each light's cast pool, as a multiplier on the light's radius. Smaller keeps "
                        "the pool tight around the source; larger spreads it wider.");
+    addSliderWithReset("Light Intensity", CVAR_ENHANCEMENT("Graphics.WorldLighting.Intensity"), 0.0f, 2.0f,
+                       0.2f, nullptr, true, hideUnlessLightCastEnabled, "Brightness of the cast light pools.");
+
+    // Navi
+    AddWidget(path, "WWLSepNavi", WIDGET_SEPARATOR).RaceDisable(false).PreFunc(hideUnlessLightCastEnabled);
+    AddWidget(path, "Enable Navi Light Casting", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.UseNaviLight"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessLightCastEnabled)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Also cast a pool from Link's fairy (Navi). Navi darts around quickly, so her pool moves a lot."));
     addSliderWithReset("Navi Cast Size", CVAR_ENHANCEMENT("Graphics.WorldLighting.NaviSphereSize"), 0.1f, 4.0f,
                        0.75f, "%.2fx", false, hideUnlessNaviCast,
                        "Navi's pool size, separate from the main Cast Size, so you can keep Navi tight "
                        "without shrinking the torches.");
-    addSliderWithReset("Light Intensity", CVAR_ENHANCEMENT("Graphics.WorldLighting.Intensity"), 0.0f, 2.0f,
-                       0.2f, nullptr, true, hideUnlessLightCastEnabled, "Brightness of the cast light pools.");
     addSliderWithReset("Navi Light Intensity", CVAR_ENHANCEMENT("Graphics.WorldLighting.NaviIntensity"), 0.0f,
                        2.0f, 0.2f, nullptr, true, hideUnlessNaviCast,
                        "Navi's pool brightness, separate from the main Light Intensity.");
+
+    // Other fairies
+    AddWidget(path, "WWLSepFairy", WIDGET_SEPARATOR).RaceDisable(false).PreFunc(hideUnlessLightCastEnabled);
+    AddWidget(path, "Enable Other Fairy Light Casting", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessLightCastEnabled)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Makes non-Navi fairies emit light (they don't in vanilla): the fairies that drift around places "
+            "like Kokiri Forest, and the healing fairies found out in the world (the magic one casts a wider "
+            "pool). Since it turns them into real light sources, they then cast light pools AND can light nearby "
+            "objects via Cel Shading, the same as Navi. A cluster of them can make the lighting busy."));
     addSliderWithReset("Other Fairy Cast Size", CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairySphereSize"),
                        0.1f, 4.0f, 0.75f, "%.2fx", false, hideUnlessWildFairyCast,
                        "Pool size for non-Navi fairies (Kokiri Forest fairies + the healing fairies), separate "
@@ -321,6 +335,7 @@ void SohMenu::AddMenuWindWakerStyle() {
     addSliderWithReset("Other Fairy Intensity", CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairyIntensity"),
                        0.0f, 2.0f, 0.2f, nullptr, true, hideUnlessWildFairyCast,
                        "Pool brightness for non-Navi fairies, separate from the main Light Intensity.");
+
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessLightCastEnabled);
     AddWidget(path, "Show Light Spheres", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_DEVELOPER_TOOLS("WorldLighting.ShowLightSpheres"))
@@ -329,6 +344,23 @@ void SohMenu::AddMenuWindWakerStyle() {
             "Overlays a translucent faceted shell of each light's icosphere — the volume used for its cast "
             "pool — tinted by the light, so you can see where the pools are, their size, and their spin. "
             "(The renderer has no line primitive, so this is a shell rather than a true wireframe.)"));
+
+    // Held Deku stick — its own light source. Unlike the casting groups above it feeds Cel Shading + Actor
+    // Shadows even with Light Casting off, so it lives in the right column with its toggle always visible;
+    // only its cast-size (a casting-pool control) hides when Light Casting is off.
+    path.column = SECTION_COLUMN_2;
+    AddWidget(path, "Deku Stick", WIDGET_SEPARATOR_TEXT);
+    AddWidget(path, "Enable Deku Stick Light Casting", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.DekuStickLight"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Makes a lit, held Deku stick a real light source at its burning tip (it isn't in vanilla). Like a "
+            "torch it lights nearby objects via Cel Shading and casts their shadows, and — with Light Casting "
+            "on — casts its own pool on the world. This one toggle controls all three."));
+    addSliderWithReset("Deku Stick Cast Size", CVAR_ENHANCEMENT("Graphics.WorldLighting.DekuStickSphereSize"),
+                       0.1f, 4.0f, 0.5f, "%.2fx", false, hideUnlessDekuStickCast,
+                       "The held Deku stick's pool size, separate from torches, so you can size the stick's "
+                       "pool on its own.");
 
     // ===========================================================================================
     // Actor Shadows — Wind Waker-style shape shadows: each actor casts its own silhouette onto the ground

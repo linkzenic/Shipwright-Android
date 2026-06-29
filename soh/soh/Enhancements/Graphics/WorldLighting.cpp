@@ -24,6 +24,7 @@
 #include "soh/cvar_prefixes.h"
 // FrameInterpolation_Record* declarations used by the OPEN_DISPS/CLOSE_DISPS macros (include before them).
 #include "soh/frame_interpolation.h"
+#include "DekuStickLight.h" // identify the held Deku stick's light so it gets its own cast size
 
 #include <math.h>
 #include <unordered_map>
@@ -53,6 +54,7 @@ static constexpr float kDefaultNaviSphereSize = 0.75f;  // Navi's pool size (× 
 static constexpr float kDefaultNaviIntensity = 0.2f;     // Navi's pool brightness
 static constexpr float kDefaultWildFairySphereSize = 0.75f; // wild fairies' pool size (× radius), separate again
 static constexpr float kDefaultWildFairyIntensity = 0.2f;   // wild fairies' pool brightness
+static constexpr float kDefaultDekuStickSphereSize = 0.5f;  // held Deku stick's pool size (× radius)
 static constexpr float kDefaultSizeFlicker = 1.0f;        // depth of the Wind Waker size pulse (1 = authentic ±5%)
 static constexpr float kDefaultFlickerSpeed = 1.0f;       // Wind Waker flame flicker rate (new target ~ every 0.25s / speed)
 
@@ -509,6 +511,14 @@ static void DrawWorldLights(void* playPtr) {
     u8 wildAlpha =
         WorldLightAlpha(CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairyIntensity"), kDefaultWildFairyIntensity));
     std::unordered_set<LightInfo*> wildFairyLights;
+
+    // The held Deku stick's flame light (DekuStickLight.cpp) is a flame like a torch, so it gets the same
+    // size/brightness flicker — but its own, smaller cast size, since the flame is small and right next to
+    // Link. Identify it by address; null when no lit stick is held.
+    f32 dekuStickSize =
+        CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldLighting.DekuStickSphereSize"), kDefaultDekuStickSphereSize);
+    LightInfo* dekuStickLight = (LightInfo*)DekuStickLight_GetActiveLightInfo();
+
     if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"), 0)) {
         Actor* a = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head;
         while (a != NULL) {
@@ -527,6 +537,7 @@ static void DrawWorldLights(void* playPtr) {
         if ((info != NULL) && (info->type != LIGHT_DIRECTIONAL)) {
             bool isNavi = (info == naviGlow) || (info == naviNoGlow);
             bool isWildFairy = !isNavi && (wildFairyLights.count(info) > 0);
+            bool isDekuStick = !isNavi && !isWildFairy && (dekuStickLight != NULL) && (info == dekuStickLight);
             if (!isNavi || useNavi) {
                 WorldLightState* s = WorldLightGetState(info);
                 LightPoint* p = &info->params.point;
@@ -567,7 +578,9 @@ static void DrawWorldLights(void* playPtr) {
                         s->sizeTarget = 1.0f + ((Rand_ZeroOne() - 0.5f) * 0.10f * sizeFlicker); // ±5% × depth
                     }
                     s->sizeCur = WWEase(s->sizeCur, s->sizeTarget, 0.4f, 0.05f, dt);
-                    worldRadius = p->radius * sizeMult * s->sizeCur;
+                    // The Deku stick is a flame too (same pulse), but sized by its own slider.
+                    f32 baseMult = isDekuStick ? dekuStickSize : sizeMult;
+                    worldRadius = p->radius * baseMult * s->sizeCur;
                 }
 
                 // Wind Waker BRIGHTNESS flicker (subtle fine grain): a faster, gentle eased random-walk on
