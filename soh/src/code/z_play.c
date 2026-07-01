@@ -1514,6 +1514,10 @@ void Play_Draw(PlayState* play) {
             }
         }
 
+        // SOH [Enhancement] Wind Waker-style night sky: draw the twinkling starfield over the skybox but
+        // before the sun/moon and the world, so the moon and terrain draw on top of and occlude the stars.
+        GameInteractor_ExecuteOnPlayDrawSky(play);
+
         if ((HREG(80) != 10) || (HREG(90) & 2)) {
             if (!play->envCtx.sunMoonDisabled) {
                 Environment_DrawSunAndMoon(play);
