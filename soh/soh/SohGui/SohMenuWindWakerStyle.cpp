@@ -411,6 +411,56 @@ void SohMenu::AddMenuWindWakerStyle() {
         .Options(CheckboxOptions().Tooltip(
             "Draws the actual 3D shadow volume translucently so you can see its shape: black top/bottom caps, "
             "blue side walls. The ground inside this volume is what gets shadowed."));
+
+    // ===========================================================================================
+    // Night Sky — a Wind Waker-style twinkling starfield drawn over the overworld night sky.
+    // ===========================================================================================
+    auto hideUnlessNightSkyEnabled = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled"), 0);
+    };
+    path = { "Wind Waker Style", "Night Sky", SECTION_COLUMN_1 };
+    AddSidebarEntry("Wind Waker Style", "Night Sky", 3);
+    AddWidget(path, "Enable Night Sky", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Draws a Wind Waker-style twinkling starfield over the overworld night sky: a fixed bright "
+            "constellation plus hundreds of small stars that shimmer and fade in at dusk / out at dawn. "
+            "Purely procedural — no textures or extra assets."));
+    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessNightSkyEnabled);
+    AddWidget(path, "Star Count", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.StarCount"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessNightSkyEnabled)
+        .Options(IntSliderOptions()
+                     .Tooltip("Maximum number of stars at full night (the actual count fades with the "
+                              "time of day). Wind Waker uses 1000.")
+                     .Min(50)
+                     .Max(1000)
+                     .DefaultValue(1000)
+                     .ShowButtons(true)
+                     .Format("%d"));
+    AddWidget(path, "Brightness", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.Brightness"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessNightSkyEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("Overall star opacity. Higher = brighter, more prominent stars.")
+                     .Min(0.0f)
+                     .Max(2.0f)
+                     .DefaultValue(1.0f)
+                     .IsPercentage());
+    AddWidget(path, "Twinkle Speed", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.TwinkleSpeed"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessNightSkyEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How fast the stars pulse. 1x is the authentic Wind Waker rate (~10s per "
+                              "cycle).")
+                     .Format("%.1fx")
+                     .Min(0.1f)
+                     .Max(5.0f)
+                     .DefaultValue(1.0f));
 }
 
 } // namespace SohGui
