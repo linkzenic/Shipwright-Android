@@ -26,10 +26,12 @@ verified correct" claim below predates that overwrite.
 
 ## Shipping without Nintendo assets — the texture override contract
 
-The mod ships **no Wind Waker art**. `WWCloudTextures.cpp` generates original WW-*style* look-alikes at
-startup (procedural metaball puffs + periodic band strips), and `WWClouds.cpp` uses them as the default.
-Any mods o2r that provides these resource paths overrides the built-ins at runtime — that is the delivery
-mechanism for a WW-themed texture pack (and for users who extract WW's own art privately):
+The mod ships **no Wind Waker art**. The built-in textures are original WW-*style* look-alikes generated
+by `scripts/gen-ww-cloud-textures.py` (procedural metaball puffs + periodic band strips) into
+`soh/assets/custom/textures/wind-waker/clouds/`, which the build packs into **soh.o2r** — so a modder can
+unzip soh.o2r and see the exact names, sizes and locations. Any mods-folder o2r that provides the same
+resource paths overrides the built-ins at runtime — that is the delivery mechanism for a WW-themed
+texture pack (and for users who extract WW's own art privately):
 
 | Resource path | Used for | Built-in size |
 |---|---|---|
