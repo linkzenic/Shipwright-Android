@@ -2,6 +2,8 @@
 
 #include <libultraship/bridge.h>
 
+#include <math.h>
+
 extern "C" {
 #include "z64.h"
 #include "variables.h"
@@ -15,6 +17,27 @@ extern "C" {
 #define CVAR_SKY_HORIZON_PARALLAX CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax")
 static constexpr float kDefaultHorizonHeight = -408.0f;  // sits well against OoT's typical visible horizon
 static constexpr float kDefaultHorizonParallax = 0.75f;  // mostly world-pinned (WW's vrbox factor is 0.09)
+
+void WWSkyEnv_Wind(void* playPtr, float* dirX, float* dirZ, float* power) {
+    PlayState* play = (PlayState*)playPtr;
+    float dx = (float)play->envCtx.windDirection.x;
+    float dz = (float)play->envCtx.windDirection.z;
+    float len = sqrtf(dx * dx + dz * dz);
+    if (len < 1.0f) {
+        dx = 1.0f; // steady baseline breeze so the sky always drifts, like WW's sea
+        dz = 0.3f;
+        len = sqrtf(dx * dx + dz * dz);
+    }
+    *dirX = dx / len;
+    *dirZ = dz / len;
+    float p = play->envCtx.windSpeed / 255.0f;
+    if (p < 0.0f) {
+        p = 0.0f;
+    } else if (p > 1.0f) {
+        p = 1.0f;
+    }
+    *power = 0.3f + 0.6f * p;
+}
 
 float WWSkyEnv_HorizonY(void* playPtr) {
     PlayState* play = (PlayState*)playPtr;
