@@ -24,6 +24,27 @@ Re-extracted the real sprite from `sea/Stage.arc` (standalone `.bti` files, not 
 `extract_cloudtx.py` pattern: `RARC` → `BTI(file_entry).render()`), repacked, reinstalled. The "asset
 verified correct" claim below predates that overwrite.
 
+## Shipping without Nintendo assets — the texture override contract
+
+The mod ships **no Wind Waker art**. `WWCloudTextures.cpp` generates original WW-*style* look-alikes at
+startup (procedural metaball puffs + periodic band strips), and `WWClouds.cpp` uses them as the default.
+Any mods o2r that provides these resource paths overrides the built-ins at runtime — that is the delivery
+mechanism for a WW-themed texture pack (and for users who extract WW's own art privately):
+
+| Resource path | Used for | Built-in size |
+|---|---|---|
+| `textures/wind-waker/clouds/cloudtx_01` | drifting cloud sprite, layer 1 | 64×64 |
+| `textures/wind-waker/clouds/cloudtx_02` | drifting cloud sprite, layer 2 | 64×64 |
+| `textures/wind-waker/clouds/cloudtx_03` | drifting cloud sprite, layer 3 | 64×64 |
+| `textures/wind-waker/clouds/cloud_mae`  | horizon band, front strip (gappy clusters) | 256×64 |
+| `textures/wind-waker/clouds/cloud_naka` | horizon band, back strip (continuous mass) | 256×64 |
+
+Replacement rules: RGBA32, power-of-two dimensions, max 512×512 (vertex texel coords are S10.5). The
+cloud *shape* lives in the alpha channel; RGB should stay near-white (it gets tinted by time-of-day
+vertex colour). Band strips must tile horizontally; their bottom edge is the horizon line. Pack them
+with ZAPD's custom-otr path: name PNGs `<name>.rgba32.png` under `textures/wind-waker/clouds/` and build
+an o2r (see `[[shipwright-ww-asset-extraction]]` for the exact command), drop it in `mods/`.
+
 The rest of this file is the original investigation log, kept for the record.
 
 ## What this feature is
