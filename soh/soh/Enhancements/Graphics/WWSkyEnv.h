@@ -35,3 +35,7 @@ void WWSkyEnv_SampleColors(void* play, const WWSkyWeather* weather, WWSkyColors*
 // camera height, the Horizon Parallax factor (0 = follows the camera, 1 = pinned to world height)
 // and the Horizon Height offset slider.
 float WWSkyEnv_HorizonY(void* play);
+
+// dKyw_get_wind_vecpow for OoT: unit wind direction (XZ) + wind power mapped into WW's 0.3/0.6/0.9
+// bracket. Shared by the clouds, the horizon band scroll and the wind wisps.
+void WWSkyEnv_Wind(void* play, float* dirX, float* dirZ, float* power);

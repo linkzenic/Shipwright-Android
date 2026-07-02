@@ -202,27 +202,12 @@ static void InitClouds() {
     sInit = true;
 }
 
-// dKyw_get_wind_vecpow for OoT: unit wind direction + wind power. WW's wind power is one of 0.3/0.6/0.9
-// per stage; OoT's windSpeed is 0..255, so map it into that same bracket (calm scenes → WW's gentle 0.3).
-static void WindDirPower(PlayState* play, Vec3f* dirOut, float* powerOut) {
-    Vec3f dir = { (float)play->envCtx.windDirection.x, 0.0f, (float)play->envCtx.windDirection.z };
-    float len = sqrtf(dir.x * dir.x + dir.z * dir.z);
-    if (len < 1.0f) {
-        dir.x = 1.0f; // steady baseline breeze so clouds always drift, like WW's sea
-        dir.z = 0.3f;
-        len = sqrtf(dir.x * dir.x + dir.z * dir.z);
-    }
-    dirOut->x = dir.x / len;
-    dirOut->y = 0.0f;
-    dirOut->z = dir.z / len;
-    *powerOut = 0.3f + 0.6f * Saturate(play->envCtx.windSpeed / 255.0f);
-}
 
 // Advance all clouds one frame: noclip's vrkumo_move, verbatim.
 static void UpdateClouds(PlayState* play, float dt, int count, float driftTrim) {
-    Vec3f wind;
+    Vec3f wind = { 0.0f, 0.0f, 0.0f };
     float power;
-    WindDirPower(play, &wind, &power);
+    WWSkyEnv_Wind(play, &wind.x, &wind.z, &power);
     wind.x *= power * driftTrim;
     wind.z *= power * driftTrim;
 
@@ -416,9 +401,9 @@ static float WrapFrac(float v) {
 }
 
 static void UpdateBandScroll(PlayState* play, float dt, float driftTrim) {
-    Vec3f dir;
+    Vec3f dir = { 0.0f, 0.0f, 0.0f };
     float power;
-    WindDirPower(play, &dir, &power);
+    WWSkyEnv_Wind(play, &dir.x, &dir.z, &power);
     // WW scrolls the band by the wind component lateral to the view direction (daVrbox2_color_set).
     Vec3f fwd = { play->view.lookAt.x - play->view.eye.x, 0.0f, play->view.lookAt.z - play->view.eye.z };
     float fl = sqrtf(fwd.x * fwd.x + fwd.z * fwd.z);
