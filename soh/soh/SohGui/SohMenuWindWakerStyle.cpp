@@ -413,37 +413,58 @@ void SohMenu::AddMenuWindWakerStyle() {
             "blue side walls. The ground inside this volume is what gets shadowed."));
 
     // ===========================================================================================
-    // Sky Gradient — a Wind Waker-style gradient dome drawn over OoT's textured overworld sky.
+    // Sky — the Wind Waker-style sky replacement: gradient dome + drifting clouds + night stars.
     // ===========================================================================================
-    auto hideUnlessSkyGradientEnabled = [](WidgetInfo& info) {
-        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"), 0);
+    auto hideUnlessSky = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"), 0);
     };
-    path = { "Wind Waker Style", "Sky Gradient", SECTION_COLUMN_1 };
-    AddSidebarEntry("Wind Waker Style", "Sky Gradient", 3);
+    auto hideUnlessSkyGradient = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"), 0) ||
+                        !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"), 1);
+    };
+    auto hideUnlessSkyClouds = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"), 0) ||
+                        !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled"), 1);
+    };
+    auto hideUnlessSkyStars = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"), 0) ||
+                        !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled"), 1);
+    };
+    path = { "Wind Waker Style", "Sky", SECTION_COLUMN_1 };
+    AddSidebarEntry("Wind Waker Style", "Sky", 3);
+    AddWidget(path, "Replace Sky", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Replaces the overworld sky with the Wind Waker-style one: a gradient sky dome, drifting puffy "
+            "clouds with a wispy horizon cloud band, and a twinkling night starfield. Each part can be "
+            "toggled and tuned below. Uses built-in cloud art; a texture pack (or your own ww_clouds.o2r in "
+            "the mods folder) can swap in higher-fidelity clouds."));
+
+    AddWidget(path, "Sky Gradient", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Enable Sky Gradient", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Replaces the overworld sky's look with a Wind Waker-style vertical gradient: a smooth fade from "
-            "a lighter hazy horizon up to a deeper sky. Colours follow the scene's live time-of-day, so it "
-            "shifts automatically through dawn, dusk and night. Purely procedural — no textures. (Covers the "
-            "sky's baked clouds; those are a later feature.)"));
-    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSkyGradientEnabled);
-    AddWidget(path, "Brightness", WIDGET_CVAR_SLIDER_FLOAT)
+        .PreFunc(hideUnlessSky)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "A Wind Waker-style vertical gradient over the sky: a smooth fade from a lighter hazy horizon "
+            "up to a deeper sky. Colours follow the scene's live time-of-day, shifting automatically "
+            "through dawn, dusk and night. Purely procedural — no textures."));
+    AddWidget(path, "Gradient Brightness", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Brightness"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessSkyGradientEnabled)
+        .PreFunc(hideUnlessSkyGradient)
         .Options(FloatSliderOptions()
                      .Tooltip("Overall brightness of the Wind Waker sky palette. Raise for a more vivid sky, "
                               "lower for a moodier one.")
                      .Min(0.5f)
                      .Max(1.5f)
-                     .DefaultValue(1.0f)
+                     .DefaultValue(0.7f)
                      .IsPercentage());
     AddWidget(path, "Haze Band", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.HazeBand"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessSkyGradientEnabled)
+        .PreFunc(hideUnlessSkyGradient)
         .Options(FloatSliderOptions()
                      .Tooltip("How far up the sky the horizon haze reaches before it becomes full sky "
                               "colour. Lower = a tighter band of haze hugging the horizon.")
@@ -452,92 +473,83 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .DefaultValue(0.5f)
                      .IsPercentage());
 
-    // ===========================================================================================
-    // Clouds — Wind Waker-style scrolling cloud layers (needs the WW cloud textures in mods/ww_clouds.o2r).
-    // ===========================================================================================
-    auto hideUnlessCloudsEnabled = [](WidgetInfo& info) {
-        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled"), 0);
-    };
-    path = { "Wind Waker Style", "Clouds", SECTION_COLUMN_1 };
-    AddSidebarEntry("Wind Waker Style", "Clouds", 3);
+    AddWidget(path, "Clouds", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Enable Clouds", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Draws drifting Wind Waker-style puffy clouds across the sky using Wind Waker's own cloud "
-            "sprites. Requires those textures: extract them from your own Wind Waker copy into a "
-            "'ww_clouds.o2r' placed in the mods folder. Without it, this does nothing."));
-    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessCloudsEnabled);
-    AddWidget(path, "Horizon Cloud Band", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBand"))
-        .RaceDisable(false)
-        .PreFunc(hideUnlessCloudsEnabled)
+        .PreFunc(hideUnlessSky)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "Also draws Wind Waker's wispy cloud band around the horizon (vr_back_cloud), slowly "
-            "evolving and scrolling with the wind. Needs the band strips in ww_clouds.o2r."));
+            "Drifting Wind Waker-style puffy clouds across the sky, plus the wispy cloud band around the "
+            "horizon, both riding the wind."));
     AddWidget(path, "Horizon Band Height", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessCloudsEnabled)
+        .PreFunc(hideUnlessSkyClouds)
         .Options(FloatSliderOptions()
                      .Tooltip("Raises or lowers the horizon cloud band. Useful where the visible horizon "
                               "sits below eye level (hilltops like the center of Hyrule Field).")
                      .Format("%.0f")
                      .Min(-2000.0f)
                      .Max(2000.0f)
-                     .DefaultValue(0.0f));
+                     .DefaultValue(-408.0f));
+    AddWidget(path, "Band Parallax", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSkyClouds)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How much the horizon band sinks as the camera climbs. 0% = it follows the "
+                              "camera (always the same height on screen); 100% = it stays at a fixed world "
+                              "height, so hilltops rise in front of it and valleys see its tops peek over "
+                              "the terrain. Wind Waker's own subtle setting is about 9%.")
+                     .Min(0.0f)
+                     .Max(1.5f)
+                     .DefaultValue(0.75f)
+                     .IsPercentage());
     AddWidget(path, "Opacity", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Opacity"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessCloudsEnabled)
+        .PreFunc(hideUnlessSkyClouds)
         .Options(FloatSliderOptions()
                      .Tooltip("How opaque the clouds are.")
                      .Min(0.0f)
                      .Max(1.0f)
-                     .DefaultValue(1.0f)
+                     .DefaultValue(0.85f)
                      .IsPercentage());
     AddWidget(path, "Coverage", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Coverage"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessCloudsEnabled)
+        .PreFunc(hideUnlessSkyClouds)
         .Options(FloatSliderOptions()
                      .Tooltip("How many clouds fill the sky (like Wind Waker's weather: from a few scattered "
                               "clouds up to a fully overcast sky).")
                      .Min(0.0f)
                      .Max(1.0f)
-                     .DefaultValue(0.5f)
+                     .DefaultValue(0.3f)
                      .IsPercentage());
     AddWidget(path, "Drift Speed", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.DriftSpeed"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessCloudsEnabled)
+        .PreFunc(hideUnlessSkyClouds)
         .Options(FloatSliderOptions()
                      .Tooltip("How fast the clouds drift across the sky on the wind.")
                      .Format("%.1fx")
                      .Min(0.0f)
                      .Max(4.0f)
-                     .DefaultValue(1.0f));
+                     .DefaultValue(2.0f));
 
-    // ===========================================================================================
-    // Night Sky — a Wind Waker-style twinkling starfield drawn over the overworld night sky.
-    // ===========================================================================================
-    auto hideUnlessNightSkyEnabled = [](WidgetInfo& info) {
-        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled"), 0);
-    };
-    path = { "Wind Waker Style", "Night Sky", SECTION_COLUMN_1 };
-    AddSidebarEntry("Wind Waker Style", "Night Sky", 3);
-    AddWidget(path, "Enable Night Sky", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "Stars", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
+    AddWidget(path, "Enable Stars", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Draws a Wind Waker-style twinkling starfield over the overworld night sky: a fixed bright "
-            "constellation plus hundreds of small stars that shimmer and fade in at dusk / out at dawn. "
-            "Purely procedural — no textures or extra assets."));
-    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessNightSkyEnabled);
+        .PreFunc(hideUnlessSky)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "A Wind Waker-style twinkling starfield over the night sky: a fixed bright constellation plus "
+            "hundreds of small stars that shimmer and fade in at dusk / out at dawn. Purely procedural — "
+            "no textures or extra assets."));
     AddWidget(path, "Star Count", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.StarCount"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessNightSkyEnabled)
+        .PreFunc(hideUnlessSkyStars)
         .Options(IntSliderOptions()
                      .Tooltip("Maximum number of stars at full night (the actual count fades with the "
                               "time of day). Wind Waker uses 1000.")
@@ -546,10 +558,10 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .DefaultValue(1000)
                      .ShowButtons(true)
                      .Format("%d"));
-    AddWidget(path, "Brightness", WIDGET_CVAR_SLIDER_FLOAT)
+    AddWidget(path, "Star Brightness", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.Brightness"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessNightSkyEnabled)
+        .PreFunc(hideUnlessSkyStars)
         .Options(FloatSliderOptions()
                      .Tooltip("Overall star opacity. Higher = brighter, more prominent stars.")
                      .Min(0.0f)
@@ -559,7 +571,7 @@ void SohMenu::AddMenuWindWakerStyle() {
     AddWidget(path, "Twinkle Speed", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.TwinkleSpeed"))
         .RaceDisable(false)
-        .PreFunc(hideUnlessNightSkyEnabled)
+        .PreFunc(hideUnlessSkyStars)
         .Options(FloatSliderOptions()
                      .Tooltip("How fast the stars pulse. 1x is the authentic Wind Waker rate (~10s per "
                               "cycle).")

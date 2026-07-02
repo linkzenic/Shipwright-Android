@@ -37,16 +37,22 @@ extern "C" {
 #include "align_asset_macro.h"
 }
 
-static constexpr float kDefaultOpacity = 1.0f;
-static constexpr float kDefaultCoverage = 0.5f;   // → active cloud count (WW: 50 + 50*strength)
-static constexpr float kDefaultDriftSpeed = 1.0f; // 1.0 = WW-faithful wind; trim knob only
+static constexpr float kDefaultOpacity = 0.85f;
+static constexpr float kDefaultCoverage = 0.3f;   // → active cloud count (WW: 50 + 50*strength)
+static constexpr float kDefaultDriftSpeed = 2.0f;
+static constexpr float kDefaultBandHeight = -408.0f; // sits well against OoT's typical visible horizon
+// How much the band sinks as the camera rises: 0 = glued to the camera height, 1 = pinned to a fixed
+// world height (terrain naturally rises in front of it / tops peek over it). WW's vrbox uses 0.09, but
+// that is imperceptible at OoT's much smaller terrain heights.
+static constexpr float kDefaultBandParallax = 0.75f; // 1.0 = WW-faithful wind; trim knob only
 
+#define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Replace Sky" master toggle
 #define CVAR_CLOUDS_ENABLED CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled")
 #define CVAR_CLOUDS_OPACITY CVAR_ENHANCEMENT("Graphics.WWClouds.Opacity")
 #define CVAR_CLOUDS_COVERAGE CVAR_ENHANCEMENT("Graphics.WWClouds.Coverage")
 #define CVAR_CLOUDS_DRIFT CVAR_ENHANCEMENT("Graphics.WWClouds.DriftSpeed")
-#define CVAR_CLOUDS_HORIZON CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBand")
 #define CVAR_CLOUDS_HORIZON_HEIGHT CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight")
+#define CVAR_CLOUDS_HORIZON_PARALLAX CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax")
 
 static const char* kCloudRes[3] = {
     "textures/wind-waker/clouds/cloudtx_01",
@@ -464,12 +470,14 @@ static void BuildBand(float opacity, const u8 tint[3], const WWCloudTexture band
 // Draw
 // ---------------------------------------------------------------------------------------------------
 
-static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2], float heightOffs) {
+static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2], float heightOffs, float parallax) {
     OPEN_DISPS(play->state.gfxCtx);
-    // The band follows the camera; WW sinks it slightly as the camera rises (vrbox parallax factor 0.09).
-    // heightOffs is the user's Band Height slider — terrain like the Hyrule Field hill puts the visible
-    // horizon below the default band line, so let them shift the whole ring up/down.
-    Matrix_Translate(play->view.eye.x, play->view.eye.y * (1.0f - 0.09f) + heightOffs, play->view.eye.z, MTXMODE_NEW);
+    // The band follows the camera horizontally; vertically it sinks as the camera rises by the parallax
+    // factor (WW's vrbox trick, factor 0.09 there). At parallax 1.0 the band sits at a fixed world height,
+    // so hilltops rise in front of it and valley floors see its tops peek over the terrain. heightOffs is
+    // the user's Band Height slider shifting the whole ring up/down.
+    Matrix_Translate(play->view.eye.x, play->view.eye.y * (1.0f - parallax) + heightOffs, play->view.eye.z,
+                     MTXMODE_NEW);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
     gDPPipeSync(POLY_OPA_DISP++);
     gSPClearGeometryMode(POLY_OPA_DISP++, G_LIGHTING | G_FOG | G_CULL_FRONT | G_CULL_BACK | G_ZBUFFER);
@@ -624,12 +632,13 @@ static void DrawClouds(void* playPtr) {
     CloudTints(edge, center);
 
     // Horizon band first, so the drifting clouds paint over it.
-    if (CVarGetInteger(CVAR_CLOUDS_HORIZON, 1)) {
+    {
         WWCloudTexture bandTex[2] = { FetchTexOr(kBandRes[0], WWCloudTex_Band(0)),
                                       FetchTexOr(kBandRes[1], WWCloudTex_Band(1)) };
         UpdateBandScroll(play, dt, drift);
         BuildBand(opacity, edge, bandTex);
-        EmitBand(play, bandTex, CVarGetFloat(CVAR_CLOUDS_HORIZON_HEIGHT, 0.0f));
+        EmitBand(play, bandTex, CVarGetFloat(CVAR_CLOUDS_HORIZON_HEIGHT, kDefaultBandHeight),
+                 CVarGetFloat(CVAR_CLOUDS_HORIZON_PARALLAX, kDefaultBandParallax));
     }
 
     WWCloudTexture texData[kLayers];
@@ -657,8 +666,8 @@ static void DrawClouds(void* playPtr) {
 }
 
 void RegisterWWClouds() {
-    bool enabled = CVarGetInteger(CVAR_CLOUDS_ENABLED, 0);
+    bool enabled = CVarGetInteger(CVAR_WWSKY_ENABLED, 0) && CVarGetInteger(CVAR_CLOUDS_ENABLED, 1);
     COND_HOOK(OnPlayDrawSkyClouds, enabled, DrawClouds);
 }
 
-static RegisterShipInitFunc initFunc(RegisterWWClouds, { CVAR_CLOUDS_ENABLED });
+static RegisterShipInitFunc initFunc(RegisterWWClouds, { CVAR_WWSKY_ENABLED, CVAR_CLOUDS_ENABLED });

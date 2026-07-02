@@ -44,6 +44,7 @@ static constexpr int kDefaultStarCount = 1000;   // WW's cap; scaled down by the
 static constexpr float kDefaultBrightness = 1.0f; // overall star alpha multiplier
 static constexpr float kDefaultTwinkleSpeed = 1.0f;
 
+#define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Replace Sky" master toggle
 #define CVAR_NIGHTSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled")
 #define CVAR_NIGHTSKY_STARCOUNT CVAR_ENHANCEMENT("Graphics.WWNightSky.StarCount")
 #define CVAR_NIGHTSKY_BRIGHTNESS CVAR_ENHANCEMENT("Graphics.WWNightSky.Brightness")
@@ -342,8 +343,8 @@ static void DrawNightSky(void* playPtr) {
 
 void RegisterWWNightSky() {
     // Only hook while enabled, so a disabled feature adds no per-frame work. Off by default — opt-in.
-    bool enabled = CVarGetInteger(CVAR_NIGHTSKY_ENABLED, 0);
+    bool enabled = CVarGetInteger(CVAR_WWSKY_ENABLED, 0) && CVarGetInteger(CVAR_NIGHTSKY_ENABLED, 1);
     COND_HOOK(OnPlayDrawSky, enabled, DrawNightSky);
 }
 
-static RegisterShipInitFunc initFunc(RegisterWWNightSky, { CVAR_NIGHTSKY_ENABLED });
+static RegisterShipInitFunc initFunc(RegisterWWNightSky, { CVAR_WWSKY_ENABLED, CVAR_NIGHTSKY_ENABLED });
