@@ -1519,6 +1519,7 @@ void Play_Draw(PlayState* play) {
         // the moon and terrain draw on top and occlude them.
         GameInteractor_ExecuteOnPlayDrawSkyGradient(play);
         GameInteractor_ExecuteOnPlayDrawSky(play);
+        GameInteractor_ExecuteOnPlayDrawSkyClouds(play);
 
         if ((HREG(80) != 10) || (HREG(90) & 2)) {
             if (!play->envCtx.sunMoonDisabled) {

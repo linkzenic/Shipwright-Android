@@ -66,6 +66,10 @@ DEFINE_HOOK(OnPlayDrawSkyGradient, (void* play));
 // world geometry, so a handler can draw a Wind Waker-style twinkling starfield over the night sky (the moon
 // and terrain then draw on top and occlude it). See Graphics/WWNightSky.cpp.
 DEFINE_HOOK(OnPlayDrawSky, (void* play));
+// SOH [Enhancement] Fires inside Play_Draw after the gradient/stars but before the sun/moon and world, so a
+// handler can draw Wind Waker-style scrolling cloud layers in front of the sky and stars. See
+// Graphics/WWClouds.cpp.
+DEFINE_HOOK(OnPlayDrawSkyClouds, (void* play));
 DEFINE_HOOK(OnVanillaBehavior, (GIVanillaBehavior flag, bool* result, va_list originalArgs));
 DEFINE_HOOK(OnSaveFile, (int32_t fileNum, int32_t sectionID));
 DEFINE_HOOK(OnLoadFile, (int32_t fileNum));
