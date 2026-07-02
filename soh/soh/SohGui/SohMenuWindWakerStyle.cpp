@@ -432,7 +432,7 @@ void SohMenu::AddMenuWindWakerStyle() {
     };
     path = { "Wind Waker Style", "Sky", SECTION_COLUMN_1 };
     AddSidebarEntry("Wind Waker Style", "Sky", 3);
-    AddWidget(path, "Replace Sky", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "Use Sky", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"))
         .RaceDisable(false)
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
@@ -442,7 +442,7 @@ void SohMenu::AddMenuWindWakerStyle() {
             "the mods folder) can swap in higher-fidelity clouds."));
 
     AddWidget(path, "Sky Gradient", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
-    AddWidget(path, "Enable Sky Gradient", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "Replace Sky Texture", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"))
         .RaceDisable(false)
         .PreFunc(hideUnlessSky)
@@ -459,7 +459,7 @@ void SohMenu::AddMenuWindWakerStyle() {
                               "lower for a moodier one.")
                      .Min(0.5f)
                      .Max(1.5f)
-                     .DefaultValue(0.7f)
+                     .DefaultValue(1.0f)
                      .IsPercentage());
     AddWidget(path, "Haze Band", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.HazeBand"))
@@ -470,7 +470,7 @@ void SohMenu::AddMenuWindWakerStyle() {
                               "colour. Lower = a tighter band of haze hugging the horizon.")
                      .Min(0.1f)
                      .Max(1.0f)
-                     .DefaultValue(0.5f)
+                     .DefaultValue(0.25f)
                      .IsPercentage());
 
     AddWidget(path, "Clouds", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);

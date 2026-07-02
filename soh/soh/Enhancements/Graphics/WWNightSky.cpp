@@ -44,7 +44,7 @@ static constexpr int kDefaultStarCount = 1000;   // WW's cap; scaled down by the
 static constexpr float kDefaultBrightness = 1.0f; // overall star alpha multiplier
 static constexpr float kDefaultTwinkleSpeed = 1.0f;
 
-#define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Replace Sky" master toggle
+#define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
 #define CVAR_NIGHTSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWNightSky.Enabled")
 #define CVAR_NIGHTSKY_STARCOUNT CVAR_ENHANCEMENT("Graphics.WWNightSky.StarCount")
 #define CVAR_NIGHTSKY_BRIGHTNESS CVAR_ENHANCEMENT("Graphics.WWNightSky.Brightness")

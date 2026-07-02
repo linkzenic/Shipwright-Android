@@ -35,10 +35,10 @@ extern "C" {
 
 // Slider defaults — mirror the GUI slider DefaultValue()s so a fresh install (CVar unset) renders the same as
 // the slider's default position.
-static constexpr float kDefaultBrightness = 0.7f; // overall multiplier on the palette colours
-static constexpr float kDefaultHazeBand = 0.5f;   // fraction of the upper hemisphere the haze fades across
+static constexpr float kDefaultBrightness = 1.0f; // overall multiplier on the palette colours
+static constexpr float kDefaultHazeBand = 0.25f;   // fraction of the upper hemisphere the haze fades across
 
-#define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Replace Sky" master toggle
+#define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
 #define CVAR_SKYGRAD_ENABLED CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled")
 #define CVAR_SKYGRAD_BRIGHTNESS CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Brightness")
 #define CVAR_SKYGRAD_HAZEBAND CVAR_ENHANCEMENT("Graphics.WWSkyGradient.HazeBand")
