@@ -58,6 +58,10 @@ DEFINE_HOOK(OnPlayDrawEnd, ());
 // SOH [Enhancement] Fires inside Play_Draw after the room is drawn but before actors, so a handler can
 // cast Wind Waker-style light pools onto the world (under the actors). See Graphics/WorldLighting.cpp.
 DEFINE_HOOK(OnPlayDrawWorldLights, (void* play));
+// SOH [Enhancement] Fires inside Play_Draw right after the skybox is drawn, before OnPlayDrawSky (stars) and
+// the sun/moon/world, so a handler can draw a Wind Waker-style gradient sky dome over OoT's textured sky. See
+// Graphics/WWSkyGradient.cpp.
+DEFINE_HOOK(OnPlayDrawSkyGradient, (void* play));
 // SOH [Enhancement] Fires inside Play_Draw right after the skybox is drawn but before the sun/moon and the
 // world geometry, so a handler can draw a Wind Waker-style twinkling starfield over the night sky (the moon
 // and terrain then draw on top and occlude it). See Graphics/WWNightSky.cpp.

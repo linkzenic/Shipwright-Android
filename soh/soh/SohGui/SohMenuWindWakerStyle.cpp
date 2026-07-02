@@ -413,6 +413,46 @@ void SohMenu::AddMenuWindWakerStyle() {
             "blue side walls. The ground inside this volume is what gets shadowed."));
 
     // ===========================================================================================
+    // Sky Gradient — a Wind Waker-style gradient dome drawn over OoT's textured overworld sky.
+    // ===========================================================================================
+    auto hideUnlessSkyGradientEnabled = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"), 0);
+    };
+    path = { "Wind Waker Style", "Sky Gradient", SECTION_COLUMN_1 };
+    AddSidebarEntry("Wind Waker Style", "Sky Gradient", 3);
+    AddWidget(path, "Enable Sky Gradient", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Replaces the overworld sky's look with a Wind Waker-style vertical gradient: a smooth fade from "
+            "a lighter hazy horizon up to a deeper sky. Colours follow the scene's live time-of-day, so it "
+            "shifts automatically through dawn, dusk and night. Purely procedural — no textures. (Covers the "
+            "sky's baked clouds; those are a later feature.)"));
+    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSkyGradientEnabled);
+    AddWidget(path, "Brightness", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Brightness"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSkyGradientEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("Overall brightness of the Wind Waker sky palette. Raise for a more vivid sky, "
+                              "lower for a moodier one.")
+                     .Min(0.5f)
+                     .Max(1.5f)
+                     .DefaultValue(1.0f)
+                     .IsPercentage());
+    AddWidget(path, "Haze Band", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.HazeBand"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSkyGradientEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How far up the sky the horizon haze reaches before it becomes full sky "
+                              "colour. Lower = a tighter band of haze hugging the horizon.")
+                     .Min(0.1f)
+                     .Max(1.0f)
+                     .DefaultValue(0.5f)
+                     .IsPercentage());
+
+    // ===========================================================================================
     // Night Sky — a Wind Waker-style twinkling starfield drawn over the overworld night sky.
     // ===========================================================================================
     auto hideUnlessNightSkyEnabled = [](WidgetInfo& info) {
