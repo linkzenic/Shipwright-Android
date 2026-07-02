@@ -23,6 +23,7 @@
 #include "soh/cvar_prefixes.h"
 // FrameInterpolation_Record* declarations used by the OPEN_DISPS/CLOSE_DISPS macros (include before them).
 #include "soh/frame_interpolation.h"
+#include "WWSkyEnv.h"
 
 #include <math.h>
 
@@ -227,6 +228,19 @@ static void DrawSkyGradient(void* playPtr) {
     float dayFrac = (float)gSaveContext.skyboxTime / 65536.0f;
     u8 sky[3], horizon[3];
     SampleSkyPalette(dayFrac, sky, horizon);
+
+    // Weather: pull the palette toward the scene's current fog colour as the sky clouds over (rain
+    // light-configs carry grey fog, so overcast skies grey out with no per-scene authoring), and darken
+    // a little further during an active storm. The horizon leans harder into the fog than the upper sky
+    // so the haze band still reads under full overcast.
+    WWSkyWeather weather = WWSkyEnv_Sample(play);
+    float skyFog = 0.75f * weather.cloudiness;
+    float horizonFog = 0.9f * weather.cloudiness;
+    float stormDim = 1.0f - 0.25f * weather.storm;
+    for (int i = 0; i < 3; i++) {
+        sky[i] = ClampU8((int)((sky[i] + (weather.fogColor[i] - sky[i]) * skyFog) * stormDim));
+        horizon[i] = ClampU8((int)((horizon[i] + (weather.fogColor[i] - horizon[i]) * horizonFog) * stormDim));
+    }
 
     float brightness = CVarGetFloat(CVAR_SKYGRAD_BRIGHTNESS, kDefaultBrightness);
     for (int i = 0; i < 3; i++) {
