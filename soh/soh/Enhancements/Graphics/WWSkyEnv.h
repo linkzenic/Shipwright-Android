@@ -14,5 +14,24 @@ typedef struct WWSkyWeather {
     uint8_t fogColor[3]; // the scene's current blended fog colour (time-of-day + weather config)
 } WWSkyWeather;
 
+// The five scheduled sky colours, evaluated for the current time of day and weather. Values are Wind
+// Waker's own sea-stage palette (extracted from stage.dzs Pale/Virt + the l_time_attribute schedule):
+// sky = upper dome, kasumi = the thin horizon haze, usoUmi = below the horizon line, kumo/kumoCenter =
+// cloud edge/centre tints. Weather blends the clear palette toward WW's rain palette by cloudiness.
+typedef struct WWSkyColors {
+    uint8_t sky[3];
+    uint8_t kasumi[3];
+    uint8_t usoUmi[3];
+    uint8_t kumo[3];
+    uint8_t kumoCenter[3];
+} WWSkyColors;
+
 // `play` is a PlayState* (void* to keep this header light, matching the GameInteractor hook style).
 WWSkyWeather WWSkyEnv_Sample(void* play);
+void WWSkyEnv_SampleColors(void* play, const WWSkyWeather* weather, WWSkyColors* out);
+
+// The world-space Y of the sky's horizon line — WW translates the whole vrbox (sky dome, fake sea,
+// cloud band) as one unit, so the gradient and the horizon clouds must share this. Combines the
+// camera height, the Horizon Parallax factor (0 = follows the camera, 1 = pinned to world height)
+// and the Horizon Height offset slider.
+float WWSkyEnv_HorizonY(void* play);

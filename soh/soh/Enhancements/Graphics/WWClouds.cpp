@@ -48,19 +48,12 @@ struct WWCloudTexture {
 static constexpr float kDefaultOpacity = 0.85f;
 static constexpr float kDefaultCoverage = 0.3f;   // → active cloud count (WW: 50 + 50*strength)
 static constexpr float kDefaultDriftSpeed = 2.0f;
-static constexpr float kDefaultBandHeight = -408.0f; // sits well against OoT's typical visible horizon
-// How much the band sinks as the camera rises: 0 = glued to the camera height, 1 = pinned to a fixed
-// world height (terrain naturally rises in front of it / tops peek over it). WW's vrbox uses 0.09, but
-// that is imperceptible at OoT's much smaller terrain heights.
-static constexpr float kDefaultBandParallax = 0.75f; // 1.0 = WW-faithful wind; trim knob only
 
 #define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
 #define CVAR_CLOUDS_ENABLED CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled")
 #define CVAR_CLOUDS_OPACITY CVAR_ENHANCEMENT("Graphics.WWClouds.Opacity")
 #define CVAR_CLOUDS_COVERAGE CVAR_ENHANCEMENT("Graphics.WWClouds.Coverage")
 #define CVAR_CLOUDS_DRIFT CVAR_ENHANCEMENT("Graphics.WWClouds.DriftSpeed")
-#define CVAR_CLOUDS_HORIZON_HEIGHT CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight")
-#define CVAR_CLOUDS_HORIZON_PARALLAX CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax")
 
 static const char* kCloudRes[3] = {
     "textures/wind-waker/clouds/cloudtx_01",
@@ -478,14 +471,12 @@ static void BuildBand(float opacity, const u8 tint[3], const WWCloudTexture band
 // Draw
 // ---------------------------------------------------------------------------------------------------
 
-static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2], float heightOffs, float parallax) {
+static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2]) {
     OPEN_DISPS(play->state.gfxCtx);
-    // The band follows the camera horizontally; vertically it sinks as the camera rises by the parallax
-    // factor (WW's vrbox trick, factor 0.09 there). At parallax 1.0 the band sits at a fixed world height,
-    // so hilltops rise in front of it and valley floors see its tops peek over the terrain. heightOffs is
-    // the user's Band Height slider shifting the whole ring up/down.
-    Matrix_Translate(play->view.eye.x, play->view.eye.y * (1.0f - parallax) + heightOffs, play->view.eye.z,
-                     MTXMODE_NEW);
+    // The band follows the camera horizontally; vertically it sits on the shared sky horizon
+    // (WWSkyEnv_HorizonY: camera height x parallax + the Horizon Height slider), the same line the
+    // gradient's haze/usoUmi boundary uses — WW moves the whole vrbox as one unit.
+    Matrix_Translate(play->view.eye.x, WWSkyEnv_HorizonY(play), play->view.eye.z, MTXMODE_NEW);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
     gDPPipeSync(POLY_OPA_DISP++);
     gSPClearGeometryMode(POLY_OPA_DISP++, G_LIGHTING | G_FOG | G_CULL_FRONT | G_CULL_BACK | G_ZBUFFER);
@@ -594,54 +585,14 @@ static void EmitClouds(PlayState* play, int clouds, const WWCloudTexture texData
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// Cloud tint schedule — the stand-in for WW's vrKumoCol (edge) / vrKumoCenterCol (center): white by
-// day, warm orange at sunrise/sunset, dark navy-grey silhouettes at night. Key times match the sky
-// gradient's palette (WWSkyGradient.cpp) so the sunset warmth hits the sky and the clouds in sync.
-typedef struct {
-    float t;
-    u8 edge[3];
-    u8 center[3];
-} CloudKey;
-
-static const CloudKey sCloudPalette[] = {
-    { 0.00f, { 60, 70, 100 }, { 80, 90, 120 } },    // midnight — dark silhouettes over the navy sky
-    { 0.23f, { 90, 85, 115 }, { 115, 110, 140 } },  // pre-dawn — warming
-    { 0.27f, { 235, 150, 110 }, { 255, 215, 180 } }, // sunrise — sunlit orange
-    { 0.33f, { 200, 215, 230 }, { 250, 252, 255 } }, // morning
-    { 0.50f, { 210, 220, 235 }, { 255, 255, 255 } }, // noon — bright white
-    { 0.68f, { 205, 210, 225 }, { 252, 250, 248 } }, // afternoon
-    { 0.74f, { 240, 140, 90 }, { 255, 200, 150 } },  // sunset — orange undersides
-    { 0.80f, { 110, 85, 120 }, { 150, 120, 150 } },  // dusk — fading violet
-    { 0.85f, { 60, 70, 100 }, { 80, 90, 120 } },     // night — back to silhouettes
-};
-
-// Sample the palette at the current time of day (lerp between bracketing keys, wrapping past the
-// last), then pull toward the scene's fog colour as the sky clouds over and dim at full storm.
-static void CloudTints(u8 edge[3], u8 center[3], const WWSkyWeather* weather) {
-    float f = (float)gSaveContext.skyboxTime / 65536.0f;
-    int n = ARRAY_COUNT(sCloudPalette);
-    const CloudKey* a = &sCloudPalette[n - 1];
-    const CloudKey* b = &sCloudPalette[0];
-    float u = 0.0f;
-    for (int i = 0; i < n; i++) {
-        float t0 = sCloudPalette[i].t;
-        float t1 = (i + 1 < n) ? sCloudPalette[i + 1].t : sCloudPalette[0].t + 1.0f;
-        if (f >= t0 && f < t1) {
-            a = &sCloudPalette[i];
-            b = &sCloudPalette[(i + 1) % n];
-            u = (f - t0) / (t1 - t0);
-            break;
-        }
-    }
-
-    float fogMix = 0.7f * weather->cloudiness;
-    float stormDim = 1.0f - 0.3f * weather->storm;
+// Cloud tints come from WW's own scheduled vrKumoCol (edge) / vrKumoCenterCol (center) — evaluated,
+// with time-of-day and weather blending, by WWSkyEnv_SampleColors (the extracted sea-stage palette).
+static void CloudTints(void* play, const WWSkyWeather* weather, u8 edge[3], u8 center[3]) {
+    WWSkyColors colors;
+    WWSkyEnv_SampleColors(play, weather, &colors);
     for (int i = 0; i < 3; i++) {
-        float e = a->edge[i] + (b->edge[i] - a->edge[i]) * u;
-        float c = a->center[i] + (b->center[i] - a->center[i]) * u;
-        // The scene's blended fog colour is already time-of-day correct, so mix toward it directly.
-        edge[i] = ClampU8((e + (weather->fogColor[i] - e) * fogMix) * stormDim);
-        center[i] = ClampU8((c + (weather->fogColor[i] - c) * fogMix) * stormDim);
+        edge[i] = colors.kumo[i];
+        center[i] = colors.kumoCenter[i];
     }
 }
 
@@ -683,7 +634,7 @@ static void DrawClouds(void* playPtr) {
     drift *= 1.0f + weather.storm;
 
     u8 edge[3], center[3];
-    CloudTints(edge, center, &weather);
+    CloudTints(play, &weather, edge, center);
 
     // Horizon band first, so the drifting clouds paint over it.
     {
@@ -691,8 +642,7 @@ static void DrawClouds(void* playPtr) {
         if (bandTex[0].data != nullptr && bandTex[1].data != nullptr) {
             UpdateBandScroll(play, dt, drift);
             BuildBand(opacity, edge, bandTex);
-            EmitBand(play, bandTex, CVarGetFloat(CVAR_CLOUDS_HORIZON_HEIGHT, kDefaultBandHeight),
-                     CVarGetFloat(CVAR_CLOUDS_HORIZON_PARALLAX, kDefaultBandParallax));
+            EmitBand(play, bandTex);
         }
     }
 

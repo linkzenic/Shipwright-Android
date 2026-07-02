@@ -1,19 +1,18 @@
-// Wind Waker-style gradient sky — a procedural gradient dome drawn over Ocarina of Time's textured sky.
+// Wind Waker-style gradient sky — a procedural reproduction of WW's vrbox sky, drawn over Ocarina of
+// Time's textured sky.
 //
-// Wind Waker's sky is not a texture: it is a dome whose smooth top-to-horizon gradient comes from the mesh
-// itself, tinted at runtime by two time-of-day colours (an upper "sky" colour and a lower "horizon haze"
-// colour). This recreates that with the same idea — a camera-centred sphere with a vertical colour gradient.
+// WW's sky is not a texture; it is a stack of vertex-coloured meshes tinted by scheduled colours:
+//   - vr_sky.bdl: an opaque dome tinted vrSkyCol, with a horizon haze band tinted vrKasumiMaeCol whose
+//     baked vertex alpha ramps 1 -> 0 from elevation 0° up to +6.6° (measured from the actual mesh).
+//   - vr_uso_umi.bdl ("fake sea"): a solid ring tinted vrUsoUmiCol strictly below the horizon line —
+//     the light backdrop the horizon cloud band sits against.
+// The gradient SHAPE is fixed in the meshes; only the colours animate (time schedule + weather). This
+// file mirrors that: a camera-centred dome with WW's measured three-zone profile, coloured every frame
+// from the WW sea-stage palette schedule evaluated in WWSkyEnv.cpp.
 //
-// Colour source: we can't reuse OoT's own environment colours for this — OoT bakes the blue into the sky
-// *texture*, so its fog/ambient colours are desaturated (grey by day, near-black at night). Wind Waker's real
-// colours live in its game data (l_vr_box_data, blended through a time-of-day schedule) and are not embedded
-// in noclip's source, so instead we carry a hand-authored WW-matched palette below (blue day sky, warm
-// dawn/dusk horizons, deep-navy night) keyframed over the day. TODO: later, source the exact WW values from
-// an asset/o2r so a texture pack can supply or tweak them.
-//
-// The dome is opaque and drawn (via the OnPlayDrawSkyGradient hook) right after OoT's skybox and before the
-// stars / sun / moon / world, so it replaces the textured sky's look while everything else still draws on
-// top. Geometry is static (built once); only the vertex colours are rewritten each frame. No new assets.
+// The dome is opaque and drawn (via the OnPlayDrawSkyGradient hook) right after OoT's skybox and before
+// the stars / clouds / sun / moon / world, so it replaces the textured sky's look while everything else
+// draws on top. Geometry is static (built once); only the vertex colours are rewritten each frame.
 
 #include <libultraship/bridge.h>
 #include <ship/Context.h>
@@ -34,70 +33,27 @@ extern "C" {
 #include "variables.h"
 }
 
-// Slider defaults — mirror the GUI slider DefaultValue()s so a fresh install (CVar unset) renders the same as
-// the slider's default position.
+// Mirror of the GUI slider default so a fresh install (CVar unset) renders like the slider's default.
 static constexpr float kDefaultBrightness = 1.0f; // overall multiplier on the palette colours
-static constexpr float kDefaultHazeBand = 0.25f;   // fraction of the upper hemisphere the haze fades across
 
 #define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
 #define CVAR_SKYGRAD_ENABLED CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled")
 #define CVAR_SKYGRAD_BRIGHTNESS CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Brightness")
-#define CVAR_SKYGRAD_HAZEBAND CVAR_ENHANCEMENT("Graphics.WWSkyGradient.HazeBand")
 
-// Hand-authored Wind Waker-style sky palette, keyframed over the day. `t` is the fraction of a day (OoT
-// dayTime / 0x10000): 0.0 = midnight, 0.25 = 06:00, 0.5 = noon, 0.75 = 18:00. Each key holds the upper-sky
-// colour and the horizon-haze colour; we linearly interpolate between adjacent keys (wrapping past the last).
-// Approximated to WW's look rather than pulled from its data — see the file header.
-typedef struct {
-    float t;
-    u8 sky[3];
-    u8 horizon[3];
-} SkyKey;
+// The kasumi haze band's extent, measured from vr_sky.bdl's baked vertex alpha: full haze at the
+// horizon, fading out by +6.6° elevation. Fixed, like WW's mesh — the drama at sunset comes from the
+// haze COLOUR turning vivid, not from the band growing (which is why the old Haze Band slider is gone).
+static constexpr float kKasumiTopDeg = 6.6f;
 
-static const SkyKey sSkyPalette[] = {
-    { 0.00f, { 20, 28, 60 }, { 45, 60, 95 } },     // midnight — deep navy
-    { 0.23f, { 35, 50, 95 }, { 90, 85, 120 } },    // pre-dawn — warming
-    { 0.27f, { 70, 120, 190 }, { 225, 150, 120 } }, // sunrise — warm horizon
-    { 0.33f, { 80, 150, 220 }, { 175, 205, 225 } }, // morning
-    { 0.50f, { 70, 145, 225 }, { 165, 210, 238 } }, // noon — vivid WW blue
-    { 0.68f, { 80, 150, 215 }, { 185, 205, 220 } }, // afternoon
-    { 0.74f, { 60, 85, 160 }, { 230, 120, 80 } },  // sunset — warm horizon
-    { 0.80f, { 30, 40, 90 }, { 95, 70, 110 } },    // dusk — fading
-    { 0.85f, { 20, 28, 60 }, { 45, 60, 95 } },     // night — back to deep navy
+// Dome tessellation: latitude rows placed non-uniformly so the thin haze band and the horizon line get
+// enough vertices to resolve (vertex colours interpolate linearly across each band).
+static const float kDomeElevations[] = {
+    -90.0f, -40.0f, -15.0f, -5.0f, -1.0f, 0.0f, 1.65f, 3.3f, 4.95f, 6.6f, 12.0f, 20.0f, 35.0f, 60.0f, 90.0f,
 };
-
-// Sample the palette at day-fraction f in [0,1): find the bracketing keys (the last key wraps to the first at
-// t+1) and lerp. sky[]/horizon[] receive 0-255 colours.
-static void SampleSkyPalette(float f, u8 sky[3], u8 horizon[3]) {
-    int n = ARRAY_COUNT(sSkyPalette);
-    for (int i = 0; i < n; i++) {
-        float t0 = sSkyPalette[i].t;
-        float t1 = (i + 1 < n) ? sSkyPalette[i + 1].t : sSkyPalette[0].t + 1.0f;
-        if (f >= t0 && f < t1) {
-            float u = (f - t0) / (t1 - t0);
-            const SkyKey* a = &sSkyPalette[i];
-            const SkyKey* b = &sSkyPalette[(i + 1) % n];
-            for (int c = 0; c < 3; c++) {
-                sky[c] = (u8)(a->sky[c] + (b->sky[c] - a->sky[c]) * u);
-                horizon[c] = (u8)(a->horizon[c] + (b->horizon[c] - a->horizon[c]) * u);
-            }
-            return;
-        }
-    }
-    // f before the first key (only if the first key's t > 0): fall back to the first key's colours.
-    for (int c = 0; c < 3; c++) {
-        sky[c] = sSkyPalette[0].sky[c];
-        horizon[c] = sSkyPalette[0].horizon[c];
-    }
-}
-
-// Dome tessellation. A camera-centred sphere emitted as a flat (non-indexed) triangle list, so emission is a
-// trivial chunked walk. RADIUS just needs to sit between OoT's near (10) and far (12800) planes; the dome has
-// no z-test and follows the camera, so its exact distance doesn't matter for layering.
-static constexpr int kDomeRings = 16; // latitude bands (bottom pole → top pole)
-static constexpr int kDomeSegs = 24;  // longitude divisions
+static constexpr int kDomeRows = (int)(sizeof(kDomeElevations) / sizeof(kDomeElevations[0]));
+static constexpr int kDomeSegs = 24; // longitude divisions
 static constexpr float kDomeRadius = 6000.0f;
-#define DOME_VERTS (kDomeRings * kDomeSegs * 6) // 6 verts (2 tris) per quad
+#define DOME_VERTS ((kDomeRows - 1) * kDomeSegs * 6) // 6 verts (2 tris) per quad
 static Vtx sDomeVtx[DOME_VERTS];
 static bool sDomeBuilt = false;
 
@@ -117,16 +73,16 @@ static void SetDomePos(Vtx* v, float x, float y, float z) {
 // Build the sphere positions once. Colours are filled every frame (they depend on the time of day).
 static void BuildDome() {
     int idx = 0;
-    for (int ring = 0; ring < kDomeRings; ring++) {
-        float phi0 = -M_PI / 2.0f + M_PI * ((float)ring / kDomeRings);
-        float phi1 = -M_PI / 2.0f + M_PI * ((float)(ring + 1) / kDomeRings);
+    for (int row = 0; row + 1 < kDomeRows; row++) {
+        float phi0 = kDomeElevations[row] * (M_PI / 180.0f);
+        float phi1 = kDomeElevations[row + 1] * (M_PI / 180.0f);
         float y0 = kDomeRadius * sinf(phi0), rc0 = kDomeRadius * cosf(phi0);
         float y1 = kDomeRadius * sinf(phi1), rc1 = kDomeRadius * cosf(phi1);
         for (int seg = 0; seg < kDomeSegs; seg++) {
             float lam0 = 2.0f * M_PI * ((float)seg / kDomeSegs);
             float lam1 = 2.0f * M_PI * ((float)(seg + 1) / kDomeSegs);
             float c0 = cosf(lam0), s0 = sinf(lam0), c1 = cosf(lam1), s1 = sinf(lam1);
-            // Quad corners: (ring, seg) grid on the sphere.
+            // Quad corners: (row, seg) grid on the sphere.
             float ax = rc0 * c0, az = rc0 * s0; // v00
             float bx = rc0 * c1, bz = rc0 * s1; // v01
             float cx = rc1 * c0, cz = rc1 * s0; // v10
@@ -147,26 +103,41 @@ static u8 ClampU8(int v) {
     return v < 0 ? 0 : (v > 255 ? 255 : (u8)v);
 }
 
-// Rewrite every vertex colour from the two current stops. The gradient is keyed off each vertex's height
-// (already baked into ob[1]): horizon colour at/below the horizon, easing to the darker upper-sky colour over
-// the lower `hazeBand` of the upper hemisphere.
-static void ColorDome(const u8 horizon[3], const u8 top[3], float hazeBand) {
-    if (hazeBand < 0.01f) {
-        hazeBand = 0.01f;
+// WW's measured three-zone profile: usoUmi below the horizon line, kasumi haze at the horizon fading
+// linearly into the sky colour by +6.6°, sky above.
+static void ZoneColor(float elevDeg, const u8 sky[3], const u8 kasumi[3], const u8 usoUmi[3], u8 out[3]) {
+    if (elevDeg < 0.0f) {
+        out[0] = usoUmi[0];
+        out[1] = usoUmi[1];
+        out[2] = usoUmi[2];
+    } else if (elevDeg >= kKasumiTopDeg) {
+        out[0] = sky[0];
+        out[1] = sky[1];
+        out[2] = sky[2];
+    } else {
+        float t = elevDeg / kKasumiTopDeg; // linear, like the mesh's baked vertex alpha
+        out[0] = (u8)(kasumi[0] + (sky[0] - kasumi[0]) * t);
+        out[1] = (u8)(kasumi[1] + (sky[1] - kasumi[1]) * t);
+        out[2] = (u8)(kasumi[2] + (sky[2] - kasumi[2]) * t);
     }
+}
+
+// Rewrite every vertex colour from the three current zone colours.
+static void ColorDome(const u8 sky[3], const u8 kasumi[3], const u8 usoUmi[3]) {
     for (int i = 0; i < DOME_VERTS; i++) {
         Vtx* v = &sDomeVtx[i];
-        float elevation = (float)v->v.ob[1] / kDomeRadius; // -1 (bottom) .. +1 (top)
-        float e = elevation / hazeBand;
-        if (e < 0.0f) {
-            e = 0.0f;
-        } else if (e > 1.0f) {
-            e = 1.0f;
+        float sinElev = (float)v->v.ob[1] / kDomeRadius; // -1 (bottom) .. +1 (top)
+        if (sinElev > 1.0f) {
+            sinElev = 1.0f;
+        } else if (sinElev < -1.0f) {
+            sinElev = -1.0f;
         }
-        float t = e * e * (3.0f - 2.0f * e); // smoothstep
-        v->v.cn[0] = (u8)(horizon[0] + (top[0] - horizon[0]) * t);
-        v->v.cn[1] = (u8)(horizon[1] + (top[1] - horizon[1]) * t);
-        v->v.cn[2] = (u8)(horizon[2] + (top[2] - horizon[2]) * t);
+        float elevDeg = asinf(sinElev) * (180.0f / M_PI);
+        u8 col[3];
+        ZoneColor(elevDeg, sky, kasumi, usoUmi, col);
+        v->v.cn[0] = col[0];
+        v->v.cn[1] = col[1];
+        v->v.cn[2] = col[2];
         v->v.cn[3] = 255;
     }
 }
@@ -180,9 +151,10 @@ static void ColorDome(const u8 horizon[3], const u8 top[3], float hazeBand) {
 static void EmitDome(PlayState* play) {
     OPEN_DISPS(play->state.gfxCtx);
 
-    // Modelview = translate to the eye, so the dome follows the camera (like the skybox). Vertices are
-    // eye-relative and small enough for s16; the camera view lives in the (interpolated) projection matrix.
-    Matrix_Translate(play->view.eye.x, play->view.eye.y, play->view.eye.z, MTXMODE_NEW);
+    // Modelview = translate to the eye horizontally; vertically the dome centre sits on the shared sky
+    // horizon (WW moves the whole vrbox as one unit, so the haze/usoUmi line here stays locked to the
+    // horizon cloud band). Vertices are eye-relative and small enough for s16.
+    Matrix_Translate(play->view.eye.x, WWSkyEnv_HorizonY(play), play->view.eye.z, MTXMODE_NEW);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
 
     gDPPipeSync(POLY_OPA_DISP++);
@@ -224,32 +196,20 @@ static void DrawSkyGradient(void* playPtr) {
         BuildDome();
     }
 
-    // Sky/horizon colours from the hand-authored WW palette at the current time of day, scaled by brightness.
-    float dayFrac = (float)gSaveContext.skyboxTime / 65536.0f;
-    u8 sky[3], horizon[3];
-    SampleSkyPalette(dayFrac, sky, horizon);
-
-    // Weather: pull the palette toward the scene's current fog colour as the sky clouds over (rain
-    // light-configs carry grey fog, so overcast skies grey out with no per-scene authoring), and darken
-    // a little further during an active storm. The horizon leans harder into the fog than the upper sky
-    // so the haze band still reads under full overcast.
+    // WW's own scheduled sky colours (time of day + weather), scaled by the user's brightness trim.
     WWSkyWeather weather = WWSkyEnv_Sample(play);
-    float skyFog = 0.75f * weather.cloudiness;
-    float horizonFog = 0.9f * weather.cloudiness;
-    float stormDim = 1.0f - 0.25f * weather.storm;
-    for (int i = 0; i < 3; i++) {
-        sky[i] = ClampU8((int)((sky[i] + (weather.fogColor[i] - sky[i]) * skyFog) * stormDim));
-        horizon[i] = ClampU8((int)((horizon[i] + (weather.fogColor[i] - horizon[i]) * horizonFog) * stormDim));
-    }
+    WWSkyColors colors;
+    WWSkyEnv_SampleColors(play, &weather, &colors);
 
     float brightness = CVarGetFloat(CVAR_SKYGRAD_BRIGHTNESS, kDefaultBrightness);
+    u8 sky[3], kasumi[3], usoUmi[3];
     for (int i = 0; i < 3; i++) {
-        sky[i] = ClampU8((int)(sky[i] * brightness));
-        horizon[i] = ClampU8((int)(horizon[i] * brightness));
+        sky[i] = ClampU8((int)(colors.sky[i] * brightness));
+        kasumi[i] = ClampU8((int)(colors.kasumi[i] * brightness));
+        usoUmi[i] = ClampU8((int)(colors.usoUmi[i] * brightness));
     }
 
-    float hazeBand = CVarGetFloat(CVAR_SKYGRAD_HAZEBAND, kDefaultHazeBand);
-    ColorDome(horizon, sky, hazeBand);
+    ColorDome(sky, kasumi, usoUmi);
     EmitDome(play);
 }
 
