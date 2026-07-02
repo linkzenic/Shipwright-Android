@@ -28,6 +28,7 @@
 #include "soh/cvar_prefixes.h"
 // FrameInterpolation_Record* declarations used by the OPEN_DISPS/CLOSE_DISPS macros (include before them).
 #include "soh/frame_interpolation.h"
+#include "WWSkyEnv.h"
 
 #include <math.h>
 
@@ -306,8 +307,10 @@ static void DrawNightSky(void* playPtr) {
     sAnimCounter += 0.01 * kFrameScale * twinkleSpeed;
     sRot += 1.0f * kFrameScale;
 
-    // Ease the star amount toward its time-of-day target so dawn/dusk transitions don't pop (WW smooths it too).
-    float target = StarAmountForTime(gSaveContext.skyboxTime);
+    // Ease the star amount toward its time-of-day target so dawn/dusk transitions don't pop (WW smooths it
+    // too). Overcast skies hide the stars: scale the target by the weather's cloudiness (already smooth).
+    WWSkyWeather weather = WWSkyEnv_Sample(play);
+    float target = StarAmountForTime(gSaveContext.skyboxTime) * (1.0f - weather.cloudiness);
     sStarAmount += (target - sStarAmount) * 0.1f;
     if (sStarAmount < 0.001f) {
         return; // fully daytime — nothing to draw

@@ -24,6 +24,7 @@
 #include "soh/cvar_prefixes.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/frame_interpolation.h"
+#include "WWSkyEnv.h"
 #include <fast/resource/type/Texture.h>
 
 #include <math.h>
@@ -593,18 +594,23 @@ static void EmitClouds(PlayState* play, int clouds, const WWCloudTexture texData
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// A simple day/night cloud tint. TODO: warm dawn/dusk hues to match WW's vrKumoCol.
-static void CloudTints(u8 edge[3], u8 center[3]) {
+// A simple day/night cloud tint, pulled toward the scene's fog colour as the sky clouds over (grey
+// rainclouds during storms) and dimmed a little at full storm. TODO: warm dawn/dusk hues (vrKumoCol).
+static void CloudTints(u8 edge[3], u8 center[3], const WWSkyWeather* weather) {
     float dayFrac = (float)gSaveContext.skyboxTime / 65536.0f;
     float daylight = sinf(dayFrac * kPi);
     if (daylight < 0.0f) {
         daylight = 0.0f;
     }
     float b = 0.4f + 0.6f * daylight;
-    edge[0] = ClampU8(210 * b);
-    edge[1] = ClampU8(220 * b);
-    edge[2] = ClampU8(235 * b);
-    center[0] = center[1] = center[2] = ClampU8(255 * b);
+    float fogMix = 0.7f * weather->cloudiness;
+    float stormDim = 1.0f - 0.3f * weather->storm;
+    u8 base[3] = { ClampU8(210 * b), ClampU8(220 * b), ClampU8(235 * b) };
+    for (int i = 0; i < 3; i++) {
+        float fog = weather->fogColor[i] * b; // fog colour, matched to the day/night curve
+        edge[i] = ClampU8((base[i] + (fog - base[i]) * fogMix) * stormDim);
+        center[i] = ClampU8((255 * b + (fog - 255 * b) * fogMix) * stormDim);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -636,8 +642,16 @@ static void DrawClouds(void* playPtr) {
     float drift = CVarGetFloat(CVAR_CLOUDS_DRIFT, kDefaultDriftSpeed);
     float opacity = CVarGetFloat(CVAR_CLOUDS_OPACITY, kDefaultOpacity);
 
+    // Weather: overcast raises the effective coverage toward WW's fully-cloudy strength (the slider is
+    // the clear-sky floor), and storms drive the wind harder.
+    WWSkyWeather weather = WWSkyEnv_Sample(play);
+    if (weather.cloudiness > coverage) {
+        coverage = weather.cloudiness;
+    }
+    drift *= 1.0f + weather.storm;
+
     u8 edge[3], center[3];
-    CloudTints(edge, center);
+    CloudTints(edge, center, &weather);
 
     // Horizon band first, so the drifting clouds paint over it.
     {
