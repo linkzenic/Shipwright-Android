@@ -468,3 +468,13 @@ run-clang-format.ps1
 # Local config
 /.claude/
 /references
+local.properties
+
+# Third-party repos (research only, not part of the build)
+/third-party/
+
+# Unpacked Wind Waker ROM (user-supplied game data for extracting reference assets)
+/wind-waker-unpacked/
+
+# Cloud textures extracted from the user's Wind Waker ROM (copyrighted; generated, not committed)
+/ww-cloud-assets/

@@ -453,6 +453,72 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .IsPercentage());
 
     // ===========================================================================================
+    // Clouds — Wind Waker-style scrolling cloud layers (needs the WW cloud textures in mods/ww_clouds.o2r).
+    // ===========================================================================================
+    auto hideUnlessCloudsEnabled = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled"), 0);
+    };
+    path = { "Wind Waker Style", "Clouds", SECTION_COLUMN_1 };
+    AddSidebarEntry("Wind Waker Style", "Clouds", 3);
+    AddWidget(path, "Enable Clouds", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled"))
+        .RaceDisable(false)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Draws drifting Wind Waker-style puffy clouds across the sky using Wind Waker's own cloud "
+            "sprites. Requires those textures: extract them from your own Wind Waker copy into a "
+            "'ww_clouds.o2r' placed in the mods folder. Without it, this does nothing."));
+    AddWidget(path, "Options", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessCloudsEnabled);
+    AddWidget(path, "Horizon Cloud Band", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBand"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessCloudsEnabled)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Also draws Wind Waker's wispy cloud band around the horizon (vr_back_cloud), slowly "
+            "evolving and scrolling with the wind. Needs the band strips in ww_clouds.o2r."));
+    AddWidget(path, "Horizon Band Height", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessCloudsEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("Raises or lowers the horizon cloud band. Useful where the visible horizon "
+                              "sits below eye level (hilltops like the center of Hyrule Field).")
+                     .Format("%.0f")
+                     .Min(-2000.0f)
+                     .Max(2000.0f)
+                     .DefaultValue(0.0f));
+    AddWidget(path, "Opacity", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Opacity"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessCloudsEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How opaque the clouds are.")
+                     .Min(0.0f)
+                     .Max(1.0f)
+                     .DefaultValue(1.0f)
+                     .IsPercentage());
+    AddWidget(path, "Coverage", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Coverage"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessCloudsEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How many clouds fill the sky (like Wind Waker's weather: from a few scattered "
+                              "clouds up to a fully overcast sky).")
+                     .Min(0.0f)
+                     .Max(1.0f)
+                     .DefaultValue(0.5f)
+                     .IsPercentage());
+    AddWidget(path, "Drift Speed", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.DriftSpeed"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessCloudsEnabled)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How fast the clouds drift across the sky on the wind.")
+                     .Format("%.1fx")
+                     .Min(0.0f)
+                     .Max(4.0f)
+                     .DefaultValue(1.0f));
+
+    // ===========================================================================================
     // Night Sky — a Wind Waker-style twinkling starfield drawn over the overworld night sky.
     // ===========================================================================================
     auto hideUnlessNightSkyEnabled = [](WidgetInfo& info) {

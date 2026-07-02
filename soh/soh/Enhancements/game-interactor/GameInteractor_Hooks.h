@@ -61,6 +61,7 @@ void GameInteractor_ExecuteOnPlayDrawEnd();
 void GameInteractor_ExecuteOnPlayDrawWorldLights(void* play);
 void GameInteractor_ExecuteOnPlayDrawSkyGradient(void* play);
 void GameInteractor_ExecuteOnPlayDrawSky(void* play);
+void GameInteractor_ExecuteOnPlayDrawSkyClouds(void* play);
 bool GameInteractor_Should(GIVanillaBehavior flag, uint32_t result, ...);
 
 // MARK: -  Save Files

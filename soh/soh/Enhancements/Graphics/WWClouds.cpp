@@ -1,0 +1,646 @@
+// Wind Waker-style clouds — the drifting puffy-cloud billboard system, using WW's own cloud sprites.
+//
+// A faithful port of WW's dKankyo_vrkumo_Packet (noclip's d_kankyo_wether.ts): up to 100 soft cloud
+// sprites placed around a camera-following dome, drifting on the wind, fading in/out, sized and tinted by a
+// distance falloff. Each cloud is drawn as THREE overlapping textured billboards (cloudtx_01/02/03, offset
+// per cloud by the WW "cloudRep" table) projected onto the dome — the same "follow the camera, no parallax"
+// trick as the star field (see WWNightSky.cpp), just textured quads instead of points.
+//
+// The simulation constants (velocities, falloff curves, alpha ease, bounce) are noclip's vrkumo_move
+// verbatim; the only OoT adaptations are the frame-rate scale (WW sim runs at 30 fps, this hook at 20),
+// the wind source (OoT windDirection/windSpeed mapped into WW's 0.3/0.6/0.9 wind-power bracket), and the
+// day/night tint stand-in for WW's vrKumoCol/vrKumoCenterCol.
+//
+// The cloud sprites (32x32 RGBA) are the copyrighted WW art, NOT shipped in the repo: the user extracts
+// them into a ww_clouds.o2r placed in the mods/ folder. If absent this feature is a no-op.
+
+#include <libultraship/bridge.h>
+#include <ship/Context.h>
+
+#include "soh/Enhancements/game-interactor/GameInteractor.h"
+#include "soh/ShipInit.hpp"
+#include "soh/cvar_prefixes.h"
+#include "soh/ResourceManagerHelpers.h"
+#include "soh/frame_interpolation.h"
+#include <fast/resource/type/Texture.h>
+
+#include <math.h>
+#include <memory>
+
+extern "C" {
+#include "z64.h"
+#include "macros.h"
+#include "functions.h"
+#include "variables.h"
+#include "align_asset_macro.h"
+}
+
+static constexpr float kDefaultOpacity = 1.0f;
+static constexpr float kDefaultCoverage = 0.5f;   // → active cloud count (WW: 50 + 50*strength)
+static constexpr float kDefaultDriftSpeed = 1.0f; // 1.0 = WW-faithful wind; trim knob only
+
+#define CVAR_CLOUDS_ENABLED CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled")
+#define CVAR_CLOUDS_OPACITY CVAR_ENHANCEMENT("Graphics.WWClouds.Opacity")
+#define CVAR_CLOUDS_COVERAGE CVAR_ENHANCEMENT("Graphics.WWClouds.Coverage")
+#define CVAR_CLOUDS_DRIFT CVAR_ENHANCEMENT("Graphics.WWClouds.DriftSpeed")
+#define CVAR_CLOUDS_HORIZON CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBand")
+#define CVAR_CLOUDS_HORIZON_HEIGHT CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight")
+
+static const char* kCloudRes[3] = {
+    "textures/wind-waker/clouds/cloudtx_01",
+    "textures/wind-waker/clouds/cloudtx_02",
+    "textures/wind-waker/clouds/cloudtx_03",
+};
+
+// The horizon cloud band strips (vr_back_cloud.bdl): CMPR colour + I4 alpha pairs combined into RGBA at
+// extract time. mae = front layer, naka = back layer.
+static const char* kBandRes[2] = {
+    "textures/wind-waker/clouds/cloud_mae",
+    "textures/wind-waker/clouds/cloud_naka",
+};
+
+static constexpr float kPi = 3.14159265358979323846f;
+// WW runs its cloud sim at 30 fps; OoT's game logic (this hook) at 20 → scale per-frame steps by 30/20.
+static constexpr float kFrameScale = 1.5f;
+
+// WW places clouds in a disk of radius 15000 and projects them onto a dome at farPlane-10000. We keep WW's
+// disk scale (it only feeds the angular placement + falloff) but render on a dome that fits OoT's 12800 far
+// plane; since the clouds follow the camera, the render radius only sets distance, not apparent size.
+static constexpr float kDiskRadius = 15000.0f;
+static constexpr float kDomeRadius = 8000.0f;
+static constexpr int kMaxClouds = 100;
+static constexpr int kLayers = 3;
+
+// One cloud (WW VRKUMO_EFF). position.y is recomputed every frame from the distance falloff.
+struct VrKumo {
+    float posX, posY, posZ;
+    float speed;     // per-cloud drift multiplier
+    float height;    // small vertical size jitter
+    float alpha;     // eased 0..1
+    float distFalloff;
+};
+static VrKumo sClouds[kMaxClouds];
+static bool sInit = false;
+static float sStrength = 0.0f;      // weather cloudiness 0..1 (v1: driven by the Coverage slider)
+static float sBounceTimer = 0.0f;
+
+// Vertex buffers: one per texture layer, 2 triangles (6 verts) per cloud, rebuilt each frame.
+static Vtx sVtx[kLayers][kMaxClouds * 6];
+
+// ---------------------------------------------------------------------------------------------------
+// Horizon cloud band (WW's vr_back_cloud.bdl, drawn by d_a_vrbox2)
+//
+// Measured from the model: three full-circle rings of 8 segments each (columns every 45°), y 0..2665,
+// UV phase u = 0.5 + wraps·azimuth/2π, v=0 at the top edge. Each material samples its 256x64 strip
+// TWICE — a static copy and a wind-scrolled copy (initial +0.2 U offset) — and the TEV combines them as
+// rgb = screen(static, scrolled) × vrKumoCol, alpha = staticA × scrolledA, which is what makes the band
+// slowly evolve instead of just sliding. Ring order (= draw order, back to front by radius/paint):
+// mae 6-wraps @1.0× scroll, naka 4-wraps @0.8×, mae again 8-wraps @1.6×.
+// ---------------------------------------------------------------------------------------------------
+
+struct BandRing {
+    float radius;
+    float uWraps;     // texture repeats around the full circle
+    float scrollMult; // of the base wind scroll speed
+    int tex;          // 0 = mae, 1 = naka
+};
+static const BandRing kBandRings[3] = {
+    { 14424.7f, 6.0f, 1.0f, 0 },
+    { 14530.5f, 4.0f, 0.8f, 1 },
+    { 14424.7f, 8.0f, 1.6f, 0 },
+};
+static constexpr float kBandHeight = 2665.2f;
+static constexpr int kBandSegs = 8;
+static constexpr float kBandTexW = 256.0f;
+// WW's band sits at r≈14500 under a huge far plane; scale it into OoT's 12800 far plane (the band is
+// camera-locked, so the radius only sets distance, not apparent size — the elevation angle is preserved).
+static constexpr float kBandScale = 0.55f;
+
+static float sBandScroll[3] = { 0.0f, 0.0f, 0.0f }; // per-ring scrolled-copy phase, in texture wraps
+static Vtx sBandVtx[3][kBandSegs * 6];
+
+// ---------------------------------------------------------------------------------------------------
+// Small helpers (local RNG so we never perturb the game's global RNG state)
+// ---------------------------------------------------------------------------------------------------
+
+static u32 sRng = 0x1a2b3c4du;
+static float Rnd01() {
+    sRng = sRng * 1664525u + 1013904223u;
+    return (float)(sRng >> 8) * (1.0f / 16777216.0f);
+}
+static float RndF(float m) {
+    return Rnd01() * m;
+}
+static float RndFX(float m) {
+    return (Rnd01() * 2.0f - 1.0f) * m;
+}
+static float Saturate(float v) {
+    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
+static u8 ClampU8(float v) {
+    return v < 0.0f ? 0 : (v > 255.0f ? 255 : (u8)v);
+}
+
+// WW's cLib_addCalc: ease src toward target; the step magnitude is clamped into [minVel, maxVel], and if
+// the step would overshoot, snap EXACTLY to the target. The snap matters: vrkumo_move switches a cloud to
+// its fast "invisible" drift only when alpha == 0, so an asymptotic ease (no snap) strands faded clouds at
+// the disk rim forever — the old "all clouds eventually disappear" bug.
+static float AddCalc(float src, float target, float speed, float maxVel, float minVel) {
+    float delta = target - src;
+    float vel = speed * delta;
+    float mag = fabsf(vel);
+    if (mag < minVel) {
+        mag = minVel;
+    }
+    if (mag > maxVel) {
+        mag = maxVel;
+    }
+    if (mag > fabsf(delta)) {
+        return target;
+    }
+    return src + (delta < 0.0f ? -mag : mag);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Cloud spawn + per-frame update (port of VRKUMO_EFF ctor + vrkumo_move)
+// ---------------------------------------------------------------------------------------------------
+
+static void SpawnCloud(VrKumo* k) {
+    float angle = RndF(2.0f * kPi);
+    float dist = RndF(18000.0f);
+    if (dist > 15000.0f) {
+        dist = 14000.0f + RndF(1000.0f);
+    }
+    k->posX = dist * sinf(angle);
+    k->posY = 0.0f;
+    k->posZ = dist * cosf(angle);
+    k->alpha = 0.0f;
+    k->speed = 0.5f + RndF(4.0f);
+    k->height = 0.3f * RndFX(0.3f);
+    k->distFalloff = 0.0f;
+}
+
+static void InitClouds() {
+    for (int i = 0; i < kMaxClouds; i++) {
+        SpawnCloud(&sClouds[i]);
+    }
+    sInit = true;
+}
+
+// dKyw_get_wind_vecpow for OoT: unit wind direction + wind power. WW's wind power is one of 0.3/0.6/0.9
+// per stage; OoT's windSpeed is 0..255, so map it into that same bracket (calm scenes → WW's gentle 0.3).
+static void WindDirPower(PlayState* play, Vec3f* dirOut, float* powerOut) {
+    Vec3f dir = { (float)play->envCtx.windDirection.x, 0.0f, (float)play->envCtx.windDirection.z };
+    float len = sqrtf(dir.x * dir.x + dir.z * dir.z);
+    if (len < 1.0f) {
+        dir.x = 1.0f; // steady baseline breeze so clouds always drift, like WW's sea
+        dir.z = 0.3f;
+        len = sqrtf(dir.x * dir.x + dir.z * dir.z);
+    }
+    dirOut->x = dir.x / len;
+    dirOut->y = 0.0f;
+    dirOut->z = dir.z / len;
+    *powerOut = 0.3f + 0.6f * Saturate(play->envCtx.windSpeed / 255.0f);
+}
+
+// Advance all clouds one frame: noclip's vrkumo_move, verbatim.
+static void UpdateClouds(PlayState* play, float dt, int count, float driftTrim) {
+    Vec3f wind;
+    float power;
+    WindDirPower(play, &wind, &power);
+    wind.x *= power * driftTrim;
+    wind.z *= power * driftTrim;
+
+    float skyboxOffsY = 1000.0f + sStrength * -500.0f;
+    float strengthY = 3000.0f + sStrength * -1000.0f;
+    float strengthVel = 4.0f + sStrength * 4.3f;
+
+    for (int i = 0; i < kMaxClouds; i++) {
+        VrKumo* k = &sClouds[i];
+        float distXZ = sqrtf(k->posX * k->posX + k->posZ * k->posZ);
+
+        if (distXZ > 15000.0f) {
+            if (distXZ <= 15100.0f) {
+                k->posX *= -1.0f;
+                k->posZ *= -1.0f;
+            } else {
+                k->posX = RndFX(14000.0f);
+                k->posZ = RndFX(14000.0f);
+                distXZ = sqrtf(k->posX * k->posX + k->posZ * k->posZ);
+            }
+            k->alpha = 0.0f;
+        }
+
+        float vel;
+        if (k->alpha > 0.0f) {
+            vel = strengthVel * k->distFalloff * k->speed * dt;
+        } else {
+            // Invisible clouds rush (falloff-independent) so they cross the rim and respawn upwind.
+            vel = strengthVel + (i / 1000.0f) * strengthVel * dt;
+        }
+        k->posX += wind.x * vel;
+        k->posZ += wind.z * vel;
+
+        float dist01 = fminf(distXZ / kDiskRadius, 1.0f);
+        float centerCubic = 1.0f - dist01 * dist01 * dist01;
+        k->posY = 500.0f * ((float)i / 100.0f) + skyboxOffsY + strengthY * centerCubic;
+        k->distFalloff = 1.0f - powf(dist01, 6.0f);
+
+        float alphaTarget;
+        float alphaMaxVel = 1.0f;
+        if (i < count) {
+            alphaMaxVel = 0.1f;
+            if (k->distFalloff >= 0.05f && k->distFalloff < 0.2f) {
+                alphaTarget = (k->distFalloff - 0.05f) / 0.15f;
+            } else if (k->distFalloff < 0.2f) {
+                alphaTarget = 0.0f;
+            } else {
+                alphaTarget = 1.0f + sStrength * -0.55f;
+            }
+        } else {
+            alphaTarget = 0.0f;
+            alphaMaxVel = 0.005f;
+        }
+        // Fade clouds that drift directly overhead (where the dome projection breaks the illusion). WW:
+        // saturate(invlerp(0.98, 0.88, centerCubic)) → 0 overhead (centerCubic→1), 1 toward the horizon.
+        float overhead = Saturate((0.98f - centerCubic) / (0.98f - 0.88f));
+        alphaTarget *= overhead;
+
+        k->alpha = AddCalc(k->alpha, alphaTarget, 0.2f * dt, alphaMaxVel, 0.01f);
+    }
+    sBounceTimer += 200.0f * dt;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Build the sprite quads (port of dKankyo_vrkumo_Packet.draw, all three texture layers)
+// ---------------------------------------------------------------------------------------------------
+
+static void WriteVtx(Vtx* v, Vec3f p, s16 uTexel, s16 vTexel, const u8 col[4]) {
+    v->v.ob[0] = (s16)p.x;
+    v->v.ob[1] = (s16)p.y;
+    v->v.ob[2] = (s16)p.z;
+    v->v.flag = 0;
+    v->v.tc[0] = (s16)(uTexel << 5); // S10.5 texels
+    v->v.tc[1] = (s16)(vTexel << 5);
+    v->v.cn[0] = col[0];
+    v->v.cn[1] = col[1];
+    v->v.cn[2] = col[2];
+    v->v.cn[3] = col[3];
+}
+
+// Project a dome direction (polar elevation, azimuth) to an eye-relative vertex on the dome sphere.
+static Vec3f DomePoint(float polar, float azimuth) {
+    float cp = cosf(polar), sp = sinf(polar);
+    return { cp * sinf(azimuth) * kDomeRadius, sp * kDomeRadius, cp * cosf(azimuth) * kDomeRadius };
+}
+
+// WW offsets the second and third sprite of each cloud by one of four patterns (cloudRep = i & 3) so the
+// trio reads as one lumpy cloud instead of three stacked copies.
+static void CloudRepOffsets(int textureIdx, int i, float m0, float m1, float* polarOffs, float* azimuthOffs) {
+    *polarOffs = 0.0f;
+    *azimuthOffs = 0.0f;
+    if (textureIdx == 0) {
+        return;
+    }
+    switch (i & 3) {
+        case 0:
+            if (textureIdx == 2) {
+                *polarOffs = m1;
+                *azimuthOffs = m0;
+            }
+            break;
+        case 1:
+            if (textureIdx == 1) {
+                *polarOffs = -m0;
+                *azimuthOffs = m0;
+            } else if (textureIdx == 2) {
+                *polarOffs = -m1;
+                *azimuthOffs = m1;
+            }
+            break;
+        case 2:
+            if (textureIdx == 1) {
+                *polarOffs = m1;
+                *azimuthOffs = -m1;
+            } else if (textureIdx == 2) {
+                *polarOffs = m0;
+                *azimuthOffs = -m1;
+            }
+            break;
+        case 3:
+            if (textureIdx == 1) {
+                *polarOffs = -m1;
+            } else if (textureIdx == 2) {
+                *polarOffs = -m0;
+                *azimuthOffs = m0;
+            }
+            break;
+    }
+}
+
+// Fill sVtx[layer] for all visible clouds; returns the number of quads written per layer (same for all).
+static int BuildClouds(float opacity, const u8 edge[3], const u8 center[3]) {
+    int n = 0;
+    for (int i = 0; i < kMaxClouds; i++) {
+        VrKumo* k = &sClouds[i];
+        if (k->alpha <= 0.000001f) {
+            continue;
+        }
+        float distXZ = sqrtf(k->posX * k->posX + k->posZ * k->posZ);
+
+        // Tint: lerp edge→center by falloff (WW vrKumoCol↔vrKumoCenterCol); alpha = cloud alpha × opacity.
+        float t = k->distFalloff;
+        u8 col[4] = { ClampU8(edge[0] + (center[0] - edge[0]) * t), ClampU8(edge[1] + (center[1] - edge[1]) * t),
+                      ClampU8(edge[2] + (center[2] - edge[2]) * t), ClampU8(255.0f * k->alpha * opacity) };
+
+        for (int textureIdx = 0; textureIdx < kLayers; textureIdx++) {
+            float size = k->distFalloff * (1.0f - powf(((textureIdx + i) & 0x0F) / 16.0f, 3.0f)) *
+                         (0.45f + sStrength * 0.55f);
+            float bounce = sinf(textureIdx + 0.0001f * sBounceTimer);
+            float sizeAnim = size + 0.06f * size * bounce * k->distFalloff;
+            float height = sizeAnim + sizeAnim * k->height;
+            float m0 = 0.15f * sizeAnim;
+            float m1 = 0.65f * sizeAnim;
+
+            float polarOffs, azimuthOffs;
+            CloudRepOffsets(textureIdx, i, m0, m1, &polarOffs, &azimuthOffs);
+
+            float polarY1 = atan2f(k->posY, distXZ) + polarOffs;
+            float np = powf(fminf(polarY1 / 1.9f, 1.0f), 3.0f);
+            float azimuth = atan2f(k->posX, k->posZ) + azimuthOffs;
+            float aOff0 = 0.6f * sizeAnim * (1.0f + 16.0f * np);
+            float aOff1 = 0.6f * sizeAnim * (1.0f + 2.0f * np);
+            float polarY0 = fminf(polarY1 + 0.9f * height * (1.0f + -4.0f * np), 1.21f);
+
+            Vec3f v0 = DomePoint(polarY0, azimuth + aOff0);
+            Vec3f v1 = DomePoint(polarY0, azimuth - aOff0);
+            Vec3f v2 = DomePoint(polarY1, azimuth - aOff1);
+            Vec3f v3 = DomePoint(polarY1, azimuth + aOff1);
+
+            Vtx* q = &sVtx[textureIdx][n * 6];
+            WriteVtx(&q[0], v0, 0, 0, col); // two triangles: (v0,v1,v2) and (v0,v2,v3)
+            WriteVtx(&q[1], v1, 32, 0, col);
+            WriteVtx(&q[2], v2, 32, 32, col);
+            WriteVtx(&q[3], v0, 0, 0, col);
+            WriteVtx(&q[4], v2, 32, 32, col);
+            WriteVtx(&q[5], v3, 0, 32, col);
+        }
+        n++;
+    }
+    return n;
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Horizon band update + geometry (port of daVrbox2_color_set + the vr_back_cloud rings)
+// ---------------------------------------------------------------------------------------------------
+
+static float WrapFrac(float v) {
+    return v - floorf(v);
+}
+
+static void UpdateBandScroll(PlayState* play, float dt, float driftTrim) {
+    Vec3f dir;
+    float power;
+    WindDirPower(play, &dir, &power);
+    // WW scrolls the band by the wind component lateral to the view direction (daVrbox2_color_set).
+    Vec3f fwd = { play->view.lookAt.x - play->view.eye.x, 0.0f, play->view.lookAt.z - play->view.eye.z };
+    float fl = sqrtf(fwd.x * fwd.x + fwd.z * fwd.z);
+    if (fl > 0.0001f) {
+        fwd.x /= fl;
+        fwd.z /= fl;
+    }
+    float windScroll = power * ((-dir.x * fwd.z) - (-dir.z * fwd.x));
+    float s0 = dt * 0.0005f * windScroll * driftTrim;
+    for (int r = 0; r < 3; r++) {
+        sBandScroll[r] = WrapFrac(sBandScroll[r] + s0 * kBandRings[r].scrollMult);
+    }
+}
+
+static void BuildBand(float opacity, const u8 tint[3]) {
+    u8 col[4] = { tint[0], tint[1], tint[2], ClampU8(255.0f * opacity) };
+    for (int r = 0; r < 3; r++) {
+        const BandRing* ring = &kBandRings[r];
+        float rad = ring->radius * kBandScale;
+        float top = kBandHeight * kBandScale;
+        float texelsPerSeg = ring->uWraps * kBandTexW / kBandSegs;
+        for (int i = 0; i < kBandSegs; i++) {
+            float az0 = -kPi + (2.0f * kPi) * i / kBandSegs;
+            float az1 = az0 + (2.0f * kPi) / kBandSegs;
+            // WW's UV phase (measured): u = 0.5 + wraps·az/2π. Each segment is its own quad with its base
+            // U wrapped into [0,256) so the S10.5 vertex coords never overflow; the tile WRAP mask keeps
+            // sampling seamless.
+            float u0f = (0.5f + ring->uWraps * az0 / (2.0f * kPi)) * kBandTexW;
+            float base = u0f - kBandTexW * floorf(u0f / kBandTexW);
+            s16 u0 = (s16)(base + 0.5f);
+            s16 u1 = (s16)(base + texelsPerSeg + 0.5f);
+            Vec3f t0 = { rad * sinf(az0), top, rad * cosf(az0) };
+            Vec3f t1 = { rad * sinf(az1), top, rad * cosf(az1) };
+            Vec3f b0 = { rad * sinf(az0), 0.0f, rad * cosf(az0) };
+            Vec3f b1 = { rad * sinf(az1), 0.0f, rad * cosf(az1) };
+            Vtx* q = &sBandVtx[r][i * 6];
+            WriteVtx(&q[0], t0, u0, 0, col); // v=0 at the top edge, matching the model
+            WriteVtx(&q[1], t1, u1, 0, col);
+            WriteVtx(&q[2], b1, u1, 64, col);
+            WriteVtx(&q[3], t0, u0, 0, col);
+            WriteVtx(&q[4], b1, u1, 64, col);
+            WriteVtx(&q[5], b0, u0, 64, col);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Draw
+// ---------------------------------------------------------------------------------------------------
+
+static void EmitBand(PlayState* play, void* bandTex[2], float heightOffs) {
+    OPEN_DISPS(play->state.gfxCtx);
+    // The band follows the camera; WW sinks it slightly as the camera rises (vrbox parallax factor 0.09).
+    // heightOffs is the user's Band Height slider — terrain like the Hyrule Field hill puts the visible
+    // horizon below the default band line, so let them shift the whole ring up/down.
+    Matrix_Translate(play->view.eye.x, play->view.eye.y * (1.0f - 0.09f) + heightOffs, play->view.eye.z, MTXMODE_NEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_LIGHTING | G_FOG | G_CULL_FRONT | G_CULL_BACK | G_ZBUFFER);
+    gSPSetGeometryMode(POLY_OPA_DISP++, G_SHADE | G_SHADING_SMOOTH);
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    // Two copies of the strip: TEXEL0 static, TEXEL1 scrolled (via tile 1's uls). Cycle 0 mirrors WW's TEV:
+    // rgb = (1-T0)·T1 + T0 (screen blend), alpha = T0·T1. Cycle 1 tints by shade (vrKumoCol stand-in +
+    // opacity). 2-cycle must be set explicitly — see the cycle-type note in EmitClouds.
+    gDPSetCombineLERP(POLY_OPA_DISP++, 1, TEXEL0, TEXEL1, TEXEL0, TEXEL0, 0, TEXEL1, 0, COMBINED, 0, SHADE, 0,
+                      COMBINED, 0, SHADE, 0);
+    gDPSetCycleType(POLY_OPA_DISP++, G_CYC_2CYCLE);
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_PASS, G_RM_XLU_SURF2);
+    gDPSetAlphaCompare(POLY_OPA_DISP++, G_AC_NONE);
+    gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    gDPSetTexturePersp(POLY_OPA_DISP++, G_TP_PERSP);
+    gDPSetTextureDetail(POLY_OPA_DISP++, G_TD_CLAMP);
+    gDPSetTextureLOD(POLY_OPA_DISP++, G_TL_TILE);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPSetTextureConvert(POLY_OPA_DISP++, G_TC_FILT);
+
+    for (int r = 0; r < 3; r++) {
+        const BandRing* ring = &kBandRings[r];
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPLoadTextureTile(POLY_OPA_DISP++, bandTex[ring->tex], G_IM_FMT_RGBA, G_IM_SIZ_32b, 256, 64, 0, 0, 255, 63, 0,
+                           G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, 8, 6, G_TX_NOLOD, G_TX_NOLOD);
+        // Second sampler on tile 1: same strip (tmem 0), offset by WW's initial +0.2 U plus the wind
+        // scroll. Fast3D subtracts a tile's uls from the vertex U, hence the negation.
+        gDPSetTile(POLY_OPA_DISP++, G_IM_FMT_RGBA, G_IM_SIZ_32b, 64, 0, G_TX_RENDERTILE + 1, 0,
+                   G_TX_WRAP | G_TX_NOMIRROR, 6, G_TX_NOLOD, G_TX_WRAP | G_TX_NOMIRROR, 8, G_TX_NOLOD);
+        u16 uls = (u16)(WrapFrac(-(0.2f + sBandScroll[r])) * kBandTexW * 4.0f);
+        gDPSetTileSize(POLY_OPA_DISP++, G_TX_RENDERTILE + 1, uls, 0, uls + (255 << 2), 63 << 2);
+
+        int verts = kBandSegs * 6;
+        for (int first = 0; first < verts; first += 30) {
+            int v = verts - first;
+            if (v > 30) {
+                v = 30;
+            }
+            gSPVertex(POLY_OPA_DISP++, (uintptr_t)&sBandVtx[r][first], v, 0);
+            for (int t = 0; t + 6 <= v; t += 6) {
+                gSP2Triangles(POLY_OPA_DISP++, t + 0, t + 1, t + 2, 0, t + 3, t + 4, t + 5, 0);
+            }
+        }
+    }
+
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+static void EmitClouds(PlayState* play, int clouds, void* texData[kLayers]) {
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Translate(play->view.eye.x, play->view.eye.y, play->view.eye.z, MTXMODE_NEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+    gDPPipeSync(POLY_OPA_DISP++);
+    gSPClearGeometryMode(POLY_OPA_DISP++, G_LIGHTING | G_FOG | G_CULL_FRONT | G_CULL_BACK | G_ZBUFFER);
+    gSPSetGeometryMode(POLY_OPA_DISP++, G_SHADE | G_SHADING_SMOOTH);
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gDPSetCombineMode(POLY_OPA_DISP++, G_CC_MODULATERGBA, G_CC_MODULATERGBA); // TEXEL0 × vertex colour
+    // Plain (non-AA) translucent surface: the anti-aliased XLU mode swallows the texture's per-pixel alpha,
+    // showing the opaque sprite instead of the cloud shape. G_RM_XLU_SURF is what SoH uses to draw RGBA
+    // textures with soft transparency (see VisualAgony.cpp).
+    gDPSetRenderMode(POLY_OPA_DISP++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
+    // 1-cycle is the load-bearing state: the skybox (SETUPDL_40) leaves the RDP in G_CYC_2CYCLE, and in
+    // 2-cycle mode Fast3D discards our cycle-1 combiner (no COMBINED reference in cycle 2) and remaps
+    // cycle-2's TEXEL0 to texture slot 1 — so the quads sampled the skybox's stale tile instead of the
+    // cloud sprite (the long-standing "solid blue rectangles" bug). Alpha compare is likewise outside
+    // gDPSetRenderMode's bits; a stale G_AC_THRESHOLD would clip the soft cloud edges.
+    gDPSetCycleType(POLY_OPA_DISP++, G_CYC_1CYCLE);
+    gDPSetAlphaCompare(POLY_OPA_DISP++, G_AC_NONE);
+    // Reset the RDP texture pipeline. gDPLoadTextureBlock doesn't set these, so a leftover state from a prior
+    // draw (especially a colour-palette/LUT mode from a CI texture in the HUD/menu) would make our RGBA
+    // texture be read through a palette and collapse to a solid colour. The setup-DL macros do this for you.
+    gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    gDPSetTexturePersp(POLY_OPA_DISP++, G_TP_PERSP);
+    gDPSetTextureDetail(POLY_OPA_DISP++, G_TD_CLAMP);
+    gDPSetTextureLOD(POLY_OPA_DISP++, G_TL_TILE);
+    gDPSetTextureFilter(POLY_OPA_DISP++, G_TF_BILERP);
+    gDPSetTextureConvert(POLY_OPA_DISP++, G_TC_FILT);
+
+    // WW draws the layers back-to-front (texture 3, then 2, then 1 on top).
+    for (int textureIdx = kLayers - 1; textureIdx >= 0; textureIdx--) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPLoadTextureBlock(POLY_OPA_DISP++, texData[textureIdx], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                            G_TX_CLAMP | G_TX_NOMIRROR, G_TX_CLAMP | G_TX_NOMIRROR, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
+
+        int verts = clouds * 6;
+        for (int first = 0; first < verts; first += 30) {
+            int v = verts - first;
+            if (v > 30) {
+                v = 30;
+            }
+            gSPVertex(POLY_OPA_DISP++, (uintptr_t)&sVtx[textureIdx][first], v, 0);
+            for (int t = 0; t + 6 <= v; t += 6) {
+                gSP2Triangles(POLY_OPA_DISP++, t + 0, t + 1, t + 2, 0, t + 3, t + 4, t + 5, 0);
+            }
+        }
+    }
+
+    gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// A simple day/night cloud tint. TODO: warm dawn/dusk hues to match WW's vrKumoCol.
+static void CloudTints(u8 edge[3], u8 center[3]) {
+    float dayFrac = (float)gSaveContext.skyboxTime / 65536.0f;
+    float daylight = sinf(dayFrac * kPi);
+    if (daylight < 0.0f) {
+        daylight = 0.0f;
+    }
+    float b = 0.4f + 0.6f * daylight;
+    edge[0] = ClampU8(210 * b);
+    edge[1] = ClampU8(220 * b);
+    edge[2] = ClampU8(235 * b);
+    center[0] = center[1] = center[2] = ClampU8(255 * b);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// Per-frame entry point (OnPlayDrawSkyClouds handler)
+// ---------------------------------------------------------------------------------------------------
+
+// Fetch a decoded texture from the user's ww_clouds.o2r; null if the mod isn't installed.
+static void* FetchTex(const char* name) {
+    auto tex = std::static_pointer_cast<Fast::Texture>(ResourceMgr_GetResourceByNameHandlingMQ(name));
+    return (tex != nullptr) ? tex->ImageData : nullptr;
+}
+
+static void DrawClouds(void* playPtr) {
+    PlayState* play = (PlayState*)playPtr;
+
+    if (play->skyboxId != SKYBOX_NORMAL_SKY || play->envCtx.skyboxDisabled) {
+        return;
+    }
+
+    float dt = kFrameScale;
+    float coverage = CVarGetFloat(CVAR_CLOUDS_COVERAGE, kDefaultCoverage);
+    float drift = CVarGetFloat(CVAR_CLOUDS_DRIFT, kDefaultDriftSpeed);
+    float opacity = CVarGetFloat(CVAR_CLOUDS_OPACITY, kDefaultOpacity);
+
+    u8 edge[3], center[3];
+    CloudTints(edge, center);
+
+    // Horizon band first, so the drifting clouds paint over it.
+    if (CVarGetInteger(CVAR_CLOUDS_HORIZON, 1)) {
+        void* bandTex[2] = { FetchTex(kBandRes[0]), FetchTex(kBandRes[1]) };
+        if (bandTex[0] != nullptr && bandTex[1] != nullptr) {
+            UpdateBandScroll(play, dt, drift);
+            BuildBand(opacity, edge);
+            EmitBand(play, bandTex, CVarGetFloat(CVAR_CLOUDS_HORIZON_HEIGHT, 0.0f));
+        }
+    }
+
+    void* texData[kLayers];
+    bool havePuffy = true;
+    for (int t = 0; t < kLayers; t++) {
+        texData[t] = FetchTex(kCloudRes[t]);
+        havePuffy = havePuffy && texData[t] != nullptr;
+    }
+    if (!havePuffy) {
+        return; // no-op unless all three WW cloud sprites are present (ww_clouds.o2r in mods/)
+    }
+
+    if (!sInit) {
+        InitClouds();
+    }
+
+    // Coverage drives the active count the way WW's weather "strength" does (50 clear → 100 fully cloudy).
+    sStrength = coverage;
+    int count = (int)(50.0f + 50.0f * coverage);
+    if (count > kMaxClouds) {
+        count = kMaxClouds;
+    }
+
+    UpdateClouds(play, dt, count, drift);
+
+    int clouds = BuildClouds(opacity, edge, center);
+    if (clouds > 0) {
+        EmitClouds(play, clouds, texData);
+    }
+}
+
+void RegisterWWClouds() {
+    bool enabled = CVarGetInteger(CVAR_CLOUDS_ENABLED, 0);
+    COND_HOOK(OnPlayDrawSkyClouds, enabled, DrawClouds);
+}
+
+static RegisterShipInitFunc initFunc(RegisterWWClouds, { CVAR_CLOUDS_ENABLED });
