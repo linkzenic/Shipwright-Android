@@ -441,6 +441,34 @@ void SohMenu::AddMenuWindWakerStyle() {
             "toggled and tuned below. Uses built-in cloud art; a texture pack (or your own ww_clouds.o2r in "
             "the mods folder) can swap in higher-fidelity clouds."));
 
+    AddWidget(path, "Horizon", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
+    AddWidget(path, "Horizon Height", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSky)
+        .Options(FloatSliderOptions()
+                     .Tooltip("Raises or lowers the sky's horizon line — the gradient's haze boundary and "
+                              "the horizon cloud band move together, like Wind Waker's sky box. Useful "
+                              "where the visible horizon sits below eye level (hilltops like the center "
+                              "of Hyrule Field).")
+                     .Format("%.0f")
+                     .Min(-2000.0f)
+                     .Max(2000.0f)
+                     .DefaultValue(-408.0f));
+    AddWidget(path, "Horizon Parallax", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSky)
+        .Options(FloatSliderOptions()
+                     .Tooltip("How much the sky horizon sinks as the camera climbs. 0% = it follows the "
+                              "camera (always the same height on screen); 100% = it stays at a fixed world "
+                              "height, so hilltops rise in front of it and valleys see the horizon clouds "
+                              "peek over the terrain. Wind Waker's own subtle setting is about 9%.")
+                     .Min(0.0f)
+                     .Max(1.5f)
+                     .DefaultValue(0.75f)
+                     .IsPercentage());
+
     AddWidget(path, "Sky Gradient", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Replace Sky Texture", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Enabled"))
@@ -461,17 +489,6 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .Max(1.5f)
                      .DefaultValue(1.0f)
                      .IsPercentage());
-    AddWidget(path, "Haze Band", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.HazeBand"))
-        .RaceDisable(false)
-        .PreFunc(hideUnlessSkyGradient)
-        .Options(FloatSliderOptions()
-                     .Tooltip("How far up the sky the horizon haze reaches before it becomes full sky "
-                              "colour. Lower = a tighter band of haze hugging the horizon.")
-                     .Min(0.1f)
-                     .Max(1.0f)
-                     .DefaultValue(0.25f)
-                     .IsPercentage());
 
     AddWidget(path, "Clouds", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Enable Clouds", WIDGET_CVAR_CHECKBOX)
@@ -481,30 +498,6 @@ void SohMenu::AddMenuWindWakerStyle() {
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Drifting Wind Waker-style puffy clouds across the sky, plus the wispy cloud band around the "
             "horizon, both riding the wind."));
-    AddWidget(path, "Horizon Band Height", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandHeight"))
-        .RaceDisable(false)
-        .PreFunc(hideUnlessSkyClouds)
-        .Options(FloatSliderOptions()
-                     .Tooltip("Raises or lowers the horizon cloud band. Useful where the visible horizon "
-                              "sits below eye level (hilltops like the center of Hyrule Field).")
-                     .Format("%.0f")
-                     .Min(-2000.0f)
-                     .Max(2000.0f)
-                     .DefaultValue(-408.0f));
-    AddWidget(path, "Band Parallax", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax"))
-        .RaceDisable(false)
-        .PreFunc(hideUnlessSkyClouds)
-        .Options(FloatSliderOptions()
-                     .Tooltip("How much the horizon band sinks as the camera climbs. 0% = it follows the "
-                              "camera (always the same height on screen); 100% = it stays at a fixed world "
-                              "height, so hilltops rise in front of it and valleys see its tops peek over "
-                              "the terrain. Wind Waker's own subtle setting is about 9%.")
-                     .Min(0.0f)
-                     .Max(1.5f)
-                     .DefaultValue(0.75f)
-                     .IsPercentage());
     AddWidget(path, "Opacity", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWClouds.Opacity"))
         .RaceDisable(false)
