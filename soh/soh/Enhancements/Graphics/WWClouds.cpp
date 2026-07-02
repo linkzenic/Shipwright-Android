@@ -594,22 +594,54 @@ static void EmitClouds(PlayState* play, int clouds, const WWCloudTexture texData
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// A simple day/night cloud tint, pulled toward the scene's fog colour as the sky clouds over (grey
-// rainclouds during storms) and dimmed a little at full storm. TODO: warm dawn/dusk hues (vrKumoCol).
+// Cloud tint schedule — the stand-in for WW's vrKumoCol (edge) / vrKumoCenterCol (center): white by
+// day, warm orange at sunrise/sunset, dark navy-grey silhouettes at night. Key times match the sky
+// gradient's palette (WWSkyGradient.cpp) so the sunset warmth hits the sky and the clouds in sync.
+typedef struct {
+    float t;
+    u8 edge[3];
+    u8 center[3];
+} CloudKey;
+
+static const CloudKey sCloudPalette[] = {
+    { 0.00f, { 60, 70, 100 }, { 80, 90, 120 } },    // midnight — dark silhouettes over the navy sky
+    { 0.23f, { 90, 85, 115 }, { 115, 110, 140 } },  // pre-dawn — warming
+    { 0.27f, { 235, 150, 110 }, { 255, 215, 180 } }, // sunrise — sunlit orange
+    { 0.33f, { 200, 215, 230 }, { 250, 252, 255 } }, // morning
+    { 0.50f, { 210, 220, 235 }, { 255, 255, 255 } }, // noon — bright white
+    { 0.68f, { 205, 210, 225 }, { 252, 250, 248 } }, // afternoon
+    { 0.74f, { 240, 140, 90 }, { 255, 200, 150 } },  // sunset — orange undersides
+    { 0.80f, { 110, 85, 120 }, { 150, 120, 150 } },  // dusk — fading violet
+    { 0.85f, { 60, 70, 100 }, { 80, 90, 120 } },     // night — back to silhouettes
+};
+
+// Sample the palette at the current time of day (lerp between bracketing keys, wrapping past the
+// last), then pull toward the scene's fog colour as the sky clouds over and dim at full storm.
 static void CloudTints(u8 edge[3], u8 center[3], const WWSkyWeather* weather) {
-    float dayFrac = (float)gSaveContext.skyboxTime / 65536.0f;
-    float daylight = sinf(dayFrac * kPi);
-    if (daylight < 0.0f) {
-        daylight = 0.0f;
+    float f = (float)gSaveContext.skyboxTime / 65536.0f;
+    int n = ARRAY_COUNT(sCloudPalette);
+    const CloudKey* a = &sCloudPalette[n - 1];
+    const CloudKey* b = &sCloudPalette[0];
+    float u = 0.0f;
+    for (int i = 0; i < n; i++) {
+        float t0 = sCloudPalette[i].t;
+        float t1 = (i + 1 < n) ? sCloudPalette[i + 1].t : sCloudPalette[0].t + 1.0f;
+        if (f >= t0 && f < t1) {
+            a = &sCloudPalette[i];
+            b = &sCloudPalette[(i + 1) % n];
+            u = (f - t0) / (t1 - t0);
+            break;
+        }
     }
-    float b = 0.4f + 0.6f * daylight;
+
     float fogMix = 0.7f * weather->cloudiness;
     float stormDim = 1.0f - 0.3f * weather->storm;
-    u8 base[3] = { ClampU8(210 * b), ClampU8(220 * b), ClampU8(235 * b) };
     for (int i = 0; i < 3; i++) {
-        float fog = weather->fogColor[i] * b; // fog colour, matched to the day/night curve
-        edge[i] = ClampU8((base[i] + (fog - base[i]) * fogMix) * stormDim);
-        center[i] = ClampU8((255 * b + (fog - 255 * b) * fogMix) * stormDim);
+        float e = a->edge[i] + (b->edge[i] - a->edge[i]) * u;
+        float c = a->center[i] + (b->center[i] - a->center[i]) * u;
+        // The scene's blended fog colour is already time-of-day correct, so mix toward it directly.
+        edge[i] = ClampU8((e + (weather->fogColor[i] - e) * fogMix) * stormDim);
+        center[i] = ClampU8((c + (weather->fogColor[i] - c) * fogMix) * stormDim);
     }
 }
 
