@@ -22,6 +22,14 @@ static float Clamp01(float v) {
 //   duration of a thunderstorm.
 // - Fog: envCtx.lightSettings holds the scene's light settings double-lerped by time of day and the
 //   weather light-config transition, so its fogColor already greys out in rain configs.
+// Eased cloudiness state: clouds roll in quickly but clear out slowly. The game's own fine<->cloud
+// skybox crossfade is a brisk ~5s both ways, which reads fine for OoT's subtle textures but makes our
+// much-bolder sky snap back to blue while the storm's final lightning bolt is still due. Advanced once
+// per game frame (the sampler is called by several sky features every frame).
+static float sEasedCloudiness = -1.0f; // -1 = uninitialized
+static uint32_t sLastFrame = 0xFFFFFFFF;
+static int16_t sLastScene = -1;
+
 WWSkyWeather WWSkyEnv_Sample(void* playPtr) {
     PlayState* play = (PlayState*)playPtr;
     EnvironmentContext* envCtx = &play->envCtx;
@@ -35,10 +43,28 @@ WWSkyWeather WWSkyEnv_Sample(void* playPtr) {
     }
 
     float rain = Clamp01(envCtx->unk_EE[1] / 30.0f);
-    float storm = (envCtx->lightningMode == LIGHTNING_MODE_ON) ? 1.0f : rain;
+    // LIGHTNING_MODE_LAST means one more strike is still coming — the sky must stay stormy for it.
+    bool lightning = envCtx->lightningMode == LIGHTNING_MODE_ON || envCtx->lightningMode == LIGHTNING_MODE_LAST;
+    float storm = lightning ? 1.0f : rain;
 
-    // Rain always implies an overcast sky, even if the skybox transition hasn't caught up.
-    w.cloudiness = Clamp01(cloudiness > rain ? cloudiness : rain);
+    // Rain or pending lightning always implies a fully overcast sky, even while the skybox blend lags
+    // (rolling in) or runs ahead (clearing before the last bolt).
+    float target = Clamp01(cloudiness > storm ? cloudiness : storm);
+
+    if (sEasedCloudiness < 0.0f || play->sceneNum != sLastScene) {
+        sEasedCloudiness = target; // no easing across scene loads / first use
+        sLastScene = play->sceneNum;
+    }
+    if (play->state.frames != sLastFrame) {
+        sLastFrame = play->state.frames;
+        float rate = (target > sEasedCloudiness) ? 0.06f : 0.012f; // ~1s to cloud over, ~10s to clear
+        sEasedCloudiness += (target - sEasedCloudiness) * rate;
+        if (fabsf(target - sEasedCloudiness) < 0.001f) {
+            sEasedCloudiness = target;
+        }
+    }
+
+    w.cloudiness = sEasedCloudiness;
     w.storm = storm;
     w.fogColor[0] = envCtx->lightSettings.fogColor[0];
     w.fogColor[1] = envCtx->lightSettings.fogColor[1];
