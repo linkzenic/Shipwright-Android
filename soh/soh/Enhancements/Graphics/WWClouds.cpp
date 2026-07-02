@@ -11,8 +11,9 @@
 // the wind source (OoT windDirection/windSpeed mapped into WW's 0.3/0.6/0.9 wind-power bracket), and the
 // day/night tint stand-in for WW's vrKumoCol/vrKumoCenterCol.
 //
-// The cloud sprites (32x32 RGBA) are the copyrighted WW art, NOT shipped in the repo: the user extracts
-// them into a ww_clouds.o2r placed in the mods/ folder. If absent this feature is a no-op.
+// No Nintendo assets are shipped or required: the textures default to procedural Wind Waker-STYLE
+// look-alikes (WWCloudTextures.cpp). A mods o2r that provides textures/wind-waker/clouds/* (a WW-themed
+// texture pack, or a user's own extraction) overrides them at runtime — see FetchTexOr.
 
 #include <libultraship/bridge.h>
 #include <ship/Context.h>
@@ -22,6 +23,7 @@
 #include "soh/cvar_prefixes.h"
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/frame_interpolation.h"
+#include "WWCloudTextures.h"
 #include <fast/resource/type/Texture.h>
 
 #include <math.h>
@@ -52,8 +54,7 @@ static const char* kCloudRes[3] = {
     "textures/wind-waker/clouds/cloudtx_03",
 };
 
-// The horizon cloud band strips (vr_back_cloud.bdl): CMPR colour + I4 alpha pairs combined into RGBA at
-// extract time. mae = front layer, naka = back layer.
+// The horizon cloud band strips (vr_back_cloud.bdl style): mae = front layer, naka = back layer.
 static const char* kBandRes[2] = {
     "textures/wind-waker/clouds/cloud_mae",
     "textures/wind-waker/clouds/cloud_naka",
@@ -111,7 +112,6 @@ static const BandRing kBandRings[3] = {
 };
 static constexpr float kBandHeight = 2665.2f;
 static constexpr int kBandSegs = 8;
-static constexpr float kBandTexW = 256.0f;
 // WW's band sits at r≈14500 under a huge far plane; scale it into OoT's 12800 far plane (the band is
 // camera-locked, so the radius only sets distance, not apparent size — the elevation angle is preserved).
 static constexpr float kBandScale = 0.55f;
@@ -136,6 +136,14 @@ static float RndFX(float m) {
 }
 static float Saturate(float v) {
     return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+}
+// Floor log2 for the tile mask fields (textures are expected to be power-of-two).
+static int Log2i(int v) {
+    int l = 0;
+    while ((1 << (l + 1)) <= v) {
+        l++;
+    }
+    return l;
 }
 static u8 ClampU8(float v) {
     return v < 0.0f ? 0 : (v > 255.0f ? 255 : (u8)v);
@@ -339,7 +347,7 @@ static void CloudRepOffsets(int textureIdx, int i, float m0, float m1, float* po
 }
 
 // Fill sVtx[layer] for all visible clouds; returns the number of quads written per layer (same for all).
-static int BuildClouds(float opacity, const u8 edge[3], const u8 center[3]) {
+static int BuildClouds(float opacity, const u8 edge[3], const u8 center[3], const WWCloudTexture tex[kLayers]) {
     int n = 0;
     for (int i = 0; i < kMaxClouds; i++) {
         VrKumo* k = &sClouds[i];
@@ -378,12 +386,14 @@ static int BuildClouds(float opacity, const u8 edge[3], const u8 center[3]) {
             Vec3f v3 = DomePoint(polarY1, azimuth + aOff1);
 
             Vtx* q = &sVtx[textureIdx][n * 6];
+            s16 tw = (s16)tex[textureIdx].width; // texel coords span the texture, whatever its size
+            s16 th = (s16)tex[textureIdx].height;
             WriteVtx(&q[0], v0, 0, 0, col); // two triangles: (v0,v1,v2) and (v0,v2,v3)
-            WriteVtx(&q[1], v1, 32, 0, col);
-            WriteVtx(&q[2], v2, 32, 32, col);
+            WriteVtx(&q[1], v1, tw, 0, col);
+            WriteVtx(&q[2], v2, tw, th, col);
             WriteVtx(&q[3], v0, 0, 0, col);
-            WriteVtx(&q[4], v2, 32, 32, col);
-            WriteVtx(&q[5], v3, 0, 32, col);
+            WriteVtx(&q[4], v2, tw, th, col);
+            WriteVtx(&q[5], v3, 0, th, col);
         }
         n++;
     }
@@ -416,21 +426,23 @@ static void UpdateBandScroll(PlayState* play, float dt, float driftTrim) {
     }
 }
 
-static void BuildBand(float opacity, const u8 tint[3]) {
+static void BuildBand(float opacity, const u8 tint[3], const WWCloudTexture band[2]) {
     u8 col[4] = { tint[0], tint[1], tint[2], ClampU8(255.0f * opacity) };
     for (int r = 0; r < 3; r++) {
         const BandRing* ring = &kBandRings[r];
         float rad = ring->radius * kBandScale;
         float top = kBandHeight * kBandScale;
-        float texelsPerSeg = ring->uWraps * kBandTexW / kBandSegs;
+        float texW = (float)band[ring->tex].width;
+        s16 texH = (s16)band[ring->tex].height;
+        float texelsPerSeg = ring->uWraps * texW / kBandSegs;
         for (int i = 0; i < kBandSegs; i++) {
             float az0 = -kPi + (2.0f * kPi) * i / kBandSegs;
             float az1 = az0 + (2.0f * kPi) / kBandSegs;
             // WW's UV phase (measured): u = 0.5 + wraps·az/2π. Each segment is its own quad with its base
             // U wrapped into [0,256) so the S10.5 vertex coords never overflow; the tile WRAP mask keeps
             // sampling seamless.
-            float u0f = (0.5f + ring->uWraps * az0 / (2.0f * kPi)) * kBandTexW;
-            float base = u0f - kBandTexW * floorf(u0f / kBandTexW);
+            float u0f = (0.5f + ring->uWraps * az0 / (2.0f * kPi)) * texW;
+            float base = u0f - texW * floorf(u0f / texW);
             s16 u0 = (s16)(base + 0.5f);
             s16 u1 = (s16)(base + texelsPerSeg + 0.5f);
             Vec3f t0 = { rad * sinf(az0), top, rad * cosf(az0) };
@@ -440,10 +452,10 @@ static void BuildBand(float opacity, const u8 tint[3]) {
             Vtx* q = &sBandVtx[r][i * 6];
             WriteVtx(&q[0], t0, u0, 0, col); // v=0 at the top edge, matching the model
             WriteVtx(&q[1], t1, u1, 0, col);
-            WriteVtx(&q[2], b1, u1, 64, col);
+            WriteVtx(&q[2], b1, u1, texH, col);
             WriteVtx(&q[3], t0, u0, 0, col);
-            WriteVtx(&q[4], b1, u1, 64, col);
-            WriteVtx(&q[5], b0, u0, 64, col);
+            WriteVtx(&q[4], b1, u1, texH, col);
+            WriteVtx(&q[5], b0, u0, texH, col);
         }
     }
 }
@@ -452,7 +464,7 @@ static void BuildBand(float opacity, const u8 tint[3]) {
 // Draw
 // ---------------------------------------------------------------------------------------------------
 
-static void EmitBand(PlayState* play, void* bandTex[2], float heightOffs) {
+static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2], float heightOffs) {
     OPEN_DISPS(play->state.gfxCtx);
     // The band follows the camera; WW sinks it slightly as the camera rises (vrbox parallax factor 0.09).
     // heightOffs is the user's Band Height slider — terrain like the Hyrule Field hill puts the visible
@@ -481,14 +493,18 @@ static void EmitBand(PlayState* play, void* bandTex[2], float heightOffs) {
     for (int r = 0; r < 3; r++) {
         const BandRing* ring = &kBandRings[r];
         gDPPipeSync(POLY_OPA_DISP++);
-        gDPLoadTextureTile(POLY_OPA_DISP++, bandTex[ring->tex], G_IM_FMT_RGBA, G_IM_SIZ_32b, 256, 64, 0, 0, 255, 63, 0,
-                           G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, 8, 6, G_TX_NOLOD, G_TX_NOLOD);
+        const WWCloudTexture* bt = &bandTex[ring->tex];
+        int mS = Log2i(bt->width), mT = Log2i(bt->height);
+        gDPLoadTextureTile(POLY_OPA_DISP++, bt->data, G_IM_FMT_RGBA, G_IM_SIZ_32b, bt->width, bt->height, 0, 0,
+                           bt->width - 1, bt->height - 1, 0, G_TX_WRAP | G_TX_NOMIRROR, G_TX_WRAP | G_TX_NOMIRROR, mS,
+                           mT, G_TX_NOLOD, G_TX_NOLOD);
         // Second sampler on tile 1: same strip (tmem 0), offset by WW's initial +0.2 U plus the wind
         // scroll. Fast3D subtracts a tile's uls from the vertex U, hence the negation.
-        gDPSetTile(POLY_OPA_DISP++, G_IM_FMT_RGBA, G_IM_SIZ_32b, 64, 0, G_TX_RENDERTILE + 1, 0,
-                   G_TX_WRAP | G_TX_NOMIRROR, 6, G_TX_NOLOD, G_TX_WRAP | G_TX_NOMIRROR, 8, G_TX_NOLOD);
-        u16 uls = (u16)(WrapFrac(-(0.2f + sBandScroll[r])) * kBandTexW * 4.0f);
-        gDPSetTileSize(POLY_OPA_DISP++, G_TX_RENDERTILE + 1, uls, 0, uls + (255 << 2), 63 << 2);
+        gDPSetTile(POLY_OPA_DISP++, G_IM_FMT_RGBA, G_IM_SIZ_32b, ((bt->width * 2) + 7) >> 3, 0, G_TX_RENDERTILE + 1, 0,
+                   G_TX_WRAP | G_TX_NOMIRROR, mT, G_TX_NOLOD, G_TX_WRAP | G_TX_NOMIRROR, mS, G_TX_NOLOD);
+        u16 uls = (u16)(WrapFrac(-(0.2f + sBandScroll[r])) * bt->width * 4.0f);
+        gDPSetTileSize(POLY_OPA_DISP++, G_TX_RENDERTILE + 1, uls, 0, uls + ((bt->width - 1) << 2),
+                       (bt->height - 1) << 2);
 
         int verts = kBandSegs * 6;
         for (int first = 0; first < verts; first += 30) {
@@ -507,7 +523,7 @@ static void EmitBand(PlayState* play, void* bandTex[2], float heightOffs) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-static void EmitClouds(PlayState* play, int clouds, void* texData[kLayers]) {
+static void EmitClouds(PlayState* play, int clouds, const WWCloudTexture texData[kLayers]) {
     OPEN_DISPS(play->state.gfxCtx);
     Matrix_Translate(play->view.eye.x, play->view.eye.y, play->view.eye.z, MTXMODE_NEW);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
@@ -540,8 +556,10 @@ static void EmitClouds(PlayState* play, int clouds, void* texData[kLayers]) {
     // WW draws the layers back-to-front (texture 3, then 2, then 1 on top).
     for (int textureIdx = kLayers - 1; textureIdx >= 0; textureIdx--) {
         gDPPipeSync(POLY_OPA_DISP++);
-        gDPLoadTextureBlock(POLY_OPA_DISP++, texData[textureIdx], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
-                            G_TX_CLAMP | G_TX_NOMIRROR, G_TX_CLAMP | G_TX_NOMIRROR, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
+        const WWCloudTexture* st = &texData[textureIdx];
+        gDPLoadTextureTile(POLY_OPA_DISP++, st->data, G_IM_FMT_RGBA, G_IM_SIZ_32b, st->width, st->height, 0, 0,
+                           st->width - 1, st->height - 1, 0, G_TX_CLAMP | G_TX_NOMIRROR, G_TX_CLAMP | G_TX_NOMIRROR,
+                           Log2i(st->width), Log2i(st->height), G_TX_NOLOD, G_TX_NOLOD);
 
         int verts = clouds * 6;
         for (int first = 0; first < verts; first += 30) {
@@ -578,10 +596,16 @@ static void CloudTints(u8 edge[3], u8 center[3]) {
 // Per-frame entry point (OnPlayDrawSkyClouds handler)
 // ---------------------------------------------------------------------------------------------------
 
-// Fetch a decoded texture from the user's ww_clouds.o2r; null if the mod isn't installed.
-static void* FetchTex(const char* name) {
+// Fetch a texture override from any installed mods o2r (a WW-themed texture pack, or the user's own
+// extraction) by resource path; fall back to the built-in procedural look-alike. Replacements should be
+// power-of-two RGBA32, up to 512 wide/tall (vertex texel coords are S10.5).
+static WWCloudTexture FetchTexOr(const char* name, WWCloudTexture fallback) {
     auto tex = std::static_pointer_cast<Fast::Texture>(ResourceMgr_GetResourceByNameHandlingMQ(name));
-    return (tex != nullptr) ? tex->ImageData : nullptr;
+    if (tex != nullptr && tex->ImageData != nullptr && tex->Width > 0 && tex->Width <= 512 && tex->Height > 0 &&
+        tex->Height <= 512) {
+        return { tex->ImageData, (int)tex->Width, (int)tex->Height };
+    }
+    return fallback;
 }
 
 static void DrawClouds(void* playPtr) {
@@ -601,22 +625,16 @@ static void DrawClouds(void* playPtr) {
 
     // Horizon band first, so the drifting clouds paint over it.
     if (CVarGetInteger(CVAR_CLOUDS_HORIZON, 1)) {
-        void* bandTex[2] = { FetchTex(kBandRes[0]), FetchTex(kBandRes[1]) };
-        if (bandTex[0] != nullptr && bandTex[1] != nullptr) {
-            UpdateBandScroll(play, dt, drift);
-            BuildBand(opacity, edge);
-            EmitBand(play, bandTex, CVarGetFloat(CVAR_CLOUDS_HORIZON_HEIGHT, 0.0f));
-        }
+        WWCloudTexture bandTex[2] = { FetchTexOr(kBandRes[0], WWCloudTex_Band(0)),
+                                      FetchTexOr(kBandRes[1], WWCloudTex_Band(1)) };
+        UpdateBandScroll(play, dt, drift);
+        BuildBand(opacity, edge, bandTex);
+        EmitBand(play, bandTex, CVarGetFloat(CVAR_CLOUDS_HORIZON_HEIGHT, 0.0f));
     }
 
-    void* texData[kLayers];
-    bool havePuffy = true;
+    WWCloudTexture texData[kLayers];
     for (int t = 0; t < kLayers; t++) {
-        texData[t] = FetchTex(kCloudRes[t]);
-        havePuffy = havePuffy && texData[t] != nullptr;
-    }
-    if (!havePuffy) {
-        return; // no-op unless all three WW cloud sprites are present (ww_clouds.o2r in mods/)
+        texData[t] = FetchTexOr(kCloudRes[t], WWCloudTex_Sprite(t));
     }
 
     if (!sInit) {
@@ -632,7 +650,7 @@ static void DrawClouds(void* playPtr) {
 
     UpdateClouds(play, dt, count, drift);
 
-    int clouds = BuildClouds(opacity, edge, center);
+    int clouds = BuildClouds(opacity, edge, center, texData);
     if (clouds > 0) {
         EmitClouds(play, clouds, texData);
     }
