@@ -574,6 +574,29 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .Max(5.0f)
                      .DefaultValue(1.0f));
 
+    AddWidget(path, "Wind Wisps", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
+    AddWidget(path, "Enable Wind Wisps", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSky)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Wind Waker's white wind streaks curling through the sky on the wind — occasionally pulling "
+            "a full loop-de-loop. Their number follows the wind's strength."));
+    AddWidget(path, "Wisp Amount", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Amount"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"), 0) ||
+                            !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled"), 1);
+        })
+        .Options(FloatSliderOptions()
+                     .Tooltip("How many wisps ride the wind. 1x is Wind Waker's own count; noclip.website "
+                              "renders about 4x for a denser sky.")
+                     .Format("%.1fx")
+                     .Min(0.5f)
+                     .Max(10.0f)
+                     .DefaultValue(1.5f));
+
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Split-Screen Compare", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSky.SplitDebug"))
