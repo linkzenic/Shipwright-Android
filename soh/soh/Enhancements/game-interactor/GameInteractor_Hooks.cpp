@@ -253,6 +253,10 @@ void GameInteractor_ExecuteOnPlayDrawWorldLights(void* play) {
     GameInteractor::Instance->ExecuteHooks<GameInteractor::OnPlayDrawWorldLights>(play);
 }
 
+void GameInteractor_ExecuteOnPlayDrawSkyGradient(void* play) {
+    GameInteractor::Instance->ExecuteHooks<GameInteractor::OnPlayDrawSkyGradient>(play);
+}
+
 void GameInteractor_ExecuteOnPlayDrawSky(void* play) {
     GameInteractor::Instance->ExecuteHooks<GameInteractor::OnPlayDrawSky>(play);
 }
