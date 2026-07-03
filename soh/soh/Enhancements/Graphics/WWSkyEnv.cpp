@@ -143,23 +143,27 @@ static const SkySlot kSeaPalette[2][6] = {
       { { 21, 35, 33 }, { 33, 46, 42 }, { 15, 45, 46 }, { 50, 55, 56 }, { 45, 53, 59 } } },
 };
 
-// l_time_attribute, converted from WW's 0..360-degree day (15°/hour, 0 = midnight) to a 0..1 day
-// fraction — the same convention as OoT's dayTime/0x10000, so it maps directly onto skyboxTime.
+// WW's six sea-stage colours (dawn, morning, noon, evening, dusk, night) staged onto Ocarina of Time's
+// OWN day cycle rather than Wind Waker's. The sun position and the HUD clock run off gSaveContext.dayTime,
+// whose day/night boundaries live in D_8011FC1C (z_kankyo.c): dawn 04:00 (0x2AAC), full day 08:00-16:00
+// (0x5556-0xAAAB), sunset 16:00 (0xAAAB), night 19:00 (0xCAAC). WW's native l_time_attribute schedule peaks
+// and sets ~2h later, which desynced the sky from OoT's sun/clock — so we keep WW's colours but re-phase the
+// breakpoints onto OoT's boundaries. dayFrac is the same convention as dayTime/0x10000 (0 = midnight).
 typedef struct {
     float t0, t1;
     uint8_t slotA, slotB;
 } SkySchedule;
 
 static const SkySchedule kSchedule[] = {
-    { 0.0000f, 0.2500f, 5, 5 }, // 00:00-06:00 night
-    { 0.2500f, 0.2917f, 5, 0 }, // 06:00-07:00 night -> dawn
-    { 0.2917f, 0.3333f, 0, 1 }, // 07:00-08:00 dawn -> morning
-    { 0.3333f, 0.4167f, 1, 2 }, // 08:00-10:00 morning -> noon
-    { 0.4167f, 0.7500f, 2, 2 }, // 10:00-18:00 noon
-    { 0.7500f, 0.7917f, 2, 3 }, // 18:00-19:00 noon -> evening
-    { 0.7917f, 0.8333f, 3, 4 }, // 19:00-20:00 evening -> dusk
-    { 0.8333f, 0.8750f, 4, 5 }, // 20:00-21:00 dusk -> night
-    { 0.8750f, 1.0000f, 5, 5 }, // 21:00-24:00 night
+    { 0.0000f, 0.1667f, 5, 5 }, // 00:00-04:00 night
+    { 0.1667f, 0.2500f, 5, 0 }, // 04:00-06:00 night -> dawn
+    { 0.2500f, 0.2917f, 0, 1 }, // 06:00-07:00 dawn -> morning
+    { 0.2917f, 0.3333f, 1, 2 }, // 07:00-08:00 morning -> noon
+    { 0.3333f, 0.6667f, 2, 2 }, // 08:00-16:00 noon (matches OoT's full-day plateau, 0x5556-0xAAAB)
+    { 0.6667f, 0.7083f, 2, 3 }, // 16:00-17:00 noon -> evening (OoT day->sunset, 0xAAAB-0xB556)
+    { 0.7083f, 0.7500f, 3, 4 }, // 17:00-18:00 evening -> dusk
+    { 0.7500f, 0.7917f, 4, 5 }, // 18:00-19:00 dusk -> night (night by 0xCAAC, matching OoT's nightFlag)
+    { 0.7917f, 1.0000f, 5, 5 }, // 19:00-24:00 night
 };
 
 static uint8_t LerpU8(uint8_t a, uint8_t b, float t) {
