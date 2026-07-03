@@ -6,9 +6,10 @@
 // per cloud by the WW "cloudRep" table) projected onto the dome — the same "follow the camera, no parallax"
 // trick as the star field (see WWNightSky.cpp), just textured quads instead of points.
 //
-// The simulation constants (velocities, falloff curves, alpha ease, bounce) are noclip's vrkumo_move
-// verbatim; the only OoT adaptations are the frame-rate scale (WW sim runs at 30 fps, this hook at 20),
-// the wind source (OoT windDirection/windSpeed mapped into WW's 0.3/0.6/0.9 wind-power bracket), and the
+// The simulation constants (velocities, falloff curves, alpha ease, bounce) are noclip's vrkumo_move;
+// the only OoT adaptations are the frame-rate scale (WW sim runs at 30 fps, this hook at 20 — including
+// the per-frame velocity caps noclip leaves unscaled, so wall-clock speeds match the GameCube), the wind
+// source (OoT windDirection/windSpeed mapped into WW's 0.3/0.6/0.9 wind-power bracket), and the
 // day/night tint stand-in for WW's vrKumoCol/vrKumoCenterCol.
 //
 // No Nintendo assets are used: the built-in textures are original Wind Waker-STYLE look-alikes,
@@ -47,7 +48,7 @@ struct WWCloudTexture {
 
 static constexpr float kDefaultOpacity = 0.85f;
 static constexpr float kDefaultCoverage = 0.3f;   // → active cloud count (WW: 50 + 50*strength)
-static constexpr float kDefaultDriftSpeed = 2.0f;
+static constexpr float kDefaultDriftSpeed = 1.0f; // 1.0 = Wind Waker's own wind-driven speed
 
 #define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
 #define CVAR_CLOUDS_ENABLED CVAR_ENHANCEMENT("Graphics.WWClouds.Enabled")
@@ -236,7 +237,9 @@ static void UpdateClouds(PlayState* play, float dt, int count, float driftTrim) 
             vel = strengthVel * k->distFalloff * k->speed * dt;
         } else {
             // Invisible clouds rush (falloff-independent) so they cross the rim and respawn upwind.
-            vel = strengthVel + (i / 1000.0f) * strengthVel * dt;
+            // noclip scales only the i-term by dt (its constant term is per-call); scale the whole
+            // rush instead so the wall-clock crossing speed matches the GameCube's 30 fps sim.
+            vel = (strengthVel + (i / 1000.0f) * strengthVel) * dt;
         }
         k->posX += wind.x * vel;
         k->posZ += wind.z * vel;
@@ -266,7 +269,9 @@ static void UpdateClouds(PlayState* play, float dt, int count, float driftTrim) 
         float overhead = Saturate((0.98f - centerCubic) / (0.98f - 0.88f));
         alphaTarget *= overhead;
 
-        k->alpha = AddCalc(k->alpha, alphaTarget, 0.2f * dt, alphaMaxVel, 0.01f);
+        // The min/max velocities are per-frame caps in WW (and per-call in noclip); scale them by dt
+        // too, or every capped fade (the whole fade-in, retiring clouds) runs 1.5x slower than WW.
+        k->alpha = AddCalc(k->alpha, alphaTarget, 0.2f * dt, alphaMaxVel * dt, 0.01f * dt);
     }
     sBounceTimer += 200.0f * dt;
 }
@@ -458,6 +463,10 @@ static void BuildBand(float opacity, const u8 tint[3], const WWCloudTexture band
 
 static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2]) {
     OPEN_DISPS(play->state.gfxCtx);
+    // Camera-epoch interpolation child, like the vanilla skybox (SkyboxDraw_Draw): the camera-follow
+    // translate below interpolates between 20Hz frames but SNAPS on camera cuts — under the default
+    // OPEN_DISPS child key it would lerp across the cut and the sky visibly slides for a frame.
+    FrameInterpolation_RecordOpenChild(NULL, FrameInterpolation_GetCameraEpoch());
     // The band follows the camera horizontally; vertically it sits on the shared sky horizon
     // (WWSkyEnv_HorizonY: camera height x parallax + the Horizon Height slider), the same line the
     // gradient's haze/usoUmi boundary uses — WW moves the whole vrbox as one unit.
@@ -512,11 +521,13 @@ static void EmitBand(PlayState* play, const WWCloudTexture bandTex[2]) {
     }
 
     gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
+    FrameInterpolation_RecordCloseChild();
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
 static void EmitClouds(PlayState* play, int clouds, const WWCloudTexture texData[kLayers]) {
     OPEN_DISPS(play->state.gfxCtx);
+    FrameInterpolation_RecordOpenChild(NULL, FrameInterpolation_GetCameraEpoch()); // see EmitBand
     Matrix_Translate(play->view.eye.x, play->view.eye.y, play->view.eye.z, MTXMODE_NEW);
     gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
     gDPPipeSync(POLY_OPA_DISP++);
@@ -567,6 +578,7 @@ static void EmitClouds(PlayState* play, int clouds, const WWCloudTexture texData
     }
 
     gSPTexture(POLY_OPA_DISP++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_OFF);
+    FrameInterpolation_RecordCloseChild();
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
@@ -587,12 +599,14 @@ static void CloudTints(void* play, const WWSkyWeather* weather, u8 edge[3], u8 c
 
 // Resolve a cloud texture by resource path. The built-ins live in soh.o2r (packed from
 // soh/assets/custom/textures/wind-waker/clouds/); a mods o2r providing the same path overrides them —
-// that is the texture-pack contract. Replacements should be power-of-two RGBA32, up to 512 wide/tall
-// (vertex texel coords are S10.5). Returns data = null if missing/unusable.
-static WWCloudTexture FetchTex(const char* name) {
+// that is the texture-pack contract. Replacements should be power-of-two RGBA32, up to 512 tall and
+// maxWidth wide: 512 for the cloud sprites, but 256 for the band strips — the 8-wrap band ring spans
+// up to 2×width texels per quad, and past 256 that exceeds the S10.5 vertex texel range (1023.97).
+// Returns data = null if missing/unusable.
+static WWCloudTexture FetchTex(const char* name, int maxWidth) {
     auto tex = std::static_pointer_cast<Fast::Texture>(ResourceMgr_GetResourceByNameHandlingMQ(name));
-    if (tex != nullptr && tex->ImageData != nullptr && tex->Width > 0 && tex->Width <= 512 && tex->Height > 0 &&
-        tex->Height <= 512) {
+    if (tex != nullptr && tex->ImageData != nullptr && tex->Width > 0 && (int)tex->Width <= maxWidth &&
+        tex->Height > 0 && tex->Height <= 512) {
         return { tex->ImageData, (int)tex->Width, (int)tex->Height };
     }
     return { nullptr, 0, 0 };
@@ -623,7 +637,7 @@ static void DrawClouds(void* playPtr) {
 
     // Horizon band first, so the drifting clouds paint over it.
     {
-        WWCloudTexture bandTex[2] = { FetchTex(kBandRes[0]), FetchTex(kBandRes[1]) };
+        WWCloudTexture bandTex[2] = { FetchTex(kBandRes[0], 256), FetchTex(kBandRes[1], 256) };
         if (bandTex[0].data != nullptr && bandTex[1].data != nullptr) {
             UpdateBandScroll(play, dt, drift);
             BuildBand(opacity, edge, bandTex);
@@ -633,7 +647,7 @@ static void DrawClouds(void* playPtr) {
 
     WWCloudTexture texData[kLayers];
     for (int t = 0; t < kLayers; t++) {
-        texData[t] = FetchTex(kCloudRes[t]);
+        texData[t] = FetchTex(kCloudRes[t], 512);
         if (texData[t].data == nullptr) {
             return; // sprites missing (stale soh.o2r?) — the band above can still draw
         }
