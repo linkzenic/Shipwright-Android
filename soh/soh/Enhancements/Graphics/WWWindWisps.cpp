@@ -51,14 +51,19 @@ static constexpr float kS2Rad = kTau / 65536.0f;
 
 static constexpr int kMaxWisps = 50; // noclip's slot count (WW hardware uses 30)
 static constexpr int kTrailLen = 16; // position history samples (~0.8s of flight at 20 fps)
-static constexpr float kHalfWidth = 40.0f;
+// Cross-section brightness profile. WW's trail is a textured particle: a solid bright core with a
+// quick falloff at the rim. A 3-vert ribbon (transparent edge - bright centre - transparent edge) is a
+// linear gradient across the whole width, maximally bright only along an infinitely thin centreline —
+// smudgy by construction. Instead, hold full alpha across a core and ramp to zero at a narrower edge.
+static constexpr float kCoreHalfWidth = 12.0f;
+static constexpr float kEdgeHalfWidth = 24.0f;
 
 // One frozen trail sample — a stand-in for one of WW's trail particles. Everything is fixed at birth
 // (position, ribbon side vector, alpha); only age-based fading changes afterwards. Recomputing any of
 // these per frame makes the streak visibly squirm.
 typedef struct {
     Vec3f pos;
-    Vec3f side; // half-width offset for the ribbon cross-section, frozen at emission
+    Vec3f side; // unit cross-section direction, frozen at emission
     float alpha;
 } TrailPt;
 
@@ -84,13 +89,13 @@ typedef struct {
 static WindEff sWisps[kMaxWisps];
 static u32 sFrameCounter = 0;
 
-// Ribbon vertices, one region per wisp: per trail sample a 3-vert cross-section (left edge, bright
-// centre, right edge). One region PER WISP is load-bearing: gSPVertex records a pointer that Fast3D
+// Ribbon vertices, one region per wisp: per trail sample a 4-vert cross-section (transparent edge,
+// solid core pair, transparent edge). One region PER WISP is load-bearing: gSPVertex records a pointer that Fast3D
 // only dereferences when the XLU list executes at the end of the frame, after every wisp has been
 // emitted. With a single shared scratch buffer, every ribbon rendered the last-emitted wisp's
 // geometry and vertex alpha — all trails wobbled in lockstep and vanished together whenever the
 // last-drawn wisp changed.
-static Vtx sWispVtx[kMaxWisps][kTrailLen * 3];
+static Vtx sWispVtx[kMaxWisps][kTrailLen * 4];
 
 // ---------------------------------------------------------------------------------------------------
 // Small helpers (local RNG; faithful cLib_addCalc / cLib_addCalcAngleRad ports)
@@ -157,12 +162,13 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
     if (fl < 0.001f) {
         fl = 1.0f;
     }
-    // WW lifts the spawn +1000; noclip additionally triples the vertical scatter (±6000), placing its
-    // wind lines well up in the sky. Our scatter stays at WW's ±2000 (OoT's view distance is small),
-    // so take the height from a bigger lift instead.
-    e->basePos.x = play->view.eye.x + fwd.x / fl * 4000.0f;
-    e->basePos.y = play->view.eye.y + fwd.y / fl * 4000.0f + 1800.0f;
-    e->basePos.z = play->view.eye.z + fwd.z / fl * 4000.0f;
+    // WW spawns 4000 ahead inside a ~100k view distance; inside OoT's 12.8k bubble that reads close
+    // and fat, so push the base toward the outer half — smaller on screen and slower angular motion is
+    // most of what "vast" looks like. The lift (WW uses +1000) scales up with the distance to keep the
+    // wisps at the same elevation in the view, well up in the sky.
+    e->basePos.x = play->view.eye.x + fwd.x / fl * 6000.0f;
+    e->basePos.y = play->view.eye.y + fwd.y / fl * 6000.0f + 2200.0f;
+    e->basePos.z = play->view.eye.z + fwd.z / fl * 6000.0f;
 
     // Scatter around the base, then push upwind so the wisp travels back across the view. WW scatters
     // ±2000 and noclip widens that x5 (±10000 XZ / ±6000 Y) against a ~100k view distance; OoT clips
@@ -179,7 +185,7 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
         float bz = e->basePos.z - play->view.eye.z;
         float baseDist = sqrtf(bx * bx + by * by + bz * bz);
         float offLen = sqrtf(e->animPos.x * e->animPos.x + e->animPos.y * e->animPos.y + e->animPos.z * e->animPos.z);
-        float maxOff = 9500.0f - baseDist;
+        float maxOff = 10500.0f - baseDist;
         if (maxOff < 0.0f) {
             maxOff = 0.0f;
         }
@@ -313,9 +319,9 @@ static void UpdateWisps(PlayState* play, int count, float dt, float mdt) {
                            along.x * toEye.y - along.y * toEye.x };
             float sl = sqrtf(side.x * side.x + side.y * side.y + side.z * side.z);
             if (sl > 0.001f) {
-                side.x *= kHalfWidth / sl;
-                side.y *= kHalfWidth / sl;
-                side.z *= kHalfWidth / sl;
+                side.x /= sl;
+                side.y /= sl;
+                side.z /= sl;
                 e->lastSide = side;
             } else {
                 side = e->lastSide;
@@ -370,9 +376,10 @@ static void WriteWispVtx(Vtx* v, float x, float y, float z, const u8 col[3], u8 
     v->v.cn[3] = alpha;
 }
 
-// Build and emit one wisp's ribbon from its frozen trail particles: a 3-vert cross-section per
-// sample (transparent edges, bright centre). Positions and side vectors never change after emission —
-// only age-based alpha/width fading — so the streak is world-anchored like WW's particle trail.
+// Build and emit one wisp's ribbon from its frozen trail particles: a 4-vert cross-section per
+// sample (transparent edge, solid bright core, transparent edge). Positions and side vectors never
+// change after emission — only age-based alpha/width fading — so the streak is world-anchored like
+// WW's particle trail.
 static void EmitWisp(PlayState* play, const WindEff* e, int slot, const u8 col[3], float alphaScale) {
     int n = e->trailCount;
     if (n < 2) {
@@ -398,25 +405,29 @@ static void EmitWisp(PlayState* play, const WindEff* e, int slot, const u8 col[3
     for (int k = 0; k < n; k++) {
         const TrailPt* pt = &e->trail[(tail + k) % kTrailLen];
         float age = (float)(n - 1 - k) / (kTrailLen - 1); // 0 = just emitted, 1 = oldest possible
-        float fade = 1.0f - age;                          // linear age fade, like a particle's life
-        float widthScale = 1.0f - 0.6f * age;             // tail thins as it ages
-        float tipSoft = 1.0f - 0.6f * Sat((0.08f - age) / 0.08f); // soften the newest ~2 samples
+        // Stretched-oval silhouette: WW's streak is fattest mid-trail and pinches to a point at both
+        // ends (a head-widest taper reads as a fairy with a glowing head instead). Elliptical width,
+        // uniform alpha along the trail — the tips vanish by geometry, which keeps the streak crisp
+        // and means the oldest sample expiring from the ring buffer never pops visibly.
+        float widthScale = sqrtf(4.0f * age * (1.0f - age));
 
-        u8 a = (u8)(255.0f * alphaScale * pt->alpha * fade * tipSoft);
-        Vec3f sd = { pt->side.x * widthScale, pt->side.y * widthScale, pt->side.z * widthScale };
-        Vtx* row = &vtx[k * 3];
-        WriteWispVtx(&row[0], pt->pos.x - origin.x - sd.x, pt->pos.y - origin.y - sd.y, pt->pos.z - origin.z - sd.z,
-                     col, 0);
-        WriteWispVtx(&row[1], pt->pos.x - origin.x, pt->pos.y - origin.y, pt->pos.z - origin.z, col, a);
-        WriteWispVtx(&row[2], pt->pos.x - origin.x + sd.x, pt->pos.y - origin.y + sd.y, pt->pos.z - origin.z + sd.z,
-                     col, 0);
+        u8 a = (u8)(255.0f * alphaScale * pt->alpha);
+        float coreW = kCoreHalfWidth * widthScale;
+        float edgeW = kEdgeHalfWidth * widthScale;
+        float px = pt->pos.x - origin.x, py = pt->pos.y - origin.y, pz = pt->pos.z - origin.z;
+        Vtx* row = &vtx[k * 4];
+        WriteWispVtx(&row[0], px - pt->side.x * edgeW, py - pt->side.y * edgeW, pz - pt->side.z * edgeW, col, 0);
+        WriteWispVtx(&row[1], px - pt->side.x * coreW, py - pt->side.y * coreW, pz - pt->side.z * coreW, col, a);
+        WriteWispVtx(&row[2], px + pt->side.x * coreW, py + pt->side.y * coreW, pz + pt->side.z * coreW, col, a);
+        WriteWispVtx(&row[3], px + pt->side.x * edgeW, py + pt->side.y * edgeW, pz + pt->side.z * edgeW, col, 0);
     }
 
-    // Emit per segment (6 verts = two cross-sections, 4 triangles).
+    // Emit per segment (8 verts = two cross-sections, 6 triangles).
     for (int k = 0; k + 1 < n; k++) {
-        gSPVertex(POLY_XLU_DISP++, (uintptr_t)&vtx[k * 3], 6, 0);
-        gSP2Triangles(POLY_XLU_DISP++, 0, 1, 4, 0, 0, 4, 3, 0);
-        gSP2Triangles(POLY_XLU_DISP++, 1, 2, 5, 0, 1, 5, 4, 0);
+        gSPVertex(POLY_XLU_DISP++, (uintptr_t)&vtx[k * 4], 8, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 0, 1, 5, 0, 0, 5, 4, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 1, 2, 6, 0, 1, 6, 5, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 2, 3, 7, 0, 2, 7, 6, 0);
     }
 
     FrameInterpolation_RecordCloseChild();
