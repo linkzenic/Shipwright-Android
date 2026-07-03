@@ -67,6 +67,7 @@ typedef struct {
     int state; // 0 idle, 1 fading in / cruising, 2 fading out
     Vec3f basePos;
     Vec3f animPos;
+    float respawnTimer; // idle frames left before this slot may spawn again
     float stateTimer;
     float alpha;
     float swerveAnimCounter;
@@ -83,8 +84,13 @@ typedef struct {
 static WindEff sWisps[kMaxWisps];
 static u32 sFrameCounter = 0;
 
-// Ribbon vertices: per trail sample a 3-vert cross-section (left edge, bright centre, right edge).
-static Vtx sWispVtx[kTrailLen * 3];
+// Ribbon vertices, one region per wisp: per trail sample a 3-vert cross-section (left edge, bright
+// centre, right edge). One region PER WISP is load-bearing: gSPVertex records a pointer that Fast3D
+// only dereferences when the XLU list executes at the end of the frame, after every wisp has been
+// emitted. With a single shared scratch buffer, every ribbon rendered the last-emitted wisp's
+// geometry and vertex alpha — all trails wobbled in lockstep and vanished together whenever the
+// last-drawn wisp changed.
+static Vtx sWispVtx[kMaxWisps][kTrailLen * 3];
 
 // ---------------------------------------------------------------------------------------------------
 // Small helpers (local RNG; faithful cLib_addCalc / cLib_addCalcAngleRad ports)
@@ -158,12 +164,32 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
     e->basePos.y = play->view.eye.y + fwd.y / fl * 4000.0f + 1800.0f;
     e->basePos.z = play->view.eye.z + fwd.z / fl * 4000.0f;
 
-    // Scatter around the base (WW's original ±2000 — noclip widens this x5, but its view distance is
-    // ~100k where OoT clips at 12.8k), then push upwind so the wisp travels back across the view.
-    float upwind = 2500.0f + RndF(2500.0f);
-    e->animPos.x = RndFX(2000.0f) - windX * upwind;
-    e->animPos.y = RndFX(2000.0f);
-    e->animPos.z = RndFX(2000.0f) - windZ * upwind;
+    // Scatter around the base, then push upwind so the wisp travels back across the view. WW scatters
+    // ±2000 and noclip widens that x5 (±10000 XZ / ±6000 Y) against a ~100k view distance; OoT clips
+    // at 12.8k, so sit in between — wide enough that wisps don't ride in as one clump.
+    float upwind = 2000.0f + RndF(2000.0f);
+    e->animPos.x = RndFX(4000.0f) - windX * upwind;
+    e->animPos.y = RndFX(2400.0f);
+    e->animPos.z = RndFX(4000.0f) - windZ * upwind;
+    // Pull an outlier scatter back inside the far-recycle radius (11500, checked against the eye) so a
+    // fresh wisp never starts its life already being faded back out.
+    {
+        float bx = e->basePos.x - play->view.eye.x;
+        float by = e->basePos.y - play->view.eye.y;
+        float bz = e->basePos.z - play->view.eye.z;
+        float baseDist = sqrtf(bx * bx + by * by + bz * bz);
+        float offLen = sqrtf(e->animPos.x * e->animPos.x + e->animPos.y * e->animPos.y + e->animPos.z * e->animPos.z);
+        float maxOff = 9500.0f - baseDist;
+        if (maxOff < 0.0f) {
+            maxOff = 0.0f;
+        }
+        if (offLen > maxOff && offLen > 0.001f) {
+            float s = maxOff / offLen;
+            e->animPos.x *= s;
+            e->animPos.y *= s;
+            e->animPos.z *= s;
+        }
+    }
     // Stand-in for WW's ground check: never start a wisp below the camera's eye line, where OoT's
     // terrain would z-test it into invisibility.
     float minY = play->view.eye.y + 250.0f;
@@ -191,12 +217,27 @@ static void UpdateWisps(PlayState* play, int count, float dt, float mdt) {
 
     sFrameCounter++;
 
+    // First activation: spread the initial spawns across a whole lifecycle so the population starts
+    // decorrelated instead of arriving as one wave.
+    static bool sSeeded = false;
+    if (!sSeeded) {
+        for (int j = 0; j < kMaxWisps; j++) {
+            sWisps[j].respawnTimer = RndF(200.0f);
+        }
+        sSeeded = true;
+    }
+
     for (int i = 0; i < kMaxWisps; i++) {
         WindEff* e = &sWisps[i];
 
         if (e->state == 0) {
-            // Round-robin stagger so the wisps don't all spawn at once.
-            if (i < count && ((sFrameCounter / 4) % count) == (u32)i) {
+            // Random respawn gap rather than WW's round-robin stagger. The fade lifecycle is nearly
+            // deterministic (~170 frames), so any fixed spawn cadence with a shorter full cycle
+            // phase-locks the population into spawn-together/die-together waves (WW and noclip only
+            // avoid this because their cycle, 8 frames x 40 slots, is longer than the lifetime).
+            // Fresh jitter every generation keeps the slots decorrelated forever.
+            e->respawnTimer -= dt;
+            if (i < count && e->respawnTimer <= 0.0f) {
                 SpawnWisp(play, e, windX, windZ);
             }
             continue;
@@ -238,11 +279,17 @@ static void UpdateWisps(PlayState* play, int count, float dt, float mdt) {
         Vec3f head = { e->basePos.x + e->animPos.x, e->basePos.y + e->animPos.y, e->basePos.z + e->animPos.z };
         {
             // OoT's far plane is 12800: a wisp beyond it is invisible flight time (WW's view distance
-            // is ~8x larger, so it never recycles). Free the slot so a fresh wisp spawns in view.
+            // is ~8x larger, so it never recycles). Force the fade-out so the slot frees soon — but
+            // never kill on the spot: an instant kill pops the whole trail off screen in one frame,
+            // and a fast camera can sweep several wisps past the radius together.
             float ddx = head.x - play->view.eye.x, ddy = head.y - play->view.eye.y, ddz = head.z - play->view.eye.z;
             if (ddx * ddx + ddy * ddy + ddz * ddz > 11500.0f * 11500.0f) {
-                e->state = 0;
-                continue;
+                if (e->state == 1) {
+                    e->state = 2;
+                }
+                if (e->stateTimer > 0.45f) {
+                    e->stateTimer = 0.45f; // below the 0.5 threshold, so the alpha ramp-down starts now
+                }
             }
         }
         {
@@ -300,6 +347,7 @@ static void UpdateWisps(PlayState* play, int count, float dt, float mdt) {
             }
             if (e->stateTimer <= 0.0f) {
                 e->state = 0;
+                e->respawnTimer = RndF(60.0f);
             }
         }
     }
@@ -325,11 +373,12 @@ static void WriteWispVtx(Vtx* v, float x, float y, float z, const u8 col[3], u8 
 // Build and emit one wisp's ribbon from its frozen trail particles: a 3-vert cross-section per
 // sample (transparent edges, bright centre). Positions and side vectors never change after emission —
 // only age-based alpha/width fading — so the streak is world-anchored like WW's particle trail.
-static void EmitWisp(PlayState* play, const WindEff* e, const u8 col[3], float alphaScale) {
+static void EmitWisp(PlayState* play, const WindEff* e, int slot, const u8 col[3], float alphaScale) {
     int n = e->trailCount;
     if (n < 2) {
         return;
     }
+    Vtx* vtx = sWispVtx[slot];
     int tail = (e->trailNext - n + kTrailLen) % kTrailLen;
     Vec3f origin = e->trail[tail].pos; // any fixed reference works; verts are exact world positions
 
@@ -355,7 +404,7 @@ static void EmitWisp(PlayState* play, const WindEff* e, const u8 col[3], float a
 
         u8 a = (u8)(255.0f * alphaScale * pt->alpha * fade * tipSoft);
         Vec3f sd = { pt->side.x * widthScale, pt->side.y * widthScale, pt->side.z * widthScale };
-        Vtx* row = &sWispVtx[k * 3];
+        Vtx* row = &vtx[k * 3];
         WriteWispVtx(&row[0], pt->pos.x - origin.x - sd.x, pt->pos.y - origin.y - sd.y, pt->pos.z - origin.z - sd.z,
                      col, 0);
         WriteWispVtx(&row[1], pt->pos.x - origin.x, pt->pos.y - origin.y, pt->pos.z - origin.z, col, a);
@@ -365,7 +414,7 @@ static void EmitWisp(PlayState* play, const WindEff* e, const u8 col[3], float a
 
     // Emit per segment (6 verts = two cross-sections, 4 triangles).
     for (int k = 0; k + 1 < n; k++) {
-        gSPVertex(POLY_XLU_DISP++, (uintptr_t)&sWispVtx[k * 3], 6, 0);
+        gSPVertex(POLY_XLU_DISP++, (uintptr_t)&vtx[k * 3], 6, 0);
         gSP2Triangles(POLY_XLU_DISP++, 0, 1, 4, 0, 0, 4, 3, 0);
         gSP2Triangles(POLY_XLU_DISP++, 1, 2, 5, 0, 1, 5, 4, 0);
     }
@@ -451,7 +500,7 @@ static void DrawWindWisps(void* playPtr) {
         if (alphaFade < 0.5f) {
             alphaFade = 0.5f;
         }
-        EmitWisp(play, e, colors.kumoCenter, alphaFade * e->alpha);
+        EmitWisp(play, e, i, colors.kumoCenter, alphaFade * e->alpha);
     }
 }
 
