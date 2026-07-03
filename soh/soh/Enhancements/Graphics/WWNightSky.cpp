@@ -127,12 +127,12 @@ static float S2Rad(int s) {
 // Time-of-day → star amount (WW's wether_move_star schedule, mapped onto OoT's [0,0xFFFF] skybox clock)
 // ---------------------------------------------------------------------------------------------------
 
-// skyboxTime is "fraction of a day" scaled to 0..360 (0 = midnight, 90 = 06:00, 180 = noon, 270 = 18:00).
+// dayTime is "fraction of a day" scaled to 0..360 (0 = midnight, 90 = 06:00, 180 = noon, 270 = 18:00).
 // The fades are phased onto OoT's own day cycle (D_8011FC1C, z_kankyo.c) to match the sun/HUD clock and the
 // re-phased sky palette in WWSkyEnv: stars fade out over dawn 04:00-07:00 (60-105) as the sky brightens, are
 // gone through the full day, and fade back in over dusk 17:00-19:00 (255-285), fully out by OoT's 19:00 night.
-static float StarAmountForTime(u16 skyboxTime) {
-    float ww = ((float)skyboxTime / 65536.0f) * 360.0f;
+static float StarAmountForTime(u16 dayTime) {
+    float ww = ((float)dayTime / 65536.0f) * 360.0f;
     if (ww >= 60.0f && ww < 105.0f) {
         return 1.0f - (ww - 60.0f) / 45.0f; // dawn: fade out
     } else if (ww >= 105.0f && ww < 255.0f) {
@@ -316,7 +316,7 @@ static void DrawNightSky(void* playPtr) {
     // Ease the star amount toward its time-of-day target so dawn/dusk transitions don't pop (WW smooths it
     // too). Overcast skies hide the stars: scale the target by the weather's cloudiness (already smooth).
     WWSkyWeather weather = WWSkyEnv_Sample(play);
-    float target = StarAmountForTime(gSaveContext.skyboxTime) * (1.0f - weather.cloudiness);
+    float target = StarAmountForTime(gSaveContext.dayTime) * (1.0f - weather.cloudiness);
     sStarAmount += (target - sStarAmount) * 0.1f;
     if (sStarAmount < 0.001f) {
         return; // fully daytime — nothing to draw

@@ -171,7 +171,11 @@ static uint8_t LerpU8(uint8_t a, uint8_t b, float t) {
 }
 
 void WWSkyEnv_SampleColors(void* playPtr, const WWSkyWeather* weather, WWSkyColors* out) {
-    float dayFrac = (float)gSaveContext.skyboxTime / 65536.0f;
+    // dayTime (not skyboxTime): it's the clock the sun and HUD use, and it responds instantly to the Save
+    // Editor's Time slider. skyboxTime only tracks dayTime while time runs forward past it (z_kankyo.c:938),
+    // so jumping the clock backward would freeze our sky until it wrapped around. Our gradient interpolates
+    // smoothly, so we don't need skyboxTime's dawn/dusk snap bands.
+    float dayFrac = (float)gSaveContext.dayTime / 65536.0f;
 
     const SkySchedule* e = &kSchedule[0];
     for (size_t i = 0; i < sizeof(kSchedule) / sizeof(kSchedule[0]); i++) {
