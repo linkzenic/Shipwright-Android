@@ -34,14 +34,13 @@ float OTRGetAspectRatio(void); // OTRGlobals.h declares this in its C-only secti
 #define CVAR_WISPS_AMOUNT CVAR_ENHANCEMENT("Graphics.WWWindWisps.Amount")
 #define CVAR_WISPS_SPEED CVAR_ENHANCEMENT("Graphics.WWWindWisps.Speed")
 
-// Multiplier on WW's wind-driven count (10 x windPower). OoT's wind is usually calm (windPower sits at
-// our 0.3 baseline), so WW's own 1x count yields only ~3 wisps; default to noclip's 4x density instead.
-static constexpr float kDefaultAmount = 4.0f;
-// Flight-speed multiplier. 1x is WW's own ~2800 units/s, which reads far faster inside OoT's 12800 far
-// plane than in WW's huge spaces; 0.5x matches how noclip's wind lines read. Slowing the sim also
-// shortens the trail (the trail is a fixed TIME window), pushing the streak toward noclip's short-fat
-// comet look. Only the flight motion slows — the fade-in/out lifecycle stays at GameCube rate.
-static constexpr float kDefaultSpeed = 0.5f;
+// The sliders are direct multipliers on WW's own numbers — its wind-driven count (10 x windPower) and
+// its ~2800 units/s flight speed — and WW's own 1x turned out to read best in-game, so both default to
+// a neutral 1x. Speed scales the flight sim's timestep only: swerve, loops and travel slow together
+// (the path keeps its shape), the trail shortens with it (a fixed TIME window), and the fade-in/out
+// lifecycle stays at GameCube rate regardless.
+static constexpr float kDefaultAmount = 1.0f;
+static constexpr float kDefaultSpeed = 1.0f;
 
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kTau = 2.0f * kPi;
@@ -494,7 +493,7 @@ static void DrawWindWisps(void* playPtr) {
     float windX, windZ, windPow;
     WWSkyEnv_Wind(play, &windX, &windZ, &windPow);
 
-    // WW: 10 lines at full wind. The Amount slider scales that (noclip renders 4x for density).
+    // WW: 10 lines at full wind, scaled by the Amount slider.
     float amount = CVarGetFloat(CVAR_WISPS_AMOUNT, kDefaultAmount);
     int count = (int)(10.0f * windPow * amount);
     if (count > kMaxWisps) {

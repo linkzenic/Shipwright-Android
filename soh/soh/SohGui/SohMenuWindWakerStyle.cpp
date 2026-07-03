@@ -436,10 +436,9 @@ void SohMenu::AddMenuWindWakerStyle() {
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"))
         .RaceDisable(false)
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Replaces the overworld sky with the Wind Waker-style one: a gradient sky dome, drifting puffy "
+            "Replaces the overworld sky with a Wind Waker-style one: a gradient sky dome, drifting puffy "
             "clouds with a wispy horizon cloud band, and a twinkling night starfield. Each part can be "
-            "toggled and tuned below. Uses built-in cloud art; a texture pack (or your own ww_clouds.o2r in "
-            "the mods folder) can swap in higher-fidelity clouds."));
+            "toggled and tuned below. Texture packs can swap in different cloud art."));
 
     AddWidget(path, "Horizon", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Horizon Height", WIDGET_CVAR_SLIDER_FLOAT)
@@ -448,9 +447,8 @@ void SohMenu::AddMenuWindWakerStyle() {
         .PreFunc(hideUnlessSky)
         .Options(FloatSliderOptions()
                      .Tooltip("Raises or lowers the sky's horizon line — the gradient's haze boundary and "
-                              "the horizon cloud band move together, like Wind Waker's sky box. Useful "
-                              "where the visible horizon sits below eye level (hilltops like the center "
-                              "of Hyrule Field).")
+                              "the horizon cloud band move together. Useful where the visible horizon sits "
+                              "below eye level, like the middle of Hyrule Field.")
                      .Format("%.0f")
                      .Min(-2000.0f)
                      .Max(2000.0f)
@@ -461,9 +459,8 @@ void SohMenu::AddMenuWindWakerStyle() {
         .PreFunc(hideUnlessSky)
         .Options(FloatSliderOptions()
                      .Tooltip("How much the sky horizon sinks as the camera climbs. 0% = it follows the "
-                              "camera (always the same height on screen); 100% = it stays at a fixed world "
-                              "height, so hilltops rise in front of it and valleys see the horizon clouds "
-                              "peek over the terrain. Wind Waker's own subtle setting is about 9%.")
+                              "camera, always at the same height on screen; 100% = it stays at a fixed "
+                              "world height, so hilltops rise in front of it and valleys look out over it.")
                      .Min(0.0f)
                      .Max(1.5f)
                      .DefaultValue(0.75f)
@@ -475,16 +472,15 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSky)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "A Wind Waker-style vertical gradient over the sky: a smooth fade from a lighter hazy horizon "
-            "up to a deeper sky. Colours follow the scene's live time-of-day, shifting automatically "
-            "through dawn, dusk and night. Purely procedural — no textures."));
+            "Replaces the sky texture with a smooth Wind Waker-style gradient, fading from a hazy horizon "
+            "up to a deeper sky. The colours shift with the time of day through dawn, dusk and night."));
     AddWidget(path, "Gradient Brightness", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWSkyGradient.Brightness"))
         .RaceDisable(false)
         .PreFunc(hideUnlessSkyGradient)
         .Options(FloatSliderOptions()
-                     .Tooltip("Overall brightness of the Wind Waker sky palette. Raise for a more vivid sky, "
-                              "lower for a moodier one.")
+                     .Tooltip("Overall brightness of the sky gradient. Raise for a more vivid sky, lower "
+                              "for a moodier one.")
                      .Min(0.5f)
                      .Max(1.5f)
                      .DefaultValue(1.0f)
@@ -513,8 +509,8 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSkyClouds)
         .Options(FloatSliderOptions()
-                     .Tooltip("How many clouds fill the sky (like Wind Waker's weather: from a few scattered "
-                              "clouds up to a fully overcast sky).")
+                     .Tooltip("How much of the sky the clouds fill — from a few scattered clouds up to "
+                              "fully overcast.")
                      .Min(0.0f)
                      .Max(1.0f)
                      .DefaultValue(0.3f)
@@ -538,15 +534,14 @@ void SohMenu::AddMenuWindWakerStyle() {
         .PreFunc(hideUnlessSky)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "A Wind Waker-style twinkling starfield over the night sky: a fixed bright constellation plus "
-            "hundreds of small stars that shimmer and fade in at dusk / out at dawn. Purely procedural — "
-            "no textures or extra assets."));
+            "hundreds of small stars that shimmer, fading in at dusk and out at dawn."));
     AddWidget(path, "Star Count", WIDGET_CVAR_SLIDER_INT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWNightSky.StarCount"))
         .RaceDisable(false)
         .PreFunc(hideUnlessSkyStars)
         .Options(IntSliderOptions()
-                     .Tooltip("Maximum number of stars at full night (the actual count fades with the "
-                              "time of day). Wind Waker uses 1000.")
+                     .Tooltip("Maximum number of stars at full night (the visible count rises and falls "
+                              "with the time of day). Wind Waker uses 1000.")
                      .Min(50)
                      .Max(1000)
                      .DefaultValue(1000)
@@ -557,7 +552,7 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSkyStars)
         .Options(FloatSliderOptions()
-                     .Tooltip("Overall star opacity. Higher = brighter, more prominent stars.")
+                     .Tooltip("Overall star brightness. Higher = brighter, more prominent stars.")
                      .Min(0.0f)
                      .Max(2.0f)
                      .DefaultValue(1.0f)
@@ -567,8 +562,8 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSkyStars)
         .Options(FloatSliderOptions()
-                     .Tooltip("How fast the stars pulse. 1x is the authentic Wind Waker rate (~10s per "
-                              "cycle).")
+                     .Tooltip("How fast the stars pulse. 1x is Wind Waker's rate — about ten seconds per "
+                              "cycle.")
                      .Format("%.1fx")
                      .Min(0.1f)
                      .Max(5.0f)
@@ -580,8 +575,8 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSky)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
-            "Wind Waker's white wind streaks curling through the sky on the wind — occasionally pulling "
-            "a full loop-de-loop. Their number follows the wind's strength."));
+            "Wind Waker's white wind streaks curling through the sky — occasionally pulling a full "
+            "loop-de-loop. Their number follows the wind's strength."));
     AddWidget(path, "Wisp Amount", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Amount"))
         .RaceDisable(false)
@@ -590,12 +585,12 @@ void SohMenu::AddMenuWindWakerStyle() {
                             !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled"), 1);
         })
         .Options(FloatSliderOptions()
-                     .Tooltip("How many wisps ride the wind. 1x is Wind Waker's own count — sparse in "
-                              "OoT's calm air; the default matches noclip.website's denser 4x rendering.")
+                     .Tooltip("How many wisps ride the wind (their number also rises and falls with the "
+                              "wind's strength). 1x is Wind Waker's own count.")
                      .Format("%.1fx")
                      .Min(0.5f)
                      .Max(10.0f)
-                     .DefaultValue(4.0f));
+                     .DefaultValue(1.0f));
     AddWidget(path, "Wisp Speed", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Speed"))
         .RaceDisable(false)
@@ -604,13 +599,13 @@ void SohMenu::AddMenuWindWakerStyle() {
                             !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled"), 1);
         })
         .Options(FloatSliderOptions()
-                     .Tooltip("How fast the wisps fly. 1x is Wind Waker's own speed, which reads very "
-                              "fast in Ocarina's tighter spaces; slowing them also shortens the streak. "
-                              "The whole flight path scales, so the curls and loops keep their shape.")
+                     .Tooltip("How fast the wisps fly. 1x is Wind Waker's own speed. The whole flight "
+                              "path scales together, so the curls and loops keep their shape; slower "
+                              "wisps also leave shorter streaks.")
                      .Format("%.2fx")
                      .Min(0.25f)
                      .Max(1.5f)
-                     .DefaultValue(0.5f));
+                     .DefaultValue(1.0f));
 
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Split-Screen Compare", WIDGET_CVAR_CHECKBOX)
@@ -618,9 +613,8 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSky)
         .Options(CheckboxOptions().DefaultValue(false).Tooltip(
-            "Draws the Wind Waker sky on the left half of the screen only, leaving Ocarina of Time's "
-            "original textured sky visible on the right — a live side-by-side to compare the two while "
-            "tuning colours and time of day."));
+            "Draws the Wind Waker sky only on the left half of the screen, leaving the original sky "
+            "visible on the right — a live side-by-side comparison."));
 }
 
 } // namespace SohGui
