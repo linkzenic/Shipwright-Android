@@ -590,12 +590,12 @@ void SohMenu::AddMenuWindWakerStyle() {
                             !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled"), 1);
         })
         .Options(FloatSliderOptions()
-                     .Tooltip("How many wisps ride the wind. 1x is Wind Waker's own count; noclip.website "
-                              "renders about 4x for a denser sky.")
+                     .Tooltip("How many wisps ride the wind. 1x is Wind Waker's own count — sparse in "
+                              "OoT's calm air; the default matches noclip.website's denser 4x rendering.")
                      .Format("%.1fx")
                      .Min(0.5f)
                      .Max(10.0f)
-                     .DefaultValue(1.5f));
+                     .DefaultValue(4.0f));
 
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Split-Screen Compare", WIDGET_CVAR_CHECKBOX)
