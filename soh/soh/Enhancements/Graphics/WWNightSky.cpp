@@ -255,8 +255,8 @@ static int BuildStars(Vtx* buf, int starCount, const View* view, float alphaMul)
 #define STARS_PER_CHUNK 5             // 5 stars × 6 verts = 30 ≤ the 32-vertex cache load limit
 #define VERTS_PER_CHUNK (STARS_PER_CHUNK * 6)
 
-static void EmitStars(PlayState* play, Vtx* buf, int starCount) {
-    OPEN_DISPS(play->state.gfxCtx);
+static void EmitStars(GraphicsContext* gfxCtx, View* view, Vtx* buf, int starCount) {
+    OPEN_DISPS(gfxCtx);
     // Camera-epoch interpolation child, like the vanilla skybox (SkyboxDraw_Draw): the camera-follow
     // translate below interpolates between 20Hz frames but SNAPS on camera cuts — under the default
     // OPEN_DISPS child key it would lerp across the cut and the sky visibly slides for a frame.
@@ -266,8 +266,8 @@ static void EmitStars(PlayState* play, Vtx* buf, int starCount) {
     // parallax) and stays within s16 range. The camera view itself lives in the projection matrix, which is
     // frame-interpolated, so the stars reproject smoothly when the camera turns even though we rebuild the
     // geometry at 20 fps.
-    Matrix_Translate(play->view.eye.x, play->view.eye.y, play->view.eye.z, MTXMODE_NEW);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+    Matrix_Translate(view->eye.x, view->eye.y, view->eye.z, MTXMODE_NEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
 
     gDPPipeSync(POLY_OPA_DISP++);
     // Unlit, vertex-coloured, double-sided (the ±half triangles wind both ways), no fog.
@@ -291,7 +291,7 @@ static void EmitStars(PlayState* play, Vtx* buf, int starCount) {
     }
 
     FrameInterpolation_RecordCloseChild();
-    CLOSE_DISPS(play->state.gfxCtx);
+    CLOSE_DISPS(gfxCtx);
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -344,8 +344,39 @@ static void DrawNightSky(void* playPtr) {
     // Rebuild the static vertex buffer each frame (kept out of the polyOpa arena — see WWNS_MAX_STARS).
     BuildStars(sStarVtx, starCount, &play->view, alphaMul);
     WWSkyEnv_SplitDebugBegin(play);
-    EmitStars(play, sStarVtx, starCount);
+    EmitStars(play->state.gfxCtx, &play->view, sStarVtx, starCount);
     WWSkyEnv_SplitDebugEnd(play);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// File-select starfield: full night, no time-of-day/weather fade (drawn from WWSky_DrawFileSelect).
+// ---------------------------------------------------------------------------------------------------
+
+void WWNightSky_DrawFileSelectStars(void* gfxCtxV, void* viewV) {
+    if (!CVarGetInteger(CVAR_NIGHTSKY_ENABLED, 1)) {
+        return;
+    }
+    GraphicsContext* gfxCtx = (GraphicsContext*)gfxCtxV;
+    View* view = (View*)viewV;
+
+    // Advance the twinkle/rotation animation once per frame, like DrawNightSky.
+    const float twinkleSpeed = CVarGetFloat(CVAR_NIGHTSKY_TWINKLE, kDefaultTwinkleSpeed);
+    sAnimCounter += 0.01 * kFrameScale * twinkleSpeed;
+    sRot += 1.0f * kFrameScale;
+
+    int starCount = CVarGetInteger(CVAR_NIGHTSKY_STARCOUNT, kDefaultStarCount);
+    if (starCount > WWNS_MAX_STARS) {
+        starCount = WWNS_MAX_STARS;
+    }
+    if (starCount <= 0) {
+        return;
+    }
+
+    float brightness = CVarGetFloat(CVAR_NIGHTSKY_BRIGHTNESS, kDefaultBrightness);
+    float alphaMul = brightness > 1.0f ? 1.0f : brightness; // full starfield: no dawn/dusk fade to apply
+
+    BuildStars(sStarVtx, starCount, view, alphaMul);
+    EmitStars(gfxCtx, view, sStarVtx, starCount);
 }
 
 // ---------------------------------------------------------------------------------------------------

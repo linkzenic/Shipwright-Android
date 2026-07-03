@@ -34,10 +34,19 @@ WWSkyWeather WWSkyEnv_Sample(void* play);
 float WWSkyEnv_SunHeight(void);
 void WWSkyEnv_SampleColors(void* play, const WWSkyWeather* weather, WWSkyColors* out);
 
+// Fixed clear-weather night palette (no time of day) — used by the file-select night sky.
+void WWSkyEnv_NightColors(WWSkyColors* out);
+
+// Draw the WW starfield over a bare (gfxCtx, view) pair rather than a PlayState — the file-select screen has
+// its own view/gfxCtx but no PlayState. void* to keep this header free of engine types.
+void WWNightSky_DrawFileSelectStars(void* gfxCtx, void* view);
+
 // The world-space Y of the sky's horizon line — WW translates the whole vrbox (sky dome, fake sea,
 // cloud band) as one unit, so the gradient and the horizon clouds must share this. Combines the
 // camera height, the Horizon Parallax factor (0 = follows the camera, 1 = pinned to world height)
-// and the Horizon Height offset slider.
+// and the Horizon Height offset slider. The ForEye variant takes the camera height directly for callers
+// without a PlayState (file select).
+float WWSkyEnv_HorizonYForEye(float eyeY);
 float WWSkyEnv_HorizonY(void* play);
 
 // dKyw_get_wind_vecpow for OoT: unit wind direction (XZ) + wind power mapped into WW's 0.3/0.6/0.9

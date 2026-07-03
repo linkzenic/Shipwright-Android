@@ -18,6 +18,7 @@
 #include "soh/Enhancements/boss-rush/BossRush.h"
 #include "soh/Enhancements/FileSelectEnhancements.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/Graphics/WWSkyFileSelect.h"
 #include <assert.h>
 #include "z64save.h"
 #include "soh/SaveManager.h"
@@ -2096,6 +2097,9 @@ void FileChoose_ConfigModeDraw(GameState* thisx) {
     FileChoose_SetView(this, eyeX, eyeY, eyeZ);
     SkyboxDraw_Draw(&this->skyboxCtx, this->state.gfxCtx, 1, this->envCtx.skyboxBlend, eyeX, eyeY, eyeZ);
     gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    // #region SOH [WW Sky] Replace the vanilla night skybox with the Wind Waker night sky when enabled.
+    WWSky_DrawFileSelect(this->state.gfxCtx, &this->view);
+    // #endregion
     ZREG(11) += ZREG(10);
     Environment_UpdateSkybox(NULL, SKYBOX_NORMAL_SKY, &this->envCtx, &this->skyboxCtx);
     gDPPipeSync(POLY_OPA_DISP++);
@@ -2604,6 +2608,9 @@ void FileChoose_SelectModeDraw(GameState* thisx) {
     FileChoose_SetView(this, eyeX, eyeY, eyeZ);
     SkyboxDraw_Draw(&this->skyboxCtx, this->state.gfxCtx, 1, this->envCtx.skyboxBlend, eyeX, eyeY, eyeZ);
     gDPSetTextureLUT(POLY_OPA_DISP++, G_TT_NONE);
+    // #region SOH [WW Sky] Replace the vanilla night skybox with the Wind Waker night sky when enabled.
+    WWSky_DrawFileSelect(this->state.gfxCtx, &this->view);
+    // #endregion
     ZREG(11) += ZREG(10);
     Environment_UpdateSkybox(NULL, SKYBOX_NORMAL_SKY, &this->envCtx, &this->skyboxCtx);
     gDPPipeSync(POLY_OPA_DISP++);
