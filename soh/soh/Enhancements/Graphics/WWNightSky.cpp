@@ -127,17 +127,18 @@ static float S2Rad(int s) {
 // Time-of-day → star amount (WW's wether_move_star schedule, mapped onto OoT's [0,0xFFFF] skybox clock)
 // ---------------------------------------------------------------------------------------------------
 
-// OoT's skyboxTime and WW's curTime are both "fraction of a day", so the map is linear: 0 = midnight,
-// 0x4000 = 06:00, 0x8000 = noon, 0xC000 = 18:00. WW fades stars out over [60,75] (dawn) and in over
-// [270,315] (dusk) of its 0..360 clock.
+// skyboxTime is "fraction of a day" scaled to 0..360 (0 = midnight, 90 = 06:00, 180 = noon, 270 = 18:00).
+// The fades are phased onto OoT's own day cycle (D_8011FC1C, z_kankyo.c) to match the sun/HUD clock and the
+// re-phased sky palette in WWSkyEnv: stars fade out over dawn 04:00-07:00 (60-105) as the sky brightens, are
+// gone through the full day, and fade back in over dusk 17:00-19:00 (255-285), fully out by OoT's 19:00 night.
 static float StarAmountForTime(u16 skyboxTime) {
     float ww = ((float)skyboxTime / 65536.0f) * 360.0f;
-    if (ww >= 60.0f && ww < 75.0f) {
-        return 1.0f - (ww - 60.0f) / 15.0f; // dawn: fade out
-    } else if (ww >= 75.0f && ww < 270.0f) {
+    if (ww >= 60.0f && ww < 105.0f) {
+        return 1.0f - (ww - 60.0f) / 45.0f; // dawn: fade out
+    } else if (ww >= 105.0f && ww < 255.0f) {
         return 0.0f; // day
-    } else if (ww >= 270.0f && ww < 315.0f) {
-        return (ww - 270.0f) / 45.0f; // dusk: fade in
+    } else if (ww >= 255.0f && ww < 285.0f) {
+        return (ww - 255.0f) / 30.0f; // dusk: fade in
     }
     return 1.0f; // night
 }
