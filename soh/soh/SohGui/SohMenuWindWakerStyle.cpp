@@ -573,6 +573,16 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .Min(0.1f)
                      .Max(5.0f)
                      .DefaultValue(1.0f));
+
+    AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
+    AddWidget(path, "Split-Screen Compare", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWSky.SplitDebug"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessSky)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Draws the Wind Waker sky on the left half of the screen only, leaving Ocarina of Time's "
+            "original textured sky visible on the right — a live side-by-side to compare the two while "
+            "tuning colours and time of day."));
 }
 
 } // namespace SohGui

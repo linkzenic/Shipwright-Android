@@ -4,8 +4,13 @@
 
 #include <math.h>
 
+// FrameInterpolation_Record* declarations used by the OPEN_DISPS/CLOSE_DISPS macros (include before them).
+#include "soh/frame_interpolation.h"
+
 extern "C" {
 #include "z64.h"
+#include "macros.h"
+#include "functions.h"
 #include "variables.h"
 }
 
@@ -17,6 +22,38 @@ extern "C" {
 #define CVAR_SKY_HORIZON_PARALLAX CVAR_ENHANCEMENT("Graphics.WWClouds.HorizonBandParallax")
 static constexpr float kDefaultHorizonHeight = -408.0f;  // sits well against OoT's typical visible horizon
 static constexpr float kDefaultHorizonParallax = 0.75f;  // mostly world-pinned (WW's vrbox factor is 0.09)
+
+// Split-screen debug: clip all WW sky elements to the left half of the screen so the vanilla OoT skybox
+// (still drawn underneath) shows through on the right — a live side-by-side A/B of our sky vs the textures.
+#define CVAR_SKY_SPLIT_DEBUG CVAR_ENHANCEMENT("Graphics.WWSky.SplitDebug")
+
+bool WWSkyEnv_SplitDebugEnabled() {
+    return CVarGetInteger(CVAR_SKY_SPLIT_DEBUG, 0) != 0;
+}
+
+// Scissor POLY_OPA to the left half (Begin) then restore it to full screen (End). Every WW sky emitter draws
+// into POLY_OPA_DISP, so each wraps its geometry in a Begin/End pair; End restores full so the world that
+// draws after us into the same buffer is never clipped. gScreenWidth/Height are the game-virtual full extents
+// the engine itself scissors to (z_rcp.c), so half-width is a clean vertical split independent of resolution.
+void WWSkyEnv_SplitDebugBegin(void* playPtr) {
+    if (!WWSkyEnv_SplitDebugEnabled()) {
+        return;
+    }
+    PlayState* play = (PlayState*)playPtr;
+    OPEN_DISPS(play->state.gfxCtx);
+    gDPSetScissor(POLY_OPA_DISP++, G_SC_NON_INTERLACE, 0, 0, gScreenWidth / 2, gScreenHeight);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+void WWSkyEnv_SplitDebugEnd(void* playPtr) {
+    if (!WWSkyEnv_SplitDebugEnabled()) {
+        return;
+    }
+    PlayState* play = (PlayState*)playPtr;
+    OPEN_DISPS(play->state.gfxCtx);
+    gDPSetScissor(POLY_OPA_DISP++, G_SC_NON_INTERLACE, 0, 0, gScreenWidth, gScreenHeight);
+    CLOSE_DISPS(play->state.gfxCtx);
+}
 
 void WWSkyEnv_Wind(void* playPtr, float* dirX, float* dirZ, float* power) {
     PlayState* play = (PlayState*)playPtr;

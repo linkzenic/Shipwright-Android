@@ -343,7 +343,9 @@ static void DrawNightSky(void* playPtr) {
 
     // Rebuild the static vertex buffer each frame (kept out of the polyOpa arena — see WWNS_MAX_STARS).
     BuildStars(sStarVtx, starCount, &play->view, alphaMul);
+    WWSkyEnv_SplitDebugBegin(play);
     EmitStars(play, sStarVtx, starCount);
+    WWSkyEnv_SplitDebugEnd(play);
 }
 
 // ---------------------------------------------------------------------------------------------------
