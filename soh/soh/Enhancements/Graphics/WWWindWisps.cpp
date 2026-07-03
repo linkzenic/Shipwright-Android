@@ -156,9 +156,16 @@ static float AddCalcAngle(float src, float target, float speed, float maxVel, fl
 // ---------------------------------------------------------------------------------------------------
 
 static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
-    // Spawn ahead of the camera (dKy_set_eyevect_calc2 with 4000), lifted 1000 up.
+    // Spawn ahead of the camera (dKy_set_eyevect_calc2 with 4000), lifted 1000 up. WW's helper zeroes
+    // the view vector's Y so the base always sits ahead HORIZONTALLY at camera height + lift — with
+    // the full 3D forward, the normal gameplay camera (pitched slightly down at Link) dragged the base
+    // to head height, where wisps read huge and fast. Clamp the pitch at horizontal instead of zeroing
+    // it: level views get WW's placement, and a camera aimed at the sky still spawns high overhead.
     Vec3f fwd = { play->view.lookAt.x - play->view.eye.x, play->view.lookAt.y - play->view.eye.y,
                   play->view.lookAt.z - play->view.eye.z };
+    if (fwd.y < 0.0f) {
+        fwd.y = 0.0f;
+    }
     float fl = sqrtf(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
     if (fl < 0.001f) {
         fl = 1.0f;
@@ -219,9 +226,10 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
             }
         }
     }
-    // Stand-in for WW's ground check: never start a wisp below the camera's eye line, where OoT's
-    // terrain would z-test it into invisibility.
-    float minY = play->view.eye.y + 250.0f;
+    // Stand-in for WW's ground check, raised well above the eye line: below it, OoT's terrain z-tests
+    // the wisp away — and since flight is horizontal, spawn altitude is cruising altitude, so this
+    // floor is also what keeps a wisp from ever buzzing past at head height.
+    float minY = play->view.eye.y + 1500.0f;
     if (e->basePos.y + e->animPos.y < minY) {
         e->animPos.y = minY - e->basePos.y + RndF(1500.0f);
     }
