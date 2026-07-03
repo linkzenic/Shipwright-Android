@@ -39,3 +39,10 @@ float WWSkyEnv_HorizonY(void* play);
 // dKyw_get_wind_vecpow for OoT: unit wind direction (XZ) + wind power mapped into WW's 0.3/0.6/0.9
 // bracket. Shared by the clouds, the horizon band scroll and the wind wisps.
 void WWSkyEnv_Wind(void* play, float* dirX, float* dirZ, float* power);
+
+// Split-screen debug (Sky page toggle): when on, each WW sky emitter wraps its geometry in a
+// Begin/End pair that scissors POLY_OPA to the left half of the screen and then restores it to full,
+// leaving the vanilla OoT skybox visible on the right for a live side-by-side comparison.
+bool WWSkyEnv_SplitDebugEnabled(void);
+void WWSkyEnv_SplitDebugBegin(void* play);
+void WWSkyEnv_SplitDebugEnd(void* play);

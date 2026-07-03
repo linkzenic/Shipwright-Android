@@ -641,7 +641,9 @@ static void DrawClouds(void* playPtr) {
         if (bandTex[0].data != nullptr && bandTex[1].data != nullptr) {
             UpdateBandScroll(play, dt, drift);
             BuildBand(opacity, edge, bandTex);
+            WWSkyEnv_SplitDebugBegin(play);
             EmitBand(play, bandTex);
+            WWSkyEnv_SplitDebugEnd(play);
         }
     }
 
@@ -668,7 +670,9 @@ static void DrawClouds(void* playPtr) {
 
     int clouds = BuildClouds(opacity, edge, center, texData);
     if (clouds > 0) {
+        WWSkyEnv_SplitDebugBegin(play);
         EmitClouds(play, clouds, texData);
+        WWSkyEnv_SplitDebugEnd(play);
     }
 }
 

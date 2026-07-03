@@ -215,7 +215,9 @@ static void DrawSkyGradient(void* playPtr) {
     }
 
     ColorDome(sky, kasumi, usoUmi);
+    WWSkyEnv_SplitDebugBegin(play);
     EmitDome(play);
+    WWSkyEnv_SplitDebugEnd(play);
 }
 
 // ---------------------------------------------------------------------------------------------------
