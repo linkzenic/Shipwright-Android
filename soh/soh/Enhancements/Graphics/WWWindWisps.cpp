@@ -31,10 +31,16 @@ extern "C" {
 #define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
 #define CVAR_WISPS_ENABLED CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled")
 #define CVAR_WISPS_AMOUNT CVAR_ENHANCEMENT("Graphics.WWWindWisps.Amount")
+#define CVAR_WISPS_SPEED CVAR_ENHANCEMENT("Graphics.WWWindWisps.Speed")
 
 // Multiplier on WW's wind-driven count (10 x windPower). OoT's wind is usually calm (windPower sits at
 // our 0.3 baseline), so WW's own 1x count yields only ~3 wisps; default to noclip's 4x density instead.
 static constexpr float kDefaultAmount = 4.0f;
+// Flight-speed multiplier. 1x is WW's own ~2800 units/s, which reads far faster inside OoT's 12800 far
+// plane than in WW's huge spaces; 0.5x matches how noclip's wind lines read. Slowing the sim also
+// shortens the trail (the trail is a fixed TIME window), pushing the streak toward noclip's short-fat
+// comet look. Only the flight motion slows — the fade-in/out lifecycle stays at GameCube rate.
+static constexpr float kDefaultSpeed = 0.5f;
 
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kTau = 2.0f * kPi;
@@ -44,8 +50,8 @@ static constexpr float kFrameScale = 1.5f;
 static constexpr float kS2Rad = kTau / 65536.0f;
 
 static constexpr int kMaxWisps = 50; // noclip's slot count (WW hardware uses 30)
-static constexpr int kTrailLen = 24; // position history samples (~1.2s of flight at 20 fps)
-static constexpr float kHalfWidth = 14.0f;
+static constexpr int kTrailLen = 16; // position history samples (~0.8s of flight at 20 fps)
+static constexpr float kHalfWidth = 40.0f;
 
 // One frozen trail sample — a stand-in for one of WW's trail particles. Everything is fixed at birth
 // (position, ribbon side vector, alpha); only age-based fading changes afterwards. Recomputing any of
@@ -145,8 +151,11 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
     if (fl < 0.001f) {
         fl = 1.0f;
     }
+    // WW lifts the spawn +1000; noclip additionally triples the vertical scatter (±6000), placing its
+    // wind lines well up in the sky. Our scatter stays at WW's ±2000 (OoT's view distance is small),
+    // so take the height from a bigger lift instead.
     e->basePos.x = play->view.eye.x + fwd.x / fl * 4000.0f;
-    e->basePos.y = play->view.eye.y + fwd.y / fl * 4000.0f + 1000.0f;
+    e->basePos.y = play->view.eye.y + fwd.y / fl * 4000.0f + 1800.0f;
     e->basePos.z = play->view.eye.z + fwd.z / fl * 4000.0f;
 
     // Scatter around the base (WW's original ±2000 — noclip widens this x5, but its view distance is
@@ -174,7 +183,9 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
     e->state = 1;
 }
 
-static void UpdateWisps(PlayState* play, int count, float dt) {
+// `dt` paces the fade lifecycle (GameCube wall-clock); `mdt` = dt x the Speed slider paces the flight
+// motion — swerve, loops and travel all slow together so the path SHAPE stays WW's.
+static void UpdateWisps(PlayState* play, int count, float dt, float mdt) {
     float windX, windZ, windPow;
     WWSkyEnv_Wind(play, &windX, &windZ, &windPow);
 
@@ -192,22 +203,24 @@ static void UpdateWisps(PlayState* play, int count, float dt) {
         }
 
         // Swerve: a sine-driven wobble on top of easing back toward the wind direction.
-        e->swerveAnimCounter += kS2Rad * 800.0f * dt;
+        e->swerveAnimCounter += kS2Rad * 800.0f * mdt;
         float swerveAnimMag = kS2Rad * (250.0f - 0.2f * 250.0f * (1.0f - windPow));
-        float change = dt * swerveAnimMag * sinf(e->swerveAnimCounter);
+        float change = mdt * swerveAnimMag * sinf(e->swerveAnimCounter);
         e->swerveAngleY += change;
         e->swerveAngleXZ += (i & 1) ? change : -change;
 
         if (e->stateTimer <= 0.5f || !e->doLoop) {
-            // WW's per-tick ease, rescaled to wall-clock: the speed divisor shrinks by dt and the
-            // per-frame velocity caps grow by it (same convention as WWClouds).
+            // WW's per-tick ease, rescaled to wall-clock: the speed divisor shrinks by the timestep and
+            // the per-frame velocity caps grow by it (same convention as WWClouds).
             float targetXZ = atan2f(windX, windZ);
             e->swerveAngleXZ =
-                AddCalcAngle(e->swerveAngleXZ, targetXZ, 10.0f / dt, kS2Rad * 1000.0f * dt, kS2Rad * 1.0f * dt);
-            e->swerveAngleY = AddCalcAngle(e->swerveAngleY, 0.0f, 10.0f / dt, kS2Rad * 1000.0f * dt, kS2Rad * 1.0f * dt);
+                AddCalcAngle(e->swerveAngleXZ, targetXZ, 10.0f / mdt, kS2Rad * 1000.0f * mdt, kS2Rad * 1.0f * mdt);
+            e->swerveAngleY =
+                AddCalcAngle(e->swerveAngleY, 0.0f, 10.0f / mdt, kS2Rad * 1000.0f * mdt, kS2Rad * 1.0f * mdt);
         } else {
-            // The signature move: pull a full vertical loop, then resume cruising.
-            float loopStep = kS2Rad * 3600.0f * dt;
+            // The signature move: pull a full vertical loop, then resume cruising. 2000/tick is
+            // noclip's rate (it slows WW hardware's 3600 by 1.8x for a bigger, statelier loop).
+            float loopStep = kS2Rad * 2000.0f * mdt;
             e->loopCounter += loopStep;
             e->swerveAngleY += loopStep;
             if (e->loopCounter > kS2Rad * 60535.0f) {
@@ -217,9 +230,9 @@ static void UpdateWisps(PlayState* play, int count, float dt) {
 
         float swerveT = Sat(e->swerveAnimCounter / kTau);
         float mag = (1.3f * 80.0f - 0.2f * 80.0f * (1.0f - windPow)) * swerveT;
-        e->animPos.x += cosf(e->swerveAngleY) * sinf(e->swerveAngleXZ) * mag * dt;
-        e->animPos.y += sinf(e->swerveAngleY) * mag * dt;
-        e->animPos.z += cosf(e->swerveAngleY) * cosf(e->swerveAngleXZ) * mag * dt;
+        e->animPos.x += cosf(e->swerveAngleY) * sinf(e->swerveAngleXZ) * mag * mdt;
+        e->animPos.y += sinf(e->swerveAngleY) * mag * mdt;
+        e->animPos.z += cosf(e->swerveAngleY) * cosf(e->swerveAngleXZ) * mag * mdt;
 
         // Record the head into the trail ring buffer.
         Vec3f head = { e->basePos.x + e->animPos.x, e->basePos.y + e->animPos.y, e->basePos.z + e->animPos.z };
@@ -397,7 +410,11 @@ static void DrawWindWisps(void* playPtr) {
         count = kMaxWisps;
     }
 
-    UpdateWisps(play, count, kFrameScale);
+    float speed = CVarGetFloat(CVAR_WISPS_SPEED, kDefaultSpeed);
+    if (speed < 0.1f) {
+        speed = 0.1f; // mdt divides the angle-ease speed, so keep it strictly positive
+    }
+    UpdateWisps(play, count, kFrameScale, kFrameScale * speed);
 
     // Wisp tint/brightness ride the scheduled cloud-centre colour, so night wisps dim like WW's
     // (which scale alpha by the ambient brightness squared).
