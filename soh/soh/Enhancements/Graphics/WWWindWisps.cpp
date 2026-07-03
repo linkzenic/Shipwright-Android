@@ -26,6 +26,7 @@ extern "C" {
 #include "macros.h"
 #include "functions.h"
 #include "variables.h"
+float OTRGetAspectRatio(void); // OTRGlobals.h declares this in its C-only section
 }
 
 #define CVAR_WWSKY_ENABLED CVAR_ENHANCEMENT("Graphics.WWSky.Enabled") // the "Use Sky" master toggle
@@ -170,30 +171,52 @@ static void SpawnWisp(PlayState* play, WindEff* e, float windX, float windZ) {
     e->basePos.y = play->view.eye.y + fwd.y / fl * 6000.0f + 2200.0f;
     e->basePos.z = play->view.eye.z + fwd.z / fl * 6000.0f;
 
-    // Scatter around the base, then push upwind so the wisp travels back across the view. WW scatters
-    // ±2000 and noclip widens that x5 (±10000 XZ / ±6000 Y) against a ~100k view distance; OoT clips
-    // at 12.8k, so sit in between — wide enough that wisps don't ride in as one clump.
+    // Lateral scatter, sized to the screen. WW scatters a fixed ±2000 in world XZ (noclip ±10000) —
+    // fine on a fixed 4:3 screen, but the port runs at arbitrary aspect and a fixed world-unit spread
+    // covers only the middle of a wide window (±4000 happened to almost exactly fill a 4:3 frame at
+    // this spawn distance, so wisps never entered the outer thirds of a widescreen view). Size the
+    // spread from the actual frustum at the spawn distance — half-width = tan(fovy/2) x aspect x
+    // distance — padded a little past the edges, and scatter along the camera's screen-right axis.
+    float aspect = OTRGetAspectRatio();
+    if (aspect < 0.1f) {
+        aspect = 4.0f / 3.0f;
+    }
+    float halfW = tanf(play->view.fovy * 0.5f * kPi / 180.0f) * aspect * 6000.0f * 1.15f;
+    if (halfW > 8500.0f) {
+        halfW = 8500.0f; // an 11.5k recycle bubble can't cover a super-ultrawide edge to edge
+    }
+    // Horizontal screen-right; degenerate looking straight up/down, where any horizontal axis is fine.
+    Vec3f right = { fwd.z, 0.0f, -fwd.x };
+    float rl = sqrtf(right.x * right.x + right.z * right.z);
+    if (rl < 0.001f) {
+        right.x = 1.0f;
+        right.z = 0.0f;
+        rl = 1.0f;
+    }
+    float lateral = RndFX(halfW) / rl;
+    float depth = RndFX(2500.0f);
     float upwind = 2000.0f + RndF(2000.0f);
-    e->animPos.x = RndFX(4000.0f) - windX * upwind;
-    e->animPos.y = RndFX(2400.0f);
-    e->animPos.z = RndFX(4000.0f) - windZ * upwind;
-    // Pull an outlier scatter back inside the far-recycle radius (11500, checked against the eye) so a
-    // fresh wisp never starts its life already being faded back out.
+    e->animPos.x = right.x * lateral + fwd.x / fl * depth - windX * upwind;
+    e->animPos.y = RndFX(2400.0f) + fwd.y / fl * depth;
+    e->animPos.z = right.z * lateral + fwd.z / fl * depth - windZ * upwind;
+    // Pull an outlier back inside the far-recycle radius (spawn cap 10500 < recycle 11500) so a fresh
+    // wisp never starts its life already being faded back out: take the largest s in [0,1] with
+    // |(basePos - eye) + s * animPos| <= cap (the base itself is always well inside).
     {
         float bx = e->basePos.x - play->view.eye.x;
         float by = e->basePos.y - play->view.eye.y;
         float bz = e->basePos.z - play->view.eye.z;
-        float baseDist = sqrtf(bx * bx + by * by + bz * bz);
-        float offLen = sqrtf(e->animPos.x * e->animPos.x + e->animPos.y * e->animPos.y + e->animPos.z * e->animPos.z);
-        float maxOff = 10500.0f - baseDist;
-        if (maxOff < 0.0f) {
-            maxOff = 0.0f;
-        }
-        if (offLen > maxOff && offLen > 0.001f) {
-            float s = maxOff / offLen;
-            e->animPos.x *= s;
-            e->animPos.y *= s;
-            e->animPos.z *= s;
+        float aa = e->animPos.x * e->animPos.x + e->animPos.y * e->animPos.y + e->animPos.z * e->animPos.z;
+        float ab = e->animPos.x * bx + e->animPos.y * by + e->animPos.z * bz;
+        float bb = bx * bx + by * by + bz * bz - 10500.0f * 10500.0f;
+        float disc = ab * ab - aa * bb;
+        if (aa > 0.001f && disc > 0.0f) {
+            float s = (-ab + sqrtf(disc)) / aa;
+            if (s < 1.0f) {
+                e->animPos.x *= s;
+                e->animPos.y *= s;
+                e->animPos.z *= s;
+            }
         }
     }
     // Stand-in for WW's ground check: never start a wisp below the camera's eye line, where OoT's
