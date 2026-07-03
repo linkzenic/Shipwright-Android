@@ -256,6 +256,10 @@ static int BuildStars(Vtx* buf, int starCount, const View* view, float alphaMul)
 
 static void EmitStars(PlayState* play, Vtx* buf, int starCount) {
     OPEN_DISPS(play->state.gfxCtx);
+    // Camera-epoch interpolation child, like the vanilla skybox (SkyboxDraw_Draw): the camera-follow
+    // translate below interpolates between 20Hz frames but SNAPS on camera cuts — under the default
+    // OPEN_DISPS child key it would lerp across the cut and the sky visibly slides for a frame.
+    FrameInterpolation_RecordOpenChild(NULL, FrameInterpolation_GetCameraEpoch());
 
     // Modelview = translate to the eye. Vertices are eye-relative, so the field follows the camera (no
     // parallax) and stays within s16 range. The camera view itself lives in the projection matrix, which is
@@ -285,6 +289,7 @@ static void EmitStars(PlayState* play, Vtx* buf, int starCount) {
         }
     }
 
+    FrameInterpolation_RecordCloseChild();
     CLOSE_DISPS(play->state.gfxCtx);
 }
 

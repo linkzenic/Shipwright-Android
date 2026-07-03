@@ -524,11 +524,12 @@ void SohMenu::AddMenuWindWakerStyle() {
         .RaceDisable(false)
         .PreFunc(hideUnlessSkyClouds)
         .Options(FloatSliderOptions()
-                     .Tooltip("How fast the clouds drift across the sky on the wind.")
+                     .Tooltip("How fast the clouds drift across the sky on the wind. 1x is Wind Waker's "
+                              "own speed.")
                      .Format("%.1fx")
                      .Min(0.0f)
                      .Max(4.0f)
-                     .DefaultValue(2.0f));
+                     .DefaultValue(1.0f));
 
     AddWidget(path, "Stars", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Enable Stars", WIDGET_CVAR_CHECKBOX)

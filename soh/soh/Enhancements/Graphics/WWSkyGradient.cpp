@@ -150,6 +150,10 @@ static void ColorDome(const u8 sky[3], const u8 kasumi[3], const u8 usoUmi[3]) {
 
 static void EmitDome(PlayState* play) {
     OPEN_DISPS(play->state.gfxCtx);
+    // Camera-epoch interpolation child, like the vanilla skybox (SkyboxDraw_Draw): the camera-follow
+    // translate below interpolates between 20Hz frames but SNAPS on camera cuts — under the default
+    // OPEN_DISPS child key it would lerp across the cut and the sky visibly slides for a frame.
+    FrameInterpolation_RecordOpenChild(NULL, FrameInterpolation_GetCameraEpoch());
 
     // Modelview = translate to the eye horizontally; vertically the dome centre sits on the shared sky
     // horizon (WW moves the whole vrbox as one unit, so the haze/usoUmi line here stays locked to the
@@ -177,6 +181,7 @@ static void EmitDome(PlayState* play) {
         }
     }
 
+    FrameInterpolation_RecordCloseChild();
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
