@@ -76,11 +76,15 @@ void WWSkyEnv_Wind(void* playPtr, float* dirX, float* dirZ, float* power) {
     *power = 0.3f + 0.6f * p;
 }
 
-float WWSkyEnv_HorizonY(void* playPtr) {
-    PlayState* play = (PlayState*)playPtr;
+float WWSkyEnv_HorizonYForEye(float eyeY) {
     float height = CVarGetFloat(CVAR_SKY_HORIZON_HEIGHT, kDefaultHorizonHeight);
     float parallax = CVarGetFloat(CVAR_SKY_HORIZON_PARALLAX, kDefaultHorizonParallax);
-    return play->view.eye.y * (1.0f - parallax) + height;
+    return eyeY * (1.0f - parallax) + height;
+}
+
+float WWSkyEnv_HorizonY(void* playPtr) {
+    PlayState* play = (PlayState*)playPtr;
+    return WWSkyEnv_HorizonYForEye(play->view.eye.y);
 }
 
 static float Clamp01(float v) {
@@ -268,5 +272,18 @@ void WWSkyEnv_SampleColors(void* playPtr, const WWSkyWeather* weather, WWSkyColo
         uint8_t clearKC = LerpU8(kSeaPalette[0][slotA].kumoCenter[i], kSeaPalette[0][slotB].kumoCenter[i], u);
         uint8_t rainKC = LerpU8(kSeaPalette[1][slotA].kumoCenter[i], kSeaPalette[1][slotB].kumoCenter[i], u);
         out->kumoCenter[i] = LerpU8(clearKC, rainKC, c);
+    }
+}
+
+// Fixed clear-weather night palette, for contexts with no time of day of their own — the file-select screen,
+// which vanilla always shows as night. Same night slot the sun-driven schedule lands on well after sunset.
+void WWSkyEnv_NightColors(WWSkyColors* out) {
+    const SkySlot* n = &kSeaPalette[0][5]; // clear, night
+    for (int i = 0; i < 3; i++) {
+        out->sky[i] = n->sky[i];
+        out->kasumi[i] = n->kasumi[i];
+        out->usoUmi[i] = n->usoUmi[i];
+        out->kumo[i] = n->kumo[i];
+        out->kumoCenter[i] = n->kumoCenter[i];
     }
 }

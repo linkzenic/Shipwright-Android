@@ -23,6 +23,7 @@
 // FrameInterpolation_Record* declarations used by the OPEN_DISPS/CLOSE_DISPS macros (include before them).
 #include "soh/frame_interpolation.h"
 #include "WWSkyEnv.h"
+#include "WWSkyFileSelect.h"
 
 #include <math.h>
 
@@ -148,8 +149,10 @@ static void ColorDome(const u8 sky[3], const u8 kasumi[3], const u8 usoUmi[3]) {
 
 #define DOME_VERTS_PER_CHUNK 30 // 30 ≤ the 32-vertex cache load limit; 10 triangles per chunk
 
-static void EmitDome(PlayState* play) {
-    OPEN_DISPS(play->state.gfxCtx);
+// Emit the coloured dome over a bare (gfxCtx, view, horizonY) — no PlayState — so both the overworld hook
+// and the file-select screen can share it. horizonY is the dome-centre height (WWSkyEnv_HorizonY[ForEye]).
+static void EmitDome(GraphicsContext* gfxCtx, View* view, float horizonY) {
+    OPEN_DISPS(gfxCtx);
     // Camera-epoch interpolation child, like the vanilla skybox (SkyboxDraw_Draw): the camera-follow
     // translate below interpolates between 20Hz frames but SNAPS on camera cuts — under the default
     // OPEN_DISPS child key it would lerp across the cut and the sky visibly slides for a frame.
@@ -158,8 +161,8 @@ static void EmitDome(PlayState* play) {
     // Modelview = translate to the eye horizontally; vertically the dome centre sits on the shared sky
     // horizon (WW moves the whole vrbox as one unit, so the haze/usoUmi line here stays locked to the
     // horizon cloud band). Vertices are eye-relative and small enough for s16.
-    Matrix_Translate(play->view.eye.x, WWSkyEnv_HorizonY(play), play->view.eye.z, MTXMODE_NEW);
-    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+    Matrix_Translate(view->eye.x, horizonY, view->eye.z, MTXMODE_NEW);
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
 
     gDPPipeSync(POLY_OPA_DISP++);
     // Unlit, vertex-coloured, double-sided (viewed from inside), no fog.
@@ -182,12 +185,23 @@ static void EmitDome(PlayState* play) {
     }
 
     FrameInterpolation_RecordCloseChild();
-    CLOSE_DISPS(play->state.gfxCtx);
+    CLOSE_DISPS(gfxCtx);
 }
 
 // ---------------------------------------------------------------------------------------------------
 // Per-frame entry point (OnPlayDrawSkyGradient handler)
 // ---------------------------------------------------------------------------------------------------
+
+// Scale a sampled palette by the user's brightness trim and load it into the dome vertices.
+static void ColorDomeFromColors(const WWSkyColors* colors, float brightness) {
+    u8 sky[3], kasumi[3], usoUmi[3];
+    for (int i = 0; i < 3; i++) {
+        sky[i] = ClampU8((int)(colors->sky[i] * brightness));
+        kasumi[i] = ClampU8((int)(colors->kasumi[i] * brightness));
+        usoUmi[i] = ClampU8((int)(colors->usoUmi[i] * brightness));
+    }
+    ColorDome(sky, kasumi, usoUmi);
+}
 
 static void DrawSkyGradient(void* playPtr) {
     PlayState* play = (PlayState*)playPtr;
@@ -205,19 +219,35 @@ static void DrawSkyGradient(void* playPtr) {
     WWSkyWeather weather = WWSkyEnv_Sample(play);
     WWSkyColors colors;
     WWSkyEnv_SampleColors(play, &weather, &colors);
+    ColorDomeFromColors(&colors, CVarGetFloat(CVAR_SKYGRAD_BRIGHTNESS, kDefaultBrightness));
 
-    float brightness = CVarGetFloat(CVAR_SKYGRAD_BRIGHTNESS, kDefaultBrightness);
-    u8 sky[3], kasumi[3], usoUmi[3];
-    for (int i = 0; i < 3; i++) {
-        sky[i] = ClampU8((int)(colors.sky[i] * brightness));
-        kasumi[i] = ClampU8((int)(colors.kasumi[i] * brightness));
-        usoUmi[i] = ClampU8((int)(colors.usoUmi[i] * brightness));
+    WWSkyEnv_SplitDebugBegin(play);
+    EmitDome(play->state.gfxCtx, &play->view, WWSkyEnv_HorizonY(play));
+    WWSkyEnv_SplitDebugEnd(play);
+}
+
+// ---------------------------------------------------------------------------------------------------
+// File-select night sky (drawn from z_file_choose.c after SkyboxDraw_Draw — no PlayState there)
+// ---------------------------------------------------------------------------------------------------
+
+extern "C" void WWSky_DrawFileSelect(GraphicsContext* gfxCtx, View* view) {
+    if (!CVarGetInteger(CVAR_WWSKY_ENABLED, 0)) {
+        return; // master toggle off — leave the vanilla night skybox in place
     }
 
-    ColorDome(sky, kasumi, usoUmi);
-    WWSkyEnv_SplitDebugBegin(play);
-    EmitDome(play);
-    WWSkyEnv_SplitDebugEnd(play);
+    // Gradient dome fixed to WW's night palette (the file-select screen has no time of day of its own).
+    if (CVarGetInteger(CVAR_SKYGRAD_ENABLED, 1)) {
+        if (!sDomeBuilt) {
+            BuildDome();
+        }
+        WWSkyColors colors;
+        WWSkyEnv_NightColors(&colors);
+        ColorDomeFromColors(&colors, CVarGetFloat(CVAR_SKYGRAD_BRIGHTNESS, kDefaultBrightness));
+        EmitDome(gfxCtx, view, WWSkyEnv_HorizonYForEye(view->eye.y));
+    }
+
+    // Twinkling starfield on top (checks its own enable toggle).
+    WWNightSky_DrawFileSelectStars((void*)gfxCtx, (void*)view);
 }
 
 // ---------------------------------------------------------------------------------------------------
