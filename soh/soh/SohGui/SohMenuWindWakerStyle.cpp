@@ -596,6 +596,21 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .Min(0.5f)
                      .Max(10.0f)
                      .DefaultValue(4.0f));
+    AddWidget(path, "Wisp Speed", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Speed"))
+        .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWSky.Enabled"), 0) ||
+                            !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled"), 1);
+        })
+        .Options(FloatSliderOptions()
+                     .Tooltip("How fast the wisps fly. 1x is Wind Waker's own speed, which reads very "
+                              "fast in Ocarina's tighter spaces; slowing them also shortens the streak. "
+                              "The whole flight path scales, so the curls and loops keep their shape.")
+                     .Format("%.2fx")
+                     .Min(0.25f)
+                     .Max(1.5f)
+                     .DefaultValue(0.5f));
 
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessSky);
     AddWidget(path, "Split-Screen Compare", WIDGET_CVAR_CHECKBOX)
