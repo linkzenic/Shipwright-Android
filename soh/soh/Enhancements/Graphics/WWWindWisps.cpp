@@ -32,7 +32,9 @@ extern "C" {
 #define CVAR_WISPS_ENABLED CVAR_ENHANCEMENT("Graphics.WWWindWisps.Enabled")
 #define CVAR_WISPS_AMOUNT CVAR_ENHANCEMENT("Graphics.WWWindWisps.Amount")
 
-static constexpr float kDefaultAmount = 1.5f; // multiplier on WW's wind-driven count (10 x windPower)
+// Multiplier on WW's wind-driven count (10 x windPower). OoT's wind is usually calm (windPower sits at
+// our 0.3 baseline), so WW's own 1x count yields only ~3 wisps; default to noclip's 4x density instead.
+static constexpr float kDefaultAmount = 4.0f;
 
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kTau = 2.0f * kPi;
@@ -41,7 +43,7 @@ static constexpr float kFrameScale = 1.5f;
 // Binary angle to radians (WW's cM_s2rad).
 static constexpr float kS2Rad = kTau / 65536.0f;
 
-static constexpr int kMaxWisps = 32;
+static constexpr int kMaxWisps = 50; // noclip's slot count (WW hardware uses 30)
 static constexpr int kTrailLen = 24; // position history samples (~1.2s of flight at 20 fps)
 static constexpr float kHalfWidth = 14.0f;
 
@@ -197,9 +199,12 @@ static void UpdateWisps(PlayState* play, int count, float dt) {
         e->swerveAngleXZ += (i & 1) ? change : -change;
 
         if (e->stateTimer <= 0.5f || !e->doLoop) {
+            // WW's per-tick ease, rescaled to wall-clock: the speed divisor shrinks by dt and the
+            // per-frame velocity caps grow by it (same convention as WWClouds).
             float targetXZ = atan2f(windX, windZ);
-            e->swerveAngleXZ = AddCalcAngle(e->swerveAngleXZ, targetXZ, 10.0f, kS2Rad * 1000.0f, kS2Rad * 1.0f);
-            e->swerveAngleY = AddCalcAngle(e->swerveAngleY, 0.0f, 10.0f, kS2Rad * 1000.0f, kS2Rad * 1.0f);
+            e->swerveAngleXZ =
+                AddCalcAngle(e->swerveAngleXZ, targetXZ, 10.0f / dt, kS2Rad * 1000.0f * dt, kS2Rad * 1.0f * dt);
+            e->swerveAngleY = AddCalcAngle(e->swerveAngleY, 0.0f, 10.0f / dt, kS2Rad * 1000.0f * dt, kS2Rad * 1.0f * dt);
         } else {
             // The signature move: pull a full vertical loop, then resume cruising.
             float loopStep = kS2Rad * 3600.0f * dt;
@@ -262,19 +267,23 @@ static void UpdateWisps(PlayState* play, int count, float dt) {
             e->trailCount++;
         }
 
+        // The AddCalc velocity caps are per-frame quantities in WW's 30 fps sim; scale them (and the
+        // alpha ramp) by dt so the fade-in/cruise/fade-out lifecycle runs at GameCube wall-clock speed
+        // — unscaled, wisps stayed invisible ~50% longer after spawning.
         float maxVel = 0.08f + 0.008f * ((float)i / 30.0f);
         if (e->state == 1) {
-            e->stateTimer = AddCalc(e->stateTimer, 1.0f, 0.3f * dt, 0.1f * maxVel, 0.01f);
+            e->stateTimer = AddCalc(e->stateTimer, 1.0f, 0.3f * dt, 0.1f * maxVel * dt, 0.01f * dt);
             if (e->stateTimer >= 1.0f) {
                 e->state = 2;
             }
             if (e->stateTimer > 0.5f) {
-                e->alpha = AddCalc(e->alpha, 1.0f, 0.5f, 0.05f, 0.001f);
+                e->alpha = AddCalc(e->alpha, 1.0f, 0.5f * dt, 0.05f * dt, 0.001f * dt);
             }
         } else {
-            e->stateTimer = AddCalc(e->stateTimer, 0.0f, 0.5f * dt, maxVel * (0.1f + 0.01f * ((float)i / 30.0f)), 0.01f);
+            e->stateTimer =
+                AddCalc(e->stateTimer, 0.0f, 0.5f * dt, maxVel * (0.1f + 0.01f * ((float)i / 30.0f)) * dt, 0.01f * dt);
             if (e->stateTimer < 0.5f) {
-                e->alpha = AddCalc(e->alpha, 0.0f, 0.5f, 0.05f, 0.001f);
+                e->alpha = AddCalc(e->alpha, 0.0f, 0.5f * dt, 0.05f * dt, 0.001f * dt);
             }
             if (e->stateTimer <= 0.0f) {
                 e->state = 0;
@@ -312,6 +321,15 @@ static void EmitWisp(PlayState* play, const WindEff* e, const u8 col[3], float a
     Vec3f origin = e->trail[tail].pos; // any fixed reference works; verts are exact world positions
 
     OPEN_DISPS(play->state.gfxCtx);
+    // Interpolation child keyed by (wisp, game frame): the frame part never repeats, so this child
+    // never matches the previous game frame and the matrix below is used VERBATIM by every replayed
+    // frame. It must be: the ribbon is world-anchored geometry whose origin (the oldest trail sample)
+    // advances every sim tick with the vertices compensating — lerping the matrix while the vertices
+    // snap made the whole trail swim sideways. Worse, under the default OPEN_DISPS key all wisps
+    // shared one label and matched BY DRAW ORDER, so when the visible set changed a trail lerped
+    // toward another wisp's origin entirely. (The camera still glides: the interpolated view matrix
+    // is applied on top of this exact model matrix.)
+    FrameInterpolation_RecordOpenChild(e, (int)sFrameCounter);
     Matrix_Translate(origin.x, origin.y, origin.z, MTXMODE_NEW);
     gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
 
@@ -339,6 +357,7 @@ static void EmitWisp(PlayState* play, const WindEff* e, const u8 col[3], float a
         gSP2Triangles(POLY_XLU_DISP++, 1, 2, 5, 0, 1, 5, 4, 0);
     }
 
+    FrameInterpolation_RecordCloseChild();
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
