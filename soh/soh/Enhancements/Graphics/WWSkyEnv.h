@@ -28,6 +28,10 @@ typedef struct WWSkyColors {
 
 // `play` is a PlayState* (void* to keep this header light, matching the GameInteractor hook style).
 WWSkyWeather WWSkyEnv_Sample(void* play);
+
+// Normalised sun elevation off OoT's own sun-position formula: +1 at noon, 0 at the horizon (06:00/18:00),
+// -1 at midnight. Shared so the gradient palette and the star fade both track the visible sun, not the clock.
+float WWSkyEnv_SunHeight(void);
 void WWSkyEnv_SampleColors(void* play, const WWSkyWeather* weather, WWSkyColors* out);
 
 // The world-space Y of the sky's horizon line — WW translates the whole vrbox (sky dome, fake sea,

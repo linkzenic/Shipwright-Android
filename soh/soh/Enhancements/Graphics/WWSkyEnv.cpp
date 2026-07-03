@@ -180,70 +180,93 @@ static const SkySlot kSeaPalette[2][6] = {
       { { 21, 35, 33 }, { 33, 46, 42 }, { 15, 45, 46 }, { 50, 55, 56 }, { 45, 53, 59 } } },
 };
 
-// WW's six sea-stage colours (dawn, morning, noon, evening, dusk, night) staged onto Ocarina of Time's
-// OWN day cycle rather than Wind Waker's. The sun position and the HUD clock run off gSaveContext.dayTime,
-// whose day/night boundaries live in D_8011FC1C (z_kankyo.c): dawn 04:00 (0x2AAC), full day 08:00-16:00
-// (0x5556-0xAAAB), sunset 16:00 (0xAAAB), night 19:00 (0xCAAC). WW's native l_time_attribute schedule peaks
-// and sets ~2h later, which desynced the sky from OoT's sun/clock — so we keep WW's colours but re-phase the
-// breakpoints onto OoT's boundaries. dayFrac is the same convention as dayTime/0x10000 (0 = midnight).
-typedef struct {
-    float t0, t1;
-    uint8_t slotA, slotB;
-} SkySchedule;
+// Normalised sun elevation, straight off OoT's own sun-position formula (z_kankyo.c:314,
+// sunPos.y = cos(dayTime - 0x8000)): +1 at noon, 0 as the sun crosses the horizon (06:00 / 18:00), -1 at
+// midnight. We drive the palette off this rather than a clock schedule so the sky stays locked to the
+// *visible* sun — the warm dusk peaks exactly as the sun touches the horizon and night falls only once it is
+// below, the way Wind Waker's vrbox tracks its own sun. (OoT's lighting table D_8011FC1C turns the world to
+// sunset ~2h before the sun geometry actually sets, which is why any clock-based schedule looked early.)
+float WWSkyEnv_SunHeight(void) {
+    return Math_CosS((s16)(gSaveContext.dayTime - 0x8000));
+}
 
-static const SkySchedule kSchedule[] = {
-    { 0.0000f, 0.1667f, 5, 5 }, // 00:00-04:00 night
-    { 0.1667f, 0.2500f, 5, 0 }, // 04:00-06:00 night -> dawn
-    { 0.2500f, 0.2917f, 0, 1 }, // 06:00-07:00 dawn -> morning
-    { 0.2917f, 0.3333f, 1, 2 }, // 07:00-08:00 morning -> noon
-    { 0.3333f, 0.6667f, 2, 2 }, // 08:00-16:00 noon (matches OoT's full-day plateau, 0x5556-0xAAAB)
-    { 0.6667f, 0.7083f, 2, 3 }, // 16:00-17:00 noon -> evening (OoT day->sunset, 0xAAAB-0xB556)
-    { 0.7083f, 0.7500f, 3, 4 }, // 17:00-18:00 evening -> dusk
-    { 0.7500f, 0.7917f, 4, 5 }, // 18:00-19:00 dusk -> night (night by 0xCAAC, matching OoT's nightFlag)
-    { 0.7917f, 1.0000f, 5, 5 }, // 19:00-24:00 night
+// WW's six sea-stage colours (dawn, morning, noon, evening, dusk, night) staged along the sun's descent,
+// brightest slot first. Between two adjacent stops the palette blends from the upper (brighter) slot to the
+// lower one as the sun drops; above the first stop it holds noon, below the last it holds night. The two
+// day halves differ only in which warm slots they pass through — dawn/morning on the way up, evening/dusk on
+// the way down — so we pick the table by AM/PM. Thresholds are sun elevations; easy to nudge while tuning.
+typedef struct {
+    float minHeight; // sun elevation at/above which this stop's slot applies
+    uint8_t slot;    // index into a kSeaPalette weather row
+} SunStop;
+
+static const SunStop kStopsPM[] = { // afternoon -> night (sun descending)
+    { 0.50f, 2 },                   // high sun      -> noon        (~16:00)
+    { 0.15f, 3 },                   // sinking       -> evening warm(~17:26)
+    { 0.00f, 4 },                   // at horizon    -> dusk (peak) (18:00 sunset)
+    { -0.15f, 5 },                  // below horizon -> night       (~18:34)
+};
+static const SunStop kStopsAM[] = { // night -> morning (sun rising), same thresholds mirrored
+    { 0.50f, 2 },                   // high sun      -> noon        (~08:00)
+    { 0.15f, 1 },                   // just risen    -> morning     (~06:34)
+    { 0.00f, 0 },                   // at horizon    -> dawn (peak)  (06:00 sunrise)
+    { -0.15f, 5 },                  // below horizon -> night       (~05:26)
 };
 
 static uint8_t LerpU8(uint8_t a, uint8_t b, float t) {
     return (uint8_t)(a + (b - a) * t);
 }
 
-void WWSkyEnv_SampleColors(void* playPtr, const WWSkyWeather* weather, WWSkyColors* out) {
-    // dayTime (not skyboxTime): it's the clock the sun and HUD use, and it responds instantly to the Save
-    // Editor's Time slider. skyboxTime only tracks dayTime while time runs forward past it (z_kankyo.c:938),
-    // so jumping the clock backward would freeze our sky until it wrapped around. Our gradient interpolates
-    // smoothly, so we don't need skyboxTime's dawn/dusk snap bands.
-    float dayFrac = (float)gSaveContext.dayTime / 65536.0f;
-
-    const SkySchedule* e = &kSchedule[0];
-    for (size_t i = 0; i < sizeof(kSchedule) / sizeof(kSchedule[0]); i++) {
-        if (dayFrac >= kSchedule[i].t0 && dayFrac < kSchedule[i].t1) {
-            e = &kSchedule[i];
-            break;
+// Pick the two palette slots and blend factor for the current sun height. result = lerp(slotA, slotB, u),
+// with slotB the brighter (upper) slot so u -> 1 near it, matching LerpU8(a, b, u) = a + (b - a) * u.
+static void SunSlots(float h, bool pm, int* slotA, int* slotB, float* u) {
+    const SunStop* s = pm ? kStopsPM : kStopsAM;
+    const int n = 4;
+    if (h >= s[0].minHeight) { // sun high: hold the brightest slot
+        *slotA = *slotB = s[0].slot;
+        *u = 0.0f;
+        return;
+    }
+    for (int i = 1; i < n; i++) {
+        if (h >= s[i].minHeight) { // bracket [i-1] (upper/brighter) .. [i] (lower)
+            *slotA = s[i].slot;
+            *slotB = s[i - 1].slot;
+            *u = (h - s[i].minHeight) / (s[i - 1].minHeight - s[i].minHeight); // 1 near upper, 0 near lower
+            return;
         }
     }
-    float u = (dayFrac - e->t0) / (e->t1 - e->t0);
+    *slotA = *slotB = s[n - 1].slot; // sun below the last stop: hold night
+    *u = 0.0f;
+}
+
+void WWSkyEnv_SampleColors(void* playPtr, const WWSkyWeather* weather, WWSkyColors* out) {
+    // Blend between two palette slots by the sun's elevation (not the clock), so the colours track the
+    // visible sun. dayTime's top half tells rising from setting (elevation alone is symmetric about noon).
+    int slotA, slotB;
+    float u;
+    SunSlots(WWSkyEnv_SunHeight(), gSaveContext.dayTime >= 0x8000, &slotA, &slotB, &u);
     float c = weather->cloudiness;
 
     for (int i = 0; i < 3; i++) {
-        // time blend within each weather set, then clear -> rain by cloudiness
-        uint8_t clearSky = LerpU8(kSeaPalette[0][e->slotA].sky[i], kSeaPalette[0][e->slotB].sky[i], u);
-        uint8_t rainSky = LerpU8(kSeaPalette[1][e->slotA].sky[i], kSeaPalette[1][e->slotB].sky[i], u);
+        // sun-elevation blend within each weather set, then clear -> rain by cloudiness
+        uint8_t clearSky = LerpU8(kSeaPalette[0][slotA].sky[i], kSeaPalette[0][slotB].sky[i], u);
+        uint8_t rainSky = LerpU8(kSeaPalette[1][slotA].sky[i], kSeaPalette[1][slotB].sky[i], u);
         out->sky[i] = LerpU8(clearSky, rainSky, c);
 
-        uint8_t clearKas = LerpU8(kSeaPalette[0][e->slotA].kasumi[i], kSeaPalette[0][e->slotB].kasumi[i], u);
-        uint8_t rainKas = LerpU8(kSeaPalette[1][e->slotA].kasumi[i], kSeaPalette[1][e->slotB].kasumi[i], u);
+        uint8_t clearKas = LerpU8(kSeaPalette[0][slotA].kasumi[i], kSeaPalette[0][slotB].kasumi[i], u);
+        uint8_t rainKas = LerpU8(kSeaPalette[1][slotA].kasumi[i], kSeaPalette[1][slotB].kasumi[i], u);
         out->kasumi[i] = LerpU8(clearKas, rainKas, c);
 
-        uint8_t clearUso = LerpU8(kSeaPalette[0][e->slotA].usoUmi[i], kSeaPalette[0][e->slotB].usoUmi[i], u);
-        uint8_t rainUso = LerpU8(kSeaPalette[1][e->slotA].usoUmi[i], kSeaPalette[1][e->slotB].usoUmi[i], u);
+        uint8_t clearUso = LerpU8(kSeaPalette[0][slotA].usoUmi[i], kSeaPalette[0][slotB].usoUmi[i], u);
+        uint8_t rainUso = LerpU8(kSeaPalette[1][slotA].usoUmi[i], kSeaPalette[1][slotB].usoUmi[i], u);
         out->usoUmi[i] = LerpU8(clearUso, rainUso, c);
 
-        uint8_t clearKumo = LerpU8(kSeaPalette[0][e->slotA].kumo[i], kSeaPalette[0][e->slotB].kumo[i], u);
-        uint8_t rainKumo = LerpU8(kSeaPalette[1][e->slotA].kumo[i], kSeaPalette[1][e->slotB].kumo[i], u);
+        uint8_t clearKumo = LerpU8(kSeaPalette[0][slotA].kumo[i], kSeaPalette[0][slotB].kumo[i], u);
+        uint8_t rainKumo = LerpU8(kSeaPalette[1][slotA].kumo[i], kSeaPalette[1][slotB].kumo[i], u);
         out->kumo[i] = LerpU8(clearKumo, rainKumo, c);
 
-        uint8_t clearKC = LerpU8(kSeaPalette[0][e->slotA].kumoCenter[i], kSeaPalette[0][e->slotB].kumoCenter[i], u);
-        uint8_t rainKC = LerpU8(kSeaPalette[1][e->slotA].kumoCenter[i], kSeaPalette[1][e->slotB].kumoCenter[i], u);
+        uint8_t clearKC = LerpU8(kSeaPalette[0][slotA].kumoCenter[i], kSeaPalette[0][slotB].kumoCenter[i], u);
+        uint8_t rainKC = LerpU8(kSeaPalette[1][slotA].kumoCenter[i], kSeaPalette[1][slotB].kumoCenter[i], u);
         out->kumoCenter[i] = LerpU8(clearKC, rainKC, c);
     }
 }
