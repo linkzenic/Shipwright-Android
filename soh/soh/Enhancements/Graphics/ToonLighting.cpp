@@ -59,6 +59,7 @@ static constexpr float kDefaultShadowOpacity = 0.2f;
 static constexpr float kDefaultShadowLength = 0.2f;
 static constexpr float kDefaultShadowSlabDepth = 8.0f; // stencil-volume depth below the feet (ground band)
 static constexpr float kDefaultShadowSlabRise = 8.0f;  // stencil-volume height above the feet (uphill ground)
+static constexpr int kDefaultShadowEdgeSoftness = 1;   // penumbra rings around the silhouette (0 = hard edge)
 static constexpr int kDefaultShadowMaxDistance = 800; // Android-friendly camera-forward shadow distance
 static constexpr float kShadowFadeTime = 0.15f; // seconds to ease the shadow size in/out (anti-pop, like Navi)
 
@@ -199,12 +200,14 @@ static void OnToonFrameUpdate() {
         f32 length = CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldShadows.Length"), kDefaultShadowLength);
         f32 slabDepth = CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldShadows.SlabDepth"), kDefaultShadowSlabDepth);
         f32 slabRise = CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldShadows.SlabRise"), kDefaultShadowSlabRise);
+        s32 edgeSoftness =
+            CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.EdgeSoftness"), kDefaultShadowEdgeSoftness);
         bool showVolume = CVarGetInteger(CVAR_DEVELOPER_TOOLS("WorldShadows.ShowVolume"), 0);
         // Map the Length slider to how steeply the key light is forced before projecting: low Length = steep
         // (short shadow tucked under the actor), high Length = lets a low key cast a long lean. 0 => 0.95, 1 => 0.10.
         f32 minElevation = 0.95f - (CLAMP(length, 0.0f, 1.0f) * 0.85f);
         // Slab Depth/Rise: how far below/above the feet the stencil volume reaches (the band of ground it conforms to).
-        interp->SetToonShadowParams(opacity, minElevation, slabDepth, slabRise, showVolume);
+        interp->SetToonShadowParams(opacity, minElevation, slabDepth, slabRise, edgeSoftness, showVolume);
     }
 
     Fast::GfxRenderingAPI* rapi = GetRenderingApi();
