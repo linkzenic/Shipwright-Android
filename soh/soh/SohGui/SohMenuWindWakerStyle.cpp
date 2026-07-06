@@ -405,6 +405,7 @@ void SohMenu::AddMenuWindWakerStyle() {
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.ReceiverActors"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.Opacity"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.EdgeSoftness"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.Length"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.SlabDepth"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.WorldShadows.SlabRise"));
@@ -422,6 +423,19 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .Max(1.0f)
                      .DefaultValue(0.2f)
                      .IsPercentage());
+    AddWidget(path, "Edge Softness", WIDGET_CVAR_SLIDER_INT)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WorldShadows.EdgeSoftness"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessShadowsEnabled)
+        .Options(IntSliderOptions()
+                     .Tooltip("Smooths the shadow's outline: edge cells the silhouette only partially covers "
+                              "render lighter, anti-aliasing the shape. 0 = hard edge; 1 = one lighter step; "
+                              "2 = a finer ramp plus a slightly wider fringe.")
+                     .Min(0)
+                     .Max(2)
+                     .DefaultValue(1)
+                     .ShowButtons(true)
+                     .Format("%d"));
     AddWidget(path, "Length", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.WorldShadows.Length"))
         .RaceDisable(false)
