@@ -1550,6 +1550,12 @@ void Play_Draw(PlayState* play) {
             }
         }
 
+        // SOH [Enhancement] Wind Waker-style light casting: cast point-light pools onto the world.
+        // Runs after the room is drawn and before the actor loop, so pools land on the world geometry and
+        // under the actors. The handler is only registered while the feature is enabled (COND_HOOK), so
+        // this is a no-op otherwise (selection/draw live in soh/soh/Enhancements/Graphics/WorldLighting.cpp).
+        GameInteractor_ExecuteOnPlayDrawWorldLights(play);
+
         if ((HREG(80) != 10) || (HREG(83) != 0)) {
             if ((play->skyboxCtx.unk_140 != 0) && (GET_ACTIVE_CAM(play)->setting != CAM_SET_PREREND_FIXED)) {
                 Vec3f quakeOffset;

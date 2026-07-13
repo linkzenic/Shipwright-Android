@@ -1,6 +1,6 @@
 def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
 def buildAsApplication = !buildAsLibrary
-def androidAppVersionName = "9.2.3-android.5"
+def androidAppVersionName = "9.2.3-celshade0.5-android.1"
 if (buildAsApplication) {
     apply plugin: 'com.android.application'
 }
@@ -17,11 +17,11 @@ android {
     }
     defaultConfig {
         if (buildAsApplication) {
-            applicationId "com.linkzenic.soh"
+            applicationId "com.linkzenic.sohcs"
         }
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 13
+        versionCode 1
         versionName androidAppVersionName
     }
     signingConfigs {
@@ -69,7 +69,7 @@ android {
             def versionCode = variant.versionCode
 
             def gitTag = System.getenv("GIT_TAG") ?: "v${versionName}"
-            def newApkName = "soh_${buildType}_${gitTag}.apk"
+            def newApkName = "sohcs_${buildType}_${gitTag}.apk"
             outputFileName = newApkName
         }
     }

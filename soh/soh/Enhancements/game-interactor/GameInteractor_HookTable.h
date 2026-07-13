@@ -38,6 +38,7 @@ DEFINE_HOOK(OnActorInit, (void* actor));
 DEFINE_HOOK(OnActorSpawn, (void* actor));
 DEFINE_HOOK(ShouldActorUpdate, (void* actor, bool* result));
 DEFINE_HOOK(OnActorUpdate, (void* actor));
+DEFINE_HOOK(OnActorDraw, (void* actor));
 DEFINE_HOOK(OnActorKill, (void* actor));
 DEFINE_HOOK(OnActorDestroy, (void* actor));
 DEFINE_HOOK(OnEnemyDefeat, (void* actor));
@@ -54,6 +55,9 @@ DEFINE_HOOK(OnPlayerShieldControl, (float* sp50, float* sp54));
 DEFINE_HOOK(OnPlayDestroy, ());
 DEFINE_HOOK(OnPlayDrawBegin, ());
 DEFINE_HOOK(OnPlayDrawEnd, ());
+// SOH [Enhancement] Fires inside Play_Draw after the room is drawn but before actors, so a handler can
+// cast Wind Waker-style light pools onto the world (under the actors). See Graphics/WorldLighting.cpp.
+DEFINE_HOOK(OnPlayDrawWorldLights, (void* play));
 DEFINE_HOOK(OnVanillaBehavior, (GIVanillaBehavior flag, bool* result, va_list originalArgs));
 DEFINE_HOOK(OnSaveFile, (int32_t fileNum, int32_t sectionID));
 DEFINE_HOOK(OnLoadFile, (int32_t fileNum));

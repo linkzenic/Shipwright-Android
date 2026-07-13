@@ -817,6 +817,26 @@ void EnElf_UpdateLights(EnElf* this, PlayState* play) {
     s16 glowLightRadius;
     Player* player;
 
+    // SOH [Enhancement] Wind Waker: tint Navi's emitted light toward her current targeting colour, so cel
+    // shading, the cast light pool, and the vanilla scene lighting all read one shared colour. Done at the
+    // source so every downstream consumer gets it for free. Saturation 0 (the default) leaves it pure white
+    // = identical to vanilla; only Navi (FAIRY_NAVI) is affected.
+    u8 lightR = 255;
+    u8 lightG = 255;
+    u8 lightB = 255;
+    if (this->actor.params == FAIRY_NAVI) {
+        f32 naviSaturation = CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldLighting.NaviSaturation"), 0.2f);
+        if (naviSaturation > 0.0f) {
+            if (naviSaturation > 1.0f) {
+                naviSaturation = 1.0f;
+            }
+            // Blend white -> outerColor (her aura/targeting colour): 255 + (outerColor - 255) * saturation.
+            lightR = (u8)(255.0f + ((this->outerColor.r - 255.0f) * naviSaturation));
+            lightG = (u8)(255.0f + ((this->outerColor.g - 255.0f) * naviSaturation));
+            lightB = (u8)(255.0f + ((this->outerColor.b - 255.0f) * naviSaturation));
+        }
+    }
+
     glowLightRadius = 100;
 
     if (this->unk_2A8 == 8) {
@@ -826,15 +846,15 @@ void EnElf_UpdateLights(EnElf* this, PlayState* play) {
     if (this->fairyFlags & 0x20) {
         player = GET_PLAYER(play);
         Lights_PointNoGlowSetInfo(&this->lightInfoNoGlow, player->actor.world.pos.x,
-                                  (s16)(player->actor.world.pos.y) + 60.0f, player->actor.world.pos.z, 255, 255, 255,
-                                  200);
+                                  (s16)(player->actor.world.pos.y) + 60.0f, player->actor.world.pos.z, lightR, lightG,
+                                  lightB, 200);
     } else {
         Lights_PointNoGlowSetInfo(&this->lightInfoNoGlow, this->actor.world.pos.x, this->actor.world.pos.y,
-                                  this->actor.world.pos.z, 255, 255, 255, -1);
+                                  this->actor.world.pos.z, lightR, lightG, lightB, -1);
     }
 
     Lights_PointGlowSetInfo(&this->lightInfoGlow, this->actor.world.pos.x, this->actor.world.pos.y,
-                            this->actor.world.pos.z, 255, 255, 255, glowLightRadius);
+                            this->actor.world.pos.z, lightR, lightG, lightB, glowLightRadius);
 
     this->unk_2BC = Math_Atan2S(this->actor.velocity.z, this->actor.velocity.x);
 

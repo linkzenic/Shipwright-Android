@@ -98,10 +98,24 @@ void ActorShape_Init(ActorShape* shape, f32 yOffset, ActorShadowFunc shadowDraw,
     shape->shadowAlpha = 255;
 }
 
+// SOH [Enhancement] Actor shadows: the Wind Waker-style shape shadow (see
+// soh/soh/Enhancements/Graphics/ToonLighting.cpp) replaces the vanilla actor shadows — Link's multi-light
+// feet, the NPC circle shadows, the horse shadow, the sign/cobra texture shadows. When the feature is on
+// AND set to suppress, early-return the vanilla draws that funnel through these helpers. Tied to the shadow
+// feature's own CVars (not cel shading), so the two can be toggled independently.
+static s32 ActorShadow_Suppressed(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0) &&
+           CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"), 1);
+}
+
 void ActorShadow_Draw(Actor* actor, Lights* lights, PlayState* play, Gfx* dlist, Color_RGBA8* color) {
     f32 temp1;
     f32 temp2;
     MtxF sp60;
+
+    if (ActorShadow_Suppressed()) {
+        return;
+    }
 
     if (actor->floorPoly != NULL) {
         temp1 = actor->world.pos.y - actor->floorHeight;
@@ -181,6 +195,10 @@ void ActorShadow_DrawFoot(PlayState* play, Light* light, MtxF* arg2, s32 arg3, f
 
 void ActorShadow_DrawFeet(Actor* actor, Lights* lights, PlayState* play) {
     f32 distToFloor = actor->world.pos.y - actor->floorHeight;
+
+    if (ActorShadow_Suppressed()) {
+        return;
+    }
 
     if (distToFloor > 20.0f) {
         f32 shadowScale = actor->shape.shadowScale;
@@ -2759,6 +2777,16 @@ void Actor_Draw(PlayState* play, Actor* actor) {
                    (actor->flags & ACTOR_FLAG_IGNORE_POINTLIGHTS) ? NULL : &actor->world.pos);
     Lights_Draw(lights, play->state.gfxCtx);
 
+    // SOH [Enhancement] Toon lighting / actor shadows: let the enhancement choose and emit this actor's key
+    // light (selection/easing live in soh/soh/Enhancements/Graphics/ToonLighting.cpp). The actor shadow
+    // reuses that same key, so fire the hook when EITHER cel shading OR actor shadows is on; the handler
+    // gates the relight and the shadow independently. Guarded so the hook is never invoked per-actor when
+    // both are off.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1) ||
+        CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0)) {
+        GameInteractor_ExecuteOnActorDraw(actor);
+    }
+
     FrameInterpolation_RecordActorPosRotMatrix();
     if (actor->flags & ACTOR_FLAG_IGNORE_QUAKE) {
         Matrix_SetTranslateRotateYXZ(
@@ -3047,6 +3075,13 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
 
     OPEN_DISPS(play->state.gfxCtx);
 
+    // SOH [Enhancement] Toon lighting: mark all actor draws so the renderer applies the toon ramp to
+    // objects only (the static scene is never bracketed). Gated by the CVar so it is a no-op when off.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
+        gSPToon(POLY_OPA_DISP++, true);
+        gSPToon(POLY_XLU_DISP++, true);
+    }
+
     actorListEntry = &actorCtx->actorLists[0];
 
     for (i = 0; i < ARRAY_COUNT(actorCtx->actorLists); i++, actorListEntry++) {
@@ -3118,6 +3153,12 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
 
             actor = actor->next;
         }
+    }
+
+    // SOH [Enhancement] Toon lighting: end the actor bracket before effects/lens/UI are drawn.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
+        gSPToon(POLY_OPA_DISP++, false);
+        gSPToon(POLY_XLU_DISP++, false);
     }
 
     if ((HREG(64) != 1) || (HREG(73) != 0)) {

@@ -446,6 +446,13 @@ void EnKarebaba_Update(Actor* thisx, PlayState* play) {
 void EnKarebaba_DrawBaseShadow(EnKarebaba* this, PlayState* play) {
     MtxF mf;
 
+    // SOH [Enhancement] Actor shadows draw this baba's shape shadow from the chosen key light; its lit
+    // body is captured, so this bespoke circle would double up. Skip it when vanilla suppression is on.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0) &&
+        CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"), 1)) {
+        return;
+    }
+
     OPEN_DISPS(play->state.gfxCtx);
 
     Gfx_SetupDL_44Xlu(play->state.gfxCtx);

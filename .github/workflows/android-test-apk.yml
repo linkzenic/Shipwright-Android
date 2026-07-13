@@ -1,4 +1,4 @@
-name: Android Test APK
+name: Android Cel-Shading Test APK
 
 on:
   workflow_dispatch:
@@ -49,16 +49,16 @@ jobs:
 
       - name: Prepare APK artifact
         run: |
-          APK=$(find Android/app/build/outputs/apk/release -name 'soh_release_*.apk' | head -1)
-          cp "$APK" "soh-test-${{ github.run_number }}.apk"
-          sha256sum "soh-test-${{ github.run_number }}.apk" > "soh-test-${{ github.run_number }}.apk.sha256"
+          APK=$(find Android/app/build/outputs/apk/release -name 'sohcs_release_*.apk' | head -1)
+          cp "$APK" "sohcs-test-${{ github.run_number }}.apk"
+          sha256sum "sohcs-test-${{ github.run_number }}.apk" > "sohcs-test-${{ github.run_number }}.apk.sha256"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: soh-test-apk
+          name: sohcs-test-apk
           path: |
-            soh-test-${{ github.run_number }}.apk
-            soh-test-${{ github.run_number }}.apk.sha256
+            sohcs-test-${{ github.run_number }}.apk
+            sohcs-test-${{ github.run_number }}.apk.sha256
           if-no-files-found: error
           retention-days: 14

@@ -63,15 +63,19 @@ public class MainActivity extends SDLActivity{
     private volatile boolean mIsAiming = false;
     private static final int COPY_BUFFER_SIZE = 65536;
     private static final int RUMBLE_MAX_DURATION_MS = 5000;
-    private static String currentDataRootPath = "/storage/emulated/0/SOH";
+    private static final String DATA_FOLDER_NAME = "SOHCS";
+    private static final String STANDARD_DATA_FOLDER_NAME = "SOH";
+    private static String currentDataRootPath = "/storage/emulated/0/" + DATA_FOLDER_NAME;
     private static final String PREF_DATA_ROOT_PATH = "dataRootPath";
     private static final String PREF_LEGACY_DATA_MIGRATION_COMPLETE = "legacyDataMigrationComplete";
+    private static final String PREF_STANDARD_DATA_IMPORT_COMPLETE = "standardDataImportComplete";
+    private static final String PREF_STANDARD_CONFIG_IMPORT_COMPLETE = "standardConfigImportComplete";
     private static final String PREF_TOUCH_CONTROLS_DISABLED = "touchControlsDisabled";
     // Legacy key name: true means the touch controls are hidden, not visible.
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String SUPPORT_FILES_VERSION_MARKER = ".android_support_files_version";
     // Bump this only when bundled Android support assets or archive layout changes.
-    private static final String SUPPORT_FILES_VERSION = "soh-android-support-1";
+    private static final String SUPPORT_FILES_VERSION = "sohcs-android-support-2";
     private AlertDialog dataRootMigrationDialog;
     private AlertDialog setupProgressDialog;
 
@@ -213,7 +217,7 @@ public class MainActivity extends SDLActivity{
     }
 
     private File getDefaultDataRootFolder() {
-        return new File(Environment.getExternalStorageDirectory(), "SOH");
+        return new File(Environment.getExternalStorageDirectory(), DATA_FOLDER_NAME);
     }
 
     private void updateCurrentDataRootPath() {
@@ -256,7 +260,7 @@ public class MainActivity extends SDLActivity{
                     continue;
                 }
 
-                File sdFolder = new File(volumeRoot, "SOH");
+                File sdFolder = new File(volumeRoot, DATA_FOLDER_NAME);
                 options.put(sdFolder.getAbsolutePath(),
                         new DataRootOption("SD card: " + sdFolder.getAbsolutePath(), sdFolder));
             }
@@ -573,9 +577,9 @@ public class MainActivity extends SDLActivity{
                     "Copying required support files. Please keep Ship of Harkinian open; SD cards may take a few minutes.");
             Executors.newSingleThreadExecutor().execute(() -> setupFilesInBackground(targetRootFolder));
         } else {
-            // No setup needed; but always ensure soh.o2r is present from APK assets
-            if (!sohOtrFile.exists()) {
-                Executors.newSingleThreadExecutor().execute(() -> {
+            // Keep support and compatible ROM archives available without blocking the UI thread.
+            Executors.newSingleThreadExecutor().execute(() -> {
+                if (!sohOtrFile.exists()) {
                     try {
                         try (InputStream in = getAssets().open("soh.o2r");
                              OutputStream out = new FileOutputStream(sohOtrFile)) {
@@ -588,11 +592,10 @@ public class MainActivity extends SDLActivity{
                     } catch (IOException e) {
                         // not bundled, nothing to do
                     }
-                    setupLatch.countDown();
-                });
-            } else {
+                }
+                importStandardDataIfNeeded(targetRootFolder);
                 setupLatch.countDown();
-            }
+            });
         }
     }
 
@@ -608,6 +611,7 @@ public class MainActivity extends SDLActivity{
         }
 
         migrateLegacyAppDataIfNeeded(targetRootFolder);
+        importStandardDataIfNeeded(targetRootFolder);
 
         // Always ensure mods folder exists
         File targetModsDir = new File(targetRootFolder, "mods");
@@ -706,6 +710,70 @@ public class MainActivity extends SDLActivity{
 
         preferences.edit().putBoolean(PREF_LEGACY_DATA_MIGRATION_COMPLETE, true).apply();
         runOnUiThread(() -> Toast.makeText(this, "Existing save data checked", Toast.LENGTH_SHORT).show());
+    }
+
+    private void importStandardDataIfNeeded(File targetRootFolder) {
+        boolean userDataImportComplete = preferences.getBoolean(PREF_STANDARD_DATA_IMPORT_COMPLETE, false);
+
+        File standardRoot = new File(Environment.getExternalStorageDirectory(), STANDARD_DATA_FOLDER_NAME);
+        if (!standardRoot.isDirectory() || standardRoot.getAbsolutePath().equals(targetRootFolder.getAbsolutePath())) {
+            if (!userDataImportComplete) {
+                preferences.edit().putBoolean(PREF_STANDARD_DATA_IMPORT_COMPLETE, true).apply();
+            }
+            return;
+        }
+
+        String[] compatibleArchives = { "oot.o2r", "oot-mq.o2r", "oot.otr", "oot-mq.otr" };
+        for (String archiveName : compatibleArchives) {
+            File source = new File(standardRoot, archiveName);
+            File destination = new File(targetRootFolder, archiveName);
+            if (!source.isFile() || destination.exists()) {
+                continue;
+            }
+            try {
+                AssetCopyUtil.copyFileNoOverwrite(source, destination);
+                Log.i("setupFiles", "Imported standard archive: " + archiveName);
+            } catch (IOException e) {
+                Log.e("setupFiles", "Failed to import standard archive: " + archiveName, e);
+            }
+        }
+
+        importStandardConfigIfNeeded(standardRoot, targetRootFolder);
+
+        if (!userDataImportComplete) {
+            File standardSaves = new File(standardRoot, "Save");
+            File sohcsSaves = new File(targetRootFolder, "Save");
+            if (standardSaves.isDirectory()) {
+                try {
+                    AssetCopyUtil.copyDirectoryNoOverwrite(standardSaves, sohcsSaves);
+                    Log.i("setupFiles", "Imported standard save data");
+                } catch (IOException e) {
+                    Log.e("setupFiles", "Failed to import standard save data", e);
+                }
+            }
+
+            preferences.edit().putBoolean(PREF_STANDARD_DATA_IMPORT_COMPLETE, true).apply();
+        }
+    }
+
+    private void importStandardConfigIfNeeded(File standardRoot, File targetRootFolder) {
+        if (preferences.getBoolean(PREF_STANDARD_CONFIG_IMPORT_COMPLETE, false)) {
+            return;
+        }
+
+        File sourceConfig = new File(standardRoot, "shipofharkinian.json");
+        if (!sourceConfig.isFile()) {
+            return;
+        }
+
+        File targetConfig = new File(targetRootFolder, "shipofharkinian.json");
+        try {
+            AssetCopyUtil.copyFileNoOverwrite(sourceConfig, targetConfig);
+            preferences.edit().putBoolean(PREF_STANDARD_CONFIG_IMPORT_COMPLETE, true).apply();
+            Log.i("setupFiles", "Imported normal SoH settings snapshot");
+        } catch (IOException e) {
+            Log.e("setupFiles", "Failed to import normal SoH settings snapshot", e);
+        }
     }
 
     private void showSetupFailure(String message) {

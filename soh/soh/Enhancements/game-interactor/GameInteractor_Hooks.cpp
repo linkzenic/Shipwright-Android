@@ -169,6 +169,10 @@ void GameInteractor_ExecuteOnActorUpdate(void* actor) {
     GameInteractor::Instance->ExecuteHooksForFilter<GameInteractor::OnActorUpdate>(actor);
 }
 
+void GameInteractor_ExecuteOnActorDraw(void* actor) {
+    GameInteractor::Instance->ExecuteHooks<GameInteractor::OnActorDraw>(actor);
+}
+
 void GameInteractor_ExecuteOnActorKill(void* actor) {
     GameInteractor::Instance->ExecuteHooks<GameInteractor::OnActorKill>(actor);
     GameInteractor::Instance->ExecuteHooksForID<GameInteractor::OnActorKill>(((Actor*)actor)->id, actor);
@@ -243,6 +247,10 @@ void GameInteractor_ExecuteOnPlayDrawBegin() {
 
 void GameInteractor_ExecuteOnPlayDrawEnd() {
     GameInteractor::Instance->ExecuteHooks<GameInteractor::OnPlayDrawEnd>();
+}
+
+void GameInteractor_ExecuteOnPlayDrawWorldLights(void* play) {
+    GameInteractor::Instance->ExecuteHooks<GameInteractor::OnPlayDrawWorldLights>(play);
 }
 
 bool GameInteractor_Should(GIVanillaBehavior flag, u32 result, ...) {
