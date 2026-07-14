@@ -65,7 +65,7 @@ public class MainActivity extends SDLActivity{
     private volatile boolean mIsAiming = false;
     private static final int COPY_BUFFER_SIZE = 65536;
     private static final int RUMBLE_MAX_DURATION_MS = 5000;
-    private static final String DATA_FOLDER_NAME = "SOHNEI";
+    private static final String DATA_FOLDER_NAME = "SOHUNIFIED";
     private static String currentDataRootPath = "/storage/emulated/0/" + DATA_FOLDER_NAME;
     private static final String PREF_DATA_ROOT_PATH = "dataRootPath";
     private static final String PREF_LEGACY_DATA_MIGRATION_COMPLETE = "legacyDataMigrationComplete";
@@ -76,7 +76,7 @@ public class MainActivity extends SDLActivity{
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String SUPPORT_FILES_VERSION_MARKER = ".android_support_files_version";
     // Bump this only when bundled Android support assets or archive layout changes.
-    private static final String SUPPORT_FILES_VERSION = "sohnei-android-support-4";
+    private static final String SUPPORT_FILES_VERSION = "sohunified-android-support-2";
     private AlertDialog dataRootMigrationDialog;
     private AlertDialog setupProgressDialog;
 
@@ -88,7 +88,7 @@ public class MainActivity extends SDLActivity{
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        preferences = getSharedPreferences("com.dishii.soh.prefs", Context.MODE_PRIVATE);
+        preferences = getSharedPreferences("com.linkzenic.sohunified.prefs", Context.MODE_PRIVATE);
         updateCurrentDataRootPath();
 
         Log.i("SoH", "hasStoragePermission=" + hasStoragePermission());
@@ -696,10 +696,10 @@ public class MainActivity extends SDLActivity{
 
         new AlertDialog.Builder(this)
                 .setTitle("Import Majora's Mask Assets?")
-                .setMessage("SOHNEI can try to copy mm.o2r from your 2Ship2Harkinian data folder:\n\n" +
+                .setMessage("SOH Unified Test can try to copy mm.o2r from your 2Ship2Harkinian data folder:\n\n" +
                         TWO_SHIP_MM_O2R_PATH + "\n\n" +
                         "This enables Majora's Mask models, animations, audio, and transformation features. " +
-                        "SOHNEI will verify that the copied file exactly matches the source.")
+                        "SOH Unified Test will verify that the copied file exactly matches the source.")
                 .setCancelable(false)
                 .setPositiveButton("Try Copy", (dialog, which) -> importMmO2rFromTwoShip(targetRootFolder))
                 .setNegativeButton("Skip", (dialog, which) -> {
@@ -715,7 +715,7 @@ public class MainActivity extends SDLActivity{
 
     private void importMmO2rFromTwoShip(File targetRootFolder) {
         showSetupProgressDialog("Importing Majora's Mask Assets",
-                "Copying and verifying mm.o2r from 2Ship2Harkinian. Please keep SOHNEI open.");
+                "Copying and verifying mm.o2r from 2Ship2Harkinian. Please keep SOH Unified Test open.");
 
         Executors.newSingleThreadExecutor().execute(() -> {
             String errorMessage = null;
@@ -738,10 +738,10 @@ public class MainActivity extends SDLActivity{
                 }
 
                 if (target.exists() && !target.delete()) {
-                    throw new IOException("The existing SOHNEI mm.o2r could not be replaced.");
+                    throw new IOException("The existing SOH Unified Test mm.o2r could not be replaced.");
                 }
                 if (!temporaryTarget.renameTo(target)) {
-                    throw new IOException("The verified file could not be moved into the SOHNEI folder.");
+                    throw new IOException("The verified file could not be moved into the SOHUNIFIED folder.");
                 }
 
                 byte[] installedHash = calculateSha256(target);
@@ -802,7 +802,7 @@ public class MainActivity extends SDLActivity{
             new AlertDialog.Builder(this)
                     .setTitle("MM Assets Imported")
                     .setMessage("mm.o2r was copied from 2Ship2Harkinian and verified successfully. " +
-                            "SOHNEI will now validate its game version as the app starts.")
+                            "SOH Unified Test will now validate its game version as the app starts.")
                     .setCancelable(false)
                     .setPositiveButton("Continue", (dialog, which) -> setupLatch.countDown())
                     .show();
@@ -919,7 +919,7 @@ public class MainActivity extends SDLActivity{
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
-                    showSetupFailure("The selected file could not be copied into the SOHNEI folder.");
+                    showSetupFailure("The selected file could not be copied into the SOHUNIFIED folder.");
                     return;
                 }
             } else {
@@ -1006,7 +1006,7 @@ public class MainActivity extends SDLActivity{
     private void showStorageAccessFailure() {
         runOnUiThread(() -> new AlertDialog.Builder(this)
                 .setTitle("Storage Permission Required")
-                .setMessage("The app needs file access to create and update the SOHNEI folder. Please grant storage access and try again.")
+                .setMessage("The app needs file access to create and update the SOHUNIFIED folder. Please grant storage access and try again.")
                 .setCancelable(false)
                 .setPositiveButton("Open Settings", (dialog, which) -> requestStoragePermission())
                 .setNegativeButton("Close", (dialog, which) -> finish())
