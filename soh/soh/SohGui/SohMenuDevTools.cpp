@@ -79,6 +79,21 @@ void SohMenu::AddMenuDevTools() {
         .CVar(CVAR_DEVELOPER_TOOLS("ResourceLogging"))
         .Options(CheckboxOptions().Tooltip("Logs some resources as XML when they're loaded in binary format."));
 
+    AddWidget(path, "Toon Lighting Viewer", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_DEVELOPER_TOOLS("ToonLighting.ShowDebug"))
+        .Options(CheckboxOptions().Tooltip(
+            "Draws a debug ray from each actor for every candidate light (coloured by the light, longer "
+            "when stronger) plus a bold white ray for the chosen toon key light. Lets you see which light "
+            "is winning and where the key points. Requires Toon Lighting to be enabled."));
+
+    AddWidget(path, "Toon Lighting: Highlight Lit Objects", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_DEVELOPER_TOOLS("ToonLighting.HighlightBands"))
+        .Options(CheckboxOptions().Tooltip(
+            "Renders every toon-lit object as flat white on the lit side and flat black in shadow (the "
+            "texture is discarded), so it is obvious which draws are receiving toon lighting. Use it to "
+            "confirm whether large surfaces like water or lava are being relit (and flickering as the ramp "
+            "edge sweeps across them). Requires Toon Lighting to be enabled."));
+
     AddWidget(path, "Frame Advance", WIDGET_CHECKBOX)
         .Options(CheckboxOptions().Tooltip(
             "This allows you to advance through the game one frame at a time on command. "
