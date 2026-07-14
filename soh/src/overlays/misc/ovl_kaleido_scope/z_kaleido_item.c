@@ -1815,23 +1815,19 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
         cursorItem = pauseCtx->cursorItem[PAUSE_ITEM];
         cursorSlot = pauseCtx->cursorSlot[PAUSE_ITEM];
 
+        // Allow the inventory sub-page switch from the item grid or either page arrow.
+        bool ngcMode = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
+        s16 freedBtn = ngcMode ? BTN_Z : BTN_L;
+
+        if (ExtInv_CanSwitchPage() && CHECK_BTN_ALL(input->press.button, freedBtn) && !IsItemCycling()) {
+            ExtInv_SwitchPage();
+            Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                                   &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+            moveCursorResult = 2;
+        }
+
         if (pauseCtx->cursorSpecialPos == 0) {
             pauseCtx->cursorColorSet = 4;
-
-            // Inventory sub-page switch (vanilla / custom items / MM masks).
-            // It uses whichever shoulder button is NOT bound to kaleido tab
-            // switching: tab switching (KaleidoScope_HandlePageToggles) uses L
-            // by default (NGCKaleidoSwitcher) and Z when the switcher is off, so
-            // this takes the freed button and the two never collide.
-            bool ngcMode = CVarGetInteger(CVAR_ENHANCEMENT("NGCKaleidoSwitcher"), 0) != 0;
-            s16 freedBtn = ngcMode ? BTN_Z : BTN_L;
-
-            if (ExtInv_CanSwitchPage() && CHECK_BTN_ALL(input->press.button, freedBtn) && !IsItemCycling()) {
-                ExtInv_SwitchPage();
-                Audio_PlaySoundGeneral(NA_SE_SY_HP_RECOVER, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
-                                       &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
-                moveCursorResult = 2;
-            }
 
             if (cursorItem == PAUSE_ITEM_NONE) {
                 pauseCtx->stickRelX = 40;
@@ -2248,6 +2244,42 @@ void KaleidoScope_SetupItemEquip(PlayState* play, u16 item, u16 slot, s16 animX,
     // Mario), so they reappear on Link; this only stops NEW assignments.
     if (CVarGetInteger("gSm64Mario", 0) != 0 && pauseCtx->equipTargetCBtn != 1) {
         Audio_PlaySoundGeneral(NA_SE_SY_ERROR, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
+                               &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
+        return;
+    }
+
+    // NEI's MM mask IDs overlap the range vanilla uses internally for its
+    // magic-arrow equip animation (0xBF+). That animation indexes three-entry
+    // arrow color arrays with the item ID and its overlay texture command is
+    // also unsafe for dynamically resolved OTR paths. Equip masks immediately;
+    // the pause grid and live HUD still render their managed HD textures.
+    if (item >= ITEM_MM_MASK_POSTMAN && item <= ITEM_MM_MASK_FIERCE_DEITY) {
+        uint16_t targetButtonIndex = pauseCtx->equipTargetCBtn + 1;
+        for (uint16_t otherSlotIndex = 0; otherSlotIndex < ARRAY_COUNT(gSaveContext.equips.cButtonSlots);
+             otherSlotIndex++) {
+            uint16_t otherButtonIndex = otherSlotIndex + 1;
+            if (otherSlotIndex == pauseCtx->equipTargetCBtn) {
+                continue;
+            }
+            if (slot == gSaveContext.equips.cButtonSlots[otherSlotIndex]) {
+                if (gSaveContext.equips.buttonItems[targetButtonIndex] != ITEM_NONE) {
+                    gSaveContext.equips.buttonItems[otherButtonIndex] =
+                        gSaveContext.equips.buttonItems[targetButtonIndex];
+                    gSaveContext.equips.cButtonSlots[otherSlotIndex] =
+                        gSaveContext.equips.cButtonSlots[pauseCtx->equipTargetCBtn];
+                    Interface_LoadItemIcon2(play, otherButtonIndex);
+                } else {
+                    gSaveContext.equips.buttonItems[otherButtonIndex] = ITEM_NONE;
+                    gSaveContext.equips.cButtonSlots[otherSlotIndex] = SLOT_NONE;
+                }
+            }
+        }
+
+        gSaveContext.equips.buttonItems[targetButtonIndex] = item;
+        gSaveContext.equips.cButtonSlots[pauseCtx->equipTargetCBtn] = slot;
+        Interface_LoadItemIcon1(play, targetButtonIndex);
+        pauseCtx->unk_1E4 = 0;
+        Audio_PlaySoundGeneral(NA_SE_SY_DECIDE, &gSfxDefaultPos, 4, &gSfxDefaultFreqAndVolScale,
                                &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
         return;
     }

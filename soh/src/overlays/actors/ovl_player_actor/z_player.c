@@ -2691,14 +2691,27 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
             }
         }
 
-        if (!maskOnButton && this->currentMask == PLAYER_MASK_BUNNY) {
-            maskOnButton = Player_ItemIsItemAction(gSaveContext.equips.buttonItems[1], PLAYER_IA_MM_MASK_BUNNY) ||
-                           Player_ItemIsItemAction(gSaveContext.equips.buttonItems[2], PLAYER_IA_MM_MASK_BUNNY) ||
-                           Player_ItemIsItemAction(gSaveContext.equips.buttonItems[3], PLAYER_IA_MM_MASK_BUNNY);
+        // The MM-page Bunny, Keaton, and Truth items deliberately wear their OOT
+        // counterparts so OOT NPC interactions continue to work. Their custom
+        // item-action IDs do not equal the vanilla mask IDs above, so explicitly
+        // count the corresponding MM item as still present on a button. Without
+        // this, Keaton/Truth are removed again on the very next frame.
+        s32 mmMaskItemAction = PLAYER_IA_NONE;
+        if (this->currentMask == PLAYER_MASK_BUNNY) {
+            mmMaskItemAction = PLAYER_IA_MM_MASK_BUNNY;
+        } else if (this->currentMask == PLAYER_MASK_KEATON) {
+            mmMaskItemAction = PLAYER_IA_MM_MASK_KEATON;
+        } else if (this->currentMask == PLAYER_MASK_TRUTH) {
+            mmMaskItemAction = PLAYER_IA_MM_MASK_TRUTH;
+        }
+        if (!maskOnButton && mmMaskItemAction != PLAYER_IA_NONE) {
+            maskOnButton = Player_ItemIsItemAction(gSaveContext.equips.buttonItems[1], mmMaskItemAction) ||
+                           Player_ItemIsItemAction(gSaveContext.equips.buttonItems[2], mmMaskItemAction) ||
+                           Player_ItemIsItemAction(gSaveContext.equips.buttonItems[3], mmMaskItemAction);
             if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
                 for (int buttonIndex = 0; buttonIndex < 4; buttonIndex++) {
-                    maskOnButton |= Player_ItemIsItemAction(gSaveContext.equips.buttonItems[5 + buttonIndex],
-                                                            PLAYER_IA_MM_MASK_BUNNY);
+                    maskOnButton |=
+                        Player_ItemIsItemAction(gSaveContext.equips.buttonItems[5 + buttonIndex], mmMaskItemAction);
                 }
             }
         }

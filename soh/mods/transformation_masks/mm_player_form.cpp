@@ -608,15 +608,17 @@ static const FormItemEntry* sFormItemHandlers[MM_PLAYER_FORM_MAX] = {
 // =============================================================================
 
 // Goron eye textures (from object_link_goron.h)
-static const char sGoronEyeOpen[] = "__OTR__objects/object_link_goron/gLinkGoronEyesOpenTex";
-static const char sGoronEyeHalf[] = "__OTR__objects/object_link_goron/gLinkGoronEyesHalfTex";
-static const char sGoronEyeClosed[] = "__OTR__objects/object_link_goron/gLinkGoronEyesClosedTex";
-static const char sGoronEyeSurprised[] = "__OTR__objects/object_link_goron/gLinkGoronEyesSurprisedTex";
+// Fast3D uses the pointer low bit to distinguish OTR path strings from raw
+// texture memory. These segment pointers therefore must always be even.
+alignas(2) static const char sGoronEyeOpen[] = "__OTR__objects/object_link_goron/gLinkGoronEyesOpenTex";
+alignas(2) static const char sGoronEyeHalf[] = "__OTR__objects/object_link_goron/gLinkGoronEyesHalfTex";
+alignas(2) static const char sGoronEyeClosed[] = "__OTR__objects/object_link_goron/gLinkGoronEyesClosedTex";
+alignas(2) static const char sGoronEyeSurprised[] = "__OTR__objects/object_link_goron/gLinkGoronEyesSurprisedTex";
 
 // Zora eye textures (from object_link_zora.h)
-static const char sZoraEyeOpen[] = "__OTR__objects/object_link_zora/gLinkZoraEyesOpenTex";
-static const char sZoraEyeHalf[] = "__OTR__objects/object_link_zora/gLinkZoraEyesHalfTex";
-static const char sZoraEyeClosed[] = "__OTR__objects/object_link_zora/gLinkZoraEyesClosedTex";
+alignas(2) static const char sZoraEyeOpen[] = "__OTR__objects/object_link_zora/gLinkZoraEyesOpenTex";
+alignas(2) static const char sZoraEyeHalf[] = "__OTR__objects/object_link_zora/gLinkZoraEyesHalfTex";
+alignas(2) static const char sZoraEyeClosed[] = "__OTR__objects/object_link_zora/gLinkZoraEyesClosedTex";
 
 // Deku eye textures - CONFIRMED: Deku has NO dynamic eye textures.
 // From 2Ship z_player_lib.c line 1939: sPlayerEyesTextures[PLAYER_FORM_DEKU] = all NULL.
@@ -633,7 +635,7 @@ static const char sZoraEyeClosed[] = "__OTR__objects/object_link_zora/gLinkZoraE
 
 // Zora mouth textures (from object_link_zora.h)
 // Zora uses segment 0x09 for mouth.
-static const char sZoraMouthClosed[] = "__OTR__objects/object_link_zora/gLinkZoraMouthClosedTex";
+alignas(2) static const char sZoraMouthClosed[] = "__OTR__objects/object_link_zora/gLinkZoraMouthClosedTex";
 
 // Fierce Deity mouth texture - same issue as eye textures above.
 // FD head DL has mouth baked in, segment 0x09 is unread. OTR path doesn't exist → crash.
@@ -15035,12 +15037,33 @@ void MmForm_HandleMaskUse(PlayState* play, Player* player, s32 item) {
     // If already transformed to a different form -> de-transform first, then re-transform
     // For now: instant switch (future: chain cutscenes)
     if (gFormState.state == MMFORM_STATE_ACTIVE && gFormState.currentForm != targetForm) {
+        // The new mask was equipped/pressed while the old form was active. The
+        // restore below intentionally brings back items restricted by that old
+        // form, but its saved snapshot also contains the OLD transformation mask.
+        // Remember the button carrying the newly used mask and reapply it after
+        // restore, otherwise Goron -> Zora (for example) leaves Goron's icon and
+        // item on the button even though the player is now Zora.
+        s32 newMaskButton = -1;
+        u8 newMaskSlot = SLOT_NONE;
+        for (s32 buttonIndex = 1; buttonIndex < ARRAY_COUNT(gSaveContext.equips.buttonItems); buttonIndex++) {
+            if (gSaveContext.equips.buttonItems[buttonIndex] == item) {
+                newMaskButton = buttonIndex;
+                newMaskSlot = gSaveContext.equips.cButtonSlots[buttonIndex - 1];
+                break;
+            }
+        }
+
         // Update currentForm to HUMAN before RestoreOotState so Player_SetBootData
         // inside loads OOT defaults (not the outgoing form's REGs).
         gFormState.currentForm = MM_PLAYER_FORM_HUMAN;
         gFormState.skeletonLoaded = 0;
         MmForm_RestoreOotState(player);
         MmForm_RestoreEquips(play);
+        if (newMaskButton >= 1) {
+            gSaveContext.equips.buttonItems[newMaskButton] = item;
+            gSaveContext.equips.cButtonSlots[newMaskButton - 1] = newMaskSlot;
+            Interface_LoadItemIcon1(play, newMaskButton);
+        }
         // Clear stale action/animation state to prevent crashes on new form
         gFormState.formSkelAnime.animation = NULL;
         gFormState.goronAction = GORON_ACT_IDLE;

@@ -63,6 +63,11 @@ static bool sInitialized = false;
 static std::string sMmO2rPath;
 static std::shared_ptr<Ship::Archive> sMmArchive; // Reference to mm.o2r archive for archive-specific loading
 
+// Optional filtered 2S2H icon pack. Android creates this archive with only the
+// MM item-icon namespace, so it can safely participate in normal alt-asset
+// resolution without replacing unrelated SOHNEI HUD assets.
+static std::shared_ptr<Ship::Archive> sMmIconArchive;
+
 // Mod override archive (higher priority than mm.o2r)
 static bool sModO2rDetected = false;
 static bool sModO2rLoaded = false;
@@ -279,6 +284,33 @@ static bool LoadMmO2r() {
     return false;
 }
 
+static void LoadMmIconArchive() {
+    std::string iconPath = Ship::Context::LocateFileAcrossAppDirs("mm-icons.o2r", appShortName);
+    if ((iconPath.empty() || !std::filesystem::exists(iconPath)) && !sMmO2rPath.empty()) {
+        std::filesystem::path besideMm = std::filesystem::path(sMmO2rPath).parent_path() / "mm-icons.o2r";
+        if (std::filesystem::exists(besideMm)) {
+            iconPath = besideMm.string();
+        }
+    }
+    if ((iconPath.empty() || !std::filesystem::exists(iconPath)) && std::filesystem::exists("mm-icons.o2r")) {
+        iconPath = "mm-icons.o2r";
+    }
+    if (iconPath.empty() || !std::filesystem::exists(iconPath)) {
+        MMASSETS_LOG("[MM Assets] No private MM icon archive found");
+        return;
+    }
+
+    auto resourceManager = OTRGlobals::Instance->context->GetResourceManager();
+    auto archiveManager = resourceManager ? resourceManager->GetArchiveManager() : nullptr;
+    auto archive = archiveManager ? archiveManager->AddArchive(iconPath) : nullptr;
+    if (archive != nullptr) {
+        sMmIconArchive = archive;
+        MMASSETS_LOG("[MM Assets] Registered filtered MM icon archive: %s", iconPath.c_str());
+    } else {
+        MMASSETS_LOG("[MM Assets] Failed to register filtered MM icon archive: %s", iconPath.c_str());
+    }
+}
+
 // =============================================================================
 // C API Implementation
 // =============================================================================
@@ -302,6 +334,7 @@ void MmAssets_Init(void) {
         // Load base MM archive FIRST (lower priority)
         if (sMmO2rDetected) {
             LoadMmO2r();
+            LoadMmIconArchive();
         }
 
         // Load mod archive LAST (higher priority - overrides mm.o2r)
@@ -387,6 +420,8 @@ static std::shared_ptr<Ship::Archive> MmAssets_FindModOverride(const char* path)
     if (cleanPath.length() > 7 && cleanPath.substr(0, 7) == "__OTR__") {
         cleanPath = cleanPath.substr(7);
     }
+    const std::string altPath = "alt/" + cleanPath;
+    const bool altAssetsEnabled = resourceManager->IsAltAssetsEnabled();
 
     // Iterate in reverse (last-added archives have highest priority in Ship)
     for (auto it = archives->rbegin(); it != archives->rend(); ++it) {
@@ -400,7 +435,8 @@ static std::shared_ptr<Ship::Archive> MmAssets_FindModOverride(const char* path)
         if (sModO2rLoaded && !sModO2rPath.empty() && archive->GetPath() == sModO2rPath)
             continue;
 
-        if (archive->HasFile(cleanPath)) {
+        // 2S2H texture packs store replacements under alt/.
+        if ((altAssetsEnabled && archive->HasFile(altPath)) || archive->HasFile(cleanPath)) {
             MMASSETS_LOG("[MM Assets] Mod override found: %s in %s", path, archive->GetPath().c_str());
             return archive;
         }
@@ -493,9 +529,42 @@ void* MmAssets_LoadResourceWithSize(const char* path, size_t* outSize) {
             return nullptr;
         }
 
+        // The imported 2S2H archive is private so its D-pad and other HUD files
+        // cannot affect SOHNEI. Only explicitly requested MM paths are read here.
+        if (sMmIconArchive && resourceManager->IsAltAssetsEnabled()) {
+            std::string cleanPath(path);
+            if (cleanPath.rfind("__OTR__", 0) == 0) {
+                cleanPath = cleanPath.substr(7);
+            }
+            std::string altPath = "alt/" + cleanPath;
+            if (sMmIconArchive->HasFile(altPath)) {
+                Ship::ResourceIdentifier iconId(altPath, 0, sMmIconArchive);
+                // ResourceManager::LoadResourceProcess(ResourceIdentifier) currently
+                // resolves the file through ArchiveManager instead of the identifier's
+                // Parent archive.  mm-icons.o2r is deliberately private (so it cannot
+                // replace the D-pad and unrelated HUD assets), therefore load its file
+                // from the parent archive explicitly and pass it through the normal
+                // resource decoder.
+                auto file = resourceManager->LoadFileProcess(iconId);
+                auto resource = file ? resourceManager->GetResourceLoader()->LoadResource(altPath, file) : nullptr;
+                if (resource) {
+                    void* ptr = resource->GetRawPointer();
+                    size_t size = resource->GetPointerSize();
+                    // Keep the decoded texture alive after this function returns.
+                    sMmResourceCache["__mm_icons__/" + altPath] = resource;
+                    if (outSize)
+                        *outSize = size;
+                    MMASSETS_LOG("[MM Assets] Loaded private icon override: %s (%zu bytes)", altPath.c_str(), size);
+                    return ptr;
+                }
+            }
+        }
+
         // LoadResourceProcess (sync) — see MmAssets_LoadResource for deadlock rationale.
-        if (sModArchive) {
-            Ship::ResourceIdentifier modId(path, 0, sModArchive);
+        // Search every loaded user archive, including imported 2S2H HUD packs.
+        auto modArchive = MmAssets_FindModOverride(path);
+        if (modArchive) {
+            Ship::ResourceIdentifier modId(path, 0, modArchive);
             auto resource = resourceManager->LoadResourceProcess(modId);
             if (resource) {
                 void* ptr = resource->GetRawPointer();
@@ -4335,7 +4404,11 @@ void MmSfx_FlushCache(void) {
 // and item_name_static/item_name_static.h
 
 // Icon paths (32x32 RGBA textures from icon_item_static_yar)
-static const char* sMmMaskIconPaths[24] = {
+// Fast3D treats odd-addressed texture pointers as non-resource segmented data.
+// Store the paths in an explicitly aligned, even-stride table so every entry
+// is recognized as an OTR resource name (ordinary string literals can land at
+// either an odd or even address).
+alignas(2) static const char sMmMaskIconPaths[24][80] = {
     "__OTR__icon_item_static_yar/gItemIconPostmansHatTex",      // 0: Postman's Hat
     "__OTR__icon_item_static_yar/gItemIconAllNightMaskTex",     // 1: All-Night Mask
     "__OTR__icon_item_static_yar/gItemIconBlastMaskTex",        // 2: Blast Mask
@@ -4393,6 +4466,7 @@ static const char* sMmMaskNamePaths[24] = {
 // Cached icon pointers (NULL = not yet loaded)
 static void* sCachedMaskIcons[24] = { 0 };
 static bool sMaskIconLoaded[24] = { false };
+static uint8_t sDownsampledMaskIcons[24][32 * 32 * 4];
 
 // Cached name texture pointers
 static void* sCachedMaskNames[24] = { 0 };
@@ -4412,9 +4486,28 @@ void* MmMasks_LoadIcon(uint16_t itemId) {
         return sCachedMaskIcons[idx];
 
     sMaskIconLoaded[idx] = true;
-    sCachedMaskIcons[idx] = MmAssets_LoadResource(sMmMaskIconPaths[idx]);
+    size_t iconSize = 0;
+    sCachedMaskIcons[idx] = MmAssets_LoadResourceWithSize(sMmMaskIconPaths[idx], &iconSize);
+    if (sCachedMaskIcons[idx] && iconSize == (64 * 64 * 4)) {
+        // The N64 texture block used by the pause menu cannot hold a 64x64 RGBA32
+        // image in TMEM. Downsample with a 2x2 box filter to the native 32x32 slot.
+        const uint8_t* source = static_cast<const uint8_t*>(sCachedMaskIcons[idx]);
+        uint8_t* target = sDownsampledMaskIcons[idx];
+        for (int y = 0; y < 32; ++y) {
+            for (int x = 0; x < 32; ++x) {
+                for (int channel = 0; channel < 4; ++channel) {
+                    size_t topLeft = ((y * 2) * 64 + (x * 2)) * 4 + channel;
+                    unsigned int sum = source[topLeft] + source[topLeft + 4] + source[topLeft + 64 * 4] +
+                                       source[topLeft + 64 * 4 + 4];
+                    target[(y * 32 + x) * 4 + channel] = static_cast<uint8_t>((sum + 2) / 4);
+                }
+            }
+        }
+        sCachedMaskIcons[idx] = target;
+        iconSize = 32 * 32 * 4;
+    }
     if (sCachedMaskIcons[idx]) {
-        MMASSETS_LOG("[MM Masks] Loaded icon %d: %s", idx, sMmMaskIconPaths[idx]);
+        MMASSETS_LOG("[MM Masks] Loaded 32x32 icon %d: %s", idx, sMmMaskIconPaths[idx]);
     }
     return sCachedMaskIcons[idx];
 }

@@ -1,6 +1,6 @@
 def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
 def buildAsApplication = !buildAsLibrary
-def androidAppVersionName = "9.2.3-nei-alpha3-android.beta.1"
+def androidAppVersionName = "9.2.3-nei-alpha3-android.beta.2"
 if (buildAsApplication) {
     apply plugin: 'com.android.application'
 }
@@ -21,7 +21,7 @@ android {
         }
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 14
+        versionCode 15
         versionName androidAppVersionName
     }
     signingConfigs {
