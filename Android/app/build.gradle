@@ -129,11 +129,27 @@ tasks.register("applyLibultrashipAndroidPatch") {
     }
 }
 
+tasks.register("applyZapdtrAndroidPatch") {
+    doLast {
+        def zapdtrDir = file("${rootProject.projectDir}/../ZAPDTR")
+        def crashHandlerFile = file("${zapdtrDir}/ZAPD/CrashHandler.cpp")
+        if (crashHandlerFile.text.contains("__has_include(<unistd.h>) && !defined(__ANDROID__)")) {
+            return
+        }
+
+        exec {
+            workingDir zapdtrDir
+            commandLine "git", "apply", "--ignore-whitespace", "--whitespace=nowarn",
+                    "../patches/zapdtr-android-crash-handler.patch"
+        }
+    }
+}
+
 tasks.configureEach { task ->
     if (task.name.startsWith("configureCMake") ||
             task.name.startsWith("buildCMake") ||
             task.name.startsWith("externalNativeBuild")) {
-        task.dependsOn("applyLibultrashipAndroidPatch")
+        task.dependsOn("applyLibultrashipAndroidPatch", "applyZapdtrAndroidPatch")
     }
 }
 

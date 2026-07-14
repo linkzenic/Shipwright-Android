@@ -1,0 +1,7 @@
+diff --git a/ZAPD/CrashHandler.cpp b/ZAPD/CrashHandler.cpp
+index 6c05733..54bf3e5 100644
+--- a/ZAPD/CrashHandler.cpp
++++ b/ZAPD/CrashHandler.cpp
+@@ -4 +4 @@
+-#if __has_include(<unistd.h>)
++#if __has_include(<unistd.h>) && !defined(__ANDROID__)
