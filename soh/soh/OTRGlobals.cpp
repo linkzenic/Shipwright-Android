@@ -88,6 +88,14 @@
 #include <libultraship/controller/controldeck/ControlDeck.h>
 #include <fast/resource/ResourceType.h>
 
+#ifdef __ANDROID__
+extern "C" void Android_SetDataRootPath(const char* path) {
+    if (path != nullptr) {
+        Ship::Context::SetAndroidDataRootPath(path);
+    }
+}
+#endif
+
 // Resource Types/Factories
 #include "soh/resource/type/Array.h"
 #include <ship/resource/type/Blob.h>
@@ -130,6 +138,13 @@
 
 #include "soh/config/ConfigUpdaters.h"
 #include "soh/ShipInit.hpp"
+#ifdef __ANDROID__
+#include <ship/port/mobile/MobileImpl.h>
+extern "C" int func_808334B4(Player* player);
+static bool sAimingThisFrame = false;
+static bool sWasAimingLastFrame = false;
+static int sAimingGraceFrames = 0;
+#endif
 
 #ifdef __WIIU__
 const uint32_t defaultImGuiScale = 3;
@@ -297,6 +312,11 @@ OTRGlobals::OTRGlobals() {
 
     context->InitConfiguration();
     context->InitConsoleVariables();
+
+#ifdef __ANDROID__
+    Ship::Mobile::SetToggleButtonVisible(CVarGetInteger("gDroidHideToggleButton", 0) == 0);
+    Ship::Mobile::SetFreeLookTouchEnabled(CVarGetInteger("gDroidFreeLookTouch", 0) != 0);
+#endif
 
     auto controlDeck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>({
         BTN_CUSTOM_MODIFIER1,
@@ -470,6 +490,13 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
 #endif
 
     while (!extractDone) {
+#ifdef __ANDROID__
+        // Rendering while a Java dialog is open causes the SDL surface to flicker; yield instead.
+        if (SohGui::PopupsQueued() > 0 && !extractionTask.has_value()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            continue;
+        }
+#endif
         if (SohGui::PopupsQueued() > 0 || extractionTask.has_value()) {
             goto render;
         }
@@ -484,6 +511,13 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                     extractStep = args.empty() ? ES_EXTRACT : ES_EXTRACT_ARGS;
 #endif
                 } else {
+#if defined(__ANDROID__)
+                    // Android can generate a missing archive from a user-selected ROM.
+                    if (!std::filesystem::exists(portArchivePath)) {
+                        extractStep = ES_EXTRACT;
+                        continue;
+                    }
+#endif
                     std::string msg;
 
 #if defined(__SWITCH__)
@@ -578,6 +612,11 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
             case ES_EXTRACT_ARGS: {
 #if !defined(__SWITCH__) && !defined(__WIIU__)
                 if (args.empty()) {
+#ifdef __ANDROID__
+                    // Touch interaction with this startup ImGui popup is unreliable.
+                    extractStep = ES_VERIFY;
+                    continue;
+#else
                     SohGui::RegisterPopup(
                         "Run Ship of Harkinian", "All files have been processed. Run SoH?", "Yes", "No",
                         [&]() {
@@ -593,6 +632,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                         },
                         [&]() { exit(0); });
                     break;
+#endif
                 }
                 file = args.at(0);
                 args.erase(args.begin());
@@ -644,6 +684,11 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                         continue;
                     }
                     case PS_LOCAL: {
+#ifdef __ANDROID__
+                        // Use Android's document picker instead of filesystem auto-discovery.
+                        promptStep = PS_FIRST;
+                        continue;
+#endif
                         extract = Extractor();
                         extract.SetSearchPath(installPath);
                         extract.GetRoms(args);
@@ -661,6 +706,21 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                         continue;
                     }
                     case PS_FIRST: {
+#ifdef __ANDROID__
+                        // The picker must not block SDL's render thread.
+                        extractionTask = threadPool->submit_task([&]() -> void {
+                            if (!extract.ManuallySearchForRomMatchingType(RomSearchMode::Both)) {
+                                promptStep = PS_FILE_CHECK;
+                                return;
+                            }
+                            extract.CallZapd(installPath, Ship::Context::GetAppDirectoryPath(appShortName),
+                                             &extractCount, &totalExtract);
+                            generatedIsMQ = extract.IsMasterQuest();
+                            promptStep = PS_SECOND;
+                            extractCount = 0;
+                            totalExtract = 0;
+                        });
+#else
                         if (!extract.ManuallySearchForRomMatchingType(RomSearchMode::Both)) {
                             promptStep = PS_FILE_CHECK;
                             continue;
@@ -673,12 +733,27 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                             extractCount = 0;
                             totalExtract = 0;
                         });
+#endif
                         continue;
                     }
                     case PS_SECOND: {
                         SohGui::RegisterPopup(
                             "Extraction Complete", "ROM Extracted. Extract another?", "Yes", "No",
                             [&]() {
+#ifdef __ANDROID__
+                                extractionTask = threadPool->submit_task([&]() -> void {
+                                    if (!extract.ManuallySearchForRomMatchingType(generatedIsMQ ? RomSearchMode::Vanilla
+                                                                                                : RomSearchMode::MQ)) {
+                                        extractStep = ES_VERIFY;
+                                        return;
+                                    }
+                                    extract.CallZapd(installPath, Ship::Context::GetAppDirectoryPath(appShortName),
+                                                     &extractCount, &totalExtract);
+                                    extractStep = ES_VERIFY;
+                                    extractCount = 0;
+                                    totalExtract = 0;
+                                });
+#else
                                 if (!extract.ManuallySearchForRomMatchingType(generatedIsMQ ? RomSearchMode::Vanilla
                                                                                             : RomSearchMode::MQ)) {
                                     extractStep = ES_VERIFY;
@@ -691,6 +766,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                                         totalExtract = 0;
                                     });
                                 }
+#endif
                             },
                             [&]() { extractStep = ES_VERIFY; });
                         continue;
@@ -783,18 +859,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
 }
 
 void InitGfxDebugger() {
-    auto dbg =
-        std::dynamic_pointer_cast<Fast::Fast3dWindow>(Ship::Context::GetRawInstance()->GetWindow())->GetGfxDebugger();
-
-    if (dbg != nullptr) {
-        return;
-    }
-
-    dbg = std::make_shared<Fast::GfxDebugger>();
-
-    if (dbg != nullptr) {
-        SPDLOG_ERROR("Failed to initialize gfx debugger");
-    }
+    Ship::Context::GetRawInstance()->InitGfxDebugger();
 }
 
 void OTRGlobals::Initialize() {
@@ -1677,6 +1742,24 @@ extern "C" void InitOTR(int argc, char* argv[]) {
     CustomMessageManager::Instance = new CustomMessageManager();
     ItemTableManager::Instance = new ItemTableManager();
     GameInteractor::Instance = new GameInteractor();
+#ifdef __ANDROID__
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerFirstPersonControl>([](Player* player) {
+        sAimingThisFrame = true;
+    });
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerUpdate>([]() {
+        if (sAimingThisFrame) {
+            sAimingGraceFrames = 15;
+        } else if (sAimingGraceFrames > 0) {
+            sAimingGraceFrames--;
+            sAimingThisFrame = true;
+        }
+        if (sAimingThisFrame != sWasAimingLastFrame) {
+            Ship::Mobile::SetFirstPersonAimingActive(sAimingThisFrame);
+        }
+        sWasAimingLastFrame = sAimingThisFrame;
+        sAimingThisFrame = false;
+    });
+#endif
     SaveManager::Instance = new SaveManager();
 
     std::shared_ptr<Ship::Config> conf = OTRGlobals::Instance->context->GetConfig();

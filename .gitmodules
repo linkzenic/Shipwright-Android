@@ -1,7 +1,7 @@
 [submodule "libultraship"]
 	path = libultraship
-	url = https://github.com/kenix3/libultraship.git
-	branch = port-maintenance
+	url = https://github.com/linkzenic/libultraship.git
+	branch = sohnei-android-compat
 [submodule "ZAPDTR"]
 	path = ZAPDTR
 	url = https://github.com/harbourmasters/ZAPDTR

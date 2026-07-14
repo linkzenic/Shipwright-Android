@@ -134,11 +134,10 @@ source_group("include" FILES ${Header_Files__include})
 # soh (root)
 file(GLOB_RECURSE soh__ RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "soh/*.c" "soh/*.cpp" "soh/*.h" "soh/*.hpp")
 
-# mods (only .cpp files - .c files are included via #include pattern)
+# NEI gameplay modules (their .c files are included by the module .cpp files).
 file(GLOB_RECURSE mods__ RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "mods/*.cpp" "mods/*.h" "mods/*.hpp")
 list(APPEND soh__ ${mods__})
 
-# expansions (only .cpp files - .c files are included via #include pattern)
 file(GLOB_RECURSE expansions__ RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "expansions/*.cpp" "expansions/*.h" "expansions/*.hpp")
 list(APPEND soh__ ${expansions__})
 
@@ -159,6 +158,20 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     set_source_files_properties(soh/Enhancements/tts/tts.cpp PROPERTIES COMPILE_FLAGS "/utf-8")
     set_source_files_properties(soh/Enhancements/custom-message/CustomMessageManager.cpp PROPERTIES COMPILE_FLAGS "/utf-8")
     set_source_files_properties(soh/Enhancements/custom-message/CustomMessageManager.h PROPERTIES COMPILE_FLAGS "/utf-8")
+endif()
+
+# Workaround for NDK 26 clang crash (ICE in DwarfStringPool::emit) on large files
+if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set_source_files_properties(
+        soh/Enhancements/randomizer/Plandomizer.cpp
+        soh/Enhancements/boss-rush/BossRush.cpp
+        PROPERTIES COMPILE_OPTIONS "-gline-tables-only"
+    )
+endif()
+
+# handle Network removals
+if (!BUILD_REMOTE_CONTROL)
+    list(FILTER soh__ EXCLUDE REGEX "soh/Enhancements/crowd-control/")
 endif()
 
 # handle speechsynthesizer removals
@@ -237,7 +250,11 @@ set(ALL_FILES
 ################################################################################
 # Target
 ################################################################################
-add_executable(${PROJECT_NAME} ${ALL_FILES})
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+    add_executable(${PROJECT_NAME} ${ALL_FILES})
+else()
+    add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
+endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
@@ -249,7 +266,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set_target_properties(${PROJECT_NAME} PROPERTIES
         VS_GLOBAL_KEYWORD "Win32Proj"
     )
-    if(SOH_WINDOWS_64BIT)
+    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
         set_target_properties(${PROJECT_NAME} PROPERTIES
             INTERPROCEDURAL_OPTIMIZATION_RELEASE "TRUE"
         )
@@ -273,7 +290,7 @@ endif()
 ################################################################################
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     get_property(MSVC_RUNTIME_LIBRARY_DEFAULT TARGET ${PROJECT_NAME} PROPERTY MSVC_RUNTIME_LIBRARY)
-    if(SOH_WINDOWS_64BIT)
+    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
         string(CONCAT "MSVC_RUNTIME_LIBRARY_STR"
             $<$<CONFIG:Debug>:
                 MultiThreadedDebug
@@ -308,15 +325,86 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dr_libs)
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    FetchContent_Declare(
+        libogg
+        GIT_REPOSITORY https://github.com/xiph/ogg.git
+        GIT_TAG v1.3.5
+    )
+    FetchContent_MakeAvailable(libogg)
+
+    FetchContent_Declare(
+        opus
+        GIT_REPOSITORY https://github.com/xiph/opus.git
+        GIT_TAG v1.5.2
+    )
+    set(OPUS_FLOAT_APPROX ON CACHE BOOL "Enable Opus floating point approximations for Android fast-math builds" FORCE)
+    set(OPUS_BUILD_TESTING OFF CACHE BOOL "Disable Opus test targets for Android APK builds" FORCE)
+    set(BUILD_TESTING OFF CACHE BOOL "Disable third-party test targets for Android APK builds" FORCE)
+    FetchContent_MakeAvailable(opus)
+
+    # Point vorbis to the FetchContent-provided ogg
+    FetchContent_GetProperties(libogg SOURCE_DIR libogg_SOURCE_DIR BINARY_DIR libogg_BINARY_DIR)
+    set(OGG_INCLUDE_DIR ${libogg_SOURCE_DIR}/include ${libogg_BINARY_DIR}/include)
+    set(OGG_LIBRARY ogg)
+    FetchContent_Declare(
+        libvorbis
+        GIT_REPOSITORY https://github.com/xiph/vorbis.git
+        GIT_TAG v1.3.7
+    )
+    FetchContent_MakeAvailable(libvorbis)
+
+    # opusfile has no CMakeLists.txt — build it directly
+    FetchContent_Declare(
+        opusfile
+        GIT_REPOSITORY https://github.com/xiph/opusfile.git
+        GIT_TAG v0.12
+    )
+    FetchContent_Populate(opusfile)
+    FetchContent_GetProperties(libogg SOURCE_DIR libogg_SOURCE_DIR BINARY_DIR libogg_BINARY_DIR)
+    FetchContent_GetProperties(opus SOURCE_DIR opus_SOURCE_DIR)
+    add_library(opusfile STATIC
+        ${opusfile_SOURCE_DIR}/src/info.c
+        ${opusfile_SOURCE_DIR}/src/internal.c
+        ${opusfile_SOURCE_DIR}/src/opusfile.c
+        ${opusfile_SOURCE_DIR}/src/stream.c
+    )
+    target_include_directories(opusfile PUBLIC
+        ${opusfile_SOURCE_DIR}/include
+        ${opus_SOURCE_DIR}/include
+        ${opus_SOURCE_DIR}/include/opus
+        ${libogg_SOURCE_DIR}/include
+        ${libogg_BINARY_DIR}/include
+    )
+    target_compile_options(opusfile PRIVATE -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0)
+endif()
+
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
 find_package(SDL2)
+endif()
 set(SDL2-INCLUDE ${SDL2_INCLUDE_DIRS})
 
-find_package(SDL2_net)
-
-if(NOT SDL2_net_FOUND)
-    message(STATUS "SDL2_net not found (it's possible the version installed is too old).")
-else()
-    set(SDL2-NET-INCLUDE ${SDL_NET_INCLUDE_DIRS})
+if (BUILD_REMOTE_CONTROL)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+        FetchContent_Declare(
+            SDL2_net
+            GIT_REPOSITORY https://github.com/libsdl-org/SDL_net.git
+            GIT_TAG release-2.2.0
+        )
+        FetchContent_MakeAvailable(SDL2_net)
+        # SDL_net.h lives at the source root but is included as <SDL2/SDL_net.h>
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sdl_net_compat/SDL2")
+        file(COPY "${sdl2_net_SOURCE_DIR}/SDL_net.h" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/sdl_net_compat/SDL2/")
+        target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/sdl_net_compat")
+    else()
+        find_package(SDL2_net)
+        if(NOT SDL2_net_FOUND)
+            message(STATUS "SDL2_net not found (it's possible the version installed is too old). Disabling BUILD_REMOTE_CONTROL.")
+            set(BUILD_REMOTE_CONTROL 0)
+        else()
+            set(SDL2-NET-INCLUDE ${SDL_NET_INCLUDE_DIRS})
+        endif()
+    endif()
 endif()
 
 if (ESPEAK)
@@ -331,6 +419,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE assets
     ${CMAKE_CURRENT_SOURCE_DIR}/include/
     ${CMAKE_CURRENT_SOURCE_DIR}/src/
     ${CMAKE_CURRENT_SOURCE_DIR}/mods/
+    ${CMAKE_CURRENT_SOURCE_DIR}/expansions/
     ${CMAKE_CURRENT_SOURCE_DIR}/../libultraship/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../ZAPDTR/ZAPD/resource/type
     ${SDL2-INCLUDE}
@@ -340,8 +429,29 @@ target_include_directories(${PROJECT_NAME} PRIVATE assets
     .
 )
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    # opus headers are flat in include/, but code uses <opus/opus.h>
+    # Create an opus/ subdir symlink at configure time
+    file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/_deps/opus-src/include/opus)
+    file(GLOB _opus_headers ${CMAKE_BINARY_DIR}/_deps/opus-src/include/opus_*.h
+                            ${CMAKE_BINARY_DIR}/_deps/opus-src/include/opus.h)
+    foreach(_h ${_opus_headers})
+        get_filename_component(_hname ${_h} NAME)
+        if(NOT EXISTS ${CMAKE_BINARY_DIR}/_deps/opus-src/include/opus/${_hname})
+            file(COPY ${_h} DESTINATION ${CMAKE_BINARY_DIR}/_deps/opus-src/include/opus/)
+        endif()
+    endforeach()
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        ${CMAKE_BINARY_DIR}/_deps/opus-src/include
+        ${CMAKE_BINARY_DIR}/_deps/libogg-src/include
+        ${CMAKE_BINARY_DIR}/_deps/libogg-build/include
+        ${CMAKE_BINARY_DIR}/_deps/libvorbis-src/include
+        ${CMAKE_BINARY_DIR}/_deps/opusfile-src/include
+    )
+endif()
+
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    if(SOH_WINDOWS_64BIT)
+    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
         target_compile_definitions(${PROJECT_NAME} PRIVATE
             "$<$<CONFIG:Debug>:"
                 "_DEBUG;"
@@ -351,6 +461,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
             "$<$<CONFIG:Release>:"
                 "NDEBUG;"
             ">"
+            "$<$<BOOL:${BUILD_REMOTE_CONTROL}>:ENABLE_REMOTE_CONTROL>"
             "INCLUDE_GAME_PRINTF;"
             "F3DEX_GBI_2"
             "UNICODE;"
@@ -407,6 +518,7 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU|Clang|AppleClang")
             "NDEBUG;"
         ">"
         "F3DEX_GBI_2;"
+        "$<$<BOOL:${BUILD_REMOTE_CONTROL}>:ENABLE_REMOTE_CONTROL>;"
         "_CONSOLE;"
         "_CRT_SECURE_NO_WARNINGS;"
         "ENABLE_OPENGL;"
@@ -420,21 +532,21 @@ endif()
 # Compile and link options
 ################################################################################
 if(MSVC)
-    if(SOH_WINDOWS_64BIT)
+    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
         target_compile_options(${PROJECT_NAME} PRIVATE
             $<$<CONFIG:Debug>:
+                /w;
                 /Od
             >
             $<$<CONFIG:Release>:
                 /Oi;
                 /Gy;
+                /W3
             >
-            /W3;
             /bigobj;
             /sdl-;
             /permissive-;
             /MP;
-            /guard:cf;
             ${DEFAULT_CXX_DEBUG_INFORMATION_FORMAT};
             ${DEFAULT_CXX_EXCEPTION_HANDLING}
         )
@@ -452,13 +564,12 @@ if(MSVC)
             /permissive-;
             /MP;
             /sdl-;
-            /W3;
-            /guard:cf;
+            /w;
             ${DEFAULT_CXX_DEBUG_INFORMATION_FORMAT};
             ${DEFAULT_CXX_EXCEPTION_HANDLING}
         )
     endif()
-    if(SOH_WINDOWS_64BIT)
+    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
         target_link_options(${PROJECT_NAME} PRIVATE
             $<$<CONFIG:Debug>:
                 /INCREMENTAL
@@ -471,8 +582,7 @@ if(MSVC)
             >
             /MANIFEST:NO;
             /DEBUG;
-            /SUBSYSTEM:WINDOWS;
-            /GUARD:CF
+            /SUBSYSTEM:WINDOWS
         )
     elseif("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "Win32")
         target_link_options(${PROJECT_NAME} PRIVATE
@@ -487,8 +597,7 @@ if(MSVC)
             >
             /MANIFEST:NO;
             /DEBUG;
-            /SUBSYSTEM:WINDOWS;
-            /GUARD:CF
+            /SUBSYSTEM:WINDOWS
         )
     endif()
 endif()
@@ -569,6 +678,34 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
                 -Wno-stringop-overflow
             >
         )
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "Android")
+        target_compile_options(${PROJECT_NAME} PRIVATE
+            -O2
+            -U_FORTIFY_SOURCE
+            -D_FORTIFY_SOURCE=0
+
+            -Wno-error
+            -Wno-format-security
+            # disable some warnings to not clutter output
+            -Wno-multichar
+            -Wno-return-type
+            -Wno-narrowing
+            -Wno-switch-outside-range
+            $<$<COMPILE_LANGUAGE:C>:
+                -Werror-implicit-function-declaration
+                -Wno-incompatible-pointer-types
+                -Wno-discarded-array-qualifiers
+                -Wno-discarded-qualifiers
+                -Wno-int-conversion
+                -Wno-builtin-declaration-mismatch
+                -Wno-switch-unreachable
+                -Wno-stringop-overflow
+                -Wno-implicit-int
+            >
+        )
+        if(DEFINED ANDROID_APP_VERSION_NAME)
+            target_compile_definitions(${PROJECT_NAME} PRIVATE ANDROID_APP_VERSION_NAME="${ANDROID_APP_VERSION_NAME}")
+        endif()
     else()
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
         set(CPU_OPTION -msse2 -mfpmath=sse)
@@ -614,7 +751,7 @@ if (CMAKE_GENERATOR MATCHES "Visual Studio")
     COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_SOURCE_DIR}/soh/assets/xml ${CMAKE_BINARY_DIR}/soh/assets/xml
     )
 endif()
-if(NOT CMAKE_SYSTEM_NAME MATCHES "NintendoSwitch|CafeOS")
+if(NOT CMAKE_SYSTEM_NAME MATCHES "NintendoSwitch|CafeOS|Android")
     add_custom_command(
         TARGET ${PROJECT_NAME}
         POST_BUILD
@@ -648,14 +785,14 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     link_libraries(Opus::opus)
     find_package(OpusFile CONFIG REQUIRED)
     link_libraries(OpusFile::opusfile CONFIG REQUIRED)
-    if(SOH_WINDOWS_64BIT)
+    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
         set(ADDITIONAL_LIBRARY_DEPENDENCIES
             "libultraship;"
             "ZAPDLib;"
             "glu32;"
             "SDL2::SDL2;"
             "SDL2::SDL2main;"
-            "SDL2_net::SDL2_net-static"
+            "$<$<BOOL:${BUILD_REMOTE_CONTROL}>:SDL2_net::SDL2_net-static>"
             "glfw;"
             "winmm;"
             "imm32;"
@@ -703,6 +840,22 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     target_include_directories(${PROJECT_NAME} PRIVATE
         ${DEVKITPRO}/portlibs/wiiu/include/
     )
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    set(ADDITIONAL_LIBRARY_DEPENDENCIES
+        "libultraship;"
+        "ZAPDLib;"
+        SDL2::SDL2
+        ogg
+        opus
+        vorbis
+        vorbisenc
+        vorbisfile
+        opusfile
+        Threads::Threads
+        "$<$<BOOL:${BUILD_REMOTE_CONTROL}>:SDL2_net::SDL2_net-static>"
+    )
 else()
     find_package(SDL2)
     set(THREADS_PREFER_PTHREAD_FLAG ON)
@@ -721,7 +874,7 @@ else()
         "Vorbis::vorbisfile"
         "Opus::opus"
         "Opusfile::Opusfile"
-        "SDL2_net::SDL2_net"
+        "$<$<BOOL:${BUILD_REMOTE_CONTROL}>:SDL2_net::SDL2_net>"
         ${CMAKE_DL_LIBS}
         Threads::Threads
     )
@@ -736,15 +889,17 @@ INSTALL(FILES $<TARGET_PDB_FILE:soh> DESTINATION ./debug COMPONENT ship)
 INSTALL(FILES ${CMAKE_BINARY_DIR}/soh/soh.o2r DESTINATION . COMPONENT ship)
 endif()
 
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
 find_program(CURL NAMES curl DOC "Path to the curl program.  Used to download files.")
 execute_process(COMMAND ${CURL} -sSfL https://raw.githubusercontent.com/mdqinc/SDL_GameControllerDB/master/gamecontrollerdb.txt -o ${CMAKE_BINARY_DIR}/gamecontrollerdb.txt OUTPUT_VARIABLE RESULT)
+endif()
 
 if("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin")
 configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/macosx/Info.plist.in ${CMAKE_BINARY_DIR}/macosx/Info.plist @ONLY)
 INSTALL(TARGETS soh DESTINATION ../MacOS COMPONENT ship)
 INSTALL(FILES ${CMAKE_BINARY_DIR}/gamecontrollerdb.txt DESTINATION ../MacOS COMPONENT ship)
 INSTALL(FILES ${CMAKE_BINARY_DIR}/soh/soh.o2r DESTINATION ../Resources COMPONENT ship)
-elseif(NOT "${CMAKE_SYSTEM_NAME}" MATCHES "NintendoSwitch|CafeOS")
+elseif(NOT "${CMAKE_SYSTEM_NAME}" MATCHES "NintendoSwitch|CafeOS|Android")
 INSTALL(FILES ${CMAKE_BINARY_DIR}/gamecontrollerdb.txt DESTINATION . COMPONENT ship)
 endif()
 

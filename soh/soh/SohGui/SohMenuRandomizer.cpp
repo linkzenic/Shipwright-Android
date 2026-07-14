@@ -7,6 +7,8 @@
 #include "soh/ShipUtils.h"
 #include "soh/SohGui/SohGui.hpp"
 
+#include <sstream>
+
 extern "C" {
 #include "variables.h"
 }

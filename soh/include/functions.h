@@ -59,9 +59,9 @@ u32 func_80001F8C(void);
 u32 Locale_IsRegionNative(void);
 #ifdef __WIIU__
 void _assert(const char* exp, const char* file, s32 line);
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(__ANDROID__)
 void __assert(const char* exp, const char* file, s32 line) __THROW;
-#elif !defined(__APPLE__) && !defined(__SWITCH__) && !defined(__OpenBSD__)
+#elif !defined(__APPLE__) && !defined(__SWITCH__) && !defined(__ANDROID__) && !defined(__OpenBSD__)
 void __assert(const char* exp, const char* file, s32 line);
 #endif
 #if defined(__APPLE__) && defined(NDEBUG)

@@ -10,6 +10,11 @@
 #include "soh/Enhancements/controls/Mouse.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 
+#ifdef __ANDROID__
+extern bool Ship_Mobile_HasTouchCameraInput(void);
+extern void Ship_Mobile_HandleTouchCamera(f32* camX, f32* camY);
+#endif
+
 s16 Camera_ChangeSettingFlags(Camera* camera, s16 setting, s16 flags);
 s32 Camera_ChangeModeFlags(Camera* camera, s16 mode, u8 flags);
 s32 Camera_QRegInit(void);
@@ -1424,7 +1429,11 @@ s32 SetCameraManual(Camera* camera) {
 
     Mouse_HandleThirdPerson(&newCamX, &newCamY);
 
-    if ((fabsf(newCamX) >= 15.0f || fabsf(newCamY) >= 15.0f) && camera->play->manualCamera == false) {
+    if ((fabsf(newCamX) >= 15.0f || fabsf(newCamY) >= 15.0f
+#ifdef __ANDROID__
+         || Ship_Mobile_HasTouchCameraInput()
+#endif
+         ) && camera->play->manualCamera == false) {
         camera->play->manualCamera = true;
 
         VecSph eyeAdjustment;
@@ -1493,6 +1502,12 @@ s32 Camera_Free(Camera* camera) {
     /* Disable mouse movement when holding down the shield */
     if (!(camera->player->stateFlags1 & 0x400000)) {
         Mouse_HandleThirdPerson(&newCamX, &newCamY);
+#ifdef __ANDROID__
+        f32 touchX = 0.0f, touchY = 0.0f;
+        Ship_Mobile_HandleTouchCamera(&touchX, &touchY);
+        newCamX += touchX * 5.0f;
+        newCamY += touchY * 5.0f;
+#endif
     }
 
     newCamX *= (CVarGetFloat(CVAR_SETTING("FreeLook.CameraSensitivity.X"), 1.0f));

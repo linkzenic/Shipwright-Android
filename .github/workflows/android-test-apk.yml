@@ -1,0 +1,65 @@
+name: Android NEI Test APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container:
+      image: djvdw7f2ro/android-builder-soh:v1.0.4
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Write local.properties
+        run: |
+          echo "sdk.dir=${ANDROID_SDK_ROOT}" > Android/local.properties
+          echo "ndk.dir=${ANDROID_NDK_HOME}" >> Android/local.properties
+
+      - name: Install host build dependencies
+        run: |
+          apt-get update
+          apt-get install -y $(cat .github/workflows/apt-deps.txt)
+
+      - name: Generate NEI soh.o2r
+        run: |
+          cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-linux --target GenerateSohOtr --parallel
+          cp soh/soh.o2r Android/app/src/main/assets/soh.o2r
+          tools/ci/inject_android_renderer_shaders.sh
+
+      - name: Decode keystore
+        run: |
+          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > Android/app/release.jks
+
+      - name: Build signed test APK
+        env:
+          GIT_TAG: v9.2.3-nei-alpha3-android.beta.1
+        run: |
+          cd Android && ./gradlew assembleRelease \
+            -PstoreFile=release.jks \
+            -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -PkeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -PkeyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Prepare APK artifact
+        run: |
+          APK=$(find Android/app/build/outputs/apk/release -name 'sohnei_release_*.apk' | head -1)
+          cp "$APK" "sohnei-v9.2.3-nei-alpha3-android.beta.1.apk"
+          sha256sum "sohnei-v9.2.3-nei-alpha3-android.beta.1.apk" > "sohnei-v9.2.3-nei-alpha3-android.beta.1.apk.sha256"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sohnei-test-apk
+          path: |
+            sohnei-v9.2.3-nei-alpha3-android.beta.1.apk
+            sohnei-v9.2.3-nei-alpha3-android.beta.1.apk.sha256
+          if-no-files-found: error
+          retention-days: 14

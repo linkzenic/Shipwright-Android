@@ -9,6 +9,23 @@
 #include "soh/OTRGlobals.h"
 #include "z64.h"
 
+#ifdef __ANDROID__
+#include <atomic>
+#include <functional>
+#include <jni.h>
+#include <SDL2/SDL.h>
+static std::atomic<bool> androidDialogOpen{ false };
+static std::function<void()> androidBtn1Callback;
+static std::function<void()> androidBtn2Callback;
+
+extern "C" void JNICALL
+Java_com_dishii_soh_MainActivity_nativeDialogResult(JNIEnv* env, jobject obj, jint result) {
+    if (result == 0 && androidBtn1Callback) androidBtn1Callback();
+    if (result == 1 && androidBtn2Callback) androidBtn2Callback();
+    androidDialogOpen = false;
+}
+#endif
+
 extern "C" PlayState* gPlayState;
 struct SohModal {
     std::string title_;
@@ -76,10 +93,31 @@ void SohModalWindow::DrawElement() {
 
 void SohModalWindow::RegisterPopup(std::string title, std::string message, std::string button1, std::string button2,
                                    std::function<void()> button1callback, std::function<void()> button2callback) {
+#ifdef __ANDROID__
+    androidBtn1Callback = button1callback;
+    androidBtn2Callback = button2callback;
+    androidDialogOpen = true;
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    jclass cls = env->GetObjectClass(activity);
+    jmethodID m = env->GetMethodID(cls, "showAlertDialog",
+        "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+    env->CallVoidMethod(activity, m,
+        env->NewStringUTF(title.c_str()),
+        env->NewStringUTF(message.c_str()),
+        env->NewStringUTF(button1.c_str()),
+        env->NewStringUTF(button2.c_str()));
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(activity);
+    return;
+#endif
     modals.push_back({ title, message, button1, button2, button1callback, button2callback });
 }
 
 size_t SohModalWindow::PopupsQueued() {
+#ifdef __ANDROID__
+    return androidDialogOpen ? 1 : 0;
+#endif
     return modals.size();
 }
 

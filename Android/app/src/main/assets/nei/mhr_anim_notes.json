@@ -1,0 +1,17 @@
+{
+ "anims": {
+  "gPlayerAnim_mhr_db_action01_loop": {
+   "binding": "mwa:16",
+   "note": "rolling over the monster back",
+   "path": "misc/link_animetion/gPlayerAnim_mhr_db_action01_loop",
+   "rename": "db_attack_roll"
+  },
+  "gPlayerAnim_mhr_db_attack03": {
+   "binding": "mwa:0",
+   "note": "",
+   "path": "misc/link_animetion/gPlayerAnim_mhr_db_attack03",
+   "rename": ""
+  }
+ },
+ "version": 1
+}

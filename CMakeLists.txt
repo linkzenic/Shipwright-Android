@@ -122,6 +122,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
         message(FATAL_ERROR "${CMAKE_VS_PLATFORM_NAME} arch is not supported!")
     endif()
 endif()
+# IEEE 754 compliant floating-point rounding on arm64 macOS
+if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    add_compile_options(-Xarch_arm64 -ffp-contract=off)
+endif()
 
 ################################################################################
 # Global configuration types
@@ -131,14 +135,15 @@ set(CMAKE_C_FLAGS_DEBUG "-g -ffast-math -DDEBUG")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -ffast-math -DDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG")
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Android")
+set(CMAKE_C_FLAGS_DEBUG "-g -ffast-math -DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-g -ffast-math -DDEBUG")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -ffast-math -DNDEBUG")
 else()
 set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 set(CMAKE_OBJCXX_FLAGS_RELEASE "-O2 -DNDEBUG")
-endif()
-# IEEE 754 compliant floating-point rounding on arm64 macOS
-if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    add_compile_options(-Xarch_arm64 -ffp-contract=off)
 endif()
 
 if(NOT CMAKE_BUILD_TYPE )
@@ -189,6 +194,30 @@ add_compile_definitions(CONTROLLERBUTTONS_T=uint32_t)
 ################################################################################
 # Sub-projects
 ################################################################################
+# libpng is not in the Android NDK sysroot; build it from source for Android
+# so that ZAPDTR/ZAPD/CMakeLists.txt's find_package(PNG REQUIRED) succeeds.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    include(FetchContent)
+    set(PNG_STATIC ON CACHE BOOL "" FORCE)
+    set(PNG_SHARED OFF CACHE BOOL "" FORCE)
+    set(PNG_TESTS OFF CACHE BOOL "" FORCE)
+    set(PNG_TOOLS OFF CACHE BOOL "" FORCE)
+    set(SKIP_INSTALL_ALL ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        PNG
+        GIT_REPOSITORY https://github.com/pnggroup/libpng.git
+        GIT_TAG v1.6.43
+        OVERRIDE_FIND_PACKAGE
+    )
+    FetchContent_MakeAvailable(PNG)
+    # libpng creates 'png_static'; ZAPDTR/ZAPD expects 'PNG::PNG' (what FindPNG.cmake provides)
+    if(NOT TARGET PNG::PNG)
+        add_library(PNG::PNG ALIAS png_static)
+    endif()
+    # PNG_PNG_INCLUDE_DIR is the legacy variable for the PNG include path
+    set(PNG_PNG_INCLUDE_DIR ${png_SOURCE_DIR} ${png_BINARY_DIR} CACHE PATH "" FORCE)
+endif()
+
 add_subdirectory(libultraship ${CMAKE_BINARY_DIR}/libultraship)
 target_compile_options(libultraship PRIVATE "${WARNING_OVERRIDE}")
 target_compile_definitions(libultraship PUBLIC INCLUDE_MPQ_SUPPORT)
@@ -213,6 +242,8 @@ install(DIRECTORY "${CMAKE_SOURCE_DIR}/soh/assets/xml/" DESTINATION ./assets/xml
 endif()
 
 find_package(Python3 COMPONENTS Interpreter)
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
 
 # Target to generate OTRs
 add_custom_target(
@@ -255,6 +286,8 @@ add_custom_target(
     COMMENT "Generating soh.o2r..."
     DEPENDS ZAPD
 )
+
+endif() # NOT Android
 
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     find_package(ImageMagick COMPONENTS convert)
@@ -306,6 +339,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows|NintendoSwitch|CafeOS")
 install(FILES ${CMAKE_SOURCE_DIR}/README.md DESTINATION . COMPONENT ship RENAME readme.txt )
 endif()
 
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
     set(CPACK_GENERATOR "External")
 elseif(CMAKE_SYSTEM_NAME MATCHES "Windows|NintendoSwitch|CafeOS")
@@ -316,3 +350,4 @@ endif()
 
 set(CPACK_PROJECT_CONFIG_FILE ${CMAKE_SOURCE_DIR}/CMake/Packaging-2.cmake)
 include(CMake/Packaging.cmake)
+endif()

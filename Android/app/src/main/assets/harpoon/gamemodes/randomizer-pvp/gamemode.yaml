@@ -1,0 +1,310 @@
+# Randomizer (cooperative + PvP) — same shared-save coop as randomizer-no-pvp
+# but with damage between players enabled. Useful for chaotic teamplay /
+# friendly trolling without affecting progression sync.
+
+gamemode_id: randomizer-pvp
+name: "Rando — PvP"
+version: "1.0.0"
+description: "Shared randomizer save (items / flags / keys / entrances). PvP enabled."
+author: "Skijer"
+license: "MIT"
+
+min_players: 1
+max_players: 8
+recommended_players: 2
+
+save_preset: null
+
+default_config:
+  sync_items: true
+  pvp_enabled: true
+  share_dungeon_keys: true
+  share_entrance_discovery: true
+
+# Cross-gamemode PvP combat damage table. Values are in hearts (16 engine
+# units per heart). Negative = HEAL the target instead of damaging.
+# See soh/soh/Network/Harpoon/Combat/CombatSync.h for the full enum.
+damage_table:
+  # Vanilla weapons (values tuned to match vanilla Link-vs-enemy feel)
+  kokiri_sword: 1
+  master_sword: 2
+  biggoron_sword: 4
+  broken_knife: 1
+  deku_stick: 1
+  deku_nut: 0
+  bomb: 2
+  bombchu: 2
+  bow: 1
+  fire_arrow: 2          # 1 + burn DOT 2s
+  ice_arrow: 0           # freeze only, no initial damage
+  light_arrow: 4
+  slingshot: 1
+  hookshot: 1
+  longshot: 1
+  boomerang: 0           # stun only
+  hammer: 4
+  dins_fire: 2
+  farores_wind: 0
+  nayrus_love: 0
+
+  # SW97 spells
+  magic_dark_sw97: 0       # blindness 10s, no damage
+  magic_fire_sw97: 3       # + burn DOT 3s
+  magic_ice_sw97: 0        # freeze 5s, no initial damage
+  magic_light_sw97: -3     # HEAL all friendly in radius
+  magic_soul_sw97: 1       # drain (caster gains 1, target loses 1)
+  magic_wind_sw97: 0       # push only
+
+  # SW97 arrows
+  dark_arrow_sw97: 3       # + blindness 5s
+  fire_arrow_sw97: 3       # + burn DOT 2s
+  ice_arrow_sw97: 2        # + freeze 3s
+  light_arrow_sw97: -3     # HEAL target (opposite of attack)
+  soul_arrow_sw97: 1       # drain 1
+  wind_arrow_sw97: 1       # + push knockback large
+
+  # Transformations
+  fd_beam: 4               # unblockable (Mirror Shield reflects)
+  fd_spin: 6
+  goron_roll: 2
+  goron_spike: 4
+  zora_electric: 2         # + stun 30fr
+  zora_fin: 3
+  zora_dive: 4
+  deku_spin: 1
+  deku_bubble: 1           # + stun 20fr
+
+  # Custom items
+  spinner_ride: 0          # knockback only
+  spinner_homing: 2
+  fire_rod_proj: 2         # + burn DOT
+  fire_rod_spin: 4
+  ice_rod_proj: 0          # freeze only, no initial damage
+  ice_rod_wave: 2          # + freeze 2s
+  light_rod_proj: 2
+  light_rod_beam: 4
+  ball_and_chain: 4
+  beetle: 1                # + stun (boomerang-style)
+  gust_jar_blow: 0
+  switch_hook: 0
+  cane_of_somaria: 0       # cube is the threat, not the cane
+  lantern_burn_regular: 1
+  lantern_burn_blue: 0     # freeze on contact instead
+  lantern_burn_poe: 0      # stun on contact
+  whip: 1
+  demise_direct: 4
+  demise_aoe: 2
+  pegasus_charge: 3        # at speed threshold
+  hylia_grace_heal: -1     # heal target on touch
+  zonai_permafrost: 0      # AOE freeze, no damage
+  bomb_arrow_direct: 1
+  bomb_arrow_aoe: 2
+  deku_leaf: 0             # wind blow, no damage
+  rocs_feather: 0
+  rocs_cape: 0
+
+  # Extended equipment
+  cane_of_byrna: 1
+  four_sword_clone: 2
+  pendant_mortal_draw: 127 # one-shot (capped at int8 max for backward compat)
+  pendant_ground_pound: 4
+  zora_barrier_shock: 2    # per second while inside aura
+
+  # Masks
+  blast_mask: 4
+
+status_durations:
+  burn_short_frames: 120        # 2 s
+  burn_long_frames: 180         # 3 s (Magic Fire)
+  freeze_short_frames: 180      # 3 s (Ice Arrow)
+  freeze_long_frames: 300       # 5 s (Magic Ice, Zonai Permafrost)
+  blindness_short_frames: 300   # 5 s (Dark Arrow)
+  blindness_long_frames: 600    # 10 s (Magic Dark)
+  stun_short_frames: 20
+  stun_long_frames: 60
+
+permissions:
+  player:
+    - primitive: PLAYER.UPDATE_FULL_STATE
+      scope: self
+      rate_limit: 60/sec
+    - primitive: PLAYER.UPDATE_TRANSFORM
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_SKELETON
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_LIMB_ROTATIONS
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_ANIMATION_FLAGS
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_MOTION_VARS
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_BOW_STATE
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_HAND_TYPES
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_VISUAL_STATE
+      scope: self
+      rate_limit: 5/sec
+    - primitive: PLAYER.UPDATE_EQUIP_VISIBLE
+      scope: self
+      rate_limit: 10/sec
+    - primitive: PLAYER.UPDATE_FACE
+      scope: self
+      rate_limit: 10/sec
+    - primitive: PLAYER.UPDATE_SCALE
+      scope: self
+      rate_limit: 5/sec
+    - primitive: PLAYER.UPDATE_CUSTOM_ITEM_STATE
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.SET_TRANSFORMATION
+      scope: self
+      rate_limit: 5/sec
+    - primitive: PLAYER.UPDATE_GORON_STATE
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.KILL
+      scope: room
+      rate_limit: 1/sec
+    - primitive: COMBAT.DEAL_DAMAGE
+      scope: any_in_room
+      rate_limit: 15/sec
+    - primitive: COMBAT.APPLY_STATUS
+      scope: any_in_room
+      rate_limit: 10/sec
+    - primitive: COMBAT.KNOCKBACK
+      scope: any_in_room
+      rate_limit: 10/sec
+    - primitive: COMBAT.PROJECTILE_SPAWN
+      scope: room
+      rate_limit: 20/sec
+    - primitive: COMBAT.PROJECTILE_HIT
+      scope: any_in_room
+      rate_limit: 20/sec
+    - primitive: COMBAT.PROJECTILE_REFLECT
+      scope: any_in_room
+      rate_limit: 10/sec
+    - primitive: COMBAT.SHIELD_PARRY
+      scope: any_in_room
+      rate_limit: 5/sec
+    - primitive: COMBAT.SHIELD_REVIVE
+      scope: room
+      rate_limit: 1/sec
+    - primitive: COMBAT.AURA_TICK
+      scope: room
+      rate_limit: 20/sec
+    - primitive: COMBAT.UTILITY_HIT
+      scope: any_in_room
+      rate_limit: 10/sec
+    - primitive: PLAYER.MASK_EQUIP_START
+      scope: room
+      rate_limit: 2/sec
+    - primitive: SAVE.SET_FLAG
+      scope: room
+      rate_limit: 200/sec
+    - primitive: SAVE.UNSET_FLAG
+      scope: room
+      rate_limit: 200/sec
+    - primitive: SAVE.SET_QUEST_STATE
+      scope: room
+      rate_limit: 200/sec
+    - primitive: SAVE.UPDATE_TEAM_STATE
+      scope: room
+      rate_limit: 1/10sec
+    - primitive: SAVE.REQUEST_TEAM_STATE
+      scope: room
+      rate_limit: 1/sec
+    - primitive: SAVE.GAME_COMPLETE
+      scope: room
+      rate_limit: 1/sec
+    - primitive: AUDIO.OCARINA_SFX
+      scope: room
+      rate_limit: 60/sec
+    - primitive: INVENTORY.GIVE_ITEM
+      scope: room
+      rate_limit: 200/sec
+    - primitive: INVENTORY.SET_DUNGEON_ITEMS
+      scope: room
+      rate_limit: 10/sec
+    - primitive: INVENTORY.SET_AMMO
+      scope: room
+      rate_limit: 10/sec
+    - primitive: MAP.ENTRANCE_DISCOVERED
+      scope: room
+      rate_limit: 200/sec
+    - primitive: WORLD.TRANSPORT_SCENE
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: APPEARANCE.SKIN_SYNC.ANNOUNCE_CATALOG
+      scope: room
+      rate_limit: 1/10sec
+    - primitive: APPEARANCE.SKIN_SYNC.UPDATE_SLOTS
+      scope: room
+      rate_limit: 5/sec
+    - primitive: AUDIO.PLAY_SFX
+      scope: self
+      rate_limit: 30/sec
+    - primitive: ROOM.BROADCAST_EVENT
+      scope: room
+      rate_limit: 5/sec
+    - primitive: CHAT.MESSAGE
+      scope: room
+      rate_limit: 5/sec
+    - primitive: CHAT.EMOTE
+      scope: room
+      rate_limit: 2/sec
+    - primitive: CHAT.PING
+      scope: room
+      rate_limit: 5/sec
+    - primitive: CHAT.MARK_LOCATION
+      scope: room
+      rate_limit: 1/sec
+    - primitive: VOTING.CAST_VOTE
+      scope: room
+      rate_limit: 5/sec
+
+  admin:
+    - inherits: player
+    - primitive: ROOM.SET_GAMEMODE_CONFIG
+      scope: room
+      rate_limit: 1/sec
+    - primitive: UI.SHOW_MESSAGE
+      scope: any_in_room
+      rate_limit: 2/sec
+    - primitive: UI.SHOW_BANNER
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: PLAYER.SET_INVULNERABLE
+      scope: any_in_room
+      rate_limit: 5/sec
+    - primitive: PLAYER.REVIVE
+      scope: any_in_room
+      rate_limit: 2/sec
+    - primitive: ADMIN.PROMOTE
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: ADMIN.DEMOTE
+      scope: any_in_room
+      rate_limit: 1/sec
+
+  host:
+    - inherits: admin
+    - primitive: ROOM.START_GAME
+      scope: room
+      rate_limit: 1/sec
+    - primitive: ROOM.SET_GAMEMODE_ID
+      scope: room
+      rate_limit: 1/sec
+    - primitive: ADMIN.SET_HOST
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: ADMIN.KICK
+      scope: any_in_room
+      rate_limit: 1/sec

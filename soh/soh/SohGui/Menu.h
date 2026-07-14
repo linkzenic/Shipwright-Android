@@ -40,7 +40,7 @@ class Menu : public GuiWindow {
     ImGuiTextFilter menuSearch;
     uint8_t searchSidebarIndex;
     UIWidgets::Colors defaultThemeIndex;
-    std::shared_ptr<std::vector<int32_t>> availableWindowBackends;
+    std::shared_ptr<std::vector<Ship::WindowBackend>> availableWindowBackends;
     std::map<Fast::WindowBackend, const char*> availableWindowBackendsMap;
     Fast::WindowBackend configWindowBackend;
     std::shared_ptr<std::vector<Ship::AudioBackend>> availableAudioBackends;
