@@ -133,15 +133,16 @@ tasks.register("applyZapdtrAndroidPatch") {
     doLast {
         def zapdtrDir = file("${rootProject.projectDir}/../ZAPDTR")
         def crashHandlerFile = file("${zapdtrDir}/ZAPD/CrashHandler.cpp")
-        if (crashHandlerFile.text.contains("__has_include(<unistd.h>) && !defined(__ANDROID__)")) {
+        def originalGuard = "#if __has_include(<unistd.h>)"
+        def androidGuard = "#if __has_include(<unistd.h>) && !defined(__ANDROID__)"
+        def source = crashHandlerFile.text
+        if (source.contains(androidGuard)) {
             return
         }
-
-        exec {
-            workingDir zapdtrDir
-            commandLine "git", "apply", "--ignore-whitespace", "--whitespace=nowarn",
-                    "../patches/zapdtr-android-crash-handler.patch"
+        if (!source.contains(originalGuard)) {
+            throw new GradleException("Unexpected ZAPDTR CrashHandler POSIX guard")
         }
+        crashHandlerFile.text = source.replace(originalGuard, androidGuard)
     }
 }
 
