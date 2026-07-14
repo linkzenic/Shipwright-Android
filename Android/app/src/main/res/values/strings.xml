@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">SOHCS</string>
+    <string name="standard_data_import_title">Import Existing SOH Data?</string>
+    <string name="standard_data_import_message">SOH data was found on this device. Would you like SOHCS to copy your existing saves, settings, controller configuration, and compatible game archives? Your original SOH files will remain unchanged. Choose No to keep SOHCS completely separate.</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
 </resources>

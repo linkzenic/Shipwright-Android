@@ -68,6 +68,8 @@ public class MainActivity extends SDLActivity{
     private static String currentDataRootPath = "/storage/emulated/0/" + DATA_FOLDER_NAME;
     private static final String PREF_DATA_ROOT_PATH = "dataRootPath";
     private static final String PREF_LEGACY_DATA_MIGRATION_COMPLETE = "legacyDataMigrationComplete";
+    private static final String PREF_STANDARD_DATA_IMPORT_DECISION_MADE = "standardDataImportDecisionMade";
+    private static final String PREF_STANDARD_DATA_IMPORT_ENABLED = "standardDataImportEnabled";
     private static final String PREF_STANDARD_DATA_IMPORT_COMPLETE = "standardDataImportComplete";
     private static final String PREF_STANDARD_CONFIG_IMPORT_COMPLETE = "standardConfigImportComplete";
     private static final String PREF_TOUCH_CONTROLS_DISABLED = "touchControlsDisabled";
@@ -229,7 +231,39 @@ public class MainActivity extends SDLActivity{
         if (!preferences.contains(PREF_DATA_ROOT_PATH)) {
             preferences.edit().putString(PREF_DATA_ROOT_PATH, getDefaultDataRootFolder().getAbsolutePath()).apply();
         }
-        beginSetupIfStorageReady();
+        promptForStandardDataImportIfNeeded();
+    }
+
+    private void promptForStandardDataImportIfNeeded() {
+        File standardRoot = new File(Environment.getExternalStorageDirectory(), STANDARD_DATA_FOLDER_NAME);
+        File targetRoot = getTargetRootFolder();
+        boolean decisionMade = preferences.getBoolean(PREF_STANDARD_DATA_IMPORT_DECISION_MADE, false);
+
+        if (decisionMade || !standardRoot.isDirectory() ||
+                standardRoot.getAbsolutePath().equals(targetRoot.getAbsolutePath())) {
+            beginSetupIfStorageReady();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.standard_data_import_title)
+                .setMessage(R.string.standard_data_import_message)
+                .setCancelable(false)
+                .setPositiveButton(R.string.yes, (dialog, which) -> {
+                    preferences.edit()
+                            .putBoolean(PREF_STANDARD_DATA_IMPORT_DECISION_MADE, true)
+                            .putBoolean(PREF_STANDARD_DATA_IMPORT_ENABLED, true)
+                            .apply();
+                    beginSetupIfStorageReady();
+                })
+                .setNegativeButton(R.string.no, (dialog, which) -> {
+                    preferences.edit()
+                            .putBoolean(PREF_STANDARD_DATA_IMPORT_DECISION_MADE, true)
+                            .putBoolean(PREF_STANDARD_DATA_IMPORT_ENABLED, false)
+                            .apply();
+                    beginSetupIfStorageReady();
+                })
+                .show();
     }
 
     private static class DataRootOption {
@@ -713,6 +747,10 @@ public class MainActivity extends SDLActivity{
     }
 
     private void importStandardDataIfNeeded(File targetRootFolder) {
+        if (!preferences.getBoolean(PREF_STANDARD_DATA_IMPORT_ENABLED, false)) {
+            return;
+        }
+
         boolean userDataImportComplete = preferences.getBoolean(PREF_STANDARD_DATA_IMPORT_COMPLETE, false);
 
         File standardRoot = new File(Environment.getExternalStorageDirectory(), STANDARD_DATA_FOLDER_NAME);
