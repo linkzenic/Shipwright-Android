@@ -146,11 +146,38 @@ tasks.register("applyZapdtrAndroidPatch") {
     }
 }
 
+tasks.register("applyOtrExporterAndroidPatch") {
+    doLast {
+        def otrExporterDir = file("${rootProject.projectDir}/../OTRExporter")
+        def cmakeFile = file("${otrExporterDir}/OTRExporter/CMakeLists.txt")
+        def linkMarker = 'target_link_libraries(${PROJECT_NAME} PUBLIC spdlog::spdlog)'
+        def androidLink = 'target_link_libraries(${PROJECT_NAME} PUBLIC libultraship tinyxml2::tinyxml2 libzip::zip)'
+        def source = cmakeFile.text
+        if (source.contains(androidLink)) {
+            return
+        }
+        if (!source.contains(linkMarker)) {
+            throw new GradleException("Unexpected OTRExporter spdlog linkage")
+        }
+        def newline = source.contains("\r\n") ? "\r\n" : "\n"
+        def androidDependencies = [
+                linkMarker,
+                "",
+                "# OTRExporter consumes resource types and archive APIs from libultraship.",
+                "# Linking the owning targets propagates generated dependency includes on Android.",
+                "find_package(libzip REQUIRED)",
+                androidLink
+        ].join(newline)
+        cmakeFile.text = source.replace(linkMarker, androidDependencies)
+    }
+}
+
 tasks.configureEach { task ->
     if (task.name.startsWith("configureCMake") ||
             task.name.startsWith("buildCMake") ||
             task.name.startsWith("externalNativeBuild")) {
-        task.dependsOn("applyLibultrashipAndroidPatch", "applyZapdtrAndroidPatch")
+        task.dependsOn("applyLibultrashipAndroidPatch", "applyZapdtrAndroidPatch",
+                "applyOtrExporterAndroidPatch")
     }
 }
 
