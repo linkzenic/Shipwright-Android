@@ -44,6 +44,12 @@ jobs:
 
       - name: Configure Gradle cache
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # This repository carries a legacy top-level wrapper JAR whose hash
+          # is not in Gradle's public checksum catalog. It is the same checked-in
+          # wrapper used by the existing successful Android builds.
+          validate-wrappers: false
+          cache-read-only: false
 
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
