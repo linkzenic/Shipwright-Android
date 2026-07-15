@@ -26,6 +26,14 @@ jobs:
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
           git fetch origin "+refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}"
 
+      - name: Verify latest NEI Android base
+        run: |
+          git fetch origin sohnei-android
+          if ! git merge-base --is-ancestor origin/sohnei-android HEAD; then
+            echo "ERROR: Fusion Fork is missing commits from sohnei-android. Merge NEI before releasing."
+            exit 1
+          fi
+
       - name: Write local.properties
         run: |
           echo "sdk.dir=${ANDROID_SDK_ROOT}" > Android/local.properties
