@@ -40,7 +40,7 @@ jobs:
 
       - name: Build signed test APK
         env:
-          GIT_TAG: v9.2.3-nei-alpha3-android.beta.2
+          GIT_TAG: v9.2.3-nei-alpha3-android.beta.3
         run: |
           cd Android && ./gradlew assembleRelease \
             -PstoreFile=release.jks \
