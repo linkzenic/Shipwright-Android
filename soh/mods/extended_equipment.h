@@ -291,14 +291,14 @@ void ExtEquip_DrawBehavior(void* player, void* play);
 u8 ExtEquip_ShouldHideSwordDL(void);
 
 /**
- * Returns the MM Mirror Shield OTR path if Shield of Ikana is equipped, NULL otherwise.
- * Called from z_player_lib.c to override shield DL.
+ * Returns a non-NULL marker when an extended shield supplies its own visual.
+ * Called from z_player_lib.c to suppress the vanilla shield DL.
  */
 const char* ExtEquip_GetShieldDLOverride(void);
 
 /**
  * Draw the ext shield DL in the current matrix context (called from PostLimbDraw).
- * For Shield of Ikana: draws GI Mirror Shield model.
+ * Draws Divine/Kite tinted shield models or Shield of Ikana's MM model.
  */
 void ExtEquip_DrawShieldDL(void* play);
 void ExtEquip_DrawShieldBackDL(void* play);
