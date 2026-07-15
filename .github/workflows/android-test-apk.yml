@@ -61,15 +61,15 @@ jobs:
       - name: Prepare APK artifact
         run: |
           APK=$(find Android/app/build/outputs/apk/release -name 'sohfusion_release_*.apk' | head -1)
-          cp "$APK" "sohfusion-v9.2.3-fusion-android.alpha.1.apk"
-          sha256sum "sohfusion-v9.2.3-fusion-android.alpha.1.apk" > "sohfusion-v9.2.3-fusion-android.alpha.1.apk.sha256"
+          cp "$APK" "sohfusion-v9.2.3-fusion-android.alpha.2.apk"
+          sha256sum "sohfusion-v9.2.3-fusion-android.alpha.2.apk" > "sohfusion-v9.2.3-fusion-android.alpha.2.apk.sha256"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: sohfusion-test-apk
           path: |
-            sohfusion-v9.2.3-fusion-android.alpha.1.apk
-            sohfusion-v9.2.3-fusion-android.alpha.1.apk.sha256
+            sohfusion-v9.2.3-fusion-android.alpha.2.apk
+            sohfusion-v9.2.3-fusion-android.alpha.2.apk.sha256
           if-no-files-found: error
           retention-days: 14
