@@ -423,13 +423,17 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index) {
     // address as RGBA32 pixels, which produces fuzz and can crash Android's
     // OpenGL driver in glTexImage2D.
     if (path != NULL) {
-        void* texture = ResourceMgr_GetResourceDataByNameHandlingMQ(path);
-        if (texture != NULL) {
-            // mm.o2r is mounted after startup and its resources are not always
-            // represented in ResourceMgr_FileExists' extension cache. Resolve
-            // the texture directly so Shield of Ikana and Pendant of Memories
-            // do not incorrectly fall through to numbered placeholders.
-            return texture;
+        if (strstr(path, "textures/icon_item_custom/") != NULL) {
+            void* texture = ResourceMgr_GetResourceDataByNameHandlingMQ(path);
+            if (texture != NULL) {
+                return texture;
+            }
+        } else {
+            // mm.o2r is mounted after startup and is not always represented in
+            // ResourceMgr_FileExists' extension cache. Keep its icons as OTR
+            // paths so Fast3D resolves both the pixels and the texture format;
+            // treating these raw buffers as RGBA32 produces striped corruption.
+            return (void*)path;
         }
     }
 
