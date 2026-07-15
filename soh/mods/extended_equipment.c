@@ -691,19 +691,8 @@ void ExtEquip_CaptureCapeShoulderPos(s32 limbIndex) {
 void ExtEquip_DrawBreastplate(void* playVoid) {
     EXT_EQUIP_REQUIRE(EQUIP_TYPE_TUNIC, 2);
 
-#ifdef __ANDROID__
-    // The inline Iron Knuckle display lists used by the Magic Armor contain
-    // host pointers to OTR texture-name strings. On 64-bit Android those
-    // pointers are not safe inside a static Gfx command and can reach Fast3D
-    // corrupted, causing a SIGSEGV in OtrSignatureCheck. Keep the equipment
-    // behavior active, but suppress only its unsafe visual until the model is
-    // converted to an Android-safe resource-backed display list.
-    (void)playVoid;
-    return;
-#else
     PlayState* play = (PlayState*)playVoid;
     Breastplate_Draw(play);
-#endif
 }
 
 u8 ExtEquip_IkanaDeathSave(void* playVoid) {

@@ -7,13 +7,26 @@
  * Textures from soh.otr (always available).
  */
 
-#include "header.h"
+#include "align_asset_macro.h"
 
-// OOT textures from soh.otr
-#define gIKMetalTex     "__OTR__objects/object_ik/gIronKnuckleMetalTex"
-#define gIKChainMailTex "__OTR__objects/object_ik/gIronKnuckleChainMailTex"
-#define gIKBigRivetTex  "__OTR__objects/object_ik/gIronKnuckleBigRivetTex"
-#define gIKRivetTex     "__OTR__objects/object_ik/object_ik_Tex_011960"
+// OOT textures from soh.otr. Keep these as aligned asset symbols rather than
+// embedding raw string-literal pointers in the static display lists. Fast3D
+// expects resource-name pointers in G_SETTIMG commands to have the same stable,
+// aligned representation used by generated OTR asset headers; raw literals can
+// be read as corrupted pointers by the 64-bit Android interpreter.
+#define dgIKBreastplateMetalTex "__OTR__objects/object_ik/gIronKnuckleMetalTex"
+static const ALIGN_ASSET(2) char gIKBreastplateMetalTex[] = dgIKBreastplateMetalTex;
+
+#define dgIKBreastplateChainMailTex "__OTR__objects/object_ik/gIronKnuckleChainMailTex"
+static const ALIGN_ASSET(2) char gIKBreastplateChainMailTex[] = dgIKBreastplateChainMailTex;
+
+#define dgIKBreastplateBigRivetTex "__OTR__objects/object_ik/gIronKnuckleBigRivetTex"
+static const ALIGN_ASSET(2) char gIKBreastplateBigRivetTex[] = dgIKBreastplateBigRivetTex;
+
+#define dgIKBreastplateRivetTex "__OTR__objects/object_ik/object_ik_Tex_011960"
+static const ALIGN_ASSET(2) char gIKBreastplateRivetTex[] = dgIKBreastplateRivetTex;
+
+#include "header.h"
 
 // ============================================================================
 // Front plate vertices (44) - object_ik_Vtx_011A60 (ORIGINAL)
@@ -195,7 +208,7 @@ static Vtx sHelmetMarkingVtx[] = {
     gsDPPipeSync(), \
     gsDPSetTextureLUT(G_TT_NONE), \
     gsSPTexture(0x0BB8, 0x0BB8, 0, G_TX_RENDERTILE, G_ON), \
-    gsDPLoadTextureBlock_4b(gIKMetalTex, G_IM_FMT_I, 32, 64, 0, \
+    gsDPLoadTextureBlock_4b(gIKBreastplateMetalTex, G_IM_FMT_I, 32, 64, 0, \
                             G_TX_MIRROR | G_TX_WRAP, G_TX_MIRROR | G_TX_WRAP, \
                             5, 6, G_TX_NOLOD, G_TX_NOLOD), \
     gsDPSetCombineLERP(PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, 0, 0, 0, PRIMITIVE, \
@@ -224,7 +237,7 @@ Gfx gSpiritChestDL[] = {
     // Chain mail
     gsDPPipeSync(),
     gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON),
-    gsDPLoadTextureBlock(gIKChainMailTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 16, 0,
+    gsDPLoadTextureBlock(gIKBreastplateChainMailTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 16, 0,
                          G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP,
                          4, 4, G_TX_NOLOD, G_TX_NOLOD),
     gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, PRIMITIVE,
@@ -241,7 +254,7 @@ Gfx gSpiritChestDL[] = {
     // Back plate
     gsDPPipeSync(),
     gsSPTexture(0x0BB8, 0x0BB8, 0, G_TX_RENDERTILE, G_ON),
-    gsDPLoadTextureBlock_4b(gIKMetalTex, G_IM_FMT_I, 32, 64, 0,
+    gsDPLoadTextureBlock_4b(gIKBreastplateMetalTex, G_IM_FMT_I, 32, 64, 0,
                             G_TX_MIRROR | G_TX_WRAP, G_TX_MIRROR | G_TX_WRAP,
                             5, 6, G_TX_NOLOD, G_TX_NOLOD),
     gsDPSetCombineLERP(PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, 0, 0, 0, PRIMITIVE,
@@ -262,7 +275,7 @@ Gfx gSpiritChestDL[] = {
     gsSP2Triangles(11, 12, 13, 0, 11, 13, 3, 0),
     gsDPPipeSync(),
     gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON),
-    gsDPLoadTextureBlock(gIKChainMailTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 16, 0,
+    gsDPLoadTextureBlock(gIKBreastplateChainMailTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 16, 16, 0,
                          G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_CLAMP,
                          4, 4, G_TX_NOLOD, G_TX_NOLOD),
     gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, PRIMITIVE,
@@ -313,7 +326,7 @@ Gfx gSpiritHelmetMarkDL[] = {
     gsDPPipeSync(),
     gsDPSetTextureLUT(G_TT_NONE),
     gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON),
-    gsDPLoadTextureBlock(gIKBigRivetTex, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 32, 0,
+    gsDPLoadTextureBlock(gIKBreastplateBigRivetTex, G_IM_FMT_IA, G_IM_SIZ_8b, 32, 32, 0,
                          G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_CLAMP,
                          5, 5, G_TX_NOLOD, G_TX_NOLOD),
     gsDPSetCombineLERP(TEXEL0, 0, SHADE, 0, 0, 0, 0, PRIMITIVE,
@@ -327,7 +340,7 @@ Gfx gSpiritHelmetMarkDL[] = {
     gsSP2Triangles(10, 8, 7, 0, 11, 12, 4, 0),
     gsSP2Triangles(13, 14, 1, 0, 13, 1, 0, 0),
     gsDPPipeSync(),
-    gsDPLoadTextureBlock(gIKRivetTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
+    gsDPLoadTextureBlock(gIKBreastplateRivetTex, G_IM_FMT_IA, G_IM_SIZ_8b, 16, 16, 0,
                          G_TX_NOMIRROR | G_TX_CLAMP, G_TX_NOMIRROR | G_TX_WRAP,
                          4, 4, G_TX_NOLOD, G_TX_NOLOD),
     gsDPSetRenderMode(G_RM_FOG_SHADE_A, G_RM_AA_ZB_XLU_SURF2),
