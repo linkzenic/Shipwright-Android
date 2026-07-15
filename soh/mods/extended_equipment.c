@@ -22,6 +22,7 @@ extern MmPlayerTransformation MmForm_GetCurrentForm(void);
 #include "z64save.h"
 #include "functions.h"
 #include "variables.h"
+#include "soh/ResourceManagerHelpers.h"
 
 extern SaveContext gSaveContext;
 extern s32 CVarGetInteger(const char* name, s32 defaultValue);
@@ -414,7 +415,29 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index) {
         return NULL;
     }
 
-    return (void*)sExtEquipIconPaths[equipType][index - 1];
+    const char* path = sExtEquipIconPaths[equipType][index - 1];
+
+    // Resolve built-in custom icons before putting them into the display list.
+    // Returning one of these paths unresolved can make Fast3D treat the path
+    // address as RGBA32 pixels, which produces fuzz and can crash Android's
+    // OpenGL driver in glTexImage2D.
+    if (path != NULL && ResourceMgr_FileExists(path)) {
+        if (strstr(path, "textures/icon_item_custom/") != NULL) {
+            void* texture = ResourceMgr_GetResourceDataByNameHandlingMQ(path);
+            if (texture != NULL) {
+                return texture;
+            }
+        } else {
+            // Keep optional MM icons as OTR paths so HD replacements retain
+            // their texture metadata and are scaled correctly.
+            return (void*)path;
+        }
+    }
+
+    // These buffers have static lifetime and are always valid 32x32 RGBA32
+    // textures, so missing optional MM resources remain safe to draw.
+    ExtEquip_GenerateIcons();
+    return sExtEquipIconBufs[equipType][index - 1];
 }
 
 u16 ExtEquip_GetItemId(s16 equipType, u8 index) {
