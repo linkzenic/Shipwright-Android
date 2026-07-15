@@ -399,6 +399,17 @@ void Handle_BombArrows(Player* p, PlayState* play) {
     // impact even after the player exits aim or swaps items.
     BombArrows_UpdateTrackedArrows(play);
 
+    // The Android port's canonical Bomb Arrows enhancement owns bow/bomb equip,
+    // ammo, and firing state when enabled. Do not run NEI's separate custom-item
+    // state machine at the same time; already-fired NEI arrows are still updated
+    // above so changing the setting cannot strand them in flight.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("BombArrows"), 0) != 0) {
+        if (baActive) {
+            BombArrows_Stop(p, play);
+        }
+        return;
+    }
+
     ItemInputState in;
     ItemInput_Update(&in, ITEM_BOMB_ARROWS, p, play);
     baButtonMask = in.equippedButton;
