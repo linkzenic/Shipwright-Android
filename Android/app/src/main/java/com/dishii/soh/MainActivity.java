@@ -103,7 +103,7 @@ public class MainActivity extends SDLActivity{
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String SUPPORT_FILES_VERSION_MARKER = ".android_support_files_version";
     // Bump this only when bundled Android support assets or archive layout changes.
-    private static final String SUPPORT_FILES_VERSION = "sohnei-android-support-4";
+    private static final String SUPPORT_FILES_VERSION = "sohnei-android-support-5";
     private AlertDialog dataRootMigrationDialog;
     private AlertDialog setupProgressDialog;
 
