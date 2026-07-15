@@ -23,6 +23,7 @@ extern MmPlayerTransformation MmForm_GetCurrentForm(void);
 #include "functions.h"
 #include "variables.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "align_asset_macro.h"
 #include "objects/object_custom_equip/object_custom_equip.h"
 
 extern SaveContext gSaveContext;
@@ -396,18 +397,26 @@ u8 ExtEquip_GetCurrent(s16 equipType) {
 // Icons / Names
 // ---------------------------------------------------------------------------
 
+// Fast3D reserves odd addresses as non-OTR/segmented pointers. Keep optional
+// MM icon resource names explicitly aligned so link layout can never make the
+// renderer mistake the path bytes for RGBA32 pixels.
+static const ALIGN_ASSET(2) char sShieldOfIkanaIconPath[] =
+    "__OTR__icon_item_static_yar/gItemIconMirrorShieldTex";
+static const ALIGN_ASSET(2) char sPendantOfMemoriesIconPath[] =
+    "__OTR__icon_item_static_yar/gItemIconPendantOfMemoriesTex";
+
 // Icon lookup table: [type][index-1] = OTR path string
 static const char* sExtEquipIconPaths[4][3] = {
     // Swords
     { dgItemIconCaneOfByrnaTex, dgItemIconFourSwordTex, dgItemIconDrillshaftTex },
     // Shields
     { dgItemIconDivineShieldTex, dgItemIconGerudoScimitarTex,
-      "__OTR__icon_item_static_yar/gItemIconMirrorShieldTex" }, // Shield of Ikana (MM mirror shield)
+      sShieldOfIkanaIconPath }, // Shield of Ikana (MM mirror shield)
     // Tunics
     { dgItemIconMagicCapeTex, dgItemIconPending4Tex, dgItemIconChampionsTunicTex },
     // Boots
     { dgItemIconPegasusAnkletTex,
-      "__OTR__icon_item_static_yar/gItemIconPendantOfMemoriesTex", // mm.o2r
+      sPendantOfMemoriesIconPath, // mm.o2r
       dgItemIconWaterDragonScaleTex },
 };
 

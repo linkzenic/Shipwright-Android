@@ -89,7 +89,7 @@ public class MainActivity extends SDLActivity{
     private static final String LEGACY_IMPORTED_MM_ICON_PACK_NAME = "2s2h-3ds-hud-icons.o2r";
     private static final String MM_ICON_ARCHIVE_PREFIX = "alt/icon_item_static_yar/";
     private static final long FULL_HD_MM_ICON_MIN_BYTES = 262000;
-    private static final Set<String> MM_MASK_ICON_NAMES = new HashSet<>(Arrays.asList(
+    private static final Set<String> MM_HD_ICON_NAMES = new HashSet<>(Arrays.asList(
             "gItemIconPostmansHatTex", "gItemIconAllNightMaskTex", "gItemIconBlastMaskTex",
             "gItemIconStoneMaskTex", "gItemIconGreatFairyMaskTex", "gItemIconDekuMaskTex",
             "gItemIconKeatonMaskTex", "gItemIconBremenMaskTex", "gItemIconBunnyHoodTex",
@@ -97,7 +97,8 @@ public class MainActivity extends SDLActivity{
             "gItemIconRomaniMaskTex", "gItemIconCircusLeaderMaskTex", "gItemIconKafeisMaskTex",
             "gItemIconCouplesMaskTex", "gItemIconMaskOfTruthTex", "gItemIconZoraMaskTex",
             "gItemIconKamaroMaskTex", "gItemIconGibdoMaskTex", "gItemIconGaroMaskTex",
-            "gItemIconCaptainsHatTex", "gItemIconGiantsMaskTex", "gItemIconFierceDeityMaskTex"));
+            "gItemIconCaptainsHatTex", "gItemIconGiantsMaskTex", "gItemIconFierceDeityMaskTex",
+            "gItemIconMirrorShieldTex", "gItemIconPendantOfMemoriesTex"));
     private static final String PREF_TOUCH_CONTROLS_DISABLED = "touchControlsDisabled";
     // Legacy key name: true means the touch controls are hidden, not visible.
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
@@ -964,7 +965,8 @@ public class MainActivity extends SDLActivity{
                 .setTitle("Import HD Majora's Mask Icons?")
                 .setMessage("A 2Ship2Harkinian " + sourceName + " pack was found:\n\n" +
                         source.getAbsolutePath() + "\n\n" +
-                        "SOHNEI can extract only its 24 " + iconResolution + " Majora's Mask inventory icons. " +
+                        "SOHNEI can extract only its 24 mask icons plus the Shield of Ikana and Pendant of " +
+                        "Memories icons at " + iconResolution + ". " +
                         "The original 32x32 mm.o2r icons remain as a fallback. No other 2S2H mods will be copied.")
                 .setCancelable(false)
                 .setPositiveButton("Import Icons", (dialog, which) ->
@@ -1024,12 +1026,12 @@ public class MainActivity extends SDLActivity{
         });
     }
 
-    private boolean isMmMaskIconEntry(String entryName) {
+    private boolean isMmHdIconEntry(String entryName) {
         if (!entryName.startsWith(MM_ICON_ARCHIVE_PREFIX)) {
             return false;
         }
         String fileName = entryName.substring(MM_ICON_ARCHIVE_PREFIX.length());
-        return !fileName.contains("/") && MM_MASK_ICON_NAMES.contains(fileName);
+        return !fileName.contains("/") && MM_HD_ICON_NAMES.contains(fileName);
     }
 
     private void createFilteredMmIconArchive(File source, File target) throws IOException {
@@ -1037,7 +1039,7 @@ public class MainActivity extends SDLActivity{
         try (ZipFile sourceArchive = new ZipFile(source);
              ZipOutputStream out = new ZipOutputStream(new FileOutputStream(target))) {
             byte[] buffer = new byte[COPY_BUFFER_SIZE];
-            for (String iconName : MM_MASK_ICON_NAMES) {
+            for (String iconName : MM_HD_ICON_NAMES) {
                 String entryName = MM_ICON_ARCHIVE_PREFIX + iconName;
                 ZipEntry entry = sourceArchive.getEntry(entryName);
                 if (entry == null || entry.isDirectory()) {
@@ -1060,9 +1062,9 @@ public class MainActivity extends SDLActivity{
             }
         }
 
-        if (copiedIcons.size() != MM_MASK_ICON_NAMES.size()) {
+        if (copiedIcons.size() != MM_HD_ICON_NAMES.size()) {
             target.delete();
-            throw new IOException("The 2S2H pack did not contain all 24 Majora's Mask icons.");
+            throw new IOException("The 2S2H pack did not contain all 26 selected Majora's Mask icons.");
         }
     }
 
@@ -1078,7 +1080,7 @@ public class MainActivity extends SDLActivity{
                 if (entry.isDirectory()) {
                     continue;
                 }
-                if (!isMmMaskIconEntry(entry.getName())) {
+                if (!isMmHdIconEntry(entry.getName())) {
                     return false;
                 }
                 long uncompressedBytes = 0;
@@ -1096,7 +1098,7 @@ public class MainActivity extends SDLActivity{
             Log.w("setupFiles", "Unable to validate imported MM icon archive", e);
             return false;
         }
-        return foundIcons.size() == MM_MASK_ICON_NAMES.size();
+        return foundIcons.size() == MM_HD_ICON_NAMES.size();
     }
 
     private void showMmIconImportResult(File targetRootFolder, String errorMessage) {
@@ -1108,8 +1110,8 @@ public class MainActivity extends SDLActivity{
             preferences.edit().putBoolean(preferenceKey, true).apply();
             new AlertDialog.Builder(this)
                     .setTitle("HD MM Icons Imported")
-                    .setMessage("The 24 mask icons from 2S2H " + sourceName +
-                            " were extracted and verified successfully. Its " + iconResolution +
+                    .setMessage("The 24 mask icons plus Shield of Ikana and Pendant of Memories from 2S2H " +
+                            sourceName + " were extracted and verified successfully. Its " + iconResolution +
                             " icons will be used when Alternate Assets is enabled.")
                     .setCancelable(false)
                     .setPositiveButton("Continue", (dialog, which) -> setupLatch.countDown())
