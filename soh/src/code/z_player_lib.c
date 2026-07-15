@@ -1632,8 +1632,15 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
         // If GetEquipDL returns a DL or STUB, use it. If NULL, fall through to vanilla code.
         if (!gerudoHandled) {
             u8 pakHandled = 0;
-            if (PakLoader_HasActiveModel() && (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
-                                               limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
+            // Extended shields draw their own front/back model in PostLimbDraw.
+            // Do not accept a model pak's shield here: that would become the
+            // "base" DL preserved below and leave a duplicate (often an
+            // untextured pink shield) underneath the extended shield.
+            u8 suppressPakShield = ExtEquip_GetShieldDLOverride() != NULL &&
+                                   (limbIndex == PLAYER_LIMB_R_HAND || limbIndex == PLAYER_LIMB_SHEATH);
+            if (PakLoader_HasActiveModel() && !suppressPakShield &&
+                (limbIndex == PLAYER_LIMB_L_HAND || limbIndex == PLAYER_LIMB_R_HAND ||
+                 limbIndex == PLAYER_LIMB_SHEATH || limbIndex == PLAYER_LIMB_WAIST)) {
                 Gfx* pakDL = PakLoader_GetEquipDL(this, limbIndex);
                 if (pakDL == PAK_DL_STUB) {
                     *dList = NULL;

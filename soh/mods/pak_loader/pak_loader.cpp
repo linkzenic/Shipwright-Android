@@ -4643,20 +4643,24 @@ extern "C" void PakLoader_ForceModel(const char* pakPath) {
         }
     }
 
-    // Lazy-load: parse and load the pak file
-    if (!std::filesystem::exists(pakPath)) {
+    // Lazy-load: resolve bundled relative paths against the app data root.
+    // Android's process working directory is not the user-selected SOH data
+    // folder, so paths such as "nei/N64_Kafei.pak" otherwise fail even when
+    // setup copied the file to /sdcard/SOHNEI/nei.
+    std::string resolvedPakPath = Ship::Context::LocateFileAcrossAppDirs(pakPath);
+    if (!std::filesystem::exists(resolvedPakPath)) {
         PAK_LOG("Forced model file not found: %s", pakPath);
         return;
     }
 
     PakModel model = {};
-    model.pakPath = pakPath;
+    model.pakPath = resolvedPakPath;
     snprintf(model.displayName, sizeof(model.displayName), "Forced");
 
     if (LoadPakModel(model)) {
         sModels.push_back(std::move(model));
         sForcedModelIndex = (s32)sModels.size() - 1;
-        sForcedModelPath = pakPath;
+        sForcedModelPath = resolvedPakPath;
 
         // Fix up limb table pointers after move
         PakModel& m = sModels.back();
@@ -4731,19 +4735,22 @@ extern "C" void PakLoader_ForceEquipment(const char* pakPath) {
         }
     }
 
-    if (!std::filesystem::exists(pakPath)) {
+    // See PakLoader_ForceModel: relative custom-item paths must be resolved
+    // from the app data root, especially when Android storage was relocated.
+    std::string resolvedPakPath = Ship::Context::LocateFileAcrossAppDirs(pakPath);
+    if (!std::filesystem::exists(resolvedPakPath)) {
         PAK_LOG("Forced equipment file not found: %s", pakPath);
         return;
     }
 
     PakModel model = {};
-    model.pakPath = pakPath;
+    model.pakPath = resolvedPakPath;
     snprintf(model.displayName, sizeof(model.displayName), "ForcedEquip");
 
     if (LoadPakModel(model)) {
         sModels.push_back(std::move(model));
         sForcedEquipIndex = (s32)sModels.size() - 1;
-        sForcedEquipPath = pakPath;
+        sForcedEquipPath = resolvedPakPath;
 
         PakModel& m = sModels.back();
         for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {

@@ -8,6 +8,12 @@ jobs:
     runs-on: ubuntu-24.04
     container:
       image: djvdw7f2ro/android-builder-soh:v1.0.4
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 1G
+      CCACHE_COMPRESS: "true"
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     permissions:
       contents: read
 
@@ -35,7 +41,28 @@ jobs:
       - name: Install host build dependencies
         run: |
           apt-get update
-          apt-get install -y $(cat .github/workflows/apt-deps.txt)
+          apt-get install -y ccache $(cat .github/workflows/apt-deps.txt)
+
+      - name: Restore C/C++ compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: soh-android-ccache-v1-builder-1.0.4-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt', 'soh/**', 'libultraship/**', 'Android/**') }}
+          restore-keys: |
+            soh-android-ccache-v1-builder-1.0.4-${{ runner.os }}-${{ github.ref_name }}-
+            soh-android-ccache-v1-builder-1.0.4-${{ runner.os }}-
+
+      - name: Configure Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # This repository carries a legacy top-level wrapper JAR whose hash
+          # is not in Gradle's public checksum catalog. It is the same checked-in
+          # wrapper used by the existing successful Android builds.
+          validate-wrappers: false
+          cache-read-only: false
+
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
 
       - name: Generate Fusion Fork soh.o2r
         run: |
@@ -57,6 +84,10 @@ jobs:
             -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             -PkeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
             -PkeyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Report compiler cache statistics
+        if: always()
+        run: ccache --show-stats
 
       - name: Prepare APK artifact
         run: |
