@@ -111,12 +111,12 @@ u8 Breastplate_HasPower(void) {
 #include "equipment/objects/breastplate_DL/model.inc.c"
 
 // Helper: set color + alpha based on rupees
-// Has rupees: golden, 20% alpha (51/255)
+// Has rupees: golden, mostly opaque so this reads as armor rather than a glow
 // No rupees:  golden, fully opaque (armor materializes when magic is spent)
 #define BREASTPLATE_SET_MATERIAL()                                      \
     do {                                                                \
         if (gSaveContext.rupees > 0) {                                  \
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 51);  \
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 200); \
             gDPSetEnvColor(POLY_XLU_DISP++, 25, 20, 0, 255);            \
         } else {                                                        \
             gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 225, 205, 115, 255); \

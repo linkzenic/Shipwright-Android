@@ -1774,7 +1774,7 @@ void DrawEquipmentTab() {
     if (ImGui::CollapsingHeader("Extended Equipment (Page 2)")) {
         static const char* extEquipNames[4][3] = {
             { "Cane of Byrna", "Four Sword", "Drillshaft" },
-            { "Divine Shield", "Gerudo Scimitar", "Shield of Ikana" },
+            { "Divine Shield", "Kite Shield", "Shield of Ikana" },
             { "Magic Cape", "Pending 4", "Champion's Tunic" },
             { "Pegasus Anklet", "Pendant of Memories", "Water Dragon Scale" },
         };

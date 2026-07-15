@@ -472,7 +472,7 @@ static const CustomItemMessageEntry customItemMessages[] = {
       "Vous obtenez le %yBouclier Divin%w!&Un bouclier en bois béni qui&résiste à la colère du feu.^Équipez-le dans l'%yemplacement bouclier%w.^Bouclier en bois MAIS %rignifuge%w -&souffle de feu, flammes de Dodongo&et torches ne le brûlent pas.^%cParade Parfaite%w (%y\xA3%w + bloquer dans&les 10 premières frames d'une attaque):&%cgèle TOUS les ennemis%w à l'écran!" },
 
     { RG_EXT_SHEIKAH_SHIELD, static_cast<ItemID>(ITEM_EXT_SHIELD_2),
-      "You got the %cSheikah Shield%w!&A ceremonial shield bearing the&eye of the Sheikah tribe.^Equip on the %yshield slot%w (%y\xA2%w toggles).^Hold %y\xA3%w to block normally.&Currently a %ycosmetic shield%w -&no special effect.",
+      "You got the %cKite Shield%w!&A ceremonial shield bearing the&eye of the Sheikah tribe.^Equip on the %yshield slot%w (%y\xA2%w toggles).^Hold %y\xA3%w to block normally.&Currently a %ycosmetic shield%w -&no special effect.",
       "Du hast den %cSheikah-Schild%w!&Ein zeremonieller Schild mit dem&Auge des Sheikah-Stammes.^Rüste ihn am %ySchild-Platz%w aus.^%y\xA3%w zum normalen Blocken.&Derzeit ein %ykosmetischer Schild%w -&kein besonderer Effekt.",
       "Vous obtenez le %cBouclier Sheikah%w!&Un bouclier cérémoniel portant&l'œil de la tribu Sheikah.^Équipez-le dans l'%yemplacement bouclier%w.^Maintenez %y\xA3%w pour parer normalement.&Actuellement un %ybouclier cosmétique%w -&pas d'effet particulier." },
 

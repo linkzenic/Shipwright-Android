@@ -23,6 +23,7 @@ extern MmPlayerTransformation MmForm_GetCurrentForm(void);
 #include "functions.h"
 #include "variables.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "objects/object_custom_equip/object_custom_equip.h"
 
 extern SaveContext gSaveContext;
 extern s32 CVarGetInteger(const char* name, s32 defaultValue);
@@ -48,7 +49,7 @@ extern s32 CVarGetInteger(const char* name, s32 defaultValue);
 
 // Per-piece age requirement: [equipType][index-1]
 //   SWORD:  Byrna,            Four Sword,    Drillshaft
-//   SHIELD: Divine Shield,    Gerudo Scim.,  Shield of Ikana
+//   SHIELD: Divine Shield,    Kite Shield,    Shield of Ikana
 //   TUNIC:  Magic Cape,       Pending4,      Champion's Tunic
 //   BOOTS:  Pegasus Anklet,   Pendant Mem.,  Water Dragon Scale
 static const u8 sExtEquipAgeReqs[4][3] = {
@@ -421,16 +422,14 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index) {
     // Returning one of these paths unresolved can make Fast3D treat the path
     // address as RGBA32 pixels, which produces fuzz and can crash Android's
     // OpenGL driver in glTexImage2D.
-    if (path != NULL && ResourceMgr_FileExists(path)) {
-        if (strstr(path, "textures/icon_item_custom/") != NULL) {
-            void* texture = ResourceMgr_GetResourceDataByNameHandlingMQ(path);
-            if (texture != NULL) {
-                return texture;
-            }
-        } else {
-            // Keep optional MM icons as OTR paths so HD replacements retain
-            // their texture metadata and are scaled correctly.
-            return (void*)path;
+    if (path != NULL) {
+        void* texture = ResourceMgr_GetResourceDataByNameHandlingMQ(path);
+        if (texture != NULL) {
+            // mm.o2r is mounted after startup and its resources are not always
+            // represented in ResourceMgr_FileExists' extension cache. Resolve
+            // the texture directly so Shield of Ikana and Pendant of Memories
+            // do not incorrectly fall through to numbered placeholders.
+            return texture;
         }
     }
 
@@ -544,8 +543,10 @@ const char* ExtEquip_GetShieldDLOverride(void) {
     if (!ExtEquip_IsEnabled())
         return NULL;
 
-    // Shield of Ikana (slot 3): hide OOT mirror shield, draw custom in PostLimbDraw
-    if (gExtEquipState.currentExtShield == 3)
+    // Every extended shield has an explicit visual drawn in PostLimbDraw.
+    // Suppress the vanilla fallback so model/equipment packs cannot leave a
+    // duplicate or missing-texture Hylian Shield underneath it.
+    if (gExtEquipState.currentExtShield >= 1 && gExtEquipState.currentExtShield <= 3)
         return "HIDE";
 
     return NULL;
@@ -583,27 +584,70 @@ static void DrawCachedShieldDL(void* playVoid, Gfx* dl) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-void ExtEquip_DrawShieldDL(void* playVoid) {
-    if (!ExtEquip_IsEnabled() || gExtEquipState.currentExtShield != 3)
+// Draw the built-in shield-only Hylian model with an extended-equipment tint.
+// Unlike the normal player limb DL, this model does not include Link's hand,
+// so grayscale recoloring cannot turn his skin gold/teal as a side effect.
+static void DrawTintedHylianShieldDL(void* playVoid, Gfx* dl, u8 r, u8 g, u8 b) {
+    if (dl == NULL)
         return;
 
-    ExtEquip_LoadMmShieldDLs();
-    if (sCachedMmShieldHandDL == NULL)
-        return;
+    PlayState* play = (PlayState*)playVoid;
+    OPEN_DISPS(play->state.gfxCtx);
 
-    DrawCachedShieldDL(playVoid, sCachedMmShieldHandDL);
+    Matrix_Push();
+    gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPGrayscale(POLY_OPA_DISP++, true);
+    gDPSetGrayscaleColor(POLY_OPA_DISP++, r, g, b, 255);
+    gSPDisplayList(POLY_OPA_DISP++, dl);
+    gSPGrayscale(POLY_OPA_DISP++, false);
+    Matrix_Pop();
+
+    CLOSE_DISPS(play->state.gfxCtx);
 }
 
-// Draw MM Mirror Shield on Link's back (sheath position)
+void ExtEquip_DrawShieldDL(void* playVoid) {
+    if (!ExtEquip_IsEnabled())
+        return;
+
+    switch (gExtEquipState.currentExtShield) {
+        case 1:
+            DrawTintedHylianShieldDL(playVoid, ResourceMgr_LoadGfxByName(gCustomHylianShieldDL), 255, 215, 0);
+            break;
+        case 2:
+            DrawTintedHylianShieldDL(playVoid, ResourceMgr_LoadGfxByName(gCustomHylianShieldDL), 100, 200, 200);
+            break;
+        case 3:
+            ExtEquip_LoadMmShieldDLs();
+            if (sCachedMmShieldHandDL != NULL) {
+                DrawCachedShieldDL(playVoid, sCachedMmShieldHandDL);
+            }
+            break;
+    }
+}
+
+// Draw the active extended shield on Link's back (sheath position).
 void ExtEquip_DrawShieldBackDL(void* playVoid) {
-    if (!ExtEquip_IsEnabled() || gExtEquipState.currentExtShield != 3)
+    if (!ExtEquip_IsEnabled())
         return;
 
-    ExtEquip_LoadMmShieldDLs();
-    if (sCachedMmShieldBackDL == NULL)
-        return;
-
-    DrawCachedShieldDL(playVoid, sCachedMmShieldBackDL);
+    switch (gExtEquipState.currentExtShield) {
+        case 1: {
+            const char* path = LINK_IS_ADULT ? gCustomHylianShieldOnBackDL : gCustomHylianShieldOnChildBackDL;
+            DrawTintedHylianShieldDL(playVoid, ResourceMgr_LoadGfxByName(path), 255, 215, 0);
+            break;
+        }
+        case 2: {
+            const char* path = LINK_IS_ADULT ? gCustomHylianShieldOnBackDL : gCustomHylianShieldOnChildBackDL;
+            DrawTintedHylianShieldDL(playVoid, ResourceMgr_LoadGfxByName(path), 100, 200, 200);
+            break;
+        }
+        case 3:
+            ExtEquip_LoadMmShieldDLs();
+            if (sCachedMmShieldBackDL != NULL) {
+                DrawCachedShieldDL(playVoid, sCachedMmShieldBackDL);
+            }
+            break;
+    }
 }
 
 // Common prologue for the per-piece dispatch wrappers below: bail out unless

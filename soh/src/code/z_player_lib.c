@@ -1674,9 +1674,15 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
 
                 if (sRightHandType == PLAYER_MODELTYPE_RH_SHIELD) {
                     if (ExtEquip_GetShieldDLOverride() != NULL) {
-                        // Shield of Ikana: show open hand, custom shield drawn in PostLimbDraw
-                        dLists = &sPlayerRightHandOpenDLs[gSaveContext.linkAge];
-                        sRightHandType = PLAYER_MODELTYPE_RH_OPEN;
+                        // Shield of Ikana's MM DL includes its own hand. Divine/Kite
+                        // use a shield-only DL, so retain a closed hand beneath it.
+                        if (gExtEquipState.currentExtShield == 3) {
+                            dLists = &sPlayerRightHandOpenDLs[gSaveContext.linkAge];
+                            sRightHandType = PLAYER_MODELTYPE_RH_OPEN;
+                        } else {
+                            dLists = &sPlayerRightHandClosedDLs[gSaveContext.linkAge];
+                            sRightHandType = PLAYER_MODELTYPE_RH_CLOSED;
+                        }
                     } else {
                         dLists += this->currentShield * 4;
                     }
@@ -2408,7 +2414,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             // activated, so Mirror Shield reflection / deflection / sword
             // sparks all work 1:1 vanilla. Only the model render is suppressed.
             if (!GerudoForm_IsActive()) {
-                // Shield of Ikana: draw MM Mirror Shield from mm.o2r
+                // Draw the active extended shield in the right-hand matrix.
                 ExtEquip_DrawShieldDL(play);
             }
         }
@@ -2466,7 +2472,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                 Matrix_TranslateRotateZYX(&sSheathLimbModelShieldOnBackPos, &sSheathLimbModelShieldOnBackZyxRot);
                 Matrix_Get(&this->shieldMf);
 
-                // Shield of Ikana: draw MM Mirror Shield on back
+                // Draw the active extended shield on Link's back.
                 ExtEquip_DrawShieldBackDL(play);
             }
 
