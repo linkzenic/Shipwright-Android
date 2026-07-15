@@ -668,16 +668,19 @@ void SohMenu::AddMenuNEI() {
             "reverse-pull behaviour (enemy → Link, pin to grappling point)."));
 
     static bool sTwilightBombArrowsShadow = false;
-    AddWidget(path, "Bomb Arrows", WIDGET_CHECKBOX)
+    AddWidget(path, "NEI Custom Bomb Arrows", WIDGET_CHECKBOX)
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
             sTwilightBombArrowsShadow = TwilightUpgrade_HasBombArrows() != 0;
             info.valuePointer = &sTwilightBombArrowsShadow;
+            info.options->disabled = CVarGetInteger(CVAR_ENHANCEMENT("BombArrows"), 0) != 0;
         })
         .Callback([](WidgetInfo& info) {
             TwilightUpgrade_SetBombArrows(sTwilightBombArrowsShadow ? 1 : 0);
         })
         .Options(CheckboxOptions().Tooltip(
+            "Skijer's separate custom inventory item. Disabled while the canonical\n"
+            "Bomb Arrows enhancement under Enhancements > Items is enabled.\n\n"
             "Auto-grants ITEM_BOMB_ARROWS into the inventory once a bomb bag\n"
             "is owned, and adds bomb arrows as a position in the SW97 R/L\n"
             "arrow cycle during bow aim."));
@@ -1210,10 +1213,15 @@ void SohMenu::AddMenuNEI() {
             "Press L on the equipment page to toggle between vanilla and extended equipment.\n\n"
             "Seed-locked rando setting (also enables the in-game equipment system)."));
 
-    AddWidget(path, "Bomb Arrows: Auto-grant with Bomb Bag", WIDGET_CVAR_CHECKBOX)
+    AddWidget(path, "NEI Bomb Arrows: Auto-grant with Bomb Bag", WIDGET_CVAR_CHECKBOX)
         .CVar("gMods.BombArrows.AutoGrantOnBag")
         .RaceDisable(false)
+        .PreFunc([](WidgetInfo& info) {
+            info.options->disabled = CVarGetInteger(CVAR_ENHANCEMENT("BombArrows"), 0) != 0;
+        })
         .Options(CheckboxOptions().Tooltip(
+            "Controls Skijer's separate custom Bomb Arrows item and is disabled while the\n"
+            "canonical Bomb Arrows enhancement under Enhancements > Items is enabled.\n\n"
             "Cheat: automatically gives ITEM_BOMB_ARROWS the moment you obtain any bomb bag.\n"
             "When on, the new bow/slingshot arrow wheel will show a Bomb entry as soon as the\n"
             "bag is yours. Has no effect on the randomizer item pool."));
