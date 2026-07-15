@@ -1204,9 +1204,14 @@ void SohMenu::AddMenuNEI() {
         .CVar(CVAR_RANDOMIZER_SETTING("ExtEquipment"))
         .RaceDisable(false)
         .PostFunc([](WidgetInfo& info) {
-            CVarSetInteger("gCheats.ExtEquip.Enabled",
-                           CVarGetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 0));
-            Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            // The randomizer pool setting and the ordinary equipment-page feature
+            // are separate choices. Opting into the randomizer items must enable
+            // their runtime system, but opting out must not disable Extended
+            // Equipment for normal saves.
+            if (CVarGetInteger(CVAR_RANDOMIZER_SETTING("ExtEquipment"), 0)) {
+                CVarSetInteger("gCheats.ExtEquip.Enabled", 1);
+                Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+            }
         })
         .Options(CheckboxOptions().Tooltip(
             "Adds the 12 extended equipment pieces (3 swords, 3 shields, 3 tunics, 3 boots) to the randomizer pool.\n"
