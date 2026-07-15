@@ -113,10 +113,24 @@ void ActorShape_Init(ActorShape* shape, f32 yOffset, ActorShadowFunc shadowDraw,
     shape->shadowAlpha = 255;
 }
 
+// SOH [Enhancement] Actor shadows: the Wind Waker-style shape shadow (see
+// soh/soh/Enhancements/Graphics/ToonLighting.cpp) replaces the vanilla actor shadows — Link's multi-light
+// feet, the NPC circle shadows, the horse shadow, the sign/cobra texture shadows. When the feature is on
+// AND set to suppress, early-return the vanilla draws that funnel through these helpers. Tied to the shadow
+// feature's own CVars (not cel shading), so the two can be toggled independently.
+static s32 ActorShadow_Suppressed(void) {
+    return CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0) &&
+           CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"), 1);
+}
+
 void ActorShadow_Draw(Actor* actor, Lights* lights, PlayState* play, Gfx* dlist, Color_RGBA8* color) {
     f32 temp1;
     f32 temp2;
     MtxF sp60;
+
+    if (ActorShadow_Suppressed()) {
+        return;
+    }
 
     if (actor->floorPoly != NULL) {
         temp1 = actor->world.pos.y - actor->floorHeight;
@@ -196,6 +210,10 @@ void ActorShadow_DrawFoot(PlayState* play, Light* light, MtxF* arg2, s32 arg3, f
 
 void ActorShadow_DrawFeet(Actor* actor, Lights* lights, PlayState* play) {
     f32 distToFloor = actor->world.pos.y - actor->floorHeight;
+
+    if (ActorShadow_Suppressed()) {
+        return;
+    }
 
     if (distToFloor > 20.0f) {
         f32 shadowScale = actor->shape.shadowScale;
@@ -2866,10 +2884,13 @@ void Actor_Draw(PlayState* play, Actor* actor) {
                    (actor->flags & ACTOR_FLAG_IGNORE_POINTLIGHTS) ? NULL : &actor->world.pos);
     Lights_Draw(lights, play->state.gfxCtx);
 
-    // SOH [Enhancement] Toon lighting: let the enhancement choose and emit this actor's key light
-    // (selection/easing live in soh/soh/Enhancements/Graphics/ToonLighting.cpp). Guarded so the hook
-    // is never invoked per-actor when the feature is off.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
+    // SOH [Enhancement] Toon lighting / actor shadows: let the enhancement choose and emit this actor's key
+    // light (selection/easing live in soh/soh/Enhancements/Graphics/ToonLighting.cpp). The actor shadow
+    // reuses that same key, so fire the hook when EITHER cel shading OR actor shadows is on; the handler
+    // gates the relight and the shadow independently. Guarded so the hook is never invoked per-actor when
+    // both are off.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1) ||
+        CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0)) {
         GameInteractor_ExecuteOnActorDraw(actor);
     }
 

@@ -8,6 +8,7 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include "objects/object_kanban/object_kanban.h"
 #include "vt.h"
+#include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h" // SOH [Enhancement] actor shadow CVars
 
 #define FLAGS (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED)
 
@@ -841,7 +842,11 @@ void EnKanban_Draw(Actor* thisx, PlayState* play) {
             gSPDisplayList(POLY_XLU_DISP++, object_kanban_DL_001630);
         }
     }
-    if ((this->actor.projectedPos.z <= 400.0f) && (this->actor.projectedPos.z > 0.0f) &&
+    // SOH [Enhancement] Actor shadows cast the sign's own shape shadow from the chosen key light, so skip
+    // this bespoke (fixed-direction) shadow when vanilla-shadow suppression is on.
+    if (!(CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0) &&
+          CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"), 1)) &&
+        (this->actor.projectedPos.z <= 400.0f) && (this->actor.projectedPos.z > 0.0f) &&
         (this->actor.floorHeight > -3000.0f)) {
         if ((this->bounceX != 0) || (this->bounceZ != 0)) {
             u16 dayTime = gSaveContext.dayTime;

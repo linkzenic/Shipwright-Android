@@ -34,7 +34,18 @@ void Lights_PointGlowSetInfo(LightInfo* info, s16 x, s16 y, s16 z, u8 r, u8 g, u
     Lights_PointSetInfo(info, x, y, z, r, g, b, radius, LIGHT_POINT_GLOW);
 }
 
+// SOH [Enhancement] Wind Waker flame flicker: replaces the game's per-frame white-noise torch/flame
+// flicker with a slow random-walk tween. Defined in soh/soh/Enhancements/Graphics/WorldLighting.cpp.
+void WorldLighting_ApplyFlameFlicker(LightInfo* info, u8* r, u8* g, u8* b);
+
 void Lights_PointSetColorAndRadius(LightInfo* info, u8 r, u8 g, u8 b, s16 radius) {
+    // SOH [Enhancement] Apply the Wind Waker flame flicker at the source whenever "Improve Flame Flicker" is
+    // on (independent of light casting), so it reaches the vanilla scene lighting, cel shading, the vanilla
+    // glow, and the cast light pools alike. The helper only transforms lights that are actively flickering
+    // (it detects steady/smooth lights and leaves them alone).
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.ImproveFlameFlicker"), 1)) {
+        WorldLighting_ApplyFlameFlicker(info, &r, &g, &b);
+    }
     info->params.point.color[0] = r;
     info->params.point.color[1] = g;
     info->params.point.color[2] = b;
@@ -410,6 +421,14 @@ void Lights_GlowCheck(PlayState* play) {
 void Lights_DrawGlow(PlayState* play) {
     s32 pad;
     LightNode* node;
+
+    // SOH [Enhancement] Wind Waker light casting can hide the vanilla billboarded glow circles (which
+    // otherwise clash with the cast light pools). Only while light casting is enabled, and only when "Hide
+    // Vanilla Torch Glow" is on. (Selection/draw live in soh/soh/Enhancements/Graphics/WorldLighting.cpp.)
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.Enabled"), 0) &&
+        CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.HideVanillaGlow"), 1)) {
+        return;
+    }
 
     node = play->lightCtx.listHead;
 
