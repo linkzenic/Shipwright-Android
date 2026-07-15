@@ -824,6 +824,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                 if (!ImGui::IsPopupOpen("ROM Extraction")) {
                     ImGui::OpenPopup("ROM Extraction");
                 }
+                ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 8.0f));
                 auto color = UIWidgets::ColorValues.at(THEME_COLOR);
