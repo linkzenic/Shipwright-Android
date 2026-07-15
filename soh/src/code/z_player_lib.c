@@ -1599,6 +1599,8 @@ static Gfx* Player_ResolveLimbDLForDummyOrLocal(void* dlPathOrPtr) {
 s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
                                            void* thisx) {
     Player* this = (Player*)thisx;
+    Gfx* extShieldBaseDL = NULL;
+    u8 preserveExtShieldBase = 0;
 
     if (!Player_OverrideLimbDrawGameplayCommon(play, limbIndex, dList, pos, rot, thisx)) {
         // Gerudo Form dual-wield: both hands hold a custom scimitar DL from
@@ -1793,6 +1795,16 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
         }
     }
 
+    // Preserve the hand/sheath result that deliberately excludes the vanilla
+    // shield. CustomEquipment and PakLoader run after the default override and
+    // can otherwise reinsert their Hylian shield underneath the explicit
+    // Divine/Kite/Ikana model drawn from PostLimbDraw.
+    if (ExtEquip_GetShieldDLOverride() != NULL &&
+        (limbIndex == PLAYER_LIMB_R_HAND || limbIndex == PLAYER_LIMB_SHEATH)) {
+        extShieldBaseDL = *dList;
+        preserveExtShieldBase = 1;
+    }
+
     GameInteractor_Should(VB_PLAYER_OVERRIDE_LIMB_DRAW, true, limbIndex, dList, thisx, play);
 
     // PAK Loader equipment mix must outrank CustomEquipment's VB_PLAYER_OVERRIDE_LIMB_DRAW
@@ -1809,6 +1821,10 @@ s32 Player_OverrideLimbDrawGameplayDefault(PlayState* play, s32 limbIndex, Gfx**
         } else if (pakReDL != NULL) {
             *dList = pakReDL;
         }
+    }
+
+    if (preserveExtShieldBase) {
+        *dList = extShieldBaseDL;
     }
 
     if (GameInteractor_InvisibleLinkActive()) {
