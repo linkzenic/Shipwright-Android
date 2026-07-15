@@ -17,6 +17,8 @@
 
 using namespace UIWidgets;
 
+extern PlayState* gPlayState;
+
 static WidgetInfo freeLook;
 static WidgetInfo mouseControl;
 static WidgetInfo mouseAutoCapture;
@@ -1894,14 +1896,23 @@ void RegisterInputEditorWidgets() {
 
     freeLook = { .name = "Free Look", .type = WidgetType::WIDGET_CVAR_CHECKBOX };
     freeLook.CVar(CVAR_SETTING("FreeLook.Enabled"))
+        .RaceDisable(false)
+        .Callback([](WidgetInfo&) {
+            // Reinitialize the manual camera from the current view the next time
+            // camera input is detected. This avoids carrying stale free-look state
+            // across an off/on toggle.
+            if (gPlayState != nullptr) {
+                gPlayState->manualCamera = false;
+            }
+        })
         .Options(
             CheckboxOptions()
                 .Color(THEME_COLOR)
                 .Tooltip(
                     "Enables free look camera control\nNote: You must remap C buttons off of the right stick in the "
                     "controller config menu, and map the camera stick to the right stick.\n"
-                    "Doesn't work in areas were the game locks the camera.\n"
-                    "Scene reload may be necessary to enable."));
+                    "Move the camera stick after enabling to activate free look.\n"
+                    "Doesn't work in areas where the game locks the camera."));
     SohGui::mSohMenu->AddSearchWidget({ freeLook, "Settings", "Controls", "Camera Controls" });
 
     mouseControl = { .name = "Enable Mouse Controls", .type = WidgetType::WIDGET_CVAR_CHECKBOX };

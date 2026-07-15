@@ -1378,14 +1378,6 @@ void SohMenu::AddMenuNEI() {
         .CVar(CVAR_SETTING("DPadOnPause"))
         .Options(CheckboxOptions().Tooltip("Use the D-Pad to navigate the pause menu."));
 
-    AddWidget(path, "Camera", WIDGET_SEPARATOR_TEXT);
-    AddWidget(path, "Free Camera", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_SETTING("FreeLook.Enabled"))
-        .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip(
-            "Enables free camera control (right stick / mouse).\n"
-            "Same setting as Settings > Controls > Free Look — surfaced here for convenience."));
-
     AddWidget(path, "Transformation Controls", WIDGET_SEPARATOR_TEXT);
     AddWidget(path, "Mario Controls", WIDGET_BUTTON)
         .RaceDisable(false)
