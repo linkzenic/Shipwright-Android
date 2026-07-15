@@ -52,6 +52,7 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.zip.ZipEntry;
@@ -80,6 +81,35 @@ public class MainActivity extends SDLActivity{
     private static final String PREF_LEGACY_DATA_MIGRATION_COMPLETE = "legacyDataMigrationComplete";
     private static final String PREF_MM_IMPORT_DECISION_COMPLETE = "mmImportDecisionComplete";
     private static final String TWO_SHIP_MM_O2R_PATH = "/storage/emulated/0/2S2H/mm.o2r";
+    private static final String PREF_MM_FORM_IMPORT_DECISION_COMPLETE = "mmFormImportDecisionCompleteV1";
+    private static final String TWO_SHIP_3DS_FORM_MODELS_PATH =
+            "/storage/emulated/0/2S2H/mods/3 - Link 3DS.o2r";
+    private static final String TWO_SHIP_3DS_FORM_TEXTURES_PATH =
+            "/storage/emulated/0/2S2H/mods/3 - Link 3DS Textures.o2r";
+    private static final String TWO_SHIP_3DS_FORM_HD_TEXTURES_PATH =
+            "/storage/emulated/0/2S2H/mods/0-3DS HD Link.o2r";
+    private static final String IMPORTED_MM_FORM_MODELS_NAME = "sohnei-3ds-form-models.o2r";
+    private static final String IMPORTED_MM_FORM_TEXTURES_NAME = "sohnei-3ds-form-textures.o2r";
+    private static final Set<String> MM_FORM_OBJECT_NAMES = new HashSet<>(Arrays.asList(
+            "object_link_boy", "object_link_goron", "object_link_goron_hands_bottle",
+            "object_link_goron_hands_closed", "object_link_goron_hands_open", "object_link_nuts",
+            "object_link_zora", "object_link_zora_hands_bottle", "object_link_zora_hands_closed",
+            "object_link_zora_hands_open"));
+    private static final Set<String> MM_FORM_TEXTURE_EXCLUDED_ENTRIES = new HashSet<>(Arrays.asList(
+            "alt/objects/object_link_boy/gLinkFierceDeitySkel_link_demon_f01_ci8",
+            "alt/objects/object_link_boy/gLinkFierceDeitySkel_link_demon_f01_pal_rgba16",
+            "alt/objects/object_link_goron/Shine32xSoft",
+            "alt/objects/object_link_goron/gLinkGoronSkel_tex_004340_i8_png_001_rgba16",
+            "alt/objects/object_link_nuts/link_nuts_gakki",
+            "alt/objects/object_link_zora/link_zora_guite"));
+    private static final Set<String> MM_FORM_TEXTURE_HD_ENTRIES = new HashSet<>(Arrays.asList(
+            "alt/objects/object_link_goron/gLinkGoronSkel_link_goron_e00_rgba16",
+            "alt/objects/object_link_zora/gLinkZoraSkel_link_zora_3_rgba16",
+            "alt/objects/object_link_zora/gLinkZoraSkel_link_zora_4_rgba16",
+            "alt/objects/object_link_zora/gLinkZoraSkel_link_zora_5_rgba16",
+            "alt/objects/object_link_zora_hands_bottle/gLinkZoraSkel_link_zora_5_rgba16",
+            "alt/objects/object_link_zora_hands_closed/gLinkZoraSkel_link_zora_5_rgba16",
+            "alt/objects/object_link_zora_hands_open/gLinkZoraSkel_link_zora_5_rgba16"));
     private static final String PREF_MM_ICON_IMPORT_DECISION_COMPLETE = "mmIconImportDecisionCompleteV2";
     private static final String TWO_SHIP_MM_RELOADED_ICON_PACK_PATH =
             "/storage/emulated/0/2S2H/mods/2 - MM_Reloaded_v11.0.2_HD.o2r";
@@ -775,7 +805,7 @@ public class MainActivity extends SDLActivity{
 
         if ((targetMmO2r.isFile() && targetMmO2r.length() > 0) ||
                 preferences.getBoolean(preferenceKey, false)) {
-            maybePromptForMmIconPackImport(targetRootFolder);
+            maybePromptForMmFormImport(targetRootFolder);
             return;
         }
 
@@ -789,7 +819,7 @@ public class MainActivity extends SDLActivity{
                 .setPositiveButton("Try Copy", (dialog, which) -> importMmO2rFromTwoShip(targetRootFolder))
                 .setNegativeButton("Skip", (dialog, which) -> {
                     preferences.edit().putBoolean(preferenceKey, true).apply();
-                    maybePromptForMmIconPackImport(targetRootFolder);
+                    maybePromptForMmFormImport(targetRootFolder);
                 })
                 .show();
     }
@@ -890,7 +920,7 @@ public class MainActivity extends SDLActivity{
                             "SOH Fusion will now validate its game version as the app starts.")
                     .setCancelable(false)
                     .setPositiveButton("Continue", (dialog, which) ->
-                            maybePromptForMmIconPackImport(targetRootFolder))
+                            maybePromptForMmFormImport(targetRootFolder))
                     .show();
             return;
         }
@@ -903,6 +933,270 @@ public class MainActivity extends SDLActivity{
                 .setCancelable(false)
                 .setPositiveButton("Retry", (dialog, which) -> importMmO2rFromTwoShip(targetRootFolder))
                 .setNegativeButton("Continue Without", (dialog, which) -> {
+                    preferences.edit().putBoolean(preferenceKey, true).apply();
+                    maybePromptForMmFormImport(targetRootFolder);
+                })
+                .show();
+    }
+
+    private String getMmFormImportPreferenceKey(File targetRootFolder) {
+        return PREF_MM_FORM_IMPORT_DECISION_COMPLETE + ":" + targetRootFolder.getAbsolutePath();
+    }
+
+    private File getMmFormArchive(File targetRootFolder, String archiveName) {
+        return new File(new File(targetRootFolder, "nei"), archiveName);
+    }
+
+    private boolean haveMmFormSources() {
+        File models = new File(TWO_SHIP_3DS_FORM_MODELS_PATH);
+        File textures = new File(TWO_SHIP_3DS_FORM_TEXTURES_PATH);
+        File hdTextures = new File(TWO_SHIP_3DS_FORM_HD_TEXTURES_PATH);
+        return models.isFile() && models.length() > 0 &&
+                textures.isFile() && textures.length() > 0 &&
+                hdTextures.isFile() && hdTextures.length() > 0;
+    }
+
+    private boolean haveValidMmFormArchives(File targetRootFolder) {
+        return isFilteredMmFormArchive(
+                getMmFormArchive(targetRootFolder, IMPORTED_MM_FORM_MODELS_NAME), false) &&
+                isFilteredMmFormArchive(
+                        getMmFormArchive(targetRootFolder, IMPORTED_MM_FORM_TEXTURES_NAME), true);
+    }
+
+    private void maybePromptForMmFormImport(File targetRootFolder) {
+        File modelTarget = getMmFormArchive(targetRootFolder, IMPORTED_MM_FORM_MODELS_NAME);
+        File textureTarget = getMmFormArchive(targetRootFolder, IMPORTED_MM_FORM_TEXTURES_NAME);
+        String preferenceKey = getMmFormImportPreferenceKey(targetRootFolder);
+
+        if (haveValidMmFormArchives(targetRootFolder)) {
+            maybePromptForMmIconPackImport(targetRootFolder);
+            return;
+        }
+
+        // The optional 3DS packs may be installed in 2S2H later. If they are not
+        // available yet, continue with the original N64 transformation forms.
+        if (!haveMmFormSources()) {
+            maybePromptForMmIconPackImport(targetRootFolder);
+            return;
+        }
+
+        // Respect an explicit skip, but repair a partial or invalid prior import.
+        if (preferences.getBoolean(preferenceKey, false) &&
+                !modelTarget.exists() && !textureTarget.exists()) {
+            maybePromptForMmIconPackImport(targetRootFolder);
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Import 3DS Transformation Forms?")
+                .setMessage("SOH Fusion found the optional 2Ship2Harkinian 3DS Link packs:\n\n" +
+                        TWO_SHIP_3DS_FORM_MODELS_PATH + "\n" +
+                        TWO_SHIP_3DS_FORM_TEXTURES_PATH + "\n" +
+                        TWO_SHIP_3DS_FORM_HD_TEXTURES_PATH + "\n\n" +
+                        "Fusion can extract only the Deku, Goron, Zora, and Fierce Deity form resources. " +
+                        "The source packs will not be changed or copied in full.")
+                .setCancelable(false)
+                .setPositiveButton("Import 3DS Forms", (dialog, which) ->
+                        importMmFormsFromTwoShip(targetRootFolder))
+                .setNegativeButton("Use N64 Forms", (dialog, which) -> {
+                    preferences.edit().putBoolean(preferenceKey, true).apply();
+                    maybePromptForMmIconPackImport(targetRootFolder);
+                })
+                .show();
+    }
+
+    private void importMmFormsFromTwoShip(File targetRootFolder) {
+        showSetupProgressDialog("Importing 3DS Transformation Forms",
+                "Extracting and verifying the 2S2H form models and textures. Please keep SOH Fusion open.");
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            String errorMessage = null;
+            File modelSource = new File(TWO_SHIP_3DS_FORM_MODELS_PATH);
+            File textureSource = new File(TWO_SHIP_3DS_FORM_TEXTURES_PATH);
+            File targetDirectory = new File(targetRootFolder, "nei");
+            File modelTarget = new File(targetDirectory, IMPORTED_MM_FORM_MODELS_NAME);
+            File textureTarget = new File(targetDirectory, IMPORTED_MM_FORM_TEXTURES_NAME);
+            File temporaryModels = new File(targetDirectory, ".3ds-form-models.o2r.importing");
+            File temporaryTextures = new File(targetDirectory, ".3ds-form-textures.o2r.importing");
+
+            try {
+                if (!haveMmFormSources()) {
+                    throw new IOException("All three supported 2S2H 3DS Link packs are required.");
+                }
+                if (!targetDirectory.exists() && !targetDirectory.mkdirs()) {
+                    throw new IOException("The Fusion nei folder could not be created.");
+                }
+                if ((temporaryModels.exists() && !temporaryModels.delete()) ||
+                        (temporaryTextures.exists() && !temporaryTextures.delete())) {
+                    throw new IOException("An incomplete previous 3DS form import could not be removed.");
+                }
+
+                createFilteredMmFormArchive(modelSource, temporaryModels, false);
+                createFilteredMmFormArchive(textureSource, temporaryTextures, true);
+                if (!isFilteredMmFormArchive(temporaryModels, false) ||
+                        !isFilteredMmFormArchive(temporaryTextures, true)) {
+                    throw new IOException("The extracted 3DS form archives did not pass validation.");
+                }
+
+                byte[] modelHash = calculateSha256(temporaryModels);
+                byte[] textureHash = calculateSha256(temporaryTextures);
+                if ((modelTarget.exists() && !modelTarget.delete()) ||
+                        (textureTarget.exists() && !textureTarget.delete())) {
+                    throw new IOException("The existing 3DS form archives could not be replaced.");
+                }
+                if (!temporaryModels.renameTo(modelTarget) ||
+                        !temporaryTextures.renameTo(textureTarget)) {
+                    throw new IOException("The verified 3DS form archives could not be installed.");
+                }
+
+                if (!Arrays.equals(modelHash, calculateSha256(modelTarget)) ||
+                        !Arrays.equals(textureHash, calculateSha256(textureTarget)) ||
+                        !haveValidMmFormArchives(targetRootFolder)) {
+                    modelTarget.delete();
+                    textureTarget.delete();
+                    throw new IOException("Final verification failed after installing the 3DS forms.");
+                }
+            } catch (IOException e) {
+                errorMessage = e.getMessage();
+                Log.e("setupFiles", "Unable to import 2S2H 3DS transformation forms", e);
+                temporaryModels.delete();
+                temporaryTextures.delete();
+            }
+
+            final String finalErrorMessage = errorMessage;
+            dismissSetupProgressDialog();
+            runOnUiThread(() -> showMmFormImportResult(targetRootFolder, finalErrorMessage));
+        });
+    }
+
+    private String getMmFormObjectName(String entryName, boolean textures) {
+        String prefix = textures ? "alt/objects/" : "objects/";
+        if (!entryName.startsWith(prefix)) {
+            return null;
+        }
+        String remainder = entryName.substring(prefix.length());
+        int separator = remainder.indexOf('/');
+        if (separator <= 0) {
+            return null;
+        }
+        String objectName = remainder.substring(0, separator);
+        return MM_FORM_OBJECT_NAMES.contains(objectName) ? objectName : null;
+    }
+
+    private void copyZipEntry(ZipFile sourceArchive, ZipEntry entry, ZipOutputStream out,
+                              byte[] buffer) throws IOException {
+        ZipEntry filteredEntry = new ZipEntry(entry.getName());
+        if (entry.getTime() >= 0) {
+            filteredEntry.setTime(entry.getTime());
+        }
+        out.putNextEntry(filteredEntry);
+        try (InputStream in = sourceArchive.getInputStream(entry)) {
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+        }
+        out.closeEntry();
+    }
+
+    private void createFilteredMmFormArchive(File source, File target, boolean textures) throws IOException {
+        Set<String> copiedObjects = new HashSet<>();
+        try (ZipFile sourceArchive = new ZipFile(source);
+             ZipOutputStream out = new ZipOutputStream(new FileOutputStream(target))) {
+            Enumeration<? extends ZipEntry> entries = sourceArchive.entries();
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            while (entries.hasMoreElements()) {
+                ZipEntry entry = entries.nextElement();
+                String objectName = getMmFormObjectName(entry.getName(), textures);
+                if (entry.isDirectory() || objectName == null ||
+                        (textures && (MM_FORM_TEXTURE_EXCLUDED_ENTRIES.contains(entry.getName()) ||
+                                MM_FORM_TEXTURE_HD_ENTRIES.contains(entry.getName())))) {
+                    continue;
+                }
+                copyZipEntry(sourceArchive, entry, out, buffer);
+                copiedObjects.add(objectName);
+            }
+
+            if (textures) {
+                try (ZipFile hdTextureArchive = new ZipFile(TWO_SHIP_3DS_FORM_HD_TEXTURES_PATH)) {
+                    for (String entryName : MM_FORM_TEXTURE_HD_ENTRIES) {
+                        ZipEntry entry = hdTextureArchive.getEntry(entryName);
+                        if (entry == null || entry.isDirectory()) {
+                            throw new IOException("The 3DS HD Link pack is missing a required transformation texture.");
+                        }
+                        copyZipEntry(hdTextureArchive, entry, out, buffer);
+                        copiedObjects.add(getMmFormObjectName(entryName, true));
+                    }
+                }
+            }
+        }
+
+        if (!copiedObjects.equals(MM_FORM_OBJECT_NAMES)) {
+            target.delete();
+            throw new IOException("The 2S2H pack did not contain every supported transformation form.");
+        }
+    }
+
+    private boolean isFilteredMmFormArchive(File archive, boolean textures) {
+        if (!archive.isFile() || archive.length() <= 0) {
+            return false;
+        }
+
+        Set<String> foundObjects = new HashSet<>();
+        Set<String> foundEntryNames = new HashSet<>();
+        int foundEntryCount = 0;
+        try (ZipInputStream in = new ZipInputStream(new FileInputStream(archive))) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String objectName = getMmFormObjectName(entry.getName(), textures);
+                if (objectName == null) {
+                    return false;
+                }
+                foundObjects.add(objectName);
+                foundEntryNames.add(entry.getName());
+                foundEntryCount++;
+            }
+        } catch (IOException e) {
+            Log.w("setupFiles", "Unable to validate imported 3DS form archive", e);
+            return false;
+        }
+        if (textures) {
+            if (!foundEntryNames.containsAll(MM_FORM_TEXTURE_HD_ENTRIES)) {
+                return false;
+            }
+            for (String excludedEntry : MM_FORM_TEXTURE_EXCLUDED_ENTRIES) {
+                if (foundEntryNames.contains(excludedEntry)) {
+                    return false;
+                }
+            }
+        }
+        return foundEntryCount > 0 && foundObjects.equals(MM_FORM_OBJECT_NAMES);
+    }
+
+    private void showMmFormImportResult(File targetRootFolder, String errorMessage) {
+        String preferenceKey = getMmFormImportPreferenceKey(targetRootFolder);
+        if (errorMessage == null) {
+            preferences.edit().putBoolean(preferenceKey, true).apply();
+            new AlertDialog.Builder(this)
+                    .setTitle("3DS Transformation Forms Imported")
+                    .setMessage("The Deku, Goron, Zora, and Fierce Deity form resources were extracted " +
+                            "from the 2S2H packs and verified successfully.")
+                    .setCancelable(false)
+                    .setPositiveButton("Continue", (dialog, which) ->
+                            maybePromptForMmIconPackImport(targetRootFolder))
+                    .show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("3DS Transformation Forms Were Not Imported")
+                .setMessage(errorMessage + "\n\nYou can retry or continue with the original N64 forms.")
+                .setCancelable(false)
+                .setPositiveButton("Retry", (dialog, which) -> importMmFormsFromTwoShip(targetRootFolder))
+                .setNegativeButton("Use N64 Forms", (dialog, which) -> {
                     preferences.edit().putBoolean(preferenceKey, true).apply();
                     maybePromptForMmIconPackImport(targetRootFolder);
                 })
