@@ -592,14 +592,10 @@ public class MainActivity extends SDLActivity{
         // Support both .otr (9.0.x) and .o2r (9.2.x) archive formats
         File sohOtrFile = new File(targetRootFolder, "soh.o2r");
         File sohOtrFileLegacy = new File(targetRootFolder, "soh.otr");
-        // oot.o2r / oot-mq.o2r also count; soh.o2r is not bundled, game can run with just the ROM archive
-        File ootO2rFile = new File(targetRootFolder, "oot.o2r");
-        File ootMqO2rFile = new File(targetRootFolder, "oot-mq.o2r");
-
         boolean isMissingAssets = !assetsFolder.exists() || assetsFolder.listFiles() == null || assetsFolder.listFiles().length == 0;
         boolean isMissingNei = !neiFolder.exists() || neiFolder.listFiles() == null || neiFolder.listFiles().length == 0;
         boolean isMissingHarpoon = !harpoonFolder.exists() || harpoonFolder.listFiles() == null || harpoonFolder.listFiles().length == 0;
-        boolean isMissingSohOtr = !sohOtrFile.exists() && !sohOtrFileLegacy.exists() && !ootO2rFile.exists() && !ootMqO2rFile.exists();
+        boolean isMissingSohOtr = !sohOtrFile.exists() && !sohOtrFileLegacy.exists();
 
         if (!targetRootFolder.exists() || isMissingAssets || isMissingNei || isMissingHarpoon || isMissingSohOtr) {
             showSetupProgressDialog("Preparing Data Folder",
@@ -619,7 +615,10 @@ public class MainActivity extends SDLActivity{
                             }
                         }
                     } catch (IOException e) {
-                        // not bundled, nothing to do
+                        Log.e("setupFiles", "Complete APK is missing required soh.o2r", e);
+                        runOnUiThread(() -> showSetupFailure(
+                                "The installed APK is incomplete and does not contain soh.o2r. Please install a complete build."));
+                        return;
                     }
                     finishSetupWithMmImportPrompt(targetRootFolder);
                 });
@@ -682,7 +681,8 @@ public class MainActivity extends SDLActivity{
             }
             runOnUiThread(() -> Toast.makeText(this, "soh.o2r copied", Toast.LENGTH_SHORT).show());
         } catch (IOException e) {
-            // soh.o2r not bundled in APK assets or copy failed; user must provide their own
+            Log.e("setupFiles", "Complete APK is missing required soh.o2r", e);
+            setupFailed = true;
         }
 
         if (setupFailed) {
