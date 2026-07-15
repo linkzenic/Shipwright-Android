@@ -12,7 +12,7 @@ using namespace UIWidgets;
 // keep their original "ToonLighting" / "WorldLighting" names so existing settings/saves are unaffected;
 // only the navigation moved here from Settings.
 void SohMenu::AddMenuWindWakerStyle() {
-    AddMenuEntry("Wind Waker Style", CVAR_SETTING("Menu.WindWakerStyleSidebarSection"));
+    AddMenuEntry("Wind Waker Style", CVAR_SETTING("Menu.WindWakerStyleSidebarSection"), "WW Style");
 
     // ===========================================================================================
     // Cel Shading — relights actors/objects with a single dominant light and a soft toon ramp.

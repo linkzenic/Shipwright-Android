@@ -539,7 +539,7 @@ void DrawTricksMenu(WidgetInfo& info) {
 
 void SohMenu::AddMenuRandomizer() {
     // Add Randomizer Menu
-    AddMenuEntry("Randomizer", CVAR_SETTING("Menu.RandomizerSidebarSection"));
+    AddMenuEntry("Randomizer", CVAR_SETTING("Menu.RandomizerSidebarSection"), "Rando");
 
     // Seed Settings
     WidgetPath path = { "Randomizer", "General", SECTION_COLUMN_1 };

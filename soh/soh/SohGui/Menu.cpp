@@ -273,8 +273,8 @@ uint32_t Menu::DrawSearchResults(std::string& menuSearchText) {
     return searchCount;
 }
 
-void Menu::AddMenuEntry(std::string entryName, const char* entryCvar) {
-    menuEntries.emplace(entryName, MainMenuEntry{ entryName, entryCvar });
+void Menu::AddMenuEntry(std::string entryName, const char* entryCvar, std::string displayLabel) {
+    menuEntries.emplace(entryName, MainMenuEntry{ displayLabel.empty() ? entryName : displayLabel, entryCvar });
     menuOrder.push_back(entryName);
 }
 
@@ -674,7 +674,7 @@ void Menu::DrawElement() {
         headerWidth += 200.0f;
     }
     for (auto& label : menuOrder) {
-        ImVec2 size = ImGui::CalcTextSize(label.c_str());
+        ImVec2 size = ImGui::CalcTextSize(menuEntries.at(label).label.c_str());
         headerSizes.push_back(size);
         headerWidth += size.x + style.FramePadding.x * 2 + style.ItemSpacing.x;
     }
