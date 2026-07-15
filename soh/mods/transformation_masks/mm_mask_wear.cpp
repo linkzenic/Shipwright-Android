@@ -71,7 +71,12 @@ extern "C" s32 Player_GetMovementSpeedAndYaw(Player* this_, f32* outSpeedTarget,
 // =============================================================================
 // Indexed 0-23 matching ITEM_MM_MASK_POSTMAN(0xB7) through ITEM_MM_MASK_FIERCE_DEITY(0xCE).
 
-static const char* sMmWornMaskDLPaths[24] = {
+// Fast3D distinguishes OTR resource paths from raw segmented addresses using the
+// pointer's low bit.  Ordinary string literals are not guaranteed to be evenly
+// aligned, so an odd-addressed mask path is interpreted as display-list data and
+// eventually crashes in the vertex/texture handlers. Keep every entry in one
+// explicitly aligned array (the same requirement as the pause-menu icon paths).
+alignas(2) static const char sMmWornMaskDLPaths[24][88] = {
     "__OTR__objects/object_mask_posthat/object_mask_posthat_DL_000290",   // 0  Postman's Hat
     "__OTR__objects/object_mask_yofukasi/object_mask_yofukasi_DL_000490", // 1  All-Night Mask
     "__OTR__objects/object_mask_bakuretu/object_mask_bakuretu_DL_0005C0", // 2  Blast Mask
@@ -138,7 +143,8 @@ static Vec3s sMmMaskRotOffset[24] = {
 // =============================================================================
 
 // Cooldown DL: the special XLU DL with scrolling texture used during blast recovery
-static const char* sBlastMaskCooldownDL = "__OTR__objects/object_mask_bakuretu/object_mask_bakuretu_DL_000440";
+alignas(2) static const char sBlastMaskCooldownDL[] =
+    "__OTR__objects/object_mask_bakuretu/object_mask_bakuretu_DL_000440";
 
 // D_801C0BC0: default env color for segment 0x09 (normal worn mask)
 static Gfx sBlastMaskDefaultSeg9[] = {

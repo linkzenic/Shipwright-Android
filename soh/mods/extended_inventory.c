@@ -289,13 +289,12 @@ static const CustomItemAsset* ExtInv_FindCustomItemAsset(uint16_t itemId) {
 }
 
 void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
-    // MM Mask items: return OTR path string so the RSP resolves actual texture
-    // dimensions from resource metadata (HD mod textures render at native resolution).
+    // The name-panel updater expects an OTR path string and copies it into
+    // nameSegment. Returning decoded pixels here makes it call strlen/memcpy on
+    // texture data, corrupting the alternating item-name display.
     if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
         const char* path = MmMasks_GetNamePath(itemId);
-        if (path)
-            return (void*)path;
-        return NULL;
+        return path != NULL ? (void*)path : NULL;
     }
     // Chateau Romani: name texture from mm.o2r
     if (itemId == ITEM_CHATEAU_ROMANI) {
@@ -400,16 +399,17 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             return icon;
         return gItemIcons[0];
     }
-    // MM Mask items: return OTR path string so the RSP resolves actual texture
-    // dimensions from resource metadata (HD mod textures render at native resolution).
+    // Keep MM masks on the managed OTR texture path. Android registers a
+    // filtered icon-only archive, allowing Fast3D to apply its native 64x64
+    // alternate textures without raw-buffer lifetime/TMEM problems.
     if (itemId >= ITEM_MM_MASK_POSTMAN && itemId <= ITEM_MM_MASK_FIERCE_DEITY) {
         // Bunny Hood: use OOT icon (same appearance, enables OOT behavior)
         if (itemId == ITEM_MM_MASK_BUNNY) {
             return gItemIcons[ITEM_MASK_BUNNY];
         }
-        const char* path = MmMasks_GetIconPath(itemId);
-        if (path)
-            return (void*)path;
+        const char* iconPath = MmMasks_GetIconPath(itemId);
+        if (iconPath)
+            return (void*)iconPath;
         return gItemIcons[0]; // Fallback
     }
     // Page-2 custom items with a constant icon live in the shared asset table.

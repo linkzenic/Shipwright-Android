@@ -49,6 +49,12 @@ import android.view.View;
 import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 import java.util.concurrent.Executors;
 import android.app.AlertDialog;
@@ -65,18 +71,36 @@ public class MainActivity extends SDLActivity{
     private volatile boolean mIsAiming = false;
     private static final int COPY_BUFFER_SIZE = 65536;
     private static final int RUMBLE_MAX_DURATION_MS = 5000;
-    private static final String DATA_FOLDER_NAME = "SOHUNIFIED";
+    private static final String DATA_FOLDER_NAME = "SOHFUSION";
     private static String currentDataRootPath = "/storage/emulated/0/" + DATA_FOLDER_NAME;
     private static final String PREF_DATA_ROOT_PATH = "dataRootPath";
     private static final String PREF_LEGACY_DATA_MIGRATION_COMPLETE = "legacyDataMigrationComplete";
     private static final String PREF_MM_IMPORT_DECISION_COMPLETE = "mmImportDecisionComplete";
     private static final String TWO_SHIP_MM_O2R_PATH = "/storage/emulated/0/2S2H/mm.o2r";
+    private static final String PREF_MM_ICON_IMPORT_DECISION_COMPLETE = "mmIconImportDecisionCompleteV2";
+    private static final String TWO_SHIP_MM_RELOADED_ICON_PACK_PATH =
+            "/storage/emulated/0/2S2H/mods/2 - MM_Reloaded_v11.0.2_HD.o2r";
+    private static final String TWO_SHIP_3DS_HUD_ICON_PACK_PATH =
+            "/storage/emulated/0/2S2H/mods/1 - 3DS HUD Pack.o2r";
+    private static final String IMPORTED_MM_ICON_PACK_NAME = "mm-icons.o2r";
+    private static final String LEGACY_IMPORTED_MM_ICON_PACK_NAME = "2s2h-3ds-hud-icons.o2r";
+    private static final String MM_ICON_ARCHIVE_PREFIX = "alt/icon_item_static_yar/";
+    private static final long FULL_HD_MM_ICON_MIN_BYTES = 262000;
+    private static final Set<String> MM_MASK_ICON_NAMES = new HashSet<>(Arrays.asList(
+            "gItemIconPostmansHatTex", "gItemIconAllNightMaskTex", "gItemIconBlastMaskTex",
+            "gItemIconStoneMaskTex", "gItemIconGreatFairyMaskTex", "gItemIconDekuMaskTex",
+            "gItemIconKeatonMaskTex", "gItemIconBremenMaskTex", "gItemIconBunnyHoodTex",
+            "gItemIconDonGeroMaskTex", "gItemIconMaskOfScentsTex", "gItemIconGoronMaskTex",
+            "gItemIconRomaniMaskTex", "gItemIconCircusLeaderMaskTex", "gItemIconKafeisMaskTex",
+            "gItemIconCouplesMaskTex", "gItemIconMaskOfTruthTex", "gItemIconZoraMaskTex",
+            "gItemIconKamaroMaskTex", "gItemIconGibdoMaskTex", "gItemIconGaroMaskTex",
+            "gItemIconCaptainsHatTex", "gItemIconGiantsMaskTex", "gItemIconFierceDeityMaskTex"));
     private static final String PREF_TOUCH_CONTROLS_DISABLED = "touchControlsDisabled";
     // Legacy key name: true means the touch controls are hidden, not visible.
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String SUPPORT_FILES_VERSION_MARKER = ".android_support_files_version";
     // Bump this only when bundled Android support assets or archive layout changes.
-    private static final String SUPPORT_FILES_VERSION = "sohunified-android-support-2";
+    private static final String SUPPORT_FILES_VERSION = "sohfusion-android-support-1";
     private AlertDialog dataRootMigrationDialog;
     private AlertDialog setupProgressDialog;
 
@@ -88,7 +112,7 @@ public class MainActivity extends SDLActivity{
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        preferences = getSharedPreferences("com.linkzenic.sohunified.prefs", Context.MODE_PRIVATE);
+        preferences = getSharedPreferences("com.linkzenic.sohfusion.prefs", Context.MODE_PRIVATE);
         updateCurrentDataRootPath();
 
         Log.i("SoH", "hasStoragePermission=" + hasStoragePermission());
@@ -690,21 +714,21 @@ public class MainActivity extends SDLActivity{
 
         if ((targetMmO2r.isFile() && targetMmO2r.length() > 0) ||
                 preferences.getBoolean(preferenceKey, false)) {
-            setupLatch.countDown();
+            maybePromptForMmIconPackImport(targetRootFolder);
             return;
         }
 
         new AlertDialog.Builder(this)
                 .setTitle("Import Majora's Mask Assets?")
-                .setMessage("SOH Unified Test can try to copy mm.o2r from your 2Ship2Harkinian data folder:\n\n" +
+                .setMessage("SOH Fusion can try to copy mm.o2r from your 2Ship2Harkinian data folder:\n\n" +
                         TWO_SHIP_MM_O2R_PATH + "\n\n" +
                         "This enables Majora's Mask models, animations, audio, and transformation features. " +
-                        "SOH Unified Test will verify that the copied file exactly matches the source.")
+                        "SOH Fusion will verify that the copied file exactly matches the source.")
                 .setCancelable(false)
                 .setPositiveButton("Try Copy", (dialog, which) -> importMmO2rFromTwoShip(targetRootFolder))
                 .setNegativeButton("Skip", (dialog, which) -> {
                     preferences.edit().putBoolean(preferenceKey, true).apply();
-                    setupLatch.countDown();
+                    maybePromptForMmIconPackImport(targetRootFolder);
                 })
                 .show();
     }
@@ -715,7 +739,7 @@ public class MainActivity extends SDLActivity{
 
     private void importMmO2rFromTwoShip(File targetRootFolder) {
         showSetupProgressDialog("Importing Majora's Mask Assets",
-                "Copying and verifying mm.o2r from 2Ship2Harkinian. Please keep SOH Unified Test open.");
+                "Copying and verifying mm.o2r from 2Ship2Harkinian. Please keep SOH Fusion open.");
 
         Executors.newSingleThreadExecutor().execute(() -> {
             String errorMessage = null;
@@ -738,10 +762,10 @@ public class MainActivity extends SDLActivity{
                 }
 
                 if (target.exists() && !target.delete()) {
-                    throw new IOException("The existing SOH Unified Test mm.o2r could not be replaced.");
+                    throw new IOException("The existing SOH Fusion mm.o2r could not be replaced.");
                 }
                 if (!temporaryTarget.renameTo(target)) {
-                    throw new IOException("The verified file could not be moved into the SOHUNIFIED folder.");
+                    throw new IOException("The verified file could not be moved into the SOHFUSION folder.");
                 }
 
                 byte[] installedHash = calculateSha256(target);
@@ -802,9 +826,10 @@ public class MainActivity extends SDLActivity{
             new AlertDialog.Builder(this)
                     .setTitle("MM Assets Imported")
                     .setMessage("mm.o2r was copied from 2Ship2Harkinian and verified successfully. " +
-                            "SOH Unified Test will now validate its game version as the app starts.")
+                            "SOH Fusion will now validate its game version as the app starts.")
                     .setCancelable(false)
-                    .setPositiveButton("Continue", (dialog, which) -> setupLatch.countDown())
+                    .setPositiveButton("Continue", (dialog, which) ->
+                            maybePromptForMmIconPackImport(targetRootFolder))
                     .show();
             return;
         }
@@ -816,6 +841,226 @@ public class MainActivity extends SDLActivity{
                         targetRootFolder.getAbsolutePath())
                 .setCancelable(false)
                 .setPositiveButton("Retry", (dialog, which) -> importMmO2rFromTwoShip(targetRootFolder))
+                .setNegativeButton("Continue Without", (dialog, which) -> {
+                    preferences.edit().putBoolean(preferenceKey, true).apply();
+                    maybePromptForMmIconPackImport(targetRootFolder);
+                })
+                .show();
+    }
+
+    private String getMmIconImportPreferenceKey(File targetRootFolder) {
+        return PREF_MM_ICON_IMPORT_DECISION_COMPLETE + ":" + targetRootFolder.getAbsolutePath();
+    }
+
+    private File findMmIconPackSource() {
+        File mmReloaded = new File(TWO_SHIP_MM_RELOADED_ICON_PACK_PATH);
+        if (mmReloaded.isFile() && mmReloaded.length() > 0) {
+            return mmReloaded;
+        }
+        File threeDsHud = new File(TWO_SHIP_3DS_HUD_ICON_PACK_PATH);
+        return threeDsHud.isFile() && threeDsHud.length() > 0 ? threeDsHud : null;
+    }
+
+    private boolean isMmReloadedIconSource(File source) {
+        return source != null && TWO_SHIP_MM_RELOADED_ICON_PACK_PATH.equals(source.getAbsolutePath());
+    }
+
+    private void maybePromptForMmIconPackImport(File targetRootFolder) {
+        File source = findMmIconPackSource();
+        File target = new File(targetRootFolder, IMPORTED_MM_ICON_PACK_NAME);
+        File legacyTarget = new File(new File(targetRootFolder, "mods"), LEGACY_IMPORTED_MM_ICON_PACK_NAME);
+        String preferenceKey = getMmIconImportPreferenceKey(targetRootFolder);
+
+        // The first test build placed the full HUD pack in mods/, which made it
+        // override unrelated assets such as the D-pad. Move it out so the new
+        // importer can replace it with an icon-only archive.
+        if (!target.exists() && legacyTarget.isFile() && legacyTarget.length() > 0) {
+            if (!legacyTarget.renameTo(target)) {
+                Log.w("setupFiles", "Unable to move legacy MM icon pack out of mods");
+            }
+        }
+
+        boolean requireFullHd = isMmReloadedIconSource(source);
+        boolean hasFilteredIconArchive = isFilteredMmIconArchive(target, requireFullHd);
+        boolean hasAnyFilteredIconArchive = hasFilteredIconArchive || isFilteredMmIconArchive(target, false);
+        if (hasFilteredIconArchive ||
+                (preferences.getBoolean(preferenceKey, false) &&
+                        (!target.exists() || hasAnyFilteredIconArchive))) {
+            setupLatch.countDown();
+            return;
+        }
+
+        // This is optional. If the pack is installed in 2S2H later, ask on a future launch.
+        if (source == null) {
+            setupLatch.countDown();
+            return;
+        }
+
+        String sourceName = requireFullHd ? "MM Reloaded v11.0.2 HD" : "3DS HUD Pack";
+        String iconResolution = requireFullHd ? "256x256" : "64x64";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Import HD Majora's Mask Icons?")
+                .setMessage("A 2Ship2Harkinian " + sourceName + " pack was found:\n\n" +
+                        source.getAbsolutePath() + "\n\n" +
+                        "SOH Fusion can extract only its 24 " + iconResolution + " Majora's Mask inventory icons. " +
+                        "The original 32x32 mm.o2r icons remain as a fallback. No other 2S2H mods will be copied.")
+                .setCancelable(false)
+                .setPositiveButton("Import Icons", (dialog, which) ->
+                        importMmIconPackFromTwoShip(targetRootFolder))
+                .setNegativeButton("Skip", (dialog, which) -> {
+                    preferences.edit().putBoolean(preferenceKey, true).apply();
+                    setupLatch.countDown();
+                })
+                .show();
+    }
+
+    private void importMmIconPackFromTwoShip(File targetRootFolder) {
+        File selectedSource = findMmIconPackSource();
+        String sourceName = isMmReloadedIconSource(selectedSource) ? "MM Reloaded HD" : "3DS HUD";
+        showSetupProgressDialog("Importing HD Majora's Mask Icons",
+                "Extracting and verifying the 2S2H " + sourceName + " icons. Please keep SOH Fusion open.");
+
+        Executors.newSingleThreadExecutor().execute(() -> {
+            String errorMessage = null;
+            File source = findMmIconPackSource();
+            File target = new File(targetRootFolder, IMPORTED_MM_ICON_PACK_NAME);
+            File temporaryTarget = new File(targetRootFolder, ".mm-icons.o2r.importing");
+
+            try {
+                if (source == null) {
+                    throw new IOException("A supported 2S2H HD icon pack could not be found.");
+                }
+                if (temporaryTarget.exists() && !temporaryTarget.delete()) {
+                    throw new IOException("An incomplete previous icon import could not be removed.");
+                }
+
+                createFilteredMmIconArchive(source, temporaryTarget);
+                byte[] filteredHash = calculateSha256(temporaryTarget);
+
+                if (target.exists() && !target.delete()) {
+                    throw new IOException("The existing imported icon pack could not be replaced.");
+                }
+                if (!temporaryTarget.renameTo(target)) {
+                    throw new IOException("The verified icon pack could not be installed.");
+                }
+
+                byte[] installedHash = calculateSha256(target);
+                if (!Arrays.equals(filteredHash, installedHash) ||
+                        !isFilteredMmIconArchive(target, isMmReloadedIconSource(source))) {
+                    target.delete();
+                    throw new IOException("Final verification failed after installing the icon pack.");
+                }
+            } catch (IOException e) {
+                errorMessage = e.getMessage();
+                Log.e("setupFiles", "Unable to import the 2S2H MM icon pack", e);
+                temporaryTarget.delete();
+            }
+
+            final String finalErrorMessage = errorMessage;
+            dismissSetupProgressDialog();
+            runOnUiThread(() -> showMmIconImportResult(targetRootFolder, finalErrorMessage));
+        });
+    }
+
+    private boolean isMmMaskIconEntry(String entryName) {
+        if (!entryName.startsWith(MM_ICON_ARCHIVE_PREFIX)) {
+            return false;
+        }
+        String fileName = entryName.substring(MM_ICON_ARCHIVE_PREFIX.length());
+        return !fileName.contains("/") && MM_MASK_ICON_NAMES.contains(fileName);
+    }
+
+    private void createFilteredMmIconArchive(File source, File target) throws IOException {
+        Set<String> copiedIcons = new HashSet<>();
+        try (ZipFile sourceArchive = new ZipFile(source);
+             ZipOutputStream out = new ZipOutputStream(new FileOutputStream(target))) {
+            byte[] buffer = new byte[COPY_BUFFER_SIZE];
+            for (String iconName : MM_MASK_ICON_NAMES) {
+                String entryName = MM_ICON_ARCHIVE_PREFIX + iconName;
+                ZipEntry entry = sourceArchive.getEntry(entryName);
+                if (entry == null || entry.isDirectory()) {
+                    continue;
+                }
+
+                ZipEntry filteredEntry = new ZipEntry(entryName);
+                if (entry.getTime() >= 0) {
+                    filteredEntry.setTime(entry.getTime());
+                }
+                out.putNextEntry(filteredEntry);
+                try (InputStream in = sourceArchive.getInputStream(entry)) {
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, read);
+                    }
+                }
+                out.closeEntry();
+                copiedIcons.add(entryName);
+            }
+        }
+
+        if (copiedIcons.size() != MM_MASK_ICON_NAMES.size()) {
+            target.delete();
+            throw new IOException("The 2S2H pack did not contain all 24 Majora's Mask icons.");
+        }
+    }
+
+    private boolean isFilteredMmIconArchive(File archive, boolean requireFullHd) {
+        if (!archive.isFile() || archive.length() <= 0) {
+            return false;
+        }
+
+        Set<String> foundIcons = new HashSet<>();
+        try (ZipInputStream in = new ZipInputStream(new FileInputStream(archive))) {
+            ZipEntry entry;
+            while ((entry = in.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                if (!isMmMaskIconEntry(entry.getName())) {
+                    return false;
+                }
+                long uncompressedBytes = 0;
+                byte[] buffer = new byte[COPY_BUFFER_SIZE];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    uncompressedBytes += read;
+                }
+                if (requireFullHd && uncompressedBytes < FULL_HD_MM_ICON_MIN_BYTES) {
+                    return false;
+                }
+                foundIcons.add(entry.getName());
+            }
+        } catch (IOException e) {
+            Log.w("setupFiles", "Unable to validate imported MM icon archive", e);
+            return false;
+        }
+        return foundIcons.size() == MM_MASK_ICON_NAMES.size();
+    }
+
+    private void showMmIconImportResult(File targetRootFolder, String errorMessage) {
+        String preferenceKey = getMmIconImportPreferenceKey(targetRootFolder);
+        if (errorMessage == null) {
+            File source = findMmIconPackSource();
+            String sourceName = isMmReloadedIconSource(source) ? "MM Reloaded HD" : "the 3DS HUD Pack";
+            String iconResolution = isMmReloadedIconSource(source) ? "256x256" : "64x64";
+            preferences.edit().putBoolean(preferenceKey, true).apply();
+            new AlertDialog.Builder(this)
+                    .setTitle("HD MM Icons Imported")
+                    .setMessage("The 24 mask icons from 2S2H " + sourceName +
+                            " were extracted and verified successfully. Its " + iconResolution +
+                            " icons will be used when Alternate Assets is enabled.")
+                    .setCancelable(false)
+                    .setPositiveButton("Continue", (dialog, which) -> setupLatch.countDown())
+                    .show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("HD MM Icons Were Not Imported")
+                .setMessage(errorMessage + "\n\nYou can retry or continue with the original mm.o2r icons.")
+                .setCancelable(false)
+                .setPositiveButton("Retry", (dialog, which) -> importMmIconPackFromTwoShip(targetRootFolder))
                 .setNegativeButton("Continue Without", (dialog, which) -> {
                     preferences.edit().putBoolean(preferenceKey, true).apply();
                     setupLatch.countDown();
@@ -919,7 +1164,7 @@ public class MainActivity extends SDLActivity{
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
-                    showSetupFailure("The selected file could not be copied into the SOHUNIFIED folder.");
+                    showSetupFailure("The selected file could not be copied into the SOHFUSION folder.");
                     return;
                 }
             } else {
@@ -1006,7 +1251,7 @@ public class MainActivity extends SDLActivity{
     private void showStorageAccessFailure() {
         runOnUiThread(() -> new AlertDialog.Builder(this)
                 .setTitle("Storage Permission Required")
-                .setMessage("The app needs file access to create and update the SOHUNIFIED folder. Please grant storage access and try again.")
+                .setMessage("The app needs file access to create and update the SOHFUSION folder. Please grant storage access and try again.")
                 .setCancelable(false)
                 .setPositiveButton("Open Settings", (dialog, which) -> requestStoragePermission())
                 .setNegativeButton("Close", (dialog, which) -> finish())

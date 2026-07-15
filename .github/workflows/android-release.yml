@@ -1,4 +1,4 @@
-name: Android NEI Release Build
+name: Android Fusion Fork Release Build
 
 on:
   push:
@@ -36,7 +36,7 @@ jobs:
           apt-get update
           apt-get install -y $(cat .github/workflows/apt-deps.txt)
 
-      - name: Generate NEI soh.o2r
+      - name: Generate Fusion Fork soh.o2r
         run: |
           cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build-linux --target GenerateSohOtr --parallel
@@ -59,19 +59,19 @@ jobs:
 
       - name: Rename APK
         run: |
-          APK=$(find Android/app/build/outputs/apk/release -name 'sohnei_release_*.apk' | head -1)
-          mv "$APK" "sohnei-${{ github.ref_name }}.apk"
+          APK=$(find Android/app/build/outputs/apk/release -name 'sohfusion_release_*.apk' | head -1)
+          mv "$APK" "sohfusion-${{ github.ref_name }}.apk"
 
       - name: Compute SHA256
         id: sha256
         run: |
-          HASH=$(sha256sum "sohnei-${{ github.ref_name }}.apk" | awk '{print $1}')
+          HASH=$(sha256sum "sohfusion-${{ github.ref_name }}.apk" | awk '{print $1}')
           echo "hash=${HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: sohnei-${{ github.ref_name }}.apk
+          subject-path: sohfusion-${{ github.ref_name }}.apk
 
       - name: Create GitHub release
         env:
@@ -91,10 +91,10 @@ jobs:
 
           printf '%s\n\n' "${ANNOTATION_BODY}" > /tmp/release-notes.md
           printf 'SHA256: %s\n' "${{ steps.sha256.outputs.hash }}" >> /tmp/release-notes.md
-          printf 'Verify: `gh attestation verify sohnei-%s.apk --owner linkzenic`\n' "${TAG}" >> /tmp/release-notes.md
+          printf 'Verify: `gh attestation verify sohfusion-%s.apk --owner linkzenic`\n' "${TAG}" >> /tmp/release-notes.md
           printf 'Build: %s/%s/actions/runs/%s\n' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" >> /tmp/release-notes.md
 
           gh release create "${TAG}" \
-            "sohnei-${TAG}.apk" \
-            --title "Ship of Harkinian NEI ${TAG}" \
+            "sohfusion-${TAG}.apk" \
+            --title "Ship of Harkinian: Fusion Fork ${TAG}" \
             --notes-file /tmp/release-notes.md

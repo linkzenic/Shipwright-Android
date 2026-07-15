@@ -1,6 +1,6 @@
 def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
 def buildAsApplication = !buildAsLibrary
-def androidAppVersionName = "9.2.3-unified-android.alpha.1"
+def androidAppVersionName = "9.2.3-fusion-android.alpha.1"
 if (buildAsApplication) {
     apply plugin: 'com.android.application'
 }
@@ -17,7 +17,7 @@ android {
     }
     defaultConfig {
         if (buildAsApplication) {
-            applicationId "com.linkzenic.sohunified"
+            applicationId "com.linkzenic.sohfusion"
         }
         minSdkVersion 24
         targetSdkVersion 33
@@ -69,7 +69,7 @@ android {
             def versionCode = variant.versionCode
 
             def gitTag = System.getenv("GIT_TAG") ?: "v${versionName}"
-            def newApkName = "sohunified_${buildType}_${gitTag}.apk"
+            def newApkName = "sohfusion_${buildType}_${gitTag}.apk"
             outputFileName = newApkName
         }
     }

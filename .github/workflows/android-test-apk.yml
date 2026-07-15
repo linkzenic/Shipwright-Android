@@ -1,4 +1,4 @@
-name: Android NEI Test APK
+name: Android Fusion Fork Test APK
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
           apt-get update
           apt-get install -y $(cat .github/workflows/apt-deps.txt)
 
-      - name: Generate NEI soh.o2r
+      - name: Generate Fusion Fork soh.o2r
         run: |
           cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build-linux --target GenerateSohOtr --parallel
@@ -40,7 +40,7 @@ jobs:
 
       - name: Build signed test APK
         env:
-          GIT_TAG: v9.2.3-nei-alpha3-android.beta.1
+          GIT_TAG: v9.2.3-fusion-android.alpha.1
         run: |
           cd Android && ./gradlew assembleRelease \
             -PstoreFile=release.jks \
@@ -50,16 +50,16 @@ jobs:
 
       - name: Prepare APK artifact
         run: |
-          APK=$(find Android/app/build/outputs/apk/release -name 'sohnei_release_*.apk' | head -1)
-          cp "$APK" "sohnei-v9.2.3-nei-alpha3-android.beta.1.apk"
-          sha256sum "sohnei-v9.2.3-nei-alpha3-android.beta.1.apk" > "sohnei-v9.2.3-nei-alpha3-android.beta.1.apk.sha256"
+          APK=$(find Android/app/build/outputs/apk/release -name 'sohfusion_release_*.apk' | head -1)
+          cp "$APK" "sohfusion-v9.2.3-fusion-android.alpha.1.apk"
+          sha256sum "sohfusion-v9.2.3-fusion-android.alpha.1.apk" > "sohfusion-v9.2.3-fusion-android.alpha.1.apk.sha256"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sohnei-test-apk
+          name: sohfusion-test-apk
           path: |
-            sohnei-v9.2.3-nei-alpha3-android.beta.1.apk
-            sohnei-v9.2.3-nei-alpha3-android.beta.1.apk.sha256
+            sohfusion-v9.2.3-fusion-android.alpha.1.apk
+            sohfusion-v9.2.3-fusion-android.alpha.1.apk.sha256
           if-no-files-found: error
           retention-days: 14
