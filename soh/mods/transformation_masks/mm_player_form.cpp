@@ -1676,6 +1676,42 @@ static Gfx* MmForm_LoadAndValidateDL(const char* otrPath, std::vector<Gfx>& safe
     return ptr;
 }
 
+// Some N64 Fierce Deity resources contain a truncated host pointer encoded as a
+// standard G_DL target (for example 0x80A24D8E). On a 64-bit Android process it
+// is neither a valid host pointer nor one of our encoded segmented references.
+// Following it makes the interpreter execute arbitrary bytes as display-list
+// commands. Remove only those impossible low-address targets from the safe copy;
+// valid OTR commands and encoded segment references remain untouched.
+static int MmForm_SanitizeInvalidDirectDLTargets(std::vector<Gfx>& safeCopy, const char* path) {
+    int sanitized = 0;
+
+    for (size_t i = 0; i < safeCopy.size(); i++) {
+        uint8_t op = (uint8_t)((safeCopy[i].words.w0 >> 24) & 0xFF);
+
+        if (op == 0xDE) {
+            uintptr_t target = safeCopy[i].words.w1;
+            uint8_t segment = (uint8_t)((target >> 24) & 0xFF);
+            bool isEncodedSegmentReference = (target & 1) != 0;
+            bool isImpossibleLowHostPointer = sizeof(uintptr_t) > 4 && target != 0 && target <= 0xFFFFFFFFULL &&
+                                              segment >= 0x10;
+
+            if (!isEncodedSegmentReference && isImpossibleLowHostPointer) {
+                MMFORM_LOG("[MmForm] Sanitized invalid G_DL target in %s[%zu]: 0x%016llX -> gEmptyDL", path, i,
+                           (unsigned long long)target);
+                safeCopy[i].words.w1 = (uintptr_t)gEmptyDL;
+                sanitized++;
+            }
+        }
+
+        // Do not interpret the data word of a two-instruction OTR command as Gfx.
+        if (op == 0x20 || op == 0x31 || op == 0x32 || op == 0x33 || op == 0x35 || op == 0x36 || op == 0x42) {
+            i++;
+        }
+    }
+
+    return sanitized;
+}
+
 /**
  * Pre-resolve all OTR hash references in a display list (textures, vertices, sub-DLs).
  *
@@ -1995,6 +2031,10 @@ static void MmForm_PreloadFDHandDLs(void) {
         sCachedFDHandDLs[i] = MmForm_LoadAndValidateDL(sFDHandDLPaths[i], sFDHandDLSafeCopies[i]);
         sFDHandDLCounts[i] = sFDHandDLSafeCopies[i].size();
         if (sCachedFDHandDLs[i]) {
+            int sanitized = MmForm_SanitizeInvalidDirectDLTargets(sFDHandDLSafeCopies[i], sFDHandDLPaths[i]);
+            if (sanitized > 0) {
+                MMFORM_LOG("[MmForm] Sanitized %d invalid direct DL target(s) for FD hand DL %d", sanitized, i);
+            }
             MmForm_PreResolveDLHashes(sCachedFDHandDLs[i], sFDHandDLPaths[i], 0);
             MMFORM_LOG("[MmForm] Loaded FD hand DL %d: %s (%zu instructions)", i, sFDHandDLPaths[i],
                        sFDHandDLCounts[i]);
