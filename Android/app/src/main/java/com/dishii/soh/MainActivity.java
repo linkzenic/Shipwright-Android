@@ -1335,6 +1335,32 @@ public class MainActivity extends SDLActivity{
     // Injects a directional menu nav key: dir 0=up 1=down 2=left 3=right.
     public native void nativeMenuNavKey(int dir, boolean pressed);
 
+    // Some Android handhelds expose their built-in controls as raw joystick
+    // devices instead of SDL GameControllers. Feed those events to ImGui too.
+    private final boolean[] physicalMenuNavPressed = new boolean[6];
+
+    private void setPhysicalMenuNavKey(int direction, boolean pressed) {
+        if (direction < 0 || direction >= physicalMenuNavPressed.length ||
+                physicalMenuNavPressed[direction] == pressed) {
+            return;
+        }
+        physicalMenuNavPressed[direction] = pressed;
+        nativeMenuNavKey(direction, pressed);
+    }
+
+    private int getMenuNavDirection(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_DPAD_UP: return 0;
+            case KeyEvent.KEYCODE_DPAD_DOWN: return 1;
+            case KeyEvent.KEYCODE_DPAD_LEFT: return 2;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return 3;
+            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_DPAD_CENTER: return 4;
+            case KeyEvent.KEYCODE_BUTTON_B: return 5;
+            default: return -1;
+        }
+    }
+
     public void SetFirstPersonAimingActive(boolean active) {
         mIsAiming = active;
     }
@@ -1348,17 +1374,38 @@ public class MainActivity extends SDLActivity{
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
-            int keyCode = event.getKeyCode();
-            // SDL loses controller tracking after activity transitions; catch BACK at the activity level.
-            boolean isGamepad = (event.getSource() & android.view.InputDevice.SOURCE_GAMEPAD) != 0
-                             || (event.getSource() & android.view.InputDevice.SOURCE_JOYSTICK) != 0;
-            if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT ||
-                    (keyCode == KeyEvent.KEYCODE_BACK && isGamepad)) {
+        int keyCode = event.getKeyCode();
+        boolean isGamepad = (event.getSource() & android.view.InputDevice.SOURCE_GAMEPAD) != 0
+                         || (event.getSource() & android.view.InputDevice.SOURCE_JOYSTICK) != 0;
+        if (isGamepad) {
+            int direction = getMenuNavDirection(keyCode);
+            if (direction >= 0) {
+                if (event.getAction() == KeyEvent.ACTION_UP) {
+                    setPhysicalMenuNavKey(direction, false);
+                } else if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                    setPhysicalMenuNavKey(direction, true);
+                }
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0 &&
+                    (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT || keyCode == KeyEvent.KEYCODE_BACK)) {
                 nativeGamepadBackPressed();
             }
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        boolean isJoystick = (event.getSource() & android.view.InputDevice.SOURCE_JOYSTICK) != 0;
+        if (isJoystick && event.getAction() == MotionEvent.ACTION_MOVE) {
+            float hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X);
+            float hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y);
+            setPhysicalMenuNavKey(0, hatY < -0.5f);
+            setPhysicalMenuNavKey(1, hatY > 0.5f);
+            setPhysicalMenuNavKey(2, hatX < -0.5f);
+            setPhysicalMenuNavKey(3, hatX > 0.5f);
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     private Button button1, button2, button3, button4;
@@ -1480,11 +1527,10 @@ public class MainActivity extends SDLActivity{
         if (buttonGroup != null) {
             boolean controlsHidden = preferences.getBoolean(PREF_TOUCH_CONTROLS_HIDDEN, false);
             buttonGroup.setVisibility(controlsHidden ? View.INVISIBLE : View.VISIBLE);
-            if (controlsHidden || touchControlsDisabled) {
-                DisableTouchArea();
+            TouchAreaEnabled = !controlsHidden && !touchControlsDisabled;
+            if (!TouchAreaEnabled) {
                 overlayView.setOnTouchListener(null);
             } else {
-                EnableTouchArea();
                 overlayView.setOnTouchListener((view, e) -> true);
             }
         }
@@ -1561,9 +1607,15 @@ public class MainActivity extends SDLActivity{
 
     void DisableTouchArea(){
         TouchAreaEnabled = false;
+        runOnUiThread(() -> {
+            if (overlayView != null) {
+                overlayView.setVisibility(View.GONE);
+            }
+        });
     }
     void EnableTouchArea(){
         TouchAreaEnabled = true;
+        runOnUiThread(this::applyTouchControlsVisibility);
     }
 
     void SetToggleButtonVisible(boolean visible) {
