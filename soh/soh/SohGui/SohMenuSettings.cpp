@@ -6,6 +6,7 @@
 #include <soh/GameVersions.h>
 #include "soh/ResourceManagerHelpers.h"
 #include "UIWidgets.hpp"
+#include <algorithm>
 #include <spdlog/fmt/fmt.h>
 #if defined(__ANDROID__)
 #include <jni.h>
@@ -31,13 +32,6 @@ namespace SohGui {
 extern std::shared_ptr<SohMenu> mSohMenu;
 extern std::shared_ptr<SohModalWindow> mModalWindow;
 using namespace UIWidgets;
-
-static std::map<int32_t, const char*> imguiScaleOptions = {
-    { 0, "Small" },
-    { 1, "Normal" },
-    { 2, "Large" },
-    { 3, "X-Large" },
-};
 
 static const std::map<int32_t, const char*> menuThemeOptions = {
     { UIWidgets::Colors::Red, "Red" },
@@ -327,17 +321,37 @@ void SohMenu::AddMenuSettings() {
         .CVar(CVAR_SETTING("A11yNoHeatHaze"))
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip("Disable the heat haze distortion effect in Death Mountain / Fire Temple."));
-    AddWidget(path, "EXPERIMENTAL", WIDGET_SEPARATOR_TEXT).Options(TextOptions().Color(Colors::Orange));
-    AddWidget(path, "ImGui Menu Scaling", WIDGET_CVAR_COMBOBOX)
-        .CVar(CVAR_SETTING("ImGuiScale"))
-        .RaceDisable(false)
-        .Options(ComboboxOptions()
-                     .ComboMap(imguiScaleOptions)
-                     .Tooltip("Changes the scaling of the ImGui menu elements.")
-                     .DefaultIndex(1)
-                     .ComponentAlignment(ComponentAlignments::Right)
-                     .LabelPosition(LabelPositions::Far))
-        .Callback([](WidgetInfo& info) { OTRGlobals::Instance->ScaleImGui(); });
+    AddWidget(path, "Menu Scale", WIDGET_CUSTOM).CustomFunction([](WidgetInfo& info) {
+        const auto theme = static_cast<Colors>(CVarGetInteger(CVAR_SETTING("Menu.Theme"), Colors::LightBlue));
+        const float resetButtonWidth =
+            ImGui::CalcTextSize(ICON_FA_UNDO).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float sliderWidth =
+            std::max(120.0f, ImGui::GetContentRegionAvail().x - resetButtonWidth - ImGui::GetStyle().ItemSpacing.x);
+
+        CVarSliderFloat("Menu Scale: %.2fx", CVAR_SETTING("ImGuiScale.Value"),
+                        FloatSliderOptions()
+                            .Min(0.65f)
+                            .Max(2.5f)
+                            .Step(0.05f)
+                            .DefaultValue(defaultImGuiScale)
+                            .Format("%.2fx")
+                            .Tooltip("Changes the scaling of the menu elements.")
+                            .ShowButtons(true)
+                            .Size(ImVec2(sliderWidth, 0.0f))
+                            .ComponentAlignment(ComponentAlignments::Left)
+                            .LabelPosition(LabelPositions::Above)
+                            .Color(theme));
+
+        ImGui::SameLine();
+        if (Button(ICON_FA_UNDO "##ResetMenuScale",
+                   ButtonOptions()
+                       .Tooltip("Reset menu scale to 100%.")
+                       .Size(Sizes::Inline)
+                       .Color(theme))) {
+            CVarSetFloat(CVAR_SETTING("ImGuiScale.Value"), defaultImGuiScale);
+            Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+        }
+    });
 
     // General - About
     path.column = SECTION_COLUMN_2;

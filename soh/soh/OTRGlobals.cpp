@@ -146,14 +146,6 @@ static bool sWasAimingLastFrame = false;
 static int sAimingGraceFrames = 0;
 #endif
 
-#ifdef __WIIU__
-const uint32_t defaultImGuiScale = 3;
-#else
-const uint32_t defaultImGuiScale = 1;
-#endif
-
-const float imguiScaleOptionToValue[4] = { 0.75f, 1.0f, 1.5f, 2.0f };
-
 bool SoH_HandleConfigDrop(char* filePath);
 
 OTRGlobals* OTRGlobals::Instance;
@@ -177,8 +169,9 @@ Color_RGB8 kokiriColor = { 0x1E, 0x69, 0x1B };
 Color_RGB8 goronColor = { 0x64, 0x14, 0x00 };
 Color_RGB8 zoraColor = { 0x00, 0xEC, 0x64 };
 
-int32_t previousImGuiScaleIndex;
 float previousImGuiScale;
+ImGuiStyle baseImGuiStyle;
+bool hasBaseImGuiStyle = false;
 
 bool prevAltAssets = false;
 
@@ -360,8 +353,7 @@ OTRGlobals::OTRGlobals() {
         ImGui::GetIO().FontDefault = fontStandardLarger;
     }
 
-    previousImGuiScaleIndex = -1;
-    previousImGuiScale = defaultImGuiScale;
+    previousImGuiScale = -1.0f;
     ScaleImGui();
 }
 
@@ -1133,17 +1125,36 @@ OTRGlobals::~OTRGlobals() {
 }
 
 void OTRGlobals::ScaleImGui() {
-    int32_t imGuiScaleIndex = CVarGetInteger(CVAR_SETTING("ImGuiScale"), defaultImGuiScale);
-    if (imGuiScaleIndex == previousImGuiScaleIndex) {
+    if (!hasBaseImGuiStyle) {
+        baseImGuiStyle = ImGui::GetStyle();
+        hasBaseImGuiStyle = true;
+    }
+
+    float scale = CVarGetFloat(CVAR_SETTING("ImGuiScale.Value"), -1.0f);
+    if (scale < 0.0f) {
+        int32_t legacyScaleIndex = CVarGetInteger(CVAR_SETTING("ImGuiScale"), 1);
+        legacyScaleIndex = std::clamp<int32_t>(legacyScaleIndex, 0, 3);
+        scale = imguiScaleOptionToValue[legacyScaleIndex];
+        CVarSetFloat(CVAR_SETTING("ImGuiScale.Value"), scale);
+    }
+
+    scale = std::clamp(scale, 0.65f, 2.5f);
+    if (scale == previousImGuiScale) {
         return;
     }
 
-    float scale = imguiScaleOptionToValue[imGuiScaleIndex];
-    float newScale = scale / previousImGuiScale;
-    ImGui::GetStyle().ScaleAllSizes(newScale);
+    if (ImGui::IsAnyMouseDown()) {
+        return;
+    }
+
+    ImVec4 currentColors[ImGuiCol_COUNT];
+    std::copy(std::begin(ImGui::GetStyle().Colors), std::end(ImGui::GetStyle().Colors), std::begin(currentColors));
+
+    ImGui::GetStyle() = baseImGuiStyle;
+    std::copy(std::begin(currentColors), std::end(currentColors), std::begin(ImGui::GetStyle().Colors));
+    ImGui::GetStyle().ScaleAllSizes(scale);
     ImGui::GetIO().FontGlobalScale = scale;
     previousImGuiScale = scale;
-    previousImGuiScaleIndex = imGuiScaleIndex;
 }
 
 bool OTRGlobals::HasMasterQuest() {
