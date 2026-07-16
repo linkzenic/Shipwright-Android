@@ -592,7 +592,10 @@ static void HandleActorDraw(void* actorPtr) {
                                              PLAYER_STATE1_CLIMBING_LADDER)) != 0;
         }
         bool hasFloor = false;
-        if (actor->floorPoly != NULL && actor->projectedPos.z < maxDist) {
+        // projectedPos.z is camera-forward distance. Reject actors behind the camera as well as distant
+        // actors; the old one-sided test accepted every negative Z value and let behind-camera geometry
+        // generate enormous shadow volumes at the edge of the screen.
+        if (actor->floorPoly != NULL && actor->projectedPos.z > 0.0f && actor->projectedPos.z < maxDist) {
             f32 distToFloor = actor->world.pos.y - actor->floorHeight;
             hasFloor = (distToFloor > -50.0f) && (distToFloor < 1500.0f);
         }
