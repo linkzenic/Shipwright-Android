@@ -512,7 +512,12 @@ void EnHeishi1_Draw(Actor* thisx, PlayState* play) {
 
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, EnHeishi1_OverrideLimbDraw, NULL, this);
-    func_80033C30(&this->actor.world.pos, &matrixScale, 0xFF, play);
+    // SOH [Enhancement] Actor shadows cast this guard's own shape shadow; skip the bespoke vanilla circle (drawn
+    // here directly, bypassing ActorShadow_Draw's suppression) when vanilla-shadow suppression is on.
+    if (!(CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0) &&
+          CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"), 1))) {
+        func_80033C30(&this->actor.world.pos, &matrixScale, 0xFF, play);
+    }
 
     if ((this->path == BREG(1)) && (BREG(0) != 0)) {
         DebugDisplay_AddObject(this->actor.world.pos.x, this->actor.world.pos.y + 100.0f, this->actor.world.pos.z,
