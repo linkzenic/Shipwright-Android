@@ -80,7 +80,7 @@ public class MainActivity extends SDLActivity{
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String SUPPORT_FILES_VERSION_MARKER = ".android_support_files_version";
     // Bump this only when bundled Android support assets or archive layout changes.
-    private static final String SUPPORT_FILES_VERSION = "sohcs-android-support-2";
+    private static final String SUPPORT_FILES_VERSION = "sohcs-android-support-3";
     private AlertDialog dataRootMigrationDialog;
     private AlertDialog setupProgressDialog;
 
@@ -196,12 +196,11 @@ public class MainActivity extends SDLActivity{
     private void deleteOutdatedAssets() {
         File targetRootFolder = getTargetRootFolder();
 
+        // These are app-bundled support archives and may safely be refreshed.
         deleteIfExists(new File(targetRootFolder, "soh.otr"));
-        deleteIfExists(new File(targetRootFolder, "oot.otr"));
-        deleteIfExists(new File(targetRootFolder, "oot-mq.otr"));
         deleteIfExists(new File(targetRootFolder, "soh.o2r"));
-        deleteIfExists(new File(targetRootFolder, "oot.o2r"));
-        deleteIfExists(new File(targetRootFolder, "oot-mq.o2r"));
+
+        // Preserve oot/oot-mq archives: they were extracted from the user's ROM.
         deleteRecursiveIfExists(new File(targetRootFolder, "assets"));
         deleteIfExists(getSupportFilesMarkerFile(targetRootFolder));
     }
@@ -660,7 +659,7 @@ public class MainActivity extends SDLActivity{
         // Support both .otr (9.0.x) and .o2r (9.2.x) archive formats
         File sohOtrFile = new File(targetRootFolder, "soh.o2r");
         File sohOtrFileLegacy = new File(targetRootFolder, "soh.otr");
-        // oot.o2r / oot-mq.o2r also count; soh.o2r is not bundled, game can run with just the ROM archive
+        // The game requires a ROM archive; soh.o2r is the app-bundled support archive.
         File ootO2rFile = new File(targetRootFolder, "oot.o2r");
         File ootMqO2rFile = new File(targetRootFolder, "oot-mq.o2r");
 
