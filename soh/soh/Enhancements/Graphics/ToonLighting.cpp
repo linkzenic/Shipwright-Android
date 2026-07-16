@@ -59,7 +59,7 @@ static constexpr float kDefaultShadowOpacity = 0.2f;
 static constexpr float kDefaultShadowLength = 0.2f;
 static constexpr float kDefaultShadowSlabDepth = 8.0f; // stencil-volume depth below the feet (ground band)
 static constexpr float kDefaultShadowSlabRise = 8.0f;  // stencil-volume height above the feet (uphill ground)
-static constexpr int kDefaultShadowMaxDistance = 800; // camera-forward distance past which shadows are culled
+static constexpr int kDefaultShadowMaxDistance = 800; // Android-friendly camera-forward shadow distance
 static constexpr float kShadowFadeTime = 0.15f; // seconds to ease the shadow size in/out (anti-pop, like Navi)
 
 // Actors the cel system skips entirely: they look wrong relit AND wrong casting a flattened shadow
@@ -71,8 +71,8 @@ static bool ToonActorExcluded(Actor* actor) {
         return true; // every door variant in one check
     }
     switch (actor->id) {
-        case ACTOR_BG_TREEMOUTH:  // Great Deku Tree (very tall)
-        case ACTOR_BG_MIZU_WATER: // water-box surfaces
+        case ACTOR_BG_TREEMOUTH:   // Great Deku Tree (very tall)
+        case ACTOR_BG_MIZU_WATER:  // water-box surfaces
         case ACTOR_BG_HAKA_WATER:
         case ACTOR_EN_WOOD02:     // trees / bushes / leaf scenery
             return true;
@@ -632,10 +632,24 @@ static void HandleActorDraw(void* actorPtr) {
         // projectedPos.z is camera-forward distance. Reject actors behind the camera as well as distant
         // actors; the old one-sided test accepted every negative Z value and let behind-camera geometry
         // generate enormous shadow volumes at the edge of the screen.
-        if (!ToonShadowExcluded(actor) && actor->floorPoly != NULL && actor->projectedPos.z > 0.0f &&
-            actor->projectedPos.z < maxDist) {
-            f32 distToFloor = actor->world.pos.y - actor->floorHeight;
-            hasFloor = (distToFloor > -50.0f) && (distToFloor < 1500.0f);
+        if (!ToonShadowExcluded(actor) && actor->projectedPos.z > 0.0f && actor->projectedPos.z < maxDist) {
+            // Floor reference is only a gate + a "near the ground" sanity check (the renderer builds the volume
+            // from the captured feet, not this plane). Most actors expose actor->floorPoly from their bg check;
+            // a few (e.g. the Courtyard Guards, En_Heishi1) never run one, so floorPoly stays null and the shadow
+            // would never arm. Fall back to a downward raycast for those — the same approach their bespoke shadow
+            // used.
+            f32 floorHeight = actor->floorHeight;
+            bool haveFloor = (actor->floorPoly != NULL);
+            if (!haveFloor) {
+                Vec3f rayFrom = { actor->world.pos.x, actor->world.pos.y + 1.0f, actor->world.pos.z };
+                CollisionPoly* poly = NULL;
+                floorHeight = BgCheck_EntityRaycastFloor2(play, &play->colCtx, &poly, &rayFrom);
+                haveFloor = (poly != NULL);
+            }
+            if (haveFloor) {
+                f32 distToFloor = actor->world.pos.y - floorHeight;
+                hasFloor = (distToFloor > -50.0f) && (distToFloor < 1500.0f);
+            }
         }
         f32 fadeDt = (R_UPDATE_RATE > 0 ? R_UPDATE_RATE : 3) / 60.0f;
         st.shadowScale = ToonSmoothDamp(st.shadowScale, (hasFloor && !onWall) ? 1.0f : 0.0f, &st.shadowScaleVel,
