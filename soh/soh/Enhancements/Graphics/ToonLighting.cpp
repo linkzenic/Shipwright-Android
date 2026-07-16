@@ -508,6 +508,10 @@ static void HandleActorDraw(void* actorPtr) {
         gSPToon(POLY_XLU_DISP++, wantToon);
         CLOSE_DISPS(play->state.gfxCtx);
         sToonEnabled = wantToon;
+        // Every gSPToon edge invalidates the renderer's key (it expects a fresh gSPToonKey per toon-on),
+        // so drop the dedup state too — otherwise the next actor with an unchanged key would skip its
+        // emit and render with the renderer's neutral fallback key instead of the real one.
+        sHaveLastKey = false;
     }
     if (!wantToon) {
         return;
