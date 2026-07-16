@@ -49,6 +49,7 @@ jobs:
         run: |
           cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build-linux --target GenerateSohOtr --parallel
+          python3 -c 'import sys, zipfile; required={"textures/wind-waker/clouds/cloud_mae", "textures/wind-waker/clouds/cloud_naka", "textures/wind-waker/clouds/cloudtx_01", "textures/wind-waker/clouds/cloudtx_02", "textures/wind-waker/clouds/cloudtx_03"}; archive=set(zipfile.ZipFile("soh/soh.o2r").namelist()); missing=sorted(required-archive); print("Missing Sky assets: " + ", ".join(missing)) if missing else print("Verified all Sky cloud assets in soh.o2r"); sys.exit(bool(missing))'
           cp soh/soh.o2r Android/app/src/main/assets/soh.o2r
           tools/ci/inject_android_renderer_shaders.sh
 
