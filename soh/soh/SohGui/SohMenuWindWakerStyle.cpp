@@ -433,7 +433,7 @@ void SohMenu::AddMenuWindWakerStyle() {
                               "2 = a finer ramp plus a slightly wider fringe.")
                      .Min(0)
                      .Max(2)
-                     .DefaultValue(1)
+                     .DefaultValue(0)
                      .ShowButtons(true)
                      .Format("%d"));
     AddWidget(path, "Length", WIDGET_CVAR_SLIDER_FLOAT)
@@ -487,7 +487,7 @@ void SohMenu::AddMenuWindWakerStyle() {
                               "shadows that stay visible into the distance.")
                      .Min(300)
                      .Max(5000)
-                     .DefaultValue(800)
+                     .DefaultValue(400)
                      .ShowButtons(true)
                      .Format("%d"));
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessShadowsEnabled);

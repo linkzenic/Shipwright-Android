@@ -120,8 +120,8 @@ void ActorShape_Init(ActorShape* shape, f32 yOffset, ActorShadowFunc shadowDraw,
 // AND set to suppress, early-return the vanilla draws that funnel through these helpers. Tied to the shadow
 // feature's own CVars (not cel shading), so the two can be toggled independently.
 static s32 ActorShadow_Suppressed(void) {
-    return CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0) &&
-           CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.SuppressVanillaShadows"), 1);
+    // Cached per-frame switch — this runs for every shadowed actor every frame, so no CVar lookups here.
+    return ToonLighting_SuppressVanillaShadows();
 }
 
 void ActorShadow_Draw(Actor* actor, Lights* lights, PlayState* play, Gfx* dlist, Color_RGBA8* color) {
@@ -2890,8 +2890,7 @@ void Actor_Draw(PlayState* play, Actor* actor) {
     // reuses that same key, so fire the hook when EITHER cel shading OR actor shadows is on; the handler
     // gates the relight and the shadow independently. Guarded so the hook is never invoked per-actor when
     // both are off.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1) ||
-        CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0)) {
+    if (ToonLighting_FeaturesActive()) {
         GameInteractor_ExecuteOnActorDraw(actor);
     }
 
@@ -3277,8 +3276,10 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
     OPEN_DISPS(play->state.gfxCtx);
 
     // SOH [Enhancement] Toon lighting: mark all actor draws so the renderer applies the toon ramp to
-    // objects only (the static scene is never bracketed). Gated by the CVar so it is a no-op when off.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
+    // objects only (the static scene is never bracketed). Read once and reused at the close below so
+    // the bracket can never be left unbalanced by a mid-frame CVar change.
+    bool celEnabled = ToonLighting_CelEnabled();
+    if (celEnabled) {
         gSPToon(POLY_OPA_DISP++, true);
         gSPToon(POLY_XLU_DISP++, true);
     }
@@ -3289,7 +3290,7 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
     // world effects land on them just like the static scene; they are skipped in the main loop below so each
     // still draws exactly once. The flushes must sit between this pre-pass and the rest of the actors (which
     // must NOT receive shadows, to avoid self-shadowing the casters) — that ordering is why they live here.
-    bool shadowsEnabled = CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.Enabled"), 0);
+    bool shadowsEnabled = ToonLighting_ShadowsEnabled();
     bool receiversActive = shadowsEnabled && CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.ReceiverActors"), 1);
 
     if (receiversActive) {
@@ -3332,9 +3333,15 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
     }
 
     // SOH [Enhancement] Toon lighting: end the actor bracket before effects/lens/UI are drawn.
-    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.ToonLighting.Enabled"), 1)) {
+    if (celEnabled) {
         gSPToon(POLY_OPA_DISP++, false);
         gSPToon(POLY_XLU_DISP++, false);
+    }
+    // SOH [Enhancement] WW actor shadows: mark the LAST actor's object boundary explicitly. With cel
+    // shading off there is no closing bracket edge above to flush+disarm the capture, and later lit
+    // geometry (effects, the XLU stream) would leak into the last actor's silhouette.
+    if (shadowsEnabled && !celEnabled) {
+        gSPToonShadow(POLY_OPA_DISP++, 0, 0, 0, 0.0f);
     }
 
     if ((HREG(64) != 1) || (HREG(73) != 0)) {
@@ -3347,7 +3354,12 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
 
     if ((HREG(64) != 1) || (HREG(72) != 0)) {
         if (play->actorCtx.lensActive) {
+            // SOH [Enhancement] Toon lighting / actor shadows: lens actors draw through Actor_Draw
+            // after the bracket above closed — re-open it around them so they are cel shaded like any
+            // other actor and the module's stream tracking stays in sync (see ToonLighting.h).
+            ToonLighting_LensBracketBegin(play->state.gfxCtx);
             Actor_DrawLensActors(play, invisibleActorCounter, invisibleActors);
+            ToonLighting_LensBracketEnd(play->state.gfxCtx);
             if ((play->csCtx.state != CS_STATE_IDLE) || Player_InCsMode(play)) {
                 Actor_DisableLens(play);
             }
