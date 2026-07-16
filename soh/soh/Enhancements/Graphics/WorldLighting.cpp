@@ -27,6 +27,7 @@
 
 #include <math.h>
 #include <unordered_map>
+#include <unordered_set>
 
 extern "C" {
 #include "z64.h"
@@ -50,6 +51,8 @@ static constexpr float kWWRotXRate = 0.736f; // 0x100 units/frame @ 30 Hz = 42.1
 static constexpr float kDefaultIntensity = 0.2f;        // brightness of the cast pool
 static constexpr float kDefaultNaviSphereSize = 0.75f;  // Navi's pool size (× radius), separate from torches
 static constexpr float kDefaultNaviIntensity = 0.2f;     // Navi's pool brightness
+static constexpr float kDefaultWildFairySphereSize = 0.75f; // wild fairies' pool size (× radius), separate again
+static constexpr float kDefaultWildFairyIntensity = 0.2f;   // wild fairies' pool brightness
 static constexpr float kDefaultSizeFlicker = 1.0f;        // depth of the Wind Waker size pulse (1 = authentic ±5%)
 static constexpr float kDefaultFlickerSpeed = 1.0f;       // Wind Waker flame flicker rate (new target ~ every 0.25s / speed)
 
@@ -499,11 +502,31 @@ static void DrawWorldLights(void* playPtr) {
         }
     }
 
+    // Wild fairies (Kokiri Forest ambient + healing fairies) emit light only when OtherFairyLights is on, via
+    // their no-glow LightInfo (set in EnElf_Update). Collect those by address so they get their own pool size +
+    // intensity, separate from torches and Navi. They're not flames, so (like Navi) they get a steady pool.
+    f32 wildSize = CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairySphereSize"), kDefaultWildFairySphereSize);
+    u8 wildAlpha =
+        WorldLightAlpha(CVarGetFloat(CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairyIntensity"), kDefaultWildFairyIntensity));
+    std::unordered_set<LightInfo*> wildFairyLights;
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"), 0)) {
+        Actor* a = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head;
+        while (a != NULL) {
+            if ((a->id == ACTOR_EN_ELF) &&
+                ((a->params == FAIRY_KOKIRI) || (a->params == FAIRY_HEAL) || (a->params == FAIRY_HEAL_BIG) ||
+                 (a->params == FAIRY_HEAL_TIMED))) {
+                wildFairyLights.insert(&((EnElf*)a)->lightInfoNoGlow);
+            }
+            a = a->next;
+        }
+    }
+
     LightNode* node = play->lightCtx.listHead;
     while (node != NULL) {
         LightInfo* info = node->info;
         if ((info != NULL) && (info->type != LIGHT_DIRECTIONAL)) {
             bool isNavi = (info == naviGlow) || (info == naviNoGlow);
+            bool isWildFairy = !isNavi && (wildFairyLights.count(info) > 0);
             if (!isNavi || useNavi) {
                 WorldLightState* s = WorldLightGetState(info);
                 LightPoint* p = &info->params.point;
@@ -535,6 +558,8 @@ static void DrawWorldLights(void* playPtr) {
                         s->spawnRadius = 0.0f; // fully out — DrawLightPool skips radius <= 0, so no wasted passes
                     }
                     worldRadius = s->spawnRadius * naviSize;
+                } else if (isWildFairy) {
+                    worldRadius = p->radius * wildSize; // steady, like Navi — a fairy isn't a flame
                 } else {
                     s->sizeTimer -= dt;
                     if (s->sizeTimer <= 0.0f) {
@@ -550,6 +575,8 @@ static void DrawWorldLights(void* playPtr) {
                 u8 thisAlpha;
                 if (isNavi) {
                     thisAlpha = naviAlpha;
+                } else if (isWildFairy) {
+                    thisAlpha = wildAlpha;
                 } else {
                     s->alphaTimer -= dt;
                     if (s->alphaTimer <= 0.0f) {
