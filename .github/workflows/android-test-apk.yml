@@ -1,4 +1,4 @@
-name: Android Fusion Fork Test APK
+name: Android SOHCS + Fusion Test APKs
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 180
     container:
       image: djvdw7f2ro/android-builder-soh:v1.0.4
     env:
@@ -18,69 +19,96 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout
+      - name: Checkout SOHCS
         uses: actions/checkout@v4
         with:
+          ref: sohcs-celshade-android
+          path: sohcs
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Checkout Fusion
+        uses: actions/checkout@v4
+        with:
+          ref: soh-fusion-android
+          path: fusion
           fetch-depth: 0
           submodules: recursive
 
       - name: Verify latest NEI Android base
         run: |
-          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-          git fetch origin sohnei-android
-          if ! git merge-base --is-ancestor origin/sohnei-android HEAD; then
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}/fusion"
+          git -C fusion fetch origin sohnei-android
+          if ! git -C fusion merge-base --is-ancestor origin/sohnei-android HEAD; then
             echo "ERROR: Fusion Fork is missing commits from sohnei-android. Merge NEI before building."
             exit 1
           fi
 
       - name: Write local.properties
         run: |
-          echo "sdk.dir=${ANDROID_SDK_ROOT}" > Android/local.properties
-          echo "ndk.dir=${ANDROID_NDK_HOME}" >> Android/local.properties
+          echo "sdk.dir=${ANDROID_SDK_ROOT}" > sohcs/Android/local.properties
+          echo "ndk.dir=${ANDROID_NDK_HOME}" >> sohcs/Android/local.properties
+          echo "sdk.dir=${ANDROID_SDK_ROOT}" > fusion/Android/local.properties
+          echo "ndk.dir=${ANDROID_NDK_HOME}" >> fusion/Android/local.properties
 
       - name: Install host build dependencies
         run: |
           apt-get update
-          apt-get install -y ccache $(cat .github/workflows/apt-deps.txt)
+          apt-get install -y ccache $(cat fusion/.github/workflows/apt-deps.txt)
 
       - name: Restore C/C++ compiler cache
         uses: actions/cache@v4
         with:
           path: .ccache
-          key: soh-android-ccache-v1-builder-1.0.4-${{ runner.os }}-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt', 'soh/**', 'libultraship/**', 'Android/**') }}
+          key: soh-android-forks-ccache-v1-builder-1.0.4-${{ runner.os }}-${{ hashFiles('sohcs/CMakeLists.txt', 'sohcs/**/CMakeLists.txt', 'sohcs/soh/**', 'sohcs/libultraship/**', 'sohcs/Android/**', 'fusion/CMakeLists.txt', 'fusion/**/CMakeLists.txt', 'fusion/soh/**', 'fusion/libultraship/**', 'fusion/Android/**') }}
           restore-keys: |
-            soh-android-ccache-v1-builder-1.0.4-${{ runner.os }}-${{ github.ref_name }}-
+            soh-android-forks-ccache-v1-builder-1.0.4-${{ runner.os }}-
             soh-android-ccache-v1-builder-1.0.4-${{ runner.os }}-
 
       - name: Configure Gradle cache
         uses: gradle/actions/setup-gradle@v4
         with:
-          # This repository carries a legacy top-level wrapper JAR whose hash
-          # is not in Gradle's public checksum catalog. It is the same checked-in
-          # wrapper used by the existing successful Android builds.
           validate-wrappers: false
           cache-read-only: false
 
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
 
-      - name: Generate Fusion Fork soh.o2r
+      - name: Generate SOHCS soh.o2r
         run: |
-          cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-linux --target GenerateSohOtr --parallel
-          python3 -c 'import sys, zipfile; required={"textures/wind-waker/clouds/cloud_mae", "textures/wind-waker/clouds/cloud_naka", "textures/wind-waker/clouds/cloudtx_01", "textures/wind-waker/clouds/cloudtx_02", "textures/wind-waker/clouds/cloudtx_03"}; archive=set(zipfile.ZipFile("soh/soh.o2r").namelist()); missing=sorted(required-archive); print("Missing Sky assets: " + ", ".join(missing)) if missing else print("Verified all Sky cloud assets in soh.o2r"); sys.exit(bool(missing))'
-          cp soh/soh.o2r Android/app/src/main/assets/soh.o2r
+          cmake -S sohcs -B sohcs/build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build sohcs/build-linux --target GenerateSohOtr --parallel
+          python3 -c 'import sys, zipfile; required={"textures/wind-waker/clouds/cloud_mae", "textures/wind-waker/clouds/cloud_naka", "textures/wind-waker/clouds/cloudtx_01", "textures/wind-waker/clouds/cloudtx_02", "textures/wind-waker/clouds/cloudtx_03"}; archive=set(zipfile.ZipFile("sohcs/soh/soh.o2r").namelist()); missing=sorted(required-archive); print("Missing Sky assets: " + ", ".join(missing)) if missing else print("Verified all Sky cloud assets in SOHCS soh.o2r"); sys.exit(bool(missing))'
+          cp sohcs/soh/soh.o2r sohcs/Android/app/src/main/assets/soh.o2r
+
+      - name: Build signed SOHCS test APK
+        env:
+          GIT_TAG: test-${{ github.run_number }}
+        run: |
+          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > sohcs/Android/app/release.jks
+          cd sohcs/Android
+          ./gradlew assembleRelease \
+            -PstoreFile=release.jks \
+            -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+            -PkeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
+            -PkeyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Generate Fusion soh.o2r
+        run: |
+          cmake -S fusion -B fusion/build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build fusion/build-linux --target GenerateSohOtr --parallel
+          python3 -c 'import sys, zipfile; required={"textures/wind-waker/clouds/cloud_mae", "textures/wind-waker/clouds/cloud_naka", "textures/wind-waker/clouds/cloudtx_01", "textures/wind-waker/clouds/cloudtx_02", "textures/wind-waker/clouds/cloudtx_03"}; archive=set(zipfile.ZipFile("fusion/soh/soh.o2r").namelist()); missing=sorted(required-archive); print("Missing Sky assets: " + ", ".join(missing)) if missing else print("Verified all Sky cloud assets in Fusion soh.o2r"); sys.exit(bool(missing))'
+          cp fusion/soh/soh.o2r fusion/Android/app/src/main/assets/soh.o2r
+          cd fusion
           tools/ci/inject_android_renderer_shaders.sh
 
-      - name: Decode keystore
-        run: |
-          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > Android/app/release.jks
-
-      - name: Build signed test APK
+      - name: Build signed Fusion test APK
         env:
           GIT_TAG: v9.2.3-fusion-android.alpha.3
         run: |
-          cd Android && ./gradlew assembleRelease \
+          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > fusion/Android/app/release.jks
+          cd fusion/Android
+          ./gradlew assembleRelease \
             -PstoreFile=release.jks \
             -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             -PkeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
@@ -90,18 +118,23 @@ jobs:
         if: always()
         run: ccache --show-stats
 
-      - name: Prepare APK artifact
+      - name: Prepare APK artifacts
         run: |
-          APK=$(find Android/app/build/outputs/apk/release -name 'sohfusion_release_*.apk' | head -1)
-          cp "$APK" "sohfusion-v9.2.3-fusion-android.alpha.3.apk"
-          sha256sum "sohfusion-v9.2.3-fusion-android.alpha.3.apk" > "sohfusion-v9.2.3-fusion-android.alpha.3.apk.sha256"
+          SOHCS_APK=$(find sohcs/Android/app/build/outputs/apk/release -name 'sohcs_release_*.apk' | head -1)
+          FUSION_APK=$(find fusion/Android/app/build/outputs/apk/release -name 'sohfusion_release_*.apk' | head -1)
+          cp "$SOHCS_APK" "sohcs-test-${{ github.run_number }}.apk"
+          cp "$FUSION_APK" "sohfusion-test-${{ github.run_number }}.apk"
+          sha256sum "sohcs-test-${{ github.run_number }}.apk" > "sohcs-test-${{ github.run_number }}.apk.sha256"
+          sha256sum "sohfusion-test-${{ github.run_number }}.apk" > "sohfusion-test-${{ github.run_number }}.apk.sha256"
 
-      - name: Upload APK artifact
+      - name: Upload signed test APKs
         uses: actions/upload-artifact@v4
         with:
-          name: sohfusion-test-apk
+          name: sohcs-and-fusion-test-apks
           path: |
-            sohfusion-v9.2.3-fusion-android.alpha.3.apk
-            sohfusion-v9.2.3-fusion-android.alpha.3.apk.sha256
+            sohcs-test-${{ github.run_number }}.apk
+            sohcs-test-${{ github.run_number }}.apk.sha256
+            sohfusion-test-${{ github.run_number }}.apk
+            sohfusion-test-${{ github.run_number }}.apk.sha256
           if-no-files-found: error
           retention-days: 14
