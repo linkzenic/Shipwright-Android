@@ -1144,7 +1144,7 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Fix Dungeon Entrances", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("FixDungeonMinimapIcon"))
         .RaceDisable(false)
-        .Options(CheckboxOptions().Tooltip(
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Removes the Dungeon Entrance icon on the top-left corner of the screen when no dungeon is present on the "
             "current map."));
     AddWidget(path, "Fix Two-Handed Idle Animations", WIDGET_CVAR_CHECKBOX)
