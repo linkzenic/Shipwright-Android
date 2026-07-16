@@ -67,7 +67,7 @@ jobs:
 
       - name: Build signed test APK
         env:
-          GIT_TAG: v9.2.3-nei-alpha3-android.beta.3
+          GIT_TAG: v9.2.3-nei-alpha3-android.beta.4
         run: |
           cd Android && ./gradlew assembleRelease \
             -PstoreFile=release.jks \
@@ -82,15 +82,15 @@ jobs:
       - name: Prepare APK artifact
         run: |
           APK=$(find Android/app/build/outputs/apk/release -name 'sohnei_release_*.apk' | head -1)
-          cp "$APK" "sohnei-v9.2.3-nei-alpha3-android.beta.3.apk"
-          sha256sum "sohnei-v9.2.3-nei-alpha3-android.beta.3.apk" > "sohnei-v9.2.3-nei-alpha3-android.beta.3.apk.sha256"
+          cp "$APK" "sohnei-v9.2.3-nei-alpha3-android.beta.4.apk"
+          sha256sum "sohnei-v9.2.3-nei-alpha3-android.beta.4.apk" > "sohnei-v9.2.3-nei-alpha3-android.beta.4.apk.sha256"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: sohnei-test-apk
           path: |
-            sohnei-v9.2.3-nei-alpha3-android.beta.3.apk
-            sohnei-v9.2.3-nei-alpha3-android.beta.3.apk.sha256
+            sohnei-v9.2.3-nei-alpha3-android.beta.4.apk
+            sohnei-v9.2.3-nei-alpha3-android.beta.4.apk.sha256
           if-no-files-found: error
           retention-days: 14
