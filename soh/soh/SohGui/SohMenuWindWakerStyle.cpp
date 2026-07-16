@@ -149,6 +149,11 @@ void SohMenu::AddMenuWindWakerStyle() {
         info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.Enabled"), 0) ||
                         !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.UseNaviLight"), 1);
     };
+    // Wild-fairy pool sliders need Light Casting and the Wild Fairies toggle on.
+    auto hideUnlessWildFairyCast = [](WidgetInfo& info) {
+        info.isHidden = !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.Enabled"), 0) ||
+                        !CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"), 0);
+    };
     // Rotation Speed / Size Flicker sit with the cast-pool controls, but hide entirely while "Use Wind Waker
     // default movement" is on (the renderer pins them to the authentic 1x).
     auto hideUnlessCustomMovement = [](WidgetInfo& info) {
@@ -257,6 +262,15 @@ void SohMenu::AddMenuWindWakerStyle() {
         .PreFunc(hideUnlessLightCastEnabled)
         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
             "Also cast a pool from Link's fairy (Navi). Navi darts around quickly, so her pool moves a lot."));
+    AddWidget(path, "Other Fairies Emit Light", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessLightCastEnabled)
+        .Options(CheckboxOptions().DefaultValue(false).Tooltip(
+            "Makes non-Navi fairies emit light (they don't in vanilla): the fairies that drift around places "
+            "like Kokiri Forest, and the healing fairies found out in the world (the magic one casts a wider "
+            "pool). Since it turns them into real light sources, they then cast light pools AND can light nearby "
+            "objects via Cel Shading, the same as Navi. A cluster of them can make the lighting busy."));
     AddWidget(path, "Use Wind Waker default movement", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("Graphics.WorldLighting.WWDefaultMovement"))
         .RaceDisable(false)
@@ -300,6 +314,13 @@ void SohMenu::AddMenuWindWakerStyle() {
     addSliderWithReset("Navi Light Intensity", CVAR_ENHANCEMENT("Graphics.WorldLighting.NaviIntensity"), 0.0f,
                        2.0f, 0.2f, nullptr, true, hideUnlessNaviCast,
                        "Navi's pool brightness, separate from the main Light Intensity.");
+    addSliderWithReset("Other Fairy Cast Size", CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairySphereSize"),
+                       0.1f, 4.0f, 0.75f, "%.2fx", false, hideUnlessWildFairyCast,
+                       "Pool size for non-Navi fairies (Kokiri Forest fairies + the healing fairies), separate "
+                       "from torches and Navi. The magic (big) fairy is already larger than the rest.");
+    addSliderWithReset("Other Fairy Intensity", CVAR_ENHANCEMENT("Graphics.WorldLighting.WildFairyIntensity"),
+                       0.0f, 2.0f, 0.2f, nullptr, true, hideUnlessWildFairyCast,
+                       "Pool brightness for non-Navi fairies, separate from the main Light Intensity.");
     AddWidget(path, "Debug", WIDGET_SEPARATOR_TEXT).PreFunc(hideUnlessLightCastEnabled);
     AddWidget(path, "Show Light Spheres", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_DEVELOPER_TOOLS("WorldLighting.ShowLightSpheres"))

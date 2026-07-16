@@ -1483,6 +1483,21 @@ void EnElf_Update(Actor* thisx, PlayState* play) {
     if (this->fairyFlags & FAIRY_FLAG_BIG) {
         func_80A04D90(this, play);
     }
+
+    // SOH [Enhancement] Wild fairies (the Kokiri Forest ambient fairies and the healing fairies found out in the
+    // world) leave their light radius at 0 in vanilla, so they light nothing. When the toggle is on, give the
+    // no-glow light a usable radius at the fairy's position each frame so both cel shading and the cast light
+    // pools pick it up, like Navi. Done here (after the action func) so it applies in every fairy state. Navi has
+    // her own toggle; bottled/revive/spawner fairies are left alone. The magic (big) fairy gets a wider pool.
+    if (CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldLighting.OtherFairyLights"), 0)) {
+        s32 fairyType = this->actor.params;
+        if ((fairyType == FAIRY_KOKIRI) || (fairyType == FAIRY_HEAL) || (fairyType == FAIRY_HEAL_BIG) ||
+            (fairyType == FAIRY_HEAL_TIMED)) {
+            s16 radius = (this->fairyFlags & FAIRY_FLAG_BIG) ? 150 : 100;
+            Lights_PointNoGlowSetInfo(&this->lightInfoNoGlow, this->actor.world.pos.x, this->actor.world.pos.y,
+                                      this->actor.world.pos.z, 255, 255, 255, radius);
+        }
+    }
 }
 
 s32 EnElf_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot, void* thisx,
