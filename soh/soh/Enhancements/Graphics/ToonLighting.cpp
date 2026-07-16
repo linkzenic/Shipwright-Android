@@ -88,6 +88,12 @@ static bool ToonActorExcluded(Actor* actor) {
     return false;
 }
 
+// Actors whose model geometry extends well below the floor. Raise the renderer's shadow feet to the actor's
+// floor height so a buried part of the model cannot leave the entire shadow slab underground.
+static bool ToonShadowDeepRooted(Actor* actor) {
+    return actor->id == ACTOR_EN_KANBAN; // wooden signposts
+}
+
 // Actors that keep cel relight but should NOT cast a drop shadow (unlike ToonActorExcluded, which drops both).
 // Small cuttable grass (En_Kusa) is everywhere and tiny, so a blob under every tuft reads wrong and is wasteful.
 static bool ToonShadowExcluded(Actor* actor) {
@@ -629,6 +635,7 @@ static void HandleActorDraw(void* actorPtr) {
                                              PLAYER_STATE1_CLIMBING_LADDER)) != 0;
         }
         bool hasFloor = false;
+        f32 floorHeight = actor->floorHeight;
         // projectedPos.z is camera-forward distance. Reject actors behind the camera as well as distant
         // actors; the old one-sided test accepted every negative Z value and let behind-camera geometry
         // generate enormous shadow volumes at the edge of the screen.
@@ -638,7 +645,6 @@ static void HandleActorDraw(void* actorPtr) {
             // a few (e.g. the Courtyard Guards, En_Heishi1) never run one, so floorPoly stays null and the shadow
             // would never arm. Fall back to a downward raycast for those — the same approach their bespoke shadow
             // used.
-            f32 floorHeight = actor->floorHeight;
             bool haveFloor = (actor->floorPoly != NULL);
             if (!haveFloor) {
                 Vec3f rayFrom = { actor->world.pos.x, actor->world.pos.y + 1.0f, actor->world.pos.z };
@@ -655,7 +661,9 @@ static void HandleActorDraw(void* actorPtr) {
         st.shadowScale = ToonSmoothDamp(st.shadowScale, (hasFloor && !onWall) ? 1.0f : 0.0f, &st.shadowScaleVel,
                                         kShadowFadeTime, fadeDt);
         if (st.shadowScale > 0.01f) {
-            gSPToonShadow(POLY_OPA_DISP++, 0, (s8)127, 0, st.shadowScale); // arm; planeD = eased size scale
+            f32 clampY = floorHeight < -32767.0f ? -32767.0f : (floorHeight > 32767.0f ? 32767.0f : floorHeight);
+            s16 feetClamp = ToonShadowDeepRooted(actor) ? (s16)clampY : (s16)TOON_SHADOW_NO_CLAMP;
+            gSPToonShadowArm(POLY_OPA_DISP++, feetClamp, st.shadowScale);
         } else {
             gSPToonShadow(POLY_OPA_DISP++, 0, 0, 0, 0.0f); // fully off
         }
