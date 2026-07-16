@@ -41,6 +41,7 @@ void SohMenu::AddMenuWindWakerStyle() {
             CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.HighlightIntensity"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.ShadowIntensity"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.PointLightRange"));
+            CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.UseNaviLight"));
             CVarClear(CVAR_ENHANCEMENT("Graphics.ToonLighting.TransitionTime"));
             Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
         })
@@ -101,6 +102,14 @@ void SohMenu::AddMenuWindWakerStyle() {
                      .Min(1.0f)
                      .Max(4.0f)
                      .DefaultValue(1.5f));
+    AddWidget(path, "Use Navi as a Light Source", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.UseNaviLight"))
+        .RaceDisable(false)
+        .PreFunc(hideUnlessCelEnabled)
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "Let Navi count as a candidate key light for cel shading. Navi blinks on/off and orbits Link, so "
+            "leaving this on makes the lighting on nearby objects shift around with her. Turn it off to ignore "
+            "Navi and keep the key light steady (the sun/moon or a torch wins instead)."));
     AddWidget(path, "Transition Time", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_ENHANCEMENT("Graphics.ToonLighting.TransitionTime"))
         .RaceDisable(false)
