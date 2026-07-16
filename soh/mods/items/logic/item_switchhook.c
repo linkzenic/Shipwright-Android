@@ -79,6 +79,24 @@ static s16 SwitchHook_GetAimPitch(Player* p) {
     return shFirstPerson ? FirstPerson_GetAimPitch(p) : 0;
 }
 
+// Use the live right-hand limb anchor for every Switch Hook phase. unk_3C8 is
+// maintained by the vanilla Hookshot/Longshot draw path only, so it can remain
+// stale (often near the head) while a transformation form uses Switch Hook.
+static Vec3f SwitchHook_GetHandPos(Player* p) {
+    Vec3f handPos = p->bodyPartsPos[PLAYER_BODYPART_R_HAND];
+
+    if (handPos.x == 0.0f && handPos.y == 0.0f && handPos.z == 0.0f) {
+        handPos.x = p->actor.world.pos.x;
+        handPos.y = p->actor.world.pos.y + 40.0f;
+        handPos.z = p->actor.world.pos.z;
+    } else {
+        s16 yaw = p->actor.shape.rot.y;
+        handPos.x += Math_SinS(yaw) * 8.0f;
+        handPos.z += Math_CosS(yaw) * 8.0f;
+    }
+    return handPos;
+}
+
 // ============================================================================
 // START AIMING - Enter first-person mode (called on button press)
 // Uses custom first-person that avoids slingshot display
@@ -184,16 +202,7 @@ static void SwitchHook_FireHook(Player* p, PlayState* play) {
     }
 
     // Start position at player's hand
-    shProjPos.x = p->unk_3C8.x;
-    shProjPos.y = p->unk_3C8.y;
-    shProjPos.z = p->unk_3C8.z;
-
-    // Fallback if hand position is zero
-    if (shProjPos.x == 0.0f && shProjPos.y == 0.0f && shProjPos.z == 0.0f) {
-        shProjPos.x = p->actor.world.pos.x;
-        shProjPos.y = p->actor.world.pos.y + 40.0f;
-        shProjPos.z = p->actor.world.pos.z;
-    }
+    shProjPos = SwitchHook_GetHandPos(p);
 
     shProjYaw = aimYaw;
     shProjPitch = aimPitch;
@@ -481,13 +490,7 @@ static void SwitchHook_Retract(Player* p, PlayState* play) {
     f32 speed;
     f32 invDist;
 
-    handPos = p->unk_3C8;
-
-    if (handPos.x == 0.0f && handPos.y == 0.0f && handPos.z == 0.0f) {
-        handPos.x = p->actor.world.pos.x;
-        handPos.y = p->actor.world.pos.y + 40.0f;
-        handPos.z = p->actor.world.pos.z;
-    }
+    handPos = SwitchHook_GetHandPos(p);
 
     toPlayer.x = handPos.x - shProjPos.x;
     toPlayer.y = handPos.y - shProjPos.y;
@@ -690,12 +693,7 @@ void CustomItems_DrawSwitchHook(Player* player, PlayState* play) {
         return;
 
     // Get hand position
-    handPos = player->unk_3C8;
-    if (handPos.x == 0.0f && handPos.y == 0.0f && handPos.z == 0.0f) {
-        handPos.x = player->actor.world.pos.x;
-        handPos.y = player->actor.world.pos.y + 40.0f;
-        handPos.z = player->actor.world.pos.z;
-    }
+    handPos = SwitchHook_GetHandPos(player);
 
     // Determine chain endpoints
     if (shState == SWITCHHOOK_STATE_HIT_SWAP && shTarget != NULL) {

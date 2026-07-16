@@ -1424,6 +1424,44 @@ static s16 sQuestItemFlags[] = { 0x0012, 0x0013, 0x0014, 0x0000, 0x0001, 0x0002,
 static s16 sNamePrimColors[2][3] = { { 255, 255, 255 }, { 100, 100, 100 } };
 static void* sHeartTextures[] = { gHeartFullTex, gDefenseHeartFullTex };
 
+static u8 FileChoose_DecodeWesternFilenameChar(u8 character, u8 filenameLanguage) {
+    if (filenameLanguage == NAME_LANGUAGE_PAL) {
+        if (character < 0x0A) {
+            return character + '0';
+        }
+        if (character < 0x24) {
+            return character + '7';
+        }
+        if (character < 0x3E) {
+            return character + '=';
+        }
+        if (character == 0x3F) {
+            return '-';
+        }
+        if (character == 0x40) {
+            return '.';
+        }
+        return ' ';
+    }
+
+    if (character < 0x0A) {
+        return character + '0';
+    }
+    if (character < 0xC5) {
+        return character - 0x6A;
+    }
+    if (character < 0xDF) {
+        return character - 0x64;
+    }
+    if (character == 0xE4) {
+        return '-';
+    }
+    if (character == 0xEA) {
+        return '.';
+    }
+    return ' ';
+}
+
 void FileChoose_DrawFileInfo(GameState* thisx, s16 fileIndex, s16 isActive) {
     FileChooseContext* this = (FileChooseContext*)thisx;
     Font* sp54 = &this->font;
@@ -1466,6 +1504,13 @@ void FileChoose_DrawFileInfo(GameState* thisx, s16 fileIndex, s16 isActive) {
         u8 filenameLanguage = Save_GetSaveMetaInfo(fileIndex)->filenameLanguage;
         for (i = 0, vtxOffset = 0; vtxOffset < 0x20; i++, vtxOffset += 4) {
             u8 curChar = Save_GetSaveMetaInfo(fileIndex)->playerName[i];
+            if (filenameLanguage != NAME_LANGUAGE_NTSC_JPN) {
+                u8 decodedChar = FileChoose_DecodeWesternFilenameChar(curChar, filenameLanguage);
+                Font_LoadChar(sp54, decodedChar - ' ', i * FONT_CHAR_TEX_SIZE);
+                FileChoose_DrawCharacter(this->state.gfxCtx, sp54->charTexBuf + i * FONT_CHAR_TEX_SIZE,
+                                         vtxOffset);
+                continue;
+            }
             if (ResourceMgr_GetGameRegion(0) == GAME_REGION_PAL && gSaveContext.language != LANGUAGE_JPN) {
                 if (filenameLanguage != NAME_LANGUAGE_PAL) {
                     // Remove JPN Characters from the pool (set them to ' ')

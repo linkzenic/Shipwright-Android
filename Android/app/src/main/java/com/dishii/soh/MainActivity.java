@@ -1230,8 +1230,16 @@ public class MainActivity extends SDLActivity{
         // The first test build placed the full HUD pack in mods/, which made it
         // override unrelated assets such as the D-pad. Move it out so the new
         // importer can replace it with an icon-only archive.
-        if (!target.exists() && legacyTarget.isFile() && legacyTarget.length() > 0) {
-            if (!legacyTarget.renameTo(target)) {
+        if (legacyTarget.isFile() && legacyTarget.length() > 0) {
+            if (target.isFile() && isFilteredMmIconArchive(target, false)) {
+                // Once the private filtered archive exists, the old full HUD
+                // pack must not remain in mods/. It overrides unrelated HUD
+                // assets and its FD sword icon is not compatible with SoH's
+                // B-button texture path.
+                if (!legacyTarget.delete()) {
+                    Log.w("setupFiles", "Unable to remove legacy MM HUD pack from mods");
+                }
+            } else if (!target.exists() && !legacyTarget.renameTo(target)) {
                 Log.w("setupFiles", "Unable to move legacy MM icon pack out of mods");
             }
         }
