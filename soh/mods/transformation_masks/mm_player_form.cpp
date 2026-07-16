@@ -1514,7 +1514,7 @@ static Gfx* sCachedDekuBubbleMoveDL = NULL;
 // FD hand models swap dynamically based on held item (sword, empty, bottle).
 // These are loaded once during skeleton setup and swapped in MmForm_OverrideLimbDraw.
 enum FDHandDLIndex {
-    FD_DL_LEFT_HAND_SWORD = 0,
+    FD_DL_SWORD = 0,
     FD_DL_LEFT_HAND_EMPTY,
     FD_DL_LEFT_HAND_BOTTLE,
     FD_DL_RIGHT_HAND_EMPTY,
@@ -1528,10 +1528,10 @@ static Gfx* sCachedFDHandDLs[FD_DL_COUNT] = { NULL };
 
 // OTR paths for FD hand DLs (from object_link_boy.h)
 static const char* sFDHandDLPaths[FD_DL_COUNT] = {
-    "__OTR__objects/object_link_boy/gLinkFierceDeityLeftHandHoldingSwordDL",
-    "__OTR__objects/object_link_boy/gLinkFierceDeityLeftHandEmptyDL",
-    "__OTR__objects/object_link_boy/gLinkFierceDeityLeftHandHoldingBottleDL",
-    "__OTR__objects/object_link_boy/gLinkFierceDeityRightHandEmptyDL",
+    "__OTR__objects/object_link_boy/gLinkFierceDeitySwordDL",
+    "__OTR__objects/object_link_boy/gLinkFierceDeityLeftHandDL",
+    "__OTR__objects/object_link_boy/gLinkFierceDeityLeftHandHoldBottleDL",
+    "__OTR__objects/object_link_boy/gLinkFierceDeityRightHandDL",
     "__OTR__objects/gameplay_keep/gSwordBeamDL",
 };
 
@@ -2049,17 +2049,29 @@ static Gfx* MmForm_GetFDHandDL(PlayState* play, FDHandDLIndex index) {
     if (index < 0 || index >= FD_DL_COUNT || sCachedFDHandDLs[index] == NULL || sFDHandDLCounts[index] == 0)
         return NULL;
 
-    // Allocate per-frame copy from Graph_Alloc (GFX interpreter modifies DLs in-place)
-    size_t count = sFDHandDLCounts[index];
-    Gfx* dlCopy = (Gfx*)Graph_Alloc(play->state.gfxCtx, (count + 1) * sizeof(Gfx));
-    memcpy(dlCopy, sFDHandDLSafeCopies[index].data(), count * sizeof(Gfx));
-    // Ensure G_ENDDL terminator
-    gSPEndDisplayList(&dlCopy[count]);
-    // Defensive: patch any segment 0x08 refs to gEmptyDL (safe no-op)
-    MmForm_PatchSegmentedDL(dlCopy, count, 0x08, gEmptyDL);
-    // Patch G_DL_INDEX seg 0x0C → direct pointers to cull DLs
-    MmForm_PatchCullDLIndex(dlCopy, count);
-    return dlCopy;
+    // The upstream HoldingSword composite is a two-level hash-based DL which is
+    // not safe in the Android Fast3D command stream. Build the tiny composition
+    // locally from the independently validated hand and sword resources instead.
+    if (index == FD_DL_SWORD) {
+        Gfx* hand = sCachedFDHandDLs[FD_DL_LEFT_HAND_EMPTY];
+        Gfx* sword = sCachedFDHandDLs[FD_DL_SWORD];
+        if (hand == NULL || sword == NULL) {
+            return NULL;
+        }
+        Gfx* composite = (Gfx*)Graph_Alloc(play->state.gfxCtx, 3 * sizeof(Gfx));
+        Gfx* p = composite;
+        gSPDisplayList(p++, hand);
+        gSPDisplayList(p++, sword);
+        gSPEndDisplayList(p++);
+        return composite;
+    }
+
+    // These are ordinary archive-owned display lists, just like the limb DLs in
+    // the FD skeleton. Keep their ResourceManager-owned storage intact. Copying
+    // an OTR hash-based DL into Graph_Alloc detached its nested resource calls
+    // from the archive-owned command stream; the FD sword-hand list could then
+    // execute a hash payload as a display-list address on 64-bit Android.
+    return sCachedFDHandDLs[index];
 }
 
 static void MmForm_ClearCachedDLs(void) {
@@ -13289,7 +13301,7 @@ static s32 MmForm_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, 
                 case PLAYER_MODELTYPE_LH_SWORD_2:
                 case PLAYER_MODELTYPE_LH_BGS:
                     // Holding a sword → show FD sword hand
-                    fdDL = MmForm_GetFDHandDL(play, FD_DL_LEFT_HAND_SWORD);
+                    fdDL = MmForm_GetFDHandDL(play, FD_DL_SWORD);
                     break;
                 case PLAYER_MODELTYPE_LH_BOTTLE:
                     // Holding a bottle → show FD bottle hand
@@ -15353,6 +15365,17 @@ void MmForm_Update(PlayState* play, Player* player) {
 // (squash + charge + launch) handle moving the player down/up into/out of
 // the flower — the flower itself stays still on the ground.
 static void MmForm_DrawDekuLaunchFlower(PlayState* play, Player* player) {
+#if defined(__ANDROID__)
+    // The MM gameplay_keep composite contains a G_SETTIMG_OTR_FILEPATH payload
+    // that is not valid after the display list is copied into Android's
+    // per-frame graphics arena. Fast3D consequently treats command data as a
+    // C-string pointer and crashes in strlen(). Keep the burrow/launch state
+    // machine functional while the flower is rebuilt from renderer-safe
+    // component display lists.
+    (void)play;
+    (void)player;
+    return;
+#else
     if (sCachedDekuFlowerDL == NULL || sDekuFlowerDLCount == 0 || sDekuFlowerDLSafeCopy.empty())
         return;
 
@@ -15392,6 +15415,7 @@ static void MmForm_DrawDekuLaunchFlower(PlayState* play, Player* player) {
 
     Matrix_Pop();
     CLOSE_DISPS(play->state.gfxCtx);
+#endif
 }
 
 void MmForm_Draw(PlayState* play, Player* player) {
@@ -15887,7 +15911,11 @@ void MmForm_Draw(PlayState* play, Player* player) {
     // From 2Ship z_player.c:13030-13070: draws 3 flower petals at surface while underground.
     // MM uses D_8085D574[] = { DL_009C48, DL_009AB8, DL_009DB8 } with keyframe animation.
     // Simplified: draw 3 petals at 0°/120°/240° with scale based on bud counter (0-8).
-    if (gFormState.currentForm == MM_PLAYER_FORM_DEKU && gFormState.goronAction == MMFORM_ACT_DEKU_FLOWER &&
+    if (
+#if defined(__ANDROID__)
+        false &&
+#endif
+        gFormState.currentForm == MM_PLAYER_FORM_DEKU && gFormState.goronAction == MMFORM_ACT_DEKU_FLOWER &&
         gFormState.dekuFlowerDepth < -1000.0f) {
         static Gfx* sPetalDLs[3] = {
             (Gfx*)gLinkDekuFlowerPetal1DL,
@@ -16293,11 +16321,11 @@ s16 MmForm_GetRollChargeLevel(void) {
 }
 
 Gfx* MmForm_GetFDSwordBeamDL(PlayState* play) {
-    if (!MmAssets_IsLoaded())
-        return NULL;
-    // MM's gameplay_keep contains gSwordBeamDL
-    static const char sSwordBeamPath[] = "__OTR__objects/gameplay_keep/gSwordBeamDL";
-    return (Gfx*)sSwordBeamPath;
+    // The MM sword-beam DL contains a segmented nested call which is not safe
+    // in the current Android Fast3D path. Returning NULL selects En_M_Thunder's
+    // built-in cyan OOT beam fallback while preserving FD homing, damage, magic
+    // consumption, lifetime, and collision behavior.
+    return NULL;
 }
 
 // Gerudo dual-scimitar accessors exposed to z_player_lib.c — the Gerudo

@@ -10,6 +10,7 @@
 #include "Enhancements/randomizer/item.h"
 #include "soh/Enhancements/randomizer/settings.h"
 #include "ResourceManagerHelpers.h"
+#include "mods/transformation_masks/transformation_masks.h"
 
 #include "z64.h"
 #include "cvar_prefixes.h"
@@ -1288,6 +1289,13 @@ void SaveManager::LoadFile(int fileNum) {
     SPDLOG_INFO("Load File - fileNum: {}", fileNum);
     std::filesystem::path fileName = GetFileName(fileNum);
     assert(std::filesystem::exists(fileName));
+
+    // A transformation may legitimately survive a scene transition, but it
+    // must never survive switching save files. Clear the outgoing form before
+    // InitFile replaces gSaveContext; otherwise the next Player init treats the
+    // old form as a soft scene reload and carries its skeleton/equipment state
+    // into the newly selected save.
+    TransformMasks_Reset();
     InitFile(false);
 
     std::ifstream input(fileName);
@@ -1506,7 +1514,10 @@ void SaveManager::LoadBaseVersion1() {
     });
     SaveManager::Instance->LoadStruct("inventory", []() {
         SaveManager::Instance->LoadArray("items", ARRAY_COUNT(gSaveContext.inventory.items), [](size_t i) {
-            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i]);
+            // Older/upstream saves contain only the 24 vanilla inventory slots.
+            // Missing extended slots must be empty; value-initializing them to 0
+            // makes every absent custom item and MM mask appear as a Deku Stick.
+            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i], static_cast<uint8_t>(ITEM_NONE));
         });
         SaveManager::Instance->LoadArray("ammo", ARRAY_COUNT(gSaveContext.inventory.ammo), [](size_t i) {
             SaveManager::Instance->LoadData("", gSaveContext.inventory.ammo[i]);
@@ -1645,7 +1656,7 @@ void SaveManager::LoadBaseVersion2() {
     });
     SaveManager::Instance->LoadStruct("inventory", []() {
         SaveManager::Instance->LoadArray("items", ARRAY_COUNT(gSaveContext.inventory.items), [](size_t i) {
-            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i]);
+            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i], static_cast<uint8_t>(ITEM_NONE));
         });
         SaveManager::Instance->LoadArray("ammo", ARRAY_COUNT(gSaveContext.inventory.ammo), [](size_t i) {
             SaveManager::Instance->LoadData("", gSaveContext.inventory.ammo[i]);
@@ -1857,7 +1868,7 @@ void SaveManager::LoadBaseVersion3() {
     });
     SaveManager::Instance->LoadStruct("inventory", []() {
         SaveManager::Instance->LoadArray("items", ARRAY_COUNT(gSaveContext.inventory.items), [](size_t i) {
-            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i]);
+            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i], static_cast<uint8_t>(ITEM_NONE));
         });
         SaveManager::Instance->LoadArray("ammo", ARRAY_COUNT(gSaveContext.inventory.ammo), [](size_t i) {
             SaveManager::Instance->LoadData("", gSaveContext.inventory.ammo[i]);
@@ -2073,7 +2084,7 @@ void SaveManager::LoadBaseVersion4() {
     });
     SaveManager::Instance->LoadStruct("inventory", []() {
         SaveManager::Instance->LoadArray("items", ARRAY_COUNT(gSaveContext.inventory.items), [](size_t i) {
-            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i]);
+            SaveManager::Instance->LoadData("", gSaveContext.inventory.items[i], static_cast<uint8_t>(ITEM_NONE));
         });
         SaveManager::Instance->LoadArray("ammo", ARRAY_COUNT(gSaveContext.inventory.ammo), [](size_t i) {
             SaveManager::Instance->LoadData("", gSaveContext.inventory.ammo[i]);

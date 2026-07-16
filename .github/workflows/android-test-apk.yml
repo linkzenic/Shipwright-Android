@@ -104,7 +104,7 @@ jobs:
 
       - name: Build signed Fusion test APK
         env:
-          GIT_TAG: v9.2.3-fusion-android.alpha.3
+          GIT_TAG: v9.2.3-fusion-android.alpha.4
         run: |
           echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > fusion/Android/app/release.jks
           cd fusion/Android

@@ -355,7 +355,9 @@ class SaveState {
 };
 
 SaveStateMgr::SaveStateMgr() {
-    this->SetCurrentSlot(0);
+    // Initializing the default slot is not a user-requested slot change. Calling
+    // SetCurrentSlot() here briefly displays "slot 0 set" during app startup.
+    this->currentSlot = 0;
 }
 SaveStateMgr::~SaveStateMgr() {
     this->states.clear();

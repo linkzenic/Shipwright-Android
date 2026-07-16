@@ -306,7 +306,19 @@ void Handle_DekuLeaf(Player* p, PlayState* play) {
                 return;
             if (p->meleeWeaponState != 0)
                 return;
+#if defined(__ANDROID__)
+            // Stable Android fallback: the persistent held-leaf draw/item state
+            // freezes the player even with an archive-managed replacement mesh.
+            // Preserve the actual gust gameplay without entering that state.
+            if (gSaveContext.magic < DEKULEAF_BLOW_MAGIC_COST)
+                return;
+            ItemMagic_Consume(play, DEKULEAF_BLOW_MAGIC_COST);
+            Player_PlaySfx(p, DEKULEAF_SOUND_BLOW);
+            DekuLeaf_SpawnWindParticles(p, play);
+            DekuLeaf_BlowEnemies(p, play);
+#else
             DekuLeaf_StartBlow(p, play);
+#endif
         }
         return;
     }
