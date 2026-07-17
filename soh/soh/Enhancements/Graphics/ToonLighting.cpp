@@ -61,7 +61,7 @@ static constexpr float kDefaultShadowLength = 0.2f;
 static constexpr float kDefaultShadowSlabDepth = 8.0f; // stencil-volume depth below the feet (ground band)
 static constexpr float kDefaultShadowSlabRise = 8.0f;  // stencil-volume height above the feet (uphill ground)
 static constexpr int kDefaultShadowEdgeSoftness = 0;  // penumbra rings around the silhouette (0 = hard edge)
-static constexpr int kDefaultShadowMaxDistance = 400; // camera-forward distance past which shadows are culled
+static constexpr int kDefaultShadowMaxDistance = 550; // camera-forward distance past which shadows are culled
 static constexpr float kShadowFadeTime = 0.15f; // seconds to ease the shadow size in/out (anti-pop, like Navi)
 
 // Per-frame snapshot of every CVar the per-actor hot path reads. CVarGet* is a string-keyed hash-map
@@ -133,6 +133,9 @@ static bool ToonActorExcluded(Actor* actor) {
         case ACTOR_BG_MIZU_WATER:  // water-box surfaces
         case ACTOR_BG_HAKA_WATER:
         case ACTOR_EN_WOOD02:     // trees / bushes / leaf scenery
+        case ACTOR_OBJ_SWITCH:    // floor/crystal/eye switches — environment fixtures, not relit objects.
+        case ACTOR_OBJ_BEAN:      // magic bean plant/platform — same. Both are also RECEIVERS below, so
+                                  // they still catch other actors' shadows like the ground does.
             return true;
         default:
             break;
@@ -166,9 +169,9 @@ static bool ToonShadowDeepRooted(Actor* actor) {
 // the depth buffer and catch shadows like the static scene. Curated by id on purpose — only flat, broadly
 // static, genuinely-walked-on pieces belong here (a moving platform would show the shadow's one-frame lag).
 // Extend cautiously and verify per actor; candidates to try next are noted inline.
-// NOTE: the receiver pre-pass in z_actor.c only scans the BG and PROP actor lists — every id below is
-// in one of those two categories. If a receiver from another category is ever added here, extend that
-// scan or the new receiver will silently never pre-draw.
+// NOTE: the receiver pre-pass in z_actor.c only scans the BG, PROP and SWITCH actor lists — every id
+// below is in one of those categories. If a receiver from another category is ever added here, extend
+// that scan or the new receiver will silently never pre-draw.
 static bool ToonShadowReceiver(Actor* actor) {
     switch (actor->id) {
         case ACTOR_BG_SPOT00_HANEBASI: // Hyrule Field <-> Castle Town drawbridge (the planks you cross)
@@ -178,6 +181,8 @@ static bool ToonShadowReceiver(Actor* actor) {
         case ACTOR_BG_MENKURI_KAITEN:  // Large rotating stone ring (Gerudo Training Ground + Forest Temple).
                                        // Genuinely rotates while ridden, so the shadow shows a one-frame lag
                                        // during motion — the test case for whether moving receivers look OK.
+        case ACTOR_OBJ_SWITCH:         // floor switches are stood on (SWITCH category — see the pre-pass note)
+        case ACTOR_OBJ_BEAN:           // the bean platform is ridden; excluded from relight too (above)
             return true;
         case ACTOR_BG_HAKA_GATE: {
             // Shadow Temple. One overlay drives four different things; the variant is the low byte of params
@@ -197,12 +202,19 @@ static bool ToonShadowReceiver(Actor* actor) {
     }
 }
 
-// Actors that keep cel relight but should NOT cast a drop shadow (unlike ToonActorExcluded, which drops both).
-// Small cuttable grass (En_Kusa) is everywhere and tiny, so a blob under every tuft reads wrong and is wasteful.
-// Shadow receivers are excluded too: a walkable floor casting its own silhouette down into the void below reads
-// wrong, and (now that it sits in the depth buffer at flush time) could self-shadow.
+// Actors that keep cel relight but should NOT cast a drop shadow (unlike ToonActorExcluded, which drops both) —
+// rationale per id inline. Shadow receivers are excluded too: a walkable floor casting its own silhouette down
+// into the void below reads wrong, and (now that it sits in the depth buffer at flush time) could self-shadow.
 static bool ToonShadowExcluded(Actor* actor) {
-    return actor->id == ACTOR_EN_KUSA || ToonShadowReceiver(actor);
+    switch (actor->id) {
+        case ACTOR_EN_KUSA:      // small cuttable grass — everywhere and tiny, a blob per tuft reads wrong
+        case ACTOR_EN_SKJ:       // Skull Kid
+        case ACTOR_EN_DNT_NOMAL: // Deku Scrub mound dwellers
+        case ACTOR_EN_KZ:        // King Zora
+            return true;
+        default:
+            return ToonShadowReceiver(actor);
+    }
 }
 
 // C-callable export (see ToonLighting.h): lets the decompiled actor draw loop reorder receivers ahead of the
