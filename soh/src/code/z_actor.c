@@ -3168,11 +3168,14 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
     bool receiversActive = shadowsEnabled && CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.ReceiverActors"), 1);
 
     if (receiversActive) {
-        actorListEntry = &actorCtx->actorLists[0];
-        for (i = 0; i < ARRAY_COUNT(actorCtx->actorLists); i++, actorListEntry++) {
+        // Every receiver id lives in the BG or PROP category (asserted by a note at the whitelist,
+        // ToonShadowReceiver), so this per-frame scan skips the other ten lists.
+        static const u8 receiverCats[] = { ACTORCAT_BG, ACTORCAT_PROP };
+        for (i = 0; i < ARRAY_COUNT(receiverCats); i++) {
+            actorListEntry = &actorCtx->actorLists[receiverCats[i]];
             for (actor = actorListEntry->head; actor != NULL; actor = actor->next) {
                 if (ToonLighting_IsShadowReceiver(actor)) {
-                    Actor_DrawListEntry(play, actor, i, invisibleActors, &invisibleActorCounter);
+                    Actor_DrawListEntry(play, actor, receiverCats[i], invisibleActors, &invisibleActorCounter);
                 }
             }
         }

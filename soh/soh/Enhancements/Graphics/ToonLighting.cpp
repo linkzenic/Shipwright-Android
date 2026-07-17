@@ -94,6 +94,17 @@ static void RefreshFrameParams() {
         (f32)CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.MaxDistance"), kDefaultShadowMaxDistance);
 }
 
+// Frame-constant easing terms (they depend only on R_UPDATE_RATE and the transition-time CVar, so
+// computing them per actor repaid an expf for every drawn actor every frame). Refreshed in
+// OnToonFrameUpdate alongside sParams.
+static f32 sToonKeyDt = 3.0f / 60.0f; // seconds per game draw
+static f32 sToonKeyAlpha = 0.2f;      // per-draw slerp fraction; reaches ~99% in transitionTime seconds
+
+// Navi's two emitted lights, resolved once per frame when the player opted her out of key selection
+// (identical for every actor; see ToonClosestPointLight). Compared by address only, never dereferenced.
+static LightInfo* sNaviGlow = NULL;
+static LightInfo* sNaviNoGlow = NULL;
+
 // C-callable getters (see ToonLighting.h): the decompiled draw code asks these instead of doing its own
 // per-actor CVar lookups, and they keep the bracket/hook decisions consistent within a frame.
 extern "C" int ToonLighting_FeaturesActive(void) {
@@ -129,8 +140,15 @@ static bool ToonActorExcluded(Actor* actor) {
     // All Bg_Spot* overworld scenery (bridges, fences, gates, rocks, well/oasis water, ...) reads as part of the
     // environment, not a relit actor. Matched by name prefix so every Bg_Spot variant is covered without listing
     // ~30 scattered actor IDs. RetrieveEntry is bounds-safe and returns an empty name for unknown ids.
-    if (ActorDB::Instance != nullptr && ActorDB::Instance->RetrieveEntry(actor->id).name.rfind("Bg_Spot", 0) == 0) {
-        return true;
+    // The verdict is cached per id (this runs for every drawn actor every frame; ids are stable, so the
+    // string lookup+compare only ever happens once per actor type).
+    if (ActorDB::Instance != nullptr) {
+        static std::unordered_map<s32, bool> sBgSpotVerdicts;
+        auto [it, isNew] = sBgSpotVerdicts.try_emplace((s32)actor->id, false);
+        if (isNew) {
+            it->second = ActorDB::Instance->RetrieveEntry(actor->id).name.rfind("Bg_Spot", 0) == 0;
+        }
+        return it->second;
     }
     return false;
 }
@@ -148,6 +166,9 @@ static bool ToonShadowDeepRooted(Actor* actor) {
 // the depth buffer and catch shadows like the static scene. Curated by id on purpose — only flat, broadly
 // static, genuinely-walked-on pieces belong here (a moving platform would show the shadow's one-frame lag).
 // Extend cautiously and verify per actor; candidates to try next are noted inline.
+// NOTE: the receiver pre-pass in z_actor.c only scans the BG and PROP actor lists — every id below is
+// in one of those two categories. If a receiver from another category is ever added here, extend that
+// scan or the new receiver will silently never pre-draw.
 static bool ToonShadowReceiver(Actor* actor) {
     switch (actor->id) {
         case ACTOR_BG_SPOT00_HANEBASI: // Hyrule Field <-> Castle Town drawbridge (the planks you cross)
@@ -248,6 +269,26 @@ static void OnToonFrameUpdate() {
         return;
     }
 
+    // Frame-constant easing terms (see the statics above).
+    sToonKeyDt = (R_UPDATE_RATE > 0 ? R_UPDATE_RATE : 3) / 60.0f;
+    {
+        f32 tt = sParams.transitionTime < 0.05f ? 0.05f : sParams.transitionTime;
+        sToonKeyAlpha = 1.0f - expf(-4.6f * sToonKeyDt / tt);
+    }
+
+    // Navi's opt-out lights (see the statics above). Identification matches the light-casting feature:
+    // player->naviActor, an En_Elf with FAIRY_NAVI params.
+    sNaviGlow = sNaviNoGlow = NULL;
+    if (!sParams.useNaviLight && gPlayState != NULL) {
+        Player* player = GET_PLAYER(gPlayState);
+        if ((player != NULL) && (player->naviActor != NULL) && (player->naviActor->id == ACTOR_EN_ELF) &&
+            (player->naviActor->params == FAIRY_NAVI)) {
+            EnElf* navi = (EnElf*)player->naviActor;
+            sNaviGlow = &navi->lightInfoGlow;
+            sNaviNoGlow = &navi->lightInfoNoGlow;
+        }
+    }
+
     // Actor shadow look tuning (global, not per object): core blend strength, the slab depth/rise that bound
     // the conforming ground band, and a "length" slider mapped to the minimum grazing angle that bounds how
     // far a low-angle key may stretch the cast shadow. Lives in the interpreter (it owns the shadow
@@ -297,6 +338,12 @@ typedef struct {
     f32 colVel[3];
     f32 shadowScale;    // actor-shadow size, eased 0..1 so it grows in / shrinks out instead of popping
     f32 shadowScaleVel; // SmoothDamp velocity for shadowScale
+    // Cached floor raycast, for actors that never run a bg check (floorPoly stays NULL): a static
+    // actor pays ONE raycast ever instead of one per frame; movers re-sample after ~4 units of drift.
+    f32 floorY;      // cached raycast result (only meaningful when floorSampled)
+    f32 floorPos[3]; // world position the raycast was sampled at
+    u8 floorValid;   // the cached raycast hit a floor
+    u8 floorSampled; // a raycast has been cached
 } ToonKeyState;
 
 static std::unordered_map<Actor*, ToonKeyState> sToonKeyStates;
@@ -388,20 +435,11 @@ static void ToonSlerp(f32 from[3], f32 to[3], f32 t, f32 out[3]) {
 // alone decides — so flickering torches are perfectly stable and the nearer of two always wins. A
 // light is "in range" out to its radius × pointRange (raise pointRange to extend reach).
 static bool ToonClosestPointLight(PlayState* play, Actor* actor, f32 pointRange, f32 dirOut[3], f32 colOut[3]) {
-    // When the player opts Navi out, identify her two emitted lights by address so the selection skips them.
-    // Navi blinks on/off and orbits Link, so otherwise she constantly steals the key light. Same identification
-    // the light-casting feature uses (player->naviActor, an En_Elf with FAIRY_NAVI params).
-    LightInfo* naviGlow = NULL;
-    LightInfo* naviNoGlow = NULL;
-    if (!sParams.useNaviLight) {
-        Player* player = GET_PLAYER(play);
-        if ((player != NULL) && (player->naviActor != NULL) && (player->naviActor->id == ACTOR_EN_ELF) &&
-            (player->naviActor->params == FAIRY_NAVI)) {
-            EnElf* navi = (EnElf*)player->naviActor;
-            naviGlow = &navi->lightInfoGlow;
-            naviNoGlow = &navi->lightInfoNoGlow;
-        }
-    }
+    // When the player opts Navi out, her two emitted lights are skipped by address (she blinks on/off
+    // and orbits Link, so she'd constantly steal the key light). Resolved once per frame in
+    // OnToonFrameUpdate — identical for every actor.
+    LightInfo* naviGlow = sNaviGlow;
+    LightInfo* naviNoGlow = sNaviNoGlow;
 
     LightNode* node = play->lightCtx.listHead;
     f32 bestDistSq = -1.0f;
@@ -700,19 +738,16 @@ static void HandleActorDraw(void* actorPtr) {
         st.dir[0] = targetDir[0], st.dir[1] = targetDir[1], st.dir[2] = targetDir[2];
         st.col[0] = targetCol[0], st.col[1] = targetCol[1], st.col[2] = targetCol[2];
         st.shadowScale = 0.0f, st.shadowScaleVel = 0.0f; // grows in on first appearance
+        st.floorSampled = 0, st.floorValid = 0;
     } else {
-        // Seconds per draw, derived from R_UPDATE_RATE (3 = 20 fps in normal play, 1 = 60 fps during
-        // special transitions) so the eased travel lasts the labelled seconds at any update rate. Frame
-        // interpolation replays this draw without re-running it, so it doesn't affect dt.
-        f32 toonKeyDt = (R_UPDATE_RATE > 0 ? R_UPDATE_RATE : 3) / 60.0f;
-        // Direction: antipode-safe eased slerp; alpha reaches ~99% in transitionTime seconds.
-        f32 alpha = 1.0f - expf(-4.6f * toonKeyDt / (transitionTime < 0.05f ? 0.05f : transitionTime));
+        // Eased travel using the frame-constant dt/alpha computed in OnToonFrameUpdate (frame
+        // interpolation replays this draw without re-running it, so they can't vary per actor anyway).
         f32 newDir[3];
 
-        ToonSlerp(st.dir, targetDir, alpha, newDir);
+        ToonSlerp(st.dir, targetDir, sToonKeyAlpha, newDir);
         st.dir[0] = newDir[0], st.dir[1] = newDir[1], st.dir[2] = newDir[2];
         for (s32 i = 0; i < 3; i++) {
-            st.col[i] = ToonSmoothDamp(st.col[i], targetCol[i], &st.colVel[i], transitionTime, toonKeyDt);
+            st.col[i] = ToonSmoothDamp(st.col[i], targetCol[i], &st.colVel[i], transitionTime, sToonKeyDt);
         }
     }
 
@@ -765,22 +800,35 @@ static void HandleActorDraw(void* actorPtr) {
             // deep-rooted actors (the renderer otherwise builds the volume from the captured feet, not this
             // plane). Most actors expose actor->floorPoly from their bg check; a few (e.g. the Courtyard Guards,
             // En_Heishi1) never run one, so floorPoly stays null and the shadow would never arm. Fall back to a
-            // downward raycast for those — the same approach their bespoke shadow used.
+            // downward raycast for those — cached in the eased state (see ToonKeyState) so stationary
+            // actors don't re-walk the static collision every frame.
             bool haveFloor = (actor->floorPoly != NULL);
             if (!haveFloor) {
-                Vec3f rayFrom = { actor->world.pos.x, actor->world.pos.y + 1.0f, actor->world.pos.z };
-                CollisionPoly* poly = NULL;
-                floorHeight = BgCheck_EntityRaycastFloor2(play, &play->colCtx, &poly, &rayFrom);
-                haveFloor = (poly != NULL);
+                f32 mdx = actor->world.pos.x - st.floorPos[0];
+                f32 mdy = actor->world.pos.y - st.floorPos[1];
+                f32 mdz = actor->world.pos.z - st.floorPos[2];
+                if (!st.floorSampled || ((mdx * mdx) + (mdy * mdy) + (mdz * mdz)) > 16.0f) {
+                    Vec3f rayFrom = { actor->world.pos.x, actor->world.pos.y + 1.0f, actor->world.pos.z };
+                    CollisionPoly* poly = NULL;
+                    st.floorY = BgCheck_EntityRaycastFloor2(play, &play->colCtx, &poly, &rayFrom);
+                    st.floorValid = (poly != NULL);
+                    st.floorSampled = 1;
+                    st.floorPos[0] = actor->world.pos.x;
+                    st.floorPos[1] = actor->world.pos.y;
+                    st.floorPos[2] = actor->world.pos.z;
+                }
+                haveFloor = st.floorValid;
+                if (haveFloor) {
+                    floorHeight = st.floorY;
+                }
             }
             if (haveFloor) {
                 f32 distToFloor = actor->world.pos.y - floorHeight;
                 hasFloor = (distToFloor > -50.0f) && (distToFloor < 1500.0f);
             }
         }
-        f32 fadeDt = (R_UPDATE_RATE > 0 ? R_UPDATE_RATE : 3) / 60.0f;
         st.shadowScale = ToonSmoothDamp(st.shadowScale, (hasFloor && !onWall) ? 1.0f : 0.0f, &st.shadowScaleVel,
-                                        kShadowFadeTime, fadeDt);
+                                        kShadowFadeTime, sToonKeyDt);
         if (st.shadowScale > 0.01f) {
             f32 clampY = floorHeight < -32767.0f ? -32767.0f : (floorHeight > 32767.0f ? 32767.0f : floorHeight);
             s16 feetClamp = ToonShadowDeepRooted(actor) ? (s16)clampY : (s16)TOON_SHADOW_NO_CLAMP;
