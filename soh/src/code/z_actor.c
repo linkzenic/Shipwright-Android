@@ -3165,12 +3165,12 @@ void func_800315AC(PlayState* play, ActorContext* actorCtx) {
     // still draws exactly once. The flushes must sit between this pre-pass and the rest of the actors (which
     // must NOT receive shadows, to avoid self-shadowing the casters) — that ordering is why they live here.
     bool shadowsEnabled = ToonLighting_ShadowsEnabled();
-    bool receiversActive = shadowsEnabled && CVarGetInteger(CVAR_ENHANCEMENT("Graphics.WorldShadows.ReceiverActors"), 1);
+    bool receiversActive = shadowsEnabled; // the pre-pass rides with the feature (no separate toggle)
 
     if (receiversActive) {
-        // Every receiver id lives in the BG or PROP category (asserted by a note at the whitelist,
-        // ToonShadowReceiver), so this per-frame scan skips the other ten lists.
-        static const u8 receiverCats[] = { ACTORCAT_BG, ACTORCAT_PROP };
+        // Every receiver id lives in the BG, PROP or SWITCH category (asserted by a note at the
+        // whitelist, ToonShadowReceiver), so this per-frame scan skips the other lists.
+        static const u8 receiverCats[] = { ACTORCAT_BG, ACTORCAT_PROP, ACTORCAT_SWITCH };
         for (i = 0; i < ARRAY_COUNT(receiverCats); i++) {
             actorListEntry = &actorCtx->actorLists[receiverCats[i]];
             for (actor = actorListEntry->head; actor != NULL; actor = actor->next) {
