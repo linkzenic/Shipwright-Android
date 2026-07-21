@@ -3,7 +3,7 @@ name: Android Fusion Fork Release Build
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-fusion-*'
 
 jobs:
   build:
