@@ -2661,9 +2661,9 @@ extern "C" void PakLoader_FrameBegin(void) {
             sCacheBodyIdx = -2; // Stale key → rebuild on next sGetEquipDLs call
         }
     }
-    // Vanilla-pointer validation. Compare each cached vanilla hand/fist pointer with a
-    // fresh ResourceMgr_LoadGfxByName result. If the ResourceMgr relocated the resource,
-    // the pointer differs → invalidate cache so the next rebuild captures the fresh one.
+    // Legacy pointer validation. New cache entries use deferred OTR wrappers for vanilla
+    // pieces and therefore never retain ResourceManager-owned Gfx pointers across scenes.
+    // Keep this check for caches created before a setting/age transition completes.
     if (!sCachedVanillaPtrs.empty()) {
         u8 isAdult = (LINK_AGE_IN_YEARS == YEARS_ADULT);
         struct VanillaAlias {
@@ -3023,13 +3023,13 @@ static void RebuildCachedEquipDLs(void) {
         // would happily execute the string's bytes as opcodes.
         auto resolveVanilla = [&](u32 alias, const char* path) {
             if (sCachedEquipDLs.count(alias)) return;
-            Gfx* dl = ResourceMgr_LoadGfxByName(path);
-            if (IsValidGfxPtr(dl)) {
-                sCachedEquipDLs[alias] = dl;
-                sCachedVanillaPtrs[alias] = dl;
-                return;
-            }
-            // Deferred OTR resolution: allocate a [OTR_G_DL_OTR_FILEPATH(path), G_ENDDL] wrapper.
+            // Always defer vanilla resource resolution until draw time. A native pointer
+            // returned here is owned by ResourceManager and can become stale during a
+            // scene transition before the equipment cache notices the relocation. Death
+            // Mountain Crater's warp-pad load exposed this with the forced Four Sword:
+            // Fast3D eventually interpreted recycled string bytes as display-list opcodes.
+            // Static OTR paths remain valid and are resolved against the current scene's
+            // resource generation every time the wrapper is executed.
             Gfx* wrapper = (Gfx*)calloc(2, sizeof(Gfx));
             wrapper[0].words.w0 = (uintptr_t)0x27000000; // OTR_G_DL_OTR_FILEPATH
             wrapper[0].words.w1 = (uintptr_t)path;
@@ -3828,13 +3828,10 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
             }
         }
 
-        // Add vanilla fist/hand as fallback. If the ResourceManager doesn't
-        // give us a usable native Gfx* right now, push the OTR path string
-        // itself — Fast3D resolves OTR paths at draw time, which is when the
-        // vanilla object_link_boy / object_link_child resource is guaranteed
-        // to be loaded. This is what fixes "I need to equip a body pak to see
-        // the equipment" — we no longer require the fist resource to be
-        // materialised when the cache is built.
+        // Add the vanilla fist/hand as a deferred OTR path. Never retain a
+        // ResourceManager-owned native pointer in a runtime combined DL: scene
+        // transitions may unload it after this function returns but before the
+        // renderer consumes the command stream.
         if (def->fistOtrPath != NULL) {
             Gfx* fist = NULL;
             // DL_LFIST = 0x50A0, DL_RFIST = 0x50B8
@@ -3845,9 +3842,7 @@ extern "C" Gfx* PakLoader_GetDLOverride(const char* otrPath) {
                 IsValidGfxPtrOrOtrPath(fistIt->second)) {
                 fist = fistIt->second;
             } else {
-                try {
-                    fist = ResourceMgr_LoadGfxByName(def->fistOtrPath);
-                } catch (...) { fist = NULL; }
+                fist = (Gfx*)def->fistOtrPath;
             }
             if (IsValidGfxPtrOrOtrPath(fist)) {
                 parts[partCount++] = fist;
