@@ -252,8 +252,6 @@ public class MainActivity extends SDLActivity{
 
         // Only remove files supplied by the APK. Game archives, MM assets,
         // saves, configuration, controller settings, and mods belong to the user.
-        deleteIfExists(new File(targetRootFolder, "soh.otr"));
-        deleteIfExists(new File(targetRootFolder, "soh.o2r"));
         deleteRecursiveIfExists(new File(targetRootFolder, "assets"));
         // Refresh only files managed by the APK. The nei/ and harpoon/
         // directories can also contain user-installed packs, generated 3DS
