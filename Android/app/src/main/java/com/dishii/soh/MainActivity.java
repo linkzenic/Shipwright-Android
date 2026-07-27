@@ -134,7 +134,7 @@ public class MainActivity extends SDLActivity{
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String SUPPORT_FILES_VERSION_MARKER = ".android_support_files_version";
     // Bump this only when bundled Android support assets or archive layout changes.
-    private static final String SUPPORT_FILES_VERSION = "sohnei-android-support-5";
+    private static final String SUPPORT_FILES_VERSION = "sohnei-android-support-6";
     private AlertDialog dataRootMigrationDialog;
     private AlertDialog setupProgressDialog;
 
@@ -255,8 +255,35 @@ public class MainActivity extends SDLActivity{
         deleteIfExists(new File(targetRootFolder, "soh.otr"));
         deleteIfExists(new File(targetRootFolder, "soh.o2r"));
         deleteRecursiveIfExists(new File(targetRootFolder, "assets"));
-        deleteRecursiveIfExists(new File(targetRootFolder, "nei"));
-        deleteRecursiveIfExists(new File(targetRootFolder, "harpoon"));
+        // Refresh only files managed by the APK. The nei/ and harpoon/
+        // directories can also contain user-installed packs, generated 3DS
+        // resources, skins, and templates that must survive an app update.
+        String[] bundledNeiFiles = {
+                "Adult_BOTWLink.pak",
+                "Equip_Four_Sword.pak",
+                "N64_Kafei.pak",
+                "garo.o2r",
+                "garo_atlas.png",
+                "garo_hybrid.o2r",
+                "gerudo.o2r",
+                "mhr_anims.o2r",
+                "mhr_anim_notes.json",
+                "pikachu_anims.bin"
+        };
+        File neiDirectory = new File(targetRootFolder, "nei");
+        for (String fileName : bundledNeiFiles) {
+            deleteIfExists(new File(neiDirectory, fileName));
+        }
+
+        String[] bundledGamemodes = {
+                "randomizer-no-pvp",
+                "randomizer-pvp",
+                "story"
+        };
+        File gamemodesDirectory = new File(targetRootFolder, "harpoon/gamemodes");
+        for (String gamemode : bundledGamemodes) {
+            deleteIfExists(new File(new File(gamemodesDirectory, gamemode), "gamemode.yaml"));
+        }
         deleteIfExists(getSupportFilesMarkerFile(targetRootFolder));
     }
 
