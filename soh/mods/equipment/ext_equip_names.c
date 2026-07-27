@@ -2,7 +2,7 @@
  * ext_equip_names.c - Name textures for extended equipment
  *
  * Returns OTR path pointers for each equipment item's name texture.
- * Textures are 128x16 IA4 PNGs in soh/assets/custom/textures/item_name_custom/.
+ * Textures are 256x32 IA4 PNGs in soh/assets/custom/textures/item_name_custom/.
  *
  * Included by extended_equipment.c (unity build).
  */
@@ -33,7 +33,7 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
         case ITEM_EXT_TUNIC_1:
             return (void*)gMagicCapeNameTex;
         case ITEM_EXT_TUNIC_2:
-            return (void*)gMagicArmorNameTex;
+            return (void*)gSpiritBreastplateNameTex;
         case ITEM_EXT_TUNIC_3:
             return (void*)gChampionsTunicNameTex;
 
@@ -41,8 +41,7 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
         case ITEM_EXT_BOOTS_1:
             return (void*)gPegasusAnkletNameTex;
         case ITEM_EXT_BOOTS_2:
-            // Load from mm.o2r (MM's actual Pendant of Memories name texture)
-            return (void*)"__OTR__item_name_static/gItemNamePendantOfMemoriesENGTex";
+            return (void*)gPendantOfMemoriesNameTex;
         case ITEM_EXT_BOOTS_3:
             return (void*)gWaterDragonScaleNameTex;
 

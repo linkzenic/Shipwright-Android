@@ -768,7 +768,6 @@ void SohMenu::AddMenuNEI() {
         .PreFunc([](WidgetInfo& info) {
             const std::string kafeiPakPath = Ship::Context::LocateFileAcrossAppDirs("nei/N64_Kafei.pak");
             if (!std::filesystem::exists(kafeiPakPath)) {
-                CVarSetInteger("gMods.KafeiMaskTransform", 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Requires N64_Kafei.pak in nei/ folder.";
             }

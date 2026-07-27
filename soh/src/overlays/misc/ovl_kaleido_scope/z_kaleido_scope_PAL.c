@@ -1834,8 +1834,6 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
 
             pauseCtx->infoPanelVtx[17].v.tc[0] = pauseCtx->infoPanelVtx[19].v.tc[0] = 0x1000;
 
-            gSPVertex(POLY_OPA_DISP++, &pauseCtx->infoPanelVtx[16], 4, 0);
-
             if (pauseCtx->nameColorSet == 1) {
                 gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 70, 70, 70, 255);
             } else {
@@ -1864,7 +1862,26 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
                 }
             }
 
-            POLY_OPA_DISP = KaleidoScope_QuadTextureIA4(POLY_OPA_DISP, pauseCtx->nameSegment, 128, 16, 0);
+            // Custom item names are authored at 2x resolution. They still occupy
+            // the vanilla 128x16 panel in screen space, but use the full 256x32
+            // texture for sharper sampling on high-resolution displays. 256x32
+            // IA4 is exactly 4 KiB, so it remains within the texture-memory limit.
+            static const char sHdCustomNamePrefix[] = "__OTR__textures/item_name_custom/";
+            const bool useHdCustomName =
+                strncmp((const char*)pauseCtx->nameSegment, sHdCustomNamePrefix,
+                        sizeof(sHdCustomNamePrefix) - 1) == 0;
+            const s16 nameTextureWidth = useHdCustomName ? 256 : 128;
+            const s16 nameTextureHeight = useHdCustomName ? 32 : 16;
+
+            pauseCtx->infoPanelVtx[17].v.tc[0] = pauseCtx->infoPanelVtx[19].v.tc[0] =
+                nameTextureWidth << 5;
+            pauseCtx->infoPanelVtx[18].v.tc[1] = pauseCtx->infoPanelVtx[19].v.tc[1] =
+                nameTextureHeight << 5;
+            gSPVertex(POLY_OPA_DISP++, &pauseCtx->infoPanelVtx[16], 4, 0);
+
+            POLY_OPA_DISP =
+                KaleidoScope_QuadTextureIA4(POLY_OPA_DISP, pauseCtx->nameSegment, nameTextureWidth,
+                                            nameTextureHeight, 0);
         }
 
         if (pauseCtx->pageIndex == PAUSE_MAP && CVarGetInteger(CVAR_DEVELOPER_TOOLS("SkulltulaDebugEnabled"), 0) != 0) {

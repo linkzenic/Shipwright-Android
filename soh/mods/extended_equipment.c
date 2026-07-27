@@ -51,7 +51,7 @@ extern s32 CVarGetInteger(const char* name, s32 defaultValue);
 // Per-piece age requirement: [equipType][index-1]
 //   SWORD:  Byrna,            Four Sword,    Drillshaft
 //   SHIELD: Divine Shield,    Kite Shield,    Shield of Ikana
-//   TUNIC:  Magic Cape,       Pending4,      Champion's Tunic
+//   TUNIC:  Magic Cape,       Spirit Plate,  Champion's Tunic
 //   BOOTS:  Pegasus Anklet,   Pendant Mem.,  Water Dragon Scale
 static const u8 sExtEquipAgeReqs[4][3] = {
     { AGE_REQ_NONE,  AGE_REQ_CHILD, AGE_REQ_ADULT },
@@ -425,18 +425,23 @@ static const ALIGN_ASSET(2) char sPendantOfMemoriesIconPath[] =
     "__OTR__icon_item_static_yar/gItemIconPendantOfMemoriesTex";
 
 // Icon lookup table: [type][index-1] = OTR path string
+// Use the aligned asset symbols rather than the dg* string macros. Fast3D
+// distinguishes managed OTR texture names from raw pixel pointers by pointer
+// alignment; returning an unaligned string literal can therefore make Android
+// upload the path bytes as pixels. Keeping these as managed resources also lets
+// the renderer use the full-resolution texture while drawing it in a 32x32 slot.
 static const char* sExtEquipIconPaths[4][3] = {
     // Swords
-    { dgItemIconCaneOfByrnaTex, dgItemIconFourSwordTex, dgItemIconDrillshaftTex },
+    { gItemIconCaneOfByrnaTex, gItemIconFourSwordTex, gItemIconDrillshaftTex },
     // Shields
-    { dgItemIconDivineShieldTex, dgItemIconGerudoScimitarTex,
+    { gItemIconDivineShieldTex, gItemIconGerudoScimitarTex,
       sShieldOfIkanaIconPath }, // Shield of Ikana (MM mirror shield)
     // Tunics
-    { dgItemIconMagicCapeTex, dgItemIconPending4Tex, dgItemIconChampionsTunicTex },
+    { gItemIconMagicCapeTex, gItemIconPending4Tex, gItemIconChampionsTunicTex },
     // Boots
-    { dgItemIconPegasusAnkletTex,
+    { gItemIconPegasusAnkletTex,
       sPendantOfMemoriesIconPath, // mm.o2r
-      dgItemIconWaterDragonScaleTex },
+      gItemIconWaterDragonScaleTex },
 };
 
 void* ExtEquip_GetIcon(s16 equipType, u8 index) {
@@ -446,23 +451,11 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index) {
 
     const char* path = sExtEquipIconPaths[equipType][index - 1];
 
-    // Resolve built-in custom icons before putting them into the display list.
-    // Returning one of these paths unresolved can make Fast3D treat the path
-    // address as RGBA32 pixels, which produces fuzz and can crash Android's
-    // OpenGL driver in glTexImage2D.
+    // Return the managed resource name, matching the item-page icon path. The
+    // renderer resolves the texture's real dimensions and scales it into the
+    // equipment page's existing 32x32 quad, preserving the 128x128 source.
     if (path != NULL) {
-        if (strstr(path, "textures/icon_item_custom/") != NULL) {
-            void* texture = ResourceMgr_GetResourceDataByNameHandlingMQ(path);
-            if (texture != NULL) {
-                return texture;
-            }
-        } else {
-            // mm.o2r is mounted after startup and is not always represented in
-            // ResourceMgr_FileExists' extension cache. Keep its icons as OTR
-            // paths so Fast3D resolves both the pixels and the texture format;
-            // treating these raw buffers as RGBA32 produces striped corruption.
-            return (void*)path;
-        }
+        return (void*)path;
     }
 
     // These buffers have static lifetime and are always valid 32x32 RGBA32

@@ -1,11 +1,12 @@
-"""
-Item Name Texture Generator
-Generates 128x16 IA4-style PNGs matching GIMP settings:
-- Font: Century Gothic Bold, 12px
-- Letter spacing: -1.0
-- Text color: white
-- Shadow: "Sombra alargada" color #16202b, length 2.0, angles 45, -45, 135
-- Centered on canvas
+"""Generate NEI name plates matching Djipi's regular SOH HD item names.
+
+Each label is authored at 512x64, then downsampled to a 256x32 IA4 source
+texture.  This is twice the native OOT resolution while remaining within the
+original 4 KiB TMEM budget.  A 512x64 ``alt`` replacement cannot be used here:
+the custom 256x32 IA4 draw path causes Fast3D to repeat that replacement.
+
+The regular labels use Arial Bold Italic, white lettering, and a compact black
+outline.  Long names reduce their point size only as much as needed to fit.
 """
 
 from PIL import Image, ImageDraw, ImageFont
@@ -13,14 +14,15 @@ import os
 import sys
 
 # Config
-WIDTH = 128
-HEIGHT = 16
+WIDTH = 256
+HEIGHT = 32
+HD_WIDTH = 512
+HD_HEIGHT = 64
 TEXT_COLOR = (255, 255, 255, 255)
-SHADOW_COLOR = (0x16, 0x20, 0x2B, 255)
-SHADOW_LENGTH = 3.0
-SHADOW_ANGLES = [45, -45, 135, -135]
-FONT_SIZE = 12
-LETTER_SPACING = -1.0
+OUTLINE_COLOR = (0, 0, 0, 255)
+HD_FONT_SIZE = 36
+HD_OUTLINE_WIDTH = 3
+HD_HORIZONTAL_MARGIN = 12
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # All custom items: (filename_base, display_name)
@@ -50,24 +52,67 @@ ALL_ITEMS = [
     ("gMinishCapNameTex", "Minish Cap"),
     ("gLanternNameTex", "Lantern"),
     ("gPokeballNameTex", "Pokeball"),
+    # Extended equipment
+    ("gCaneOfByrnaNameTex", "Cane of Byrna"),
+    ("gFourSwordNameTex", "Four Sword"),
+    ("gDrillshaftNameTex", "Drillshaft"),
+    ("gDivineShieldNameTex", "Divine Shield"),
+    ("gGerudoScimitarNameTex", "Gerudo Scimitar"),
     ("gIronKnuckleAxeNameTex", "Iron Knuckle Axe"),
     ("gSheikahShieldNameTex", "Sheikah Shield"),
     ("gSpiritBreastplateNameTex", "Spirit Breastplate"),
     ("gKiteShieldNameTex", "Kite Shield"),
+    ("gShieldOfIkanaNameTex", "Shield of Ikana"),
+    ("gMagicCapeNameTex", "Magic Cape"),
     ("gMagicArmorNameTex", "Magic Armor"),
+    ("gChampionsTunicNameTex", "Champion's Tunic"),
+    ("gPegasusAnkletNameTex", "Pegasus Anklet"),
+    ("gPendantOfMemoriesNameTex", "Pendant of Memories"),
+    ("gWaterDragonScaleNameTex", "Water Dragon Scale"),
+    # Reserved slots retain readable labels in the save editor.
+    ("gPending2NameTex", "Pending 2"),
+    ("gPending3NameTex", "Pending 3"),
+    ("gPending4NameTex", "Pending 4"),
     # Twilight Upgrade mode-toggle names (shown when Clawshot/Gale modes are active
     # via the A-button toggle on hookshot/longshot or boomerang).
     ("gClawshotNameTex", "Clawshot"),
     ("gGaleBoomerangNameTex", "Gale Boomerang"),
+    # Majora's Mask inventory
+    ("gPostmansHatNameTex", "Postman's Hat"),
+    ("gAllNightMaskNameTex", "All-Night Mask"),
+    ("gBlastMaskNameTex", "Blast Mask"),
+    ("gStoneMaskNameTex", "Stone Mask"),
+    ("gGreatFairysMaskNameTex", "Great Fairy's Mask"),
+    ("gDekuMaskNameTex", "Deku Mask"),
+    ("gKeatonMaskNameTex", "Keaton Mask"),
+    ("gBremenMaskNameTex", "Bremen Mask"),
+    ("gBunnyHoodNameTex", "Bunny Hood"),
+    ("gDonGerosMaskNameTex", "Don Gero's Mask"),
+    ("gMaskOfScentsNameTex", "Mask of Scents"),
+    ("gGoronMaskNameTex", "Goron Mask"),
+    ("gRomanisMaskNameTex", "Romani's Mask"),
+    ("gCircusLeadersMaskNameTex", "Circus Leader's Mask"),
+    ("gKafeisMaskNameTex", "Kafei's Mask"),
+    ("gCouplesMaskNameTex", "Couple's Mask"),
+    ("gMaskOfTruthNameTex", "Mask of Truth"),
+    ("gZoraMaskNameTex", "Zora Mask"),
+    ("gKamarosMaskNameTex", "Kamaro's Mask"),
+    ("gGibdoMaskNameTex", "Gibdo Mask"),
+    ("gGarosMaskNameTex", "Garo's Mask"),
+    ("gCaptainsHatNameTex", "Captain's Hat"),
+    ("gGiantsMaskNameTex", "Giant's Mask"),
+    ("gFierceDeitysMaskNameTex", "Fierce Deity's Mask"),
 ]
 
 
 def find_font():
-    """Find Century Gothic Bold font."""
+    """Find the bold-italic face used by the regular HD name textures."""
     paths = [
-        "C:/Windows/Fonts/GOTHICB.TTF",
-        "C:\\Windows\\Fonts\\GOTHICB.TTF",
-        os.path.join(OUTPUT_DIR, "..", "..", "fonts", "CenturyGothicBold.ttf"),
+        "C:/Windows/Fonts/arialbi.ttf",
+        "C:\\Windows\\Fonts\\arialbi.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-BoldItalic.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
     ]
     for p in paths:
         if os.path.exists(p):
@@ -75,79 +120,39 @@ def find_font():
     return None
 
 
-def measure_text_with_spacing(font, text, spacing):
-    """Measure text width accounting for custom letter spacing."""
-    total = 0
-    for i, ch in enumerate(text):
-        bbox = font.getbbox(ch)
-        char_advance = bbox[2] - bbox[0]
-        # Use font.getlength for proper advance width
-        char_advance = font.getlength(ch)
-        total += char_advance
-        if i < len(text) - 1:
-            total += spacing
-    return total
+def generate_name_texture(name, text, font_path, output_path):
+    """Generate one 2x name texture from a 4x-quality master."""
+    size = HD_FONT_SIZE
+    while size >= 24:
+        pil_font = ImageFont.truetype(font_path, size)
+        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        bbox = probe.textbbox((0, 0), text, font=pil_font, stroke_width=HD_OUTLINE_WIDTH)
+        if bbox[2] - bbox[0] <= HD_WIDTH - (HD_HORIZONTAL_MARGIN * 2):
+            break
+        size -= 1
 
+    hd = Image.new("RGBA", (HD_WIDTH, HD_HEIGHT), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(hd)
+    bbox = draw.textbbox((0, 0), text, font=pil_font, stroke_width=HD_OUTLINE_WIDTH)
+    x = (HD_WIDTH - (bbox[2] - bbox[0])) / 2 - bbox[0]
+    y = (HD_HEIGHT - (bbox[3] - bbox[1])) / 2 - bbox[1] - 2
+    draw.text(
+        (x, y),
+        text,
+        font=pil_font,
+        fill=TEXT_COLOR,
+        stroke_width=HD_OUTLINE_WIDTH,
+        stroke_fill=OUTLINE_COLOR,
+    )
 
-def draw_text_with_spacing(draw, pos, text, font, fill, spacing):
-    """Draw text character by character with custom letter spacing."""
-    x, y = pos
-    for i, ch in enumerate(text):
-        draw.text((x, y), ch, font=font, fill=fill)
-        x += font.getlength(ch) + spacing
-
-
-def generate_name_texture(name, text, font, output_path):
-    """Generate a single item name texture matching GIMP's Sombra Alargada."""
-    import math
-
-    img = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    try:
-        pil_font = ImageFont.truetype(font, FONT_SIZE)
-    except Exception:
-        print(f"  ERROR: Could not load font at size {FONT_SIZE}")
-        return False
-
-    # Measure and center
-    text_width = measure_text_with_spacing(pil_font, text, LETTER_SPACING)
-    x = (WIDTH - text_width) / 2
-
-    bbox = pil_font.getbbox(text)
-    text_height = bbox[3] - bbox[1]
-    y = (HEIGHT - text_height) / 2 - bbox[1]
-
-    # GIMP "Sombra alargada" (Long Shadow), Estilo: Finito
-    # Algorithm: duplicate text 1 pixel at a time along angle direction for `length` copies.
-    # Each copy offset = (cos(angle), -sin(angle)) * i, for i = 1..length
-    shadow_len = SHADOW_LENGTH
-    # Use enough sub-pixel steps to fill every pixel along the diagonal
-    num_copies = int(shadow_len * 2) + 2
-    for angle_deg in SHADOW_ANGLES:
-        angle_rad = math.radians(angle_deg)
-        step_x = math.cos(angle_rad)
-        step_y = -math.sin(angle_rad)  # screen Y is inverted
-
-        # Draw from farthest to nearest
-        for i in range(num_copies, 0, -1):
-            t = i / num_copies * shadow_len
-            dx = step_x * t
-            dy = step_y * t
-            draw_text_with_spacing(draw, (x + dx, y + dy), text, pil_font, SHADOW_COLOR, LETTER_SPACING)
-
-    # Main text on top
-    draw_text_with_spacing(draw, (x, y), text, pil_font, TEXT_COLOR, LETTER_SPACING)
-
-    img.save(output_path)
+    hd.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS).save(output_path)
     return True
 
 
 def main():
     font_path = find_font()
     if not font_path:
-        print("ERROR: Century Gothic Bold not found!")
-        print("Install it or place CenturyGothicBold.ttf in the fonts folder")
+        print("ERROR: Arial/Liberation Sans Bold Italic not found!")
         sys.exit(1)
 
     print(f"Font: {font_path}")
