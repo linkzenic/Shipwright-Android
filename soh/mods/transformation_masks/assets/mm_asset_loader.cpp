@@ -4435,32 +4435,34 @@ alignas(2) static const char sMmMaskIconPaths[24][80] = {
     "__OTR__icon_item_static_yar/gItemIconFierceDeityMaskTex",  // 23: Fierce Deity Mask
 };
 
-// Name texture paths (from item_name_static)
-static const char* sMmMaskNamePaths[24] = {
-    "__OTR__item_name_static/gItemNamePostmansHatENGTex",
-    "__OTR__item_name_static/gItemNameAllNightMaskENGTex",
-    "__OTR__item_name_static/gItemNameBlastMaskENGTex",
-    "__OTR__item_name_static/gItemNameStoneMaskENGTex",
-    "__OTR__item_name_static/gItemNameGreatFairysMaskENGTex",
-    "__OTR__item_name_static/gItemNameDekuMaskENGTex",
-    "__OTR__item_name_static/gItemNameKeatonMaskENGTex",
-    "__OTR__item_name_static/gItemNameBremenMaskENGTex",
-    "__OTR__item_name_static/gItemNameBunnyHoodENGTex",
-    "__OTR__item_name_static/gItemNameDonGerosMaskENGTex",
-    "__OTR__item_name_static/gItemNameMaskOfScentsENGTex",
-    "__OTR__item_name_static/gItemNameGoronMaskENGTex",
-    "__OTR__item_name_static/gItemNameRomanisMaskENGTex",
-    "__OTR__item_name_static/gItemNameCircusLeadersMaskENGTex",
-    "__OTR__item_name_static/gItemNameKafeisMaskENGTex",
-    "__OTR__item_name_static/gItemNameCouplesMaskENGTex",
-    "__OTR__item_name_static/gItemNameMaskOfTruthENGTex",
-    "__OTR__item_name_static/gItemNameZoraMaskENGTex",
-    "__OTR__item_name_static/gItemNameKamarosMaskENGTex",
-    "__OTR__item_name_static/gItemNameGibdoMaskENGTex",
-    "__OTR__item_name_static/gItemNameGarosMaskENGTex",
-    "__OTR__item_name_static/gItemNameCaptainsHatENGTex",
-    "__OTR__item_name_static/gItemNameGiantsMaskENGTex",
-    "__OTR__item_name_static/gItemNameFierceDeitysMaskENGTex",
+// HD name texture paths from soh.o2r. Keeping these in item_name_custom makes
+// the pause-menu renderer use the same 256x32 base pipeline as NEI items and
+// equipment instead of MM's native 128x16 name plates.
+alignas(2) static const char sMmMaskNamePaths[24][80] = {
+    "__OTR__textures/item_name_custom/gPostmansHatNameTex",
+    "__OTR__textures/item_name_custom/gAllNightMaskNameTex",
+    "__OTR__textures/item_name_custom/gBlastMaskNameTex",
+    "__OTR__textures/item_name_custom/gStoneMaskNameTex",
+    "__OTR__textures/item_name_custom/gGreatFairysMaskNameTex",
+    "__OTR__textures/item_name_custom/gDekuMaskNameTex",
+    "__OTR__textures/item_name_custom/gKeatonMaskNameTex",
+    "__OTR__textures/item_name_custom/gBremenMaskNameTex",
+    "__OTR__textures/item_name_custom/gBunnyHoodNameTex",
+    "__OTR__textures/item_name_custom/gDonGerosMaskNameTex",
+    "__OTR__textures/item_name_custom/gMaskOfScentsNameTex",
+    "__OTR__textures/item_name_custom/gGoronMaskNameTex",
+    "__OTR__textures/item_name_custom/gRomanisMaskNameTex",
+    "__OTR__textures/item_name_custom/gCircusLeadersMaskNameTex",
+    "__OTR__textures/item_name_custom/gKafeisMaskNameTex",
+    "__OTR__textures/item_name_custom/gCouplesMaskNameTex",
+    "__OTR__textures/item_name_custom/gMaskOfTruthNameTex",
+    "__OTR__textures/item_name_custom/gZoraMaskNameTex",
+    "__OTR__textures/item_name_custom/gKamarosMaskNameTex",
+    "__OTR__textures/item_name_custom/gGibdoMaskNameTex",
+    "__OTR__textures/item_name_custom/gGarosMaskNameTex",
+    "__OTR__textures/item_name_custom/gCaptainsHatNameTex",
+    "__OTR__textures/item_name_custom/gGiantsMaskNameTex",
+    "__OTR__textures/item_name_custom/gFierceDeitysMaskNameTex",
 };
 
 // Cached icon pointers (NULL = not yet loaded)
