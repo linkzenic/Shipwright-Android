@@ -38,6 +38,7 @@ extern PlayState* gPlayState;
 #include <memory>
 #include <algorithm>
 #include <cstdint>
+#include <utility>
 #include <zlib.h>
 
 // Upper bound for an estimated zobj decompression buffer. A player .zobj is a
@@ -92,6 +93,68 @@ extern "C" void PakLoader_InitSyncRegistry(void);
         snprintf(_pakbuf, sizeof(_pakbuf), "[PakLoader] " fmt, ##__VA_ARGS__); \
         SPDLOG_INFO("{}", _pakbuf);                                            \
     } while (0)
+
+// Android file managers commonly preserve a second copy as "Name (1).pak".
+// Prefer the unsuffixed name when two files have identical contents, while
+// still allowing genuinely different packs regardless of how they are named.
+static bool PakLoader_HasCopyNumberSuffix(const std::string& path) {
+    const std::string stem = std::filesystem::path(path).stem().string();
+    if (stem.size() < 4 || stem.back() != ')') {
+        return false;
+    }
+
+    const size_t open = stem.rfind(" (");
+    if (open == std::string::npos || open + 2 >= stem.size() - 1) {
+        return false;
+    }
+
+    return std::all_of(stem.begin() + open + 2, stem.end() - 1,
+                       [](unsigned char c) { return c >= '0' && c <= '9'; });
+}
+
+static bool PakLoader_FilesAreIdentical(const std::string& lhs, const std::string& rhs) {
+    std::error_code ec;
+    const uintmax_t lhsSize = std::filesystem::file_size(lhs, ec);
+    if (ec) {
+        return false;
+    }
+    const uintmax_t rhsSize = std::filesystem::file_size(rhs, ec);
+    if (ec || lhsSize != rhsSize) {
+        return false;
+    }
+
+    FILE* lhsFile = fopen(lhs.c_str(), "rb");
+    FILE* rhsFile = fopen(rhs.c_str(), "rb");
+    if (lhsFile == nullptr || rhsFile == nullptr) {
+        if (lhsFile != nullptr) {
+            fclose(lhsFile);
+        }
+        if (rhsFile != nullptr) {
+            fclose(rhsFile);
+        }
+        return false;
+    }
+
+    bool identical = true;
+    u8 lhsBuffer[64 * 1024];
+    u8 rhsBuffer[64 * 1024];
+    while (true) {
+        const size_t lhsRead = fread(lhsBuffer, 1, sizeof(lhsBuffer), lhsFile);
+        const size_t rhsRead = fread(rhsBuffer, 1, sizeof(rhsBuffer), rhsFile);
+        if (lhsRead != rhsRead || memcmp(lhsBuffer, rhsBuffer, lhsRead) != 0) {
+            identical = false;
+            break;
+        }
+        if (lhsRead < sizeof(lhsBuffer)) {
+            identical = feof(lhsFile) && feof(rhsFile);
+            break;
+        }
+    }
+
+    fclose(lhsFile);
+    fclose(rhsFile);
+    return identical;
+}
 
 // ============================================================================
 // Big-Endian Read Helpers
@@ -4125,6 +4188,30 @@ extern "C" void PakLoader_Init(void) {
 
     PAK_LOG("Found %d .pak, %d .zobj files",
             (int)pakFiles.size(), (int)rawZobjFiles.size());
+
+    // Preserve discovery order because Pak Loader's existing CVars store model
+    // indices. If the natural filename is encountered after an Android-created
+    // " (1)" copy, replace the accepted path in place rather than reordering
+    // the list.
+    std::vector<std::string> uniquePakFiles;
+    uniquePakFiles.reserve(pakFiles.size());
+    for (const std::string& pakPath : pakFiles) {
+        auto duplicate = std::find_if(uniquePakFiles.begin(), uniquePakFiles.end(),
+                                      [&pakPath](const std::string& acceptedPath) {
+                                          return PakLoader_FilesAreIdentical(acceptedPath, pakPath);
+                                      });
+        if (duplicate != uniquePakFiles.end()) {
+            const std::string ignoredPath =
+                PakLoader_HasCopyNumberSuffix(*duplicate) && !PakLoader_HasCopyNumberSuffix(pakPath)
+                    ? std::exchange(*duplicate, pakPath)
+                    : pakPath;
+            PAK_LOG("Ignoring byte-identical duplicate: %s (same as %s)",
+                    ignoredPath.c_str(), duplicate->c_str());
+            continue;
+        }
+        uniquePakFiles.push_back(pakPath);
+    }
+    pakFiles = std::move(uniquePakFiles);
 
     // Reserve space so push_back doesn't reallocate and invalidate internal pointers
     sModels.reserve(pakFiles.size() + rawZobjFiles.size());

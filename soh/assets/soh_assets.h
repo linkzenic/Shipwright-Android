@@ -795,6 +795,9 @@ static const ALIGN_ASSET(2) char gChampionsTunicNameTex[] = dgChampionsTunicName
 #define dgPegasusAnkletNameTex "__OTR__textures/item_name_custom/gPegasusAnkletNameTex"
 static const ALIGN_ASSET(2) char gPegasusAnkletNameTex[] = dgPegasusAnkletNameTex;
 
+#define dgPendantOfMemoriesNameTex "__OTR__textures/item_name_custom/gPendantOfMemoriesNameTex"
+static const ALIGN_ASSET(2) char gPendantOfMemoriesNameTex[] = dgPendantOfMemoriesNameTex;
+
 #define dgPending4NameTex "__OTR__textures/item_name_custom/gPending4NameTex"
 static const ALIGN_ASSET(2) char gPending4NameTex[] = dgPending4NameTex;
 
@@ -843,6 +846,9 @@ static const ALIGN_ASSET(2) char gItemIconChampionsTunicTex[] = dgItemIconChampi
 
 #define dgItemIconPegasusAnkletTex "__OTR__textures/icon_item_custom/gItemIconPegasusAnkletTex"
 static const ALIGN_ASSET(2) char gItemIconPegasusAnkletTex[] = dgItemIconPegasusAnkletTex;
+
+#define dgItemIconPendantOfMemoriesTex "__OTR__textures/icon_item_custom/gItemIconPendantOfMemoriesTex"
+static const ALIGN_ASSET(2) char gItemIconPendantOfMemoriesTex[] = dgItemIconPendantOfMemoriesTex;
 
 #define dgItemIconPending4Tex "__OTR__textures/icon_item_custom/gItemIconPending4Tex"
 static const ALIGN_ASSET(2) char gItemIconPending4Tex[] = dgItemIconPending4Tex;

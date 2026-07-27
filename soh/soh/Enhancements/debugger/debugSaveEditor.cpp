@@ -1773,9 +1773,9 @@ void DrawEquipmentTab() {
     // ============================================================================
     if (ImGui::CollapsingHeader("Extended Equipment (Page 2)")) {
         static const char* extEquipNames[4][3] = {
-            { "Cane of Byrna", "Four Sword", "Drillshaft" },
+            { "Cane of Byrna", "Four Sword", "Iron Knuckle Axe" },
             { "Divine Shield", "Kite Shield", "Shield of Ikana" },
-            { "Magic Cape", "Pending 4", "Champion's Tunic" },
+            { "Magic Cape", "Spirit Breastplate", "Champion's Tunic" },
             { "Pegasus Anklet", "Pendant of Memories", "Water Dragon Scale" },
         };
         // OTR icon paths for each ext equipment piece (same order as item IDs)
@@ -1783,7 +1783,7 @@ void DrawEquipmentTab() {
             { dgItemIconCaneOfByrnaTex, dgItemIconFourSwordTex, dgItemIconDrillshaftTex },
             { dgItemIconDivineShieldTex, dgItemIconGerudoScimitarTex, NULL }, // Shield of Ikana: no icon yet
             { dgItemIconMagicCapeTex, dgItemIconPending4Tex, dgItemIconChampionsTunicTex },
-            { dgItemIconPegasusAnkletTex, NULL, dgItemIconWaterDragonScaleTex }, // Pendant: no icon yet
+            { dgItemIconPegasusAnkletTex, dgItemIconPendantOfMemoriesTex, dgItemIconWaterDragonScaleTex },
         };
 
         // Enable/disable cheat toggle

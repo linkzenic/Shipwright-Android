@@ -254,6 +254,28 @@ extern "C" char* ResourceMgr_GetResourceDataByNameHandlingMQ(const char* path) {
     return (char*)res->GetRawPointer();
 }
 
+extern "C" char* ResourceMgr_GetResourceDataByNameExact(const char* path) {
+    if (path == nullptr) {
+        return nullptr;
+    }
+
+    std::string resourcePath = path;
+    if (resourcePath.rfind("__OTR__", 0) == 0) {
+        resourcePath.erase(0, 7);
+    }
+
+    if (ResourceMgr_IsGameMasterQuest()) {
+        size_t pos = resourcePath.find("/nonmq/");
+        if (pos != std::string::npos) {
+            resourcePath.replace(pos, 7, "/mq/");
+        }
+    }
+
+    auto resourceManager = Ship::Context::GetRawInstance()->GetResourceManager();
+    auto resource = resourceManager->LoadResource(resourcePath, true);
+    return resource != nullptr ? (char*)resource->GetRawPointer() : nullptr;
+}
+
 extern "C" uint8_t ResourceMgr_TexIsRaw(const char* texPath) {
     auto res = std::static_pointer_cast<Fast::Texture>(ResourceMgr_GetResourceByNameHandlingMQ(texPath));
     return res->Flags & TEX_FLAG_LOAD_AS_RAW;

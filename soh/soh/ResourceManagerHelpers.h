@@ -71,6 +71,9 @@ void ResourceMgr_ClearSkeletons();
 s32* ResourceMgr_LoadCSByName(const char* path);
 int ResourceMgr_OTRSigCheck(char* imgData);
 char* ResourceMgr_GetResourceDataByNameHandlingMQ(const char* path);
+// Loads the base resource without selecting an alt/ replacement. Intended for
+// legacy draw paths that consume a fixed-size raw pixel buffer.
+char* ResourceMgr_GetResourceDataByNameExact(const char* path);
 #ifdef __cplusplus
 }
 #endif // __cplusplus

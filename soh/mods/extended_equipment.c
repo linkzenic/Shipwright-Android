@@ -51,7 +51,7 @@ extern s32 CVarGetInteger(const char* name, s32 defaultValue);
 // Per-piece age requirement: [equipType][index-1]
 //   SWORD:  Byrna,            Four Sword,    Drillshaft
 //   SHIELD: Divine Shield,    Kite Shield,    Shield of Ikana
-//   TUNIC:  Magic Cape,       Pending4,      Champion's Tunic
+//   TUNIC:  Magic Cape,       Spirit Plate,  Champion's Tunic
 //   BOOTS:  Pegasus Anklet,   Pendant Mem.,  Water Dragon Scale
 static const u8 sExtEquipAgeReqs[4][3] = {
     { AGE_REQ_NONE,  AGE_REQ_CHILD, AGE_REQ_ADULT },
