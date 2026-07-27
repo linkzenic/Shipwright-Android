@@ -14393,6 +14393,10 @@ void MmForm_Init(PlayState* play, Player* player) {
         MMFORM_LOG("[MmForm] Auto-enabled: DekuReplacesSkull, StoneReplacesSpooky, FierceReplacesGerudo");
     }
 
+    // Apply this before the first player draw after a scene reload. In
+    // particular, Fierce Deity must never inherit Four Sword's forced DLs.
+    ExtEquip_ApplyFormRestrictions();
+
     MMFORM_LOG("[MmForm] Initialized (mm.o2r=%d, enabled=%d, fierceActive=%d)", mmAvailable, tmEnabled,
                CVarGetInteger("gMods.TransformMasks.FierceReplacesGerudo", 0));
 }

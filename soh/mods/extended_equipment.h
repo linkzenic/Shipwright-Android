@@ -178,6 +178,11 @@ void ExtEquip_RestoreFromTransform(void);
 /** Discard backup without restoring. Called on reset/reload/death. */
 void ExtEquip_ClearTransformBackup(void);
 
+// Apply form-specific equipment safety rules during form/scene initialization.
+// Fierce Deity keeps Four Sword selected but suppresses it until Link returns
+// to another form.
+void ExtEquip_ApplyFormRestrictions(void);
+
 // ---------------------------------------------------------------------------
 // Divine Shield helpers (called from z_player_lib.c and z_player.c)
 // ---------------------------------------------------------------------------

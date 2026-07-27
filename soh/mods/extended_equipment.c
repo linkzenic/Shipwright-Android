@@ -288,6 +288,11 @@ void ExtEquip_Unequip(s16 equipType) {
     if (equipType == EQUIP_TYPE_SWORD && gExtEquipBehavior.byrnaActive) {
         Byrna_Cleanup();
     }
+    // Clear Four Sword immediately. Waiting for the next behavior update can
+    // leave its forced display lists alive across a transformation or scene load.
+    if (equipType == EQUIP_TYPE_SWORD && gExtEquipBehavior.fourSwordActive) {
+        FourSword_Cleanup();
+    }
 
     ExtEquip_SetCurrentByType(equipType, 0);
     // NOTE: vanilla equipment is NOT cleared here — callers that need it
@@ -338,6 +343,20 @@ void ExtEquip_RestoreFromTransform(void) {
 void ExtEquip_ClearTransformBackup(void) {
     sTransformBackupValid = 0;
     memset(sTransformBackup, 0, sizeof(sTransformBackup));
+}
+
+void ExtEquip_ApplyFormRestrictions(void) {
+    if (!ExtEquip_IsFourSwordBlockedByForm()) {
+        return;
+    }
+
+    if (gExtEquipBehavior.fourSwordActive) {
+        FourSword_Cleanup();
+    } else if (gExtEquipState.currentExtSword == 2) {
+        // The behavior state may already have been reset during scene setup
+        // while PakLoader still remembers the forced Four Sword pak.
+        PakLoader_ClearForcedEquipment();
+    }
 }
 
 void ExtEquip_ToggleFromCButton(u16 itemId) {
