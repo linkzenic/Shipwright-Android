@@ -63,7 +63,7 @@ using namespace UIWidgets;
 // =============================================================================
 namespace {
 
-constexpr const char* kMhrNotesPath = "nei/mhr_anim_notes.json";
+constexpr const char* kMhrNotesRelativePath = "nei/mhr_anim_notes.json";
 constexpr s32 kMhrS16PerFrame = 67;
 
 struct MhrNoteEntry {
@@ -91,6 +91,14 @@ uint32_t sMhrPlayerHook = 0;
 
 // Pointer-stable wrappers, same pattern as the Animation Viewer.
 std::map<std::string, LinkAnimationHeader> sMhrWrappers;
+
+std::filesystem::path MhrNotesReadPath() {
+    const std::string locatedPath = Ship::Context::LocateFileAcrossAppDirs(kMhrNotesRelativePath);
+    if (std::filesystem::exists(locatedPath)) {
+        return locatedPath;
+    }
+    return Ship::Context::GetPathRelativeToAppDirectory(kMhrNotesRelativePath);
+}
 
 void MhrScanAnims() {
     sMhrAnims.clear();
@@ -130,7 +138,7 @@ LinkAnimationHeader* MhrLoadAnim(const std::string& path) {
 void MhrLoadNotes() {
     sMhrNotesLoaded = true;
     sMhrNotes.clear();
-    std::ifstream f(kMhrNotesPath);
+    std::ifstream f(MhrNotesReadPath());
     if (!f.is_open()) {
         return;
     }
@@ -161,16 +169,20 @@ void MhrSaveNotes() {
     // user emptied deletes its key.
     nlohmann::json root = nlohmann::json::object();
     std::error_code ec;
-    if (std::filesystem::exists(kMhrNotesPath, ec)) {
+    const std::filesystem::path readPath = MhrNotesReadPath();
+    const std::filesystem::path writePath =
+        Ship::Context::GetPathRelativeToAppDirectory(kMhrNotesRelativePath);
+    std::filesystem::create_directories(writePath.parent_path());
+    if (std::filesystem::exists(readPath, ec)) {
         try {
-            std::ifstream f(kMhrNotesPath);
+            std::ifstream f(readPath);
             f >> root;
             // Safety net: keep the pre-save content around.
-            std::ofstream bak(std::string(kMhrNotesPath) + ".prev");
+            std::ofstream bak(writePath.string() + ".prev");
             bak << root.dump(1);
         } catch (const std::exception&) {
             // Unparseable: preserve the raw bytes before we overwrite.
-            std::filesystem::copy_file(kMhrNotesPath, std::string(kMhrNotesPath) + ".corrupt",
+            std::filesystem::copy_file(readPath, writePath.string() + ".corrupt",
                                        std::filesystem::copy_options::overwrite_existing, ec);
             root = nlohmann::json::object();
         }
@@ -187,8 +199,7 @@ void MhrSaveNotes() {
         anims[name] = { { "path", e.path }, { "note", e.note }, { "rename", e.rename }, { "binding", e.binding } };
     }
     root["version"] = 1;
-    std::filesystem::create_directories("nei");
-    std::ofstream f(kMhrNotesPath);
+    std::ofstream f(writePath);
     f << root.dump(1);
     sMhrDirty = false;
     MhrMoveset_Reload();
@@ -491,7 +502,7 @@ void MhrAnimNotesWidget(WidgetInfo& info) {
         MhrSaveNotes();
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("-> %s%s", kMhrNotesPath, sMhrDirty ? "  (unsaved changes)" : "");
+    ImGui::TextDisabled("-> %s%s", kMhrNotesRelativePath, sMhrDirty ? "  (unsaved changes)" : "");
 }
 
 } // namespace
@@ -519,7 +530,7 @@ extern "C" void MhrMoveset_Reload(void) {
             count++;
         }
     }
-    SPDLOG_INFO("[MhrMoveset] loaded {} bindings from {}", count, kMhrNotesPath);
+    SPDLOG_INFO("[MhrMoveset] loaded {} bindings from {}", count, MhrNotesReadPath().string());
 }
 
 extern "C" LinkAnimationHeader* MhrMoveset_GetMeleeAnim(s32 mwa) {
@@ -755,7 +766,8 @@ void SohMenu::AddMenuNEI() {
         .CVar("gMods.KafeiMaskTransform")
         .RaceDisable(false)
         .PreFunc([](WidgetInfo& info) {
-            if (!std::filesystem::exists("nei/N64_Kafei.pak")) {
+            const std::string kafeiPakPath = Ship::Context::LocateFileAcrossAppDirs("nei/N64_Kafei.pak");
+            if (!std::filesystem::exists(kafeiPakPath)) {
                 CVarSetInteger("gMods.KafeiMaskTransform", 0);
                 info.options->disabled = true;
                 info.options->disabledTooltip = "Requires N64_Kafei.pak in nei/ folder.";

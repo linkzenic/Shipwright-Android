@@ -29,9 +29,8 @@ std::vector<Template> sTemplates;
 
 std::filesystem::path ResolveTemplatesDir() {
     std::string root = Ship::Context::LocateFileAcrossAppDirs("harpoon", "soh");
-    if (root.empty()) {
-        // Fallback: ./harpoon/templates relative to cwd.
-        return std::filesystem::path("harpoon") / "templates";
+    if (!std::filesystem::exists(root)) {
+        root = Ship::Context::GetPathRelativeToAppDirectory("harpoon", "soh");
     }
     return std::filesystem::path(root) / "templates";
 }

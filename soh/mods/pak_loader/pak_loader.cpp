@@ -4233,7 +4233,7 @@ extern "C" void PakLoader_Init(void) {
 static void PakLoader_CheckMaskForce(void) {
     // CVar disabled at runtime — clear kafei forced model if active
     if (!CVarGetInteger("gMods.KafeiMaskTransform", 0) && sForcedModelIndex >= 0 &&
-        sForcedModelPath == "nei/N64_Kafei.pak") {
+        std::filesystem::path(sForcedModelPath).filename() == "N64_Kafei.pak") {
         PakLoader_ClearForcedModel();
     }
 }

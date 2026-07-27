@@ -442,7 +442,7 @@ static bool ShouldNotify(const std::string& key) {
 static std::filesystem::path EnsureHarpoonRoot() {
     // Preferred: directly resolve `harpoon` if it already exists.
     std::string existingHarpoon = Ship::Context::LocateFileAcrossAppDirs("harpoon", appShortName);
-    if (!existingHarpoon.empty()) {
+    if (std::filesystem::exists(existingHarpoon)) {
         std::filesystem::path root = existingHarpoon;
         std::error_code ec;
         std::filesystem::create_directories(root / "skins", ec);
@@ -450,16 +450,8 @@ static std::filesystem::path EnsureHarpoonRoot() {
         return root;
     }
 
-    // Doesn't exist yet — find the SoH app dir by locating `mods/` (always
-    // present), then create `harpoon/` as a sibling of it (i.e. directly
-    // under the app dir, next to the executable).
-    std::string modsPath = Ship::Context::LocateFileAcrossAppDirs("mods", appShortName);
-    if (modsPath.empty()) {
-        HSS_LOG("Cannot locate SoH app directory — Harpoon content disabled");
-        return {};
-    }
-    std::filesystem::path appDir = std::filesystem::path(modsPath).parent_path();
-    std::filesystem::path root = appDir / "harpoon";
+    // Doesn't exist yet — create it directly under the app data root.
+    std::filesystem::path root = Ship::Context::GetPathRelativeToAppDirectory("harpoon", appShortName);
     std::error_code ec;
     std::filesystem::create_directories(root / "skins", ec);
     std::filesystem::create_directories(root / "gamemodes", ec);
