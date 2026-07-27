@@ -243,6 +243,34 @@ static s32 sSelectedChildIndex = -1;
 static s32 sSelectedEquipIndex = -1;
 static u8 sInitialized = 0;
 
+// PakModel contains pointers into its own inline limb arrays. Any vector
+// reallocation moves every PakModel and invalidates those self-pointers, not
+// only the newly appended entry. Dynamic custom-item paks therefore need a
+// full rebase after insertion.
+static void FixupModelLimbTables(PakModel& model) {
+    for (s32 i = 0; i < PAK_MAX_LIMBS; i++) {
+        if (model.adultLimbTable[i]) {
+            model.adultLimbTable[i] = &model.adultLimbs[i];
+        }
+        if (model.childLimbTable[i]) {
+            model.childLimbTable[i] = &model.childLimbs[i];
+        }
+    }
+
+    if (model.adultReady) {
+        model.adultFlexHeader.sh.segment = model.adultLimbTable;
+    }
+    if (model.childReady) {
+        model.childFlexHeader.sh.segment = model.childLimbTable;
+    }
+}
+
+static void FixupAllModelLimbTables(void) {
+    for (PakModel& model : sModels) {
+        FixupModelLimbTables(model);
+    }
+}
+
 // Forced body model (from custom items like Kafei Mask, Champion's Tunic)
 static s32 sForcedModelIndex = -1;
 static std::string sForcedModelPath;
@@ -4110,14 +4138,8 @@ extern "C" void PakLoader_Init(void) {
 
         if (LoadPakModel(model)) {
             sModels.push_back(std::move(model));
-            // Fix up limbTable pointers after move (they pointed to the old struct)
             PakModel& m = sModels.back();
-            for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
-                if (m.adultLimbTable[j])
-                    m.adultLimbTable[j] = &m.adultLimbs[j];
-                if (m.childLimbTable[j])
-                    m.childLimbTable[j] = &m.childLimbs[j];
-            }
+            FixupModelLimbTables(m);
             PAK_LOG("Loaded: '%s' (adult=%d, child=%d)", m.displayName, m.adultReady, m.childReady);
         } else {
             // Free any allocated data
@@ -4139,12 +4161,7 @@ extern "C" void PakLoader_Init(void) {
         if (LoadRawZobjModel(model)) {
             sModels.push_back(std::move(model));
             PakModel& m = sModels.back();
-            for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
-                if (m.adultLimbTable[j])
-                    m.adultLimbTable[j] = &m.adultLimbs[j];
-                if (m.childLimbTable[j])
-                    m.childLimbTable[j] = &m.childLimbs[j];
-            }
+            FixupModelLimbTables(m);
             PAK_LOG("Loaded raw zobj: '%s' (adult=%d, child=%d, equipOnly=%d)",
                     m.displayName, m.adultReady, m.childReady, m.isEquipmentOnly);
         } else {
@@ -4657,14 +4674,10 @@ extern "C" void PakLoader_ForceModel(const char* pakPath) {
         sForcedModelIndex = (s32)sModels.size() - 1;
         sForcedModelPath = resolvedPakPath;
 
-        // Fix up limb table pointers after move
+        // push_back may relocate every existing model, including the user's
+        // currently selected Link body.
+        FixupAllModelLimbTables();
         PakModel& m = sModels.back();
-        for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
-            if (m.adultLimbTable[j])
-                m.adultLimbTable[j] = &m.adultLimbs[j];
-            if (m.childLimbTable[j])
-                m.childLimbTable[j] = &m.childLimbs[j];
-        }
 
         PAK_LOG("Forced model loaded: '%s' (adult=%d, child=%d)", m.displayName, m.adultReady, m.childReady);
     } else {
@@ -4747,13 +4760,11 @@ extern "C" void PakLoader_ForceEquipment(const char* pakPath) {
         sForcedEquipIndex = (s32)sModels.size() - 1;
         sForcedEquipPath = resolvedPakPath;
 
+        // Four Sword is loaded dynamically from nei/. Growing sModels can move
+        // the selected Link body and leave its skeleton table pointing at the
+        // old allocation unless every entry is rebased here.
+        FixupAllModelLimbTables();
         PakModel& m = sModels.back();
-        for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
-            if (m.adultLimbTable[j])
-                m.adultLimbTable[j] = &m.adultLimbs[j];
-            if (m.childLimbTable[j])
-                m.childLimbTable[j] = &m.childLimbs[j];
-        }
         PAK_LOG("Forced equipment loaded: '%s' (adult equip=%d, child equip=%d)", m.displayName,
                 (int)m.adultEquipDLs.size(), (int)m.childEquipDLs.size());
     } else {
@@ -4857,13 +4868,6 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
 
     PAK_LOG("harpoon/skins: found %d .pak", (int)pakFiles.size());
 
-    auto fixupLimbTables = [](PakModel& m) {
-        for (s32 j = 0; j < PAK_MAX_LIMBS; j++) {
-            if (m.adultLimbTable[j]) m.adultLimbTable[j] = &m.adultLimbs[j];
-            if (m.childLimbTable[j]) m.childLimbTable[j] = &m.childLimbs[j];
-        }
-    };
-
     // Append into the same sModels vector as local mods/ paks. The reserve
     // *may* move existing entries to new storage — that invalidates every
     // existing entry's adultLimbTable[j]/childLimbTable[j] (they still point
@@ -4873,7 +4877,7 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
     // chasing a stale limb pointer.
     size_t preSyncCount = sModels.size();
     sModels.reserve(preSyncCount + pakFiles.size());
-    for (auto& m : sModels) fixupLimbTables(m);
+    FixupAllModelLimbTables();
 
     for (auto& p : pakFiles) {
         PakModel model = {};
@@ -4882,7 +4886,7 @@ extern "C" void PakLoader_InitSyncRegistry(void) {
         if (LoadPakModel(model)) {
             model.isSyncOnly = 1;
             sModels.push_back(std::move(model));
-            fixupLimbTables(sModels.back());
+            FixupModelLimbTables(sModels.back());
             PAK_LOG("Sync loaded .pak: '%s' (idx=%d, syncOnly)",
                     sModels.back().displayName, (int)sModels.size() - 1);
         } else {
