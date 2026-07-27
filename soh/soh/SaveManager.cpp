@@ -2792,7 +2792,7 @@ void SaveManager::ConvertFromUnversioned() {
 #define SLOT_SIZE (sizeof(SaveContext_v0) + 0x28)
 #define SLOT_OFFSET(index) (SRAM_HEADER_SIZE + 0x10 + (index * SLOT_SIZE))
 
-    std::ifstream input("oot_save.sav", std::ios::binary);
+    std::ifstream input(Ship::Context::GetPathRelativeToAppDirectory("oot_save.sav"), std::ios::binary);
 
     std::vector<char> data(std::istreambuf_iterator<char>(input), {});
     input.close();
