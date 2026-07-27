@@ -115,7 +115,13 @@ static const ExtEquipBehaviorFunc sExtBootsBehaviors[3] = {
     ExtEquip_Behavior_Boots3,
 };
 
+static u8 ExtEquip_IsFourSwordBlockedByForm(void) {
+    return TransformMasks_IsTransformedAny() && MmForm_GetCurrentForm() == MM_PLAYER_FORM_FIERCE_DEITY;
+}
+
 static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
+    u8 fourSwordBlocked = ExtEquip_IsFourSwordBlockedByForm();
+
     // Always run cleanup for behaviors that need it (cape boost removal, etc.)
     MagicCape_Cleanup();
 
@@ -131,8 +137,9 @@ static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
     if (gExtEquipState.currentExtBoots != 1) {
         Pegasus_Cleanup();
     }
-    // Four Sword cleanup: clear forced equipment when sword slot 2 is no longer active
-    if (gExtEquipState.currentExtSword != 2) {
+    // Fierce Deity owns its skeleton and sword display lists. Never let Four
+    // Sword's forced equipment survive into that form.
+    if (gExtEquipState.currentExtSword != 2 || fourSwordBlocked) {
         FourSword_Cleanup();
     }
     // Champion's Tunic cleanup: clear forced model + screen tint when slot 3 is lost
@@ -140,7 +147,8 @@ static void ExtEquip_DispatchBehavior(Player* player, PlayState* play) {
         Champion_Cleanup(play);
     }
 
-    if (gExtEquipState.currentExtSword > 0 && gExtEquipState.currentExtSword <= 3) {
+    if (gExtEquipState.currentExtSword > 0 && gExtEquipState.currentExtSword <= 3 &&
+        !(gExtEquipState.currentExtSword == 2 && fourSwordBlocked)) {
         sExtSwordBehaviors[gExtEquipState.currentExtSword - 1](player, play);
     }
     if (gExtEquipState.currentExtShield > 0 && gExtEquipState.currentExtShield <= 3) {
@@ -190,7 +198,7 @@ static void ExtEquip_DrawDispatch(Player* player, PlayState* play) {
         IKAxe_DrawReticle(player, play);
     }
     // Four Sword: ghost clone Links
-    if (gExtEquipState.currentExtSword == 2) {
+    if (gExtEquipState.currentExtSword == 2 && !ExtEquip_IsFourSwordBlockedByForm()) {
         FourSword_Draw(player, play);
     }
 }
