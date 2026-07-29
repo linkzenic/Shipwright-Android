@@ -294,8 +294,12 @@ static bool VerifyArchiveVersion(OTRVersion version);
 std::string portArchivePath = "";
 static bool sohArchiveVersionMatch = false;
 
+#ifndef SOH_CONFIG_FILENAME
+#define SOH_CONFIG_FILENAME "shipofharkinian.json"
+#endif
+
 OTRGlobals::OTRGlobals() {
-    context = Ship::Context::CreateUninitializedInstance("Ship of Harkinian", appShortName, "shipofharkinian.json");
+    context = Ship::Context::CreateUninitializedInstance("Ship of Harkinian", appShortName, SOH_CONFIG_FILENAME);
 
     portArchivePath = Ship::Context::LocateFileAcrossAppDirs("soh.o2r");
     OTRVersion portArchiveVersion = DetectOTRVersion("soh.o2r", false);
@@ -308,7 +312,7 @@ OTRGlobals::OTRGlobals() {
 
 #ifdef __ANDROID__
     Ship::Mobile::SetToggleButtonVisible(CVarGetInteger("gDroidHideToggleButton", 0) == 0);
-    Ship::Mobile::SetFreeLookTouchEnabled(CVarGetInteger("gDroidFreeLookTouch", 0) != 0);
+    Ship::Mobile::SetFreeLookTouchEnabled(CVarGetInteger("gDroidFreeLookTouch", 1) != 0);
 #endif
 
     auto controlDeck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>({

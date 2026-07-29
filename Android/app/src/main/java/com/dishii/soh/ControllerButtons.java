@@ -7,7 +7,7 @@ public class ControllerButtons {
     public static final int BUTTON_X = 2;
     public static final int BUTTON_Y = 3;
     public static final int BUTTON_LB = 9; // Left Bumper
-    public static final int BUTTON_RB = -5; // Right Bumper
+    public static final int BUTTON_RB = 10; // Right Bumper
     public static final int BUTTON_BACK = 4;
     public static final int BUTTON_START = 6;
     public static final int BUTTON_DPAD_UP = 11;
@@ -20,7 +20,7 @@ public class ControllerButtons {
     public static final int AXIS_LY = 1;  // Left stick Y
     public static final int AXIS_RX = 2;  // Right stick X
     public static final int AXIS_RY = 3;  // Right stick Y
-    public static final int AXIS_LT = -2; // Left Trigger (negative axis)
-    public static final int AXIS_RT = -4; // Right Trigger (negative axis)
+    // Negative values tell MainActivity's generic touch handler to write an SDL axis.
+    public static final int AXIS_LT = -4; // Left Trigger (SDL axis 4)
+    public static final int AXIS_RT = -5; // Right Trigger (SDL axis 5)
 }
-
