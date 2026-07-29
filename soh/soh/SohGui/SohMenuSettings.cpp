@@ -62,6 +62,12 @@ static const std::map<int32_t, const char*> bootSequenceLabels = {
 };
 
 #if defined(__ANDROID__)
+static const std::map<int32_t, const char*> touchFaceButtonLayoutMap = {
+    { 0, "ABXY (Nintendo)" },
+    { 1, "BAYX (Xbox)" },
+    { 2, "GC Layout" },
+};
+
 static void SetAndroidTouchControlsDisabled(bool disabled) {
     JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
     jobject activity = (jobject)SDL_AndroidGetActivity();
@@ -81,6 +87,25 @@ static void SetAndroidTouchControlsDisabled(bool disabled) {
     }
 
     env->DeleteLocalRef(activityClass);
+    env->DeleteLocalRef(activity);
+}
+
+static void SetAndroidTouchFaceButtonLayout(int32_t layout) {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (env == nullptr || activity == nullptr) {
+        return;
+    }
+
+    jclass activityClass = env->GetObjectClass(activity);
+    if (activityClass != nullptr) {
+        jmethodID method =
+            env->GetMethodID(activityClass, "setTouchFaceButtonLayoutFromNative", "(I)V");
+        if (method != nullptr) {
+            env->CallVoidMethod(activity, method, static_cast<jint>(layout));
+        }
+        env->DeleteLocalRef(activityClass);
+    }
     env->DeleteLocalRef(activity);
 }
 
@@ -238,6 +263,20 @@ void SohMenu::AddMenuSettings() {
         .Options(CheckboxOptions().Tooltip(
             "Search input box gets autofocus when visible. Does not affect using other widgets."));
 #if defined(__ANDROID__)
+    AddWidget(path, "Touch Face Buttons", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_SETTING("TouchControls.FaceButtonLayout"))
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            SetAndroidTouchFaceButtonLayout(
+                CVarGetInteger(CVAR_SETTING("TouchControls.FaceButtonLayout"), 0));
+        })
+        .Options(ComboboxOptions()
+                     .ComboMap(touchFaceButtonLayoutMap)
+                     .DefaultIndex(0)
+                     .Tooltip("Choose ABXY (Nintendo), BAYX (Xbox), or GC Layout touch-button placement."));
+    // Keep Android's persisted overlay state aligned with the native CVar after relaunches.
+    SetAndroidTouchFaceButtonLayout(
+        CVarGetInteger(CVAR_SETTING("TouchControls.FaceButtonLayout"), 0));
     AddWidget(path, "Disable Touch Controls", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_SETTING("TouchControls.Disabled"))
         .RaceDisable(false)

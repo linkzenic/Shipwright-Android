@@ -1646,7 +1646,7 @@ void SohInputEditorWindow::DrawLinkTab() {
                 ImGui::SetTooltip("Hide the eye button that toggles\non-screen touch controls visibility");
             }
 
-            bool freeLookTouch = CVarGetInteger("gDroidFreeLookTouch", 0) != 0;
+            bool freeLookTouch = CVarGetInteger("gDroidFreeLookTouch", 1) != 0;
             if (ImGui::Checkbox("Enable right-side touch for free look##FreeLookTouch", &freeLookTouch)) {
                 CVarSetInteger("gDroidFreeLookTouch", freeLookTouch ? 1 : 0);
                 Ship::Context::GetInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();

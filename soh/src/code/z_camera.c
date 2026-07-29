@@ -1504,8 +1504,11 @@ s32 Camera_Free(Camera* camera) {
 #ifdef __ANDROID__
         f32 touchX = 0.0f, touchY = 0.0f;
         Ship_Mobile_HandleTouchCamera(&touchX, &touchY);
-        newCamX += touchX * 5.0f;
-        newCamY += touchY * 5.0f;
+        // Android touch deltas use screen coordinates (right/down are positive).
+        // Convert them to the same game-space orientation as the physical right stick
+        // before applying the shared sensitivity and inversion settings below.
+        newCamX -= touchX * 5.0f;
+        newCamY -= touchY * 5.0f;
 #endif
     }
 
