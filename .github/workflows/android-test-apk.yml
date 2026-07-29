@@ -70,6 +70,8 @@ jobs:
           GIT_TAG: v9.2.3-nei-alpha3-android.beta.7
         run: |
           cd Android && ./gradlew assembleRelease \
+            -PsohApplicationId=com.linkzenic.sohnei.touchcontroltest \
+            -PsohConfigFile=shipofharkinian-nei-touchcontroltest.json \
             -PstoreFile=release.jks \
             -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             -PkeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
