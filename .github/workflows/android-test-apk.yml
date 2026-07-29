@@ -81,7 +81,7 @@ jobs:
           cd fusion/Android
           ./gradlew assembleRelease \
             -PsohApplicationId=com.linkzenic.sohfusion.touchcontroltest \
-            -PsohConfigFile=shipofharkinian-fusion-touchcontroltest.json \
+            -PsohConfigFile=shipofharkinian.json \
             -PstoreFile=release.jks \
             -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
             -PkeyAlias=${{ secrets.ANDROID_KEY_ALIAS }} \
