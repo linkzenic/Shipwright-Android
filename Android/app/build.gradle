@@ -118,14 +118,21 @@ tasks.register("applyLibultrashipAndroidPatch") {
     doLast {
         def libultrashipDir = file("${rootProject.projectDir}/../libultraship")
         def contextFile = file("${libultrashipDir}/src/ship/Context.cpp")
-        if (contextFile.text.contains("sAndroidDataRootPath")) {
-            return
+        if (!contextFile.text.contains("sAndroidDataRootPath")) {
+            exec {
+                workingDir libultrashipDir
+                commandLine "git", "apply", "--ignore-whitespace", "--whitespace=nowarn",
+                        "../patches/libultraship-android-data-root.patch"
+            }
         }
 
-        exec {
-            workingDir libultrashipDir
-            commandLine "git", "apply", "--ignore-whitespace", "--whitespace=nowarn",
-                    "../patches/libultraship-android-data-root.patch"
+        def mobileFile = file("${libultrashipDir}/src/ship/port/mobile/MobileImpl.cpp")
+        if (!mobileFile.text.contains("sTouchCamActive")) {
+            exec {
+                workingDir libultrashipDir
+                commandLine "git", "apply", "--ignore-whitespace", "--whitespace=nowarn",
+                        "../patches/libultraship-touch-camera-active.patch"
+            }
         }
     }
 }
