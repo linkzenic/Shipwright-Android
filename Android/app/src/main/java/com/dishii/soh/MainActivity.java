@@ -1756,8 +1756,8 @@ public class MainActivity extends SDLActivity{
     private int rightStickPointerId = MotionEvent.INVALID_POINTER_ID;
     private float leftStickStartX;
     private float leftStickStartY;
-    private float rightStickLastX;
-    private float rightStickLastY;
+    private float rightStickStartX;
+    private float rightStickStartY;
 
     // Function to set up the controller overlay (inflate layout and initialize buttons)
     private void setupControllerOverlay() {
@@ -2137,8 +2137,8 @@ public class MainActivity extends SDLActivity{
         }
         if (x > view.getWidth() * 0.52f && rightStickPointerId == MotionEvent.INVALID_POINTER_ID) {
             rightStickPointerId = pointerId;
-            rightStickLastX = x;
-            rightStickLastY = y;
+            rightStickStartX = x;
+            rightStickStartY = y;
             if (mIsAiming) {
                 setItemButtonPulse();
                 setItemButtonHeld(true);
@@ -2169,12 +2169,10 @@ public class MainActivity extends SDLActivity{
 
         int rightIndex = event.findPointerIndex(rightStickPointerId);
         if (rightIndex >= 0) {
-            float x = event.getX(rightIndex);
-            float y = event.getY(rightIndex);
-            setCameraState(0, (x - rightStickLastX) * 15.0f);
-            setCameraState(1, (y - rightStickLastY) * 15.0f);
-            rightStickLastX = x;
-            rightStickLastY = y;
+            setCameraState(0, clampTouchCamera(
+                    (event.getX(rightIndex) - rightStickStartX) * 15.0f));
+            setCameraState(1, clampTouchCamera(
+                    (event.getY(rightIndex) - rightStickStartY) * 15.0f));
         }
     }
 
@@ -2205,8 +2203,8 @@ public class MainActivity extends SDLActivity{
 
     private void setupLookAround(FrameLayout rightScreenArea) {
         rightScreenArea.setOnTouchListener(new View.OnTouchListener() {
-            private float lastX = 0;
-            private float lastY = 0;
+            private float startX = 0;
+            private float startY = 0;
             private boolean isTouching = false;
 
             @Override
@@ -2214,8 +2212,8 @@ public class MainActivity extends SDLActivity{
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
                         // Start tracking the finger's position
-                        lastX = event.getX();
-                        lastY = event.getY();
+                        startX = event.getX();
+                        startY = event.getY();
                         isTouching = true;
                         setCameraTouchActive(true);
                         if (mIsAiming && TouchAreaEnabled) {
@@ -2226,19 +2224,16 @@ public class MainActivity extends SDLActivity{
 
                     case MotionEvent.ACTION_MOVE:
                         if (isTouching) {
-                            // Calculate the change in position (delta)
-                            float deltaX = event.getX() - lastX;
-                            float deltaY = event.getY() - lastY;
-
-                            // Update the last position
-                            lastX = event.getX();
-                            lastY = event.getY();
+                            // Displacement from the initial contact behaves like
+                            // a physical stick held away from center.
+                            float deltaX = event.getX() - startX;
+                            float deltaY = event.getY() - startY;
 
                             // Increase sensitivity by using a larger multiplier
                             // Adjust these multipliers to suit your needs
                             float sensitivityMultiplier = 15; // Higher value for more sensitivity
-                            float rx = (deltaX * sensitivityMultiplier);
-                            float ry = (deltaY * sensitivityMultiplier);
+                            float rx = clampTouchCamera(deltaX * sensitivityMultiplier);
+                            float ry = clampTouchCamera(deltaY * sensitivityMultiplier);
 
                             // Send the mapped values to the joystick axes
                             setCameraState(0, rx); // Right stick X axis
@@ -2261,6 +2256,12 @@ public class MainActivity extends SDLActivity{
                 return TouchAreaEnabled; // Event full handled
             }
         });
+    }
+
+    private static float clampTouchCamera(float value) {
+        // SOH multiplies touch input by 5, so 170 matches the physical
+        // N64 stick's maximum free-camera contribution of roughly 850.
+        return Math.max(-170.0f, Math.min(170.0f, value));
     }
 
 
