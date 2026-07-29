@@ -80,7 +80,7 @@ jobs:
           echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > fusion/Android/app/release.jks
           cd fusion/Android
           ./gradlew assembleRelease \
-            -PsohApplicationId=com.linkzenic.sohfusion.touchcontroltest \
+            -PsohApplicationId=com.linkzenic.sohfusion \
             -PsohConfigFile=shipofharkinian.json \
             -PstoreFile=release.jks \
             -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
