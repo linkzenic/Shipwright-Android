@@ -1,19 +1,19 @@
 diff --git a/src/ship/port/mobile/MobileImpl.cpp b/src/ship/port/mobile/MobileImpl.cpp
-index 839343b0..f12cf338 100644
+index 839343b0..7775d46 100644
 --- a/src/ship/port/mobile/MobileImpl.cpp
 +++ b/src/ship/port/mobile/MobileImpl.cpp
 @@ -125,6 +125,7 @@ void Ship::Mobile::InjectMenuNavKeys() {
- 
+
  static std::atomic<float> sTouchCamX{0.0f};
  static std::atomic<float> sTouchCamY{0.0f};
 +static std::atomic<bool> sTouchCamActive{false};
  static std::atomic<bool> sFreeLookTouchEnabled{false};
  static std::atomic<bool> sTouchItemButtonPulse{false};
  static std::atomic<bool> sTouchItemButtonHeld{false};
-@@ -136,15 +137,26 @@ extern "C" void JNICALL Java_com_dishii_soh_MainActivity_setCameraState(JNIEnv
+@@ -137,17 +138,30 @@ extern "C" void JNICALL Java_com_dishii_soh_MainActivity_setCameraState(JNIEnv*
      }
  }
- 
+
 +extern "C" void JNICALL Java_com_dishii_soh_MainActivity_setCameraTouchActive(JNIEnv* env, jobject obj,
 +                                                                              jboolean active) {
 +    sTouchCamActive.store(active == JNI_TRUE);
@@ -30,7 +30,7 @@ index 839343b0..f12cf338 100644
      }
      return sTouchCamX.load() != 0.0f || sTouchCamY.load() != 0.0f;
  }
- 
+
  void Ship::Mobile::HandleTouchCamera(float* camX, float* camY) {
 -    if (!sFreeLookTouchEnabled.load()) {
 +    if (!sFreeLookTouchEnabled.load() || !sTouchCamActive.load()) {
@@ -38,4 +38,10 @@ index 839343b0..f12cf338 100644
 +        sTouchCamY.store(0.0f);
          return;
      }
-     *camX += sTouchCamX.exchange(0.0f);
+-    *camX += sTouchCamX.exchange(0.0f);
+-    *camY += sTouchCamY.exchange(0.0f);
++    // Keep applying the held touch-stick state every frame. Java clears it
++    // when the finger is lifted.
++    *camX += sTouchCamX.load();
++    *camY += sTouchCamY.load();
+ }
