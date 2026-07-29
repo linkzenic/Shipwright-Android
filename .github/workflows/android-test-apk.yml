@@ -43,7 +43,7 @@ jobs:
           GIT_TAG: test-${{ github.run_number }}
         run: |
           cd Android && ./gradlew assembleRelease \
-            -PsohApplicationId=com.linkzenic.sohcs \
+            -PsohApplicationId=com.linkzenic.sohcs.touchcontroltest \
             -PsohConfigFile=shipofharkinian.json \
             -PstoreFile=release.jks \
             -PstorePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
