@@ -30,7 +30,7 @@ jobs:
       - name: Verify latest NEI Android base
         run: |
           git config --global --add safe.directory "${GITHUB_WORKSPACE}/fusion"
-          git -C fusion fetch origin sohnei-android
+          git -C fusion fetch origin sohnei-android:refs/remotes/origin/sohnei-android
           if ! git -C fusion merge-base --is-ancestor origin/sohnei-android HEAD; then
             echo "ERROR: Fusion Fork is missing commits from sohnei-android. Merge NEI before building."
             exit 1
