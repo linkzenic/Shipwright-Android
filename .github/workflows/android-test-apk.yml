@@ -22,7 +22,7 @@ jobs:
       - name: Checkout Fusion
         uses: actions/checkout@v4
         with:
-          ref: soh-fusion-android
+          ref: ${{ github.ref }}
           path: fusion
           fetch-depth: 0
           submodules: recursive
@@ -69,6 +69,7 @@ jobs:
           cmake -S fusion -B fusion/build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build fusion/build-linux --target GenerateSohOtr --parallel
           python3 -c 'import sys, zipfile; required={"textures/wind-waker/clouds/cloud_mae", "textures/wind-waker/clouds/cloud_naka", "textures/wind-waker/clouds/cloudtx_01", "textures/wind-waker/clouds/cloudtx_02", "textures/wind-waker/clouds/cloudtx_03"}; archive=set(zipfile.ZipFile("fusion/soh/soh.o2r").namelist()); missing=sorted(required-archive); print("Missing Sky assets: " + ", ".join(missing)) if missing else print("Verified all Sky cloud assets in Fusion soh.o2r"); sys.exit(bool(missing))'
+          python3 fusion/tools/ci/verify_nei_equipment_icons.py fusion/soh/soh.o2r
           cp fusion/soh/soh.o2r fusion/Android/app/src/main/assets/soh.o2r
           cd fusion
           tools/ci/inject_android_renderer_shaders.sh

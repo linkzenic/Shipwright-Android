@@ -451,11 +451,19 @@ void* ExtEquip_GetIcon(s16 equipType, u8 index) {
 
     const char* path = sExtEquipIconPaths[equipType][index - 1];
 
-    // Return the managed resource name, matching the item-page icon path. The
-    // renderer resolves the texture's real dimensions and scales it into the
-    // equipment page's existing 32x32 quad, preserving the 128x128 source.
+    // Return the managed resource name only after confirming it resolves. This
+    // preserves the source texture metadata used by the renderer while keeping
+    // an outdated or incomplete support archive from producing an empty slot.
     if (path != NULL) {
-        return (void*)path;
+        if (strstr(path, "textures/icon_item_custom/") != NULL) {
+            if (ResourceMgr_FileExists(path)) {
+                return (void*)path;
+            }
+        } else if (ResourceMgr_GetResourceDataByNameHandlingMQ(path) != NULL) {
+            // MM resources can be mounted after the extension cache is built,
+            // so resolve them directly before returning the managed path.
+            return (void*)path;
+        }
     }
 
     // These buffers have static lifetime and are always valid 32x32 RGBA32
