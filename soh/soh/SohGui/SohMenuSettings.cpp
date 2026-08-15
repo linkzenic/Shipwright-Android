@@ -109,6 +109,24 @@ static void SetAndroidTouchFaceButtonLayout(int32_t layout) {
     env->DeleteLocalRef(activity);
 }
 
+static void SetAndroidTouchLeftStickFloating(bool floating) {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (env == nullptr || activity == nullptr) {
+        return;
+    }
+
+    jclass activityClass = env->GetObjectClass(activity);
+    if (activityClass != nullptr) {
+        jmethodID method = env->GetMethodID(activityClass, "setTouchLeftStickFloatingFromNative", "(Z)V");
+        if (method != nullptr) {
+            env->CallVoidMethod(activity, method, floating ? JNI_TRUE : JNI_FALSE);
+        }
+        env->DeleteLocalRef(activityClass);
+    }
+    env->DeleteLocalRef(activity);
+}
+
 static void OpenAndroidDataFolderChooser() {
     JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
     jobject activity = (jobject)SDL_AndroidGetActivity();
@@ -257,29 +275,6 @@ void SohMenu::AddMenuSettings() {
         .RaceDisable(false)
         .Options(CheckboxOptions().Tooltip(
             "Search input box gets autofocus when visible. Does not affect using other widgets."));
-#if defined(__ANDROID__)
-    AddWidget(path, "Touch Face Buttons", WIDGET_CVAR_COMBOBOX)
-        .CVar(CVAR_SETTING("TouchControls.FaceButtonLayout"))
-        .RaceDisable(false)
-        .Callback([](WidgetInfo& info) {
-            SetAndroidTouchFaceButtonLayout(
-                CVarGetInteger(CVAR_SETTING("TouchControls.FaceButtonLayout"), 0));
-        })
-        .Options(ComboboxOptions()
-                     .ComboMap(touchFaceButtonLayoutMap)
-                     .DefaultIndex(0)
-                     .Tooltip("Choose ABXY (Nintendo), BAYX (Xbox), or GC Layout touch-button placement."));
-    // Keep Android's persisted overlay state aligned with the native CVar after relaunches.
-    SetAndroidTouchFaceButtonLayout(
-        CVarGetInteger(CVAR_SETTING("TouchControls.FaceButtonLayout"), 0));
-    AddWidget(path, "Disable Touch Controls", WIDGET_CVAR_CHECKBOX)
-        .CVar(CVAR_SETTING("TouchControls.Disabled"))
-        .RaceDisable(false)
-        .Callback([](WidgetInfo& info) {
-            SetAndroidTouchControlsDisabled(CVarGetInteger(CVAR_SETTING("TouchControls.Disabled"), 0) != 0);
-        })
-        .Options(CheckboxOptions().Tooltip("Hides the Android touch controls and eye button."));
-#endif
     AddWidget(path, "Reset Button Combination:", WIDGET_CVAR_BTN_SELECTOR)
         .CVar("gSettings.ResetBtn")
         .Options(BtnSelectorOptions().DefaultValue(BTN_CUSTOM_MODIFIER2));
@@ -585,6 +580,46 @@ void SohMenu::AddMenuSettings() {
         .WindowName("Configure Controller")
         .HideInSearch(true)
         .Options(WindowButtonOptions().Tooltip("Enables the separate Bindings Window."));
+
+#if defined(__ANDROID__)
+    // Touch Controls
+    path.sidebarName = "Touch Controls";
+    path.column = SECTION_COLUMN_1;
+    AddSidebarEntry("Settings", path.sidebarName, 2);
+    AddWidget(path, "Touch Face Buttons", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_SETTING("TouchControls.FaceButtonLayout"))
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            SetAndroidTouchFaceButtonLayout(
+                CVarGetInteger(CVAR_SETTING("TouchControls.FaceButtonLayout"), 0));
+        })
+        .Options(ComboboxOptions()
+                     .ComboMap(touchFaceButtonLayoutMap)
+                     .DefaultIndex(0)
+                     .Tooltip("Choose ABXY (Nintendo), BAYX (Xbox), or GC Layout touch-button placement."));
+    AddWidget(path, "Floating Left Stick", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_SETTING("TouchControls.FloatingLeftStick"))
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            SetAndroidTouchLeftStickFloating(
+                CVarGetInteger(CVAR_SETTING("TouchControls.FloatingLeftStick"), 1) != 0);
+        })
+        .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+            "When disabled, the left touch stick stays fixed in the lower-left corner."));
+    AddWidget(path, "Disable Touch Controls", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_SETTING("TouchControls.Disabled"))
+        .RaceDisable(false)
+        .Callback([](WidgetInfo& info) {
+            SetAndroidTouchControlsDisabled(CVarGetInteger(CVAR_SETTING("TouchControls.Disabled"), 0) != 0);
+        })
+        .Options(CheckboxOptions().Tooltip("Hides the Android touch controls and eye button."));
+
+    // Keep Android's persisted overlay state aligned with the native CVars after relaunches.
+    SetAndroidTouchFaceButtonLayout(CVarGetInteger(CVAR_SETTING("TouchControls.FaceButtonLayout"), 0));
+    SetAndroidTouchLeftStickFloating(
+        CVarGetInteger(CVAR_SETTING("TouchControls.FloatingLeftStick"), 1) != 0);
+    SetAndroidTouchControlsDisabled(CVarGetInteger(CVAR_SETTING("TouchControls.Disabled"), 0) != 0);
+#endif
 
     // Input Viewer
     path.sidebarName = "Input Viewer";

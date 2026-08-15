@@ -3,6 +3,10 @@
 #include <ship/window/gui/GuiElement.h>
 #include <ship/utils/StringHelper.h>
 #include <spdlog/fmt/fmt.h>
+#if defined(__ANDROID__)
+#include <jni.h>
+#include <SDL2/SDL.h>
+#endif
 
 extern "C" {
 extern PlayState* gPlayState;
@@ -14,6 +18,27 @@ namespace SohGui {
 extern std::shared_ptr<SohMenu> mSohMenu;
 
 using namespace UIWidgets;
+
+#if defined(__ANDROID__)
+static void SetAndroidTouchControlsMenuVisible(bool visible) {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (env == nullptr || activity == nullptr) {
+        return;
+    }
+
+    jclass activityClass = env->GetObjectClass(activity);
+    if (activityClass != nullptr) {
+        jmethodID method =
+            env->GetMethodID(activityClass, "setTouchControlsMenuVisibleFromNative", "(Z)V");
+        if (method != nullptr) {
+            env->CallVoidMethod(activity, method, visible ? JNI_TRUE : JNI_FALSE);
+        }
+        env->DeleteLocalRef(activityClass);
+    }
+    env->DeleteLocalRef(activity);
+}
+#endif
 
 void SohMenu::AddSidebarEntry(std::string sectionName, std::string sidebarName, uint32_t columnCount) {
     assert(!sectionName.empty());
@@ -172,6 +197,14 @@ void SohMenu::InitElement() {
 
 void SohMenu::UpdateElement() {
     Ship::Menu::UpdateElement();
+#if defined(__ANDROID__)
+    static int lastMenuVisible = -1;
+    const int menuVisible = IsVisible() ? 1 : 0;
+    if (menuVisible != lastMenuVisible) {
+        SetAndroidTouchControlsMenuVisible(menuVisible != 0);
+        lastMenuVisible = menuVisible;
+    }
+#endif
 }
 
 void SohMenu::Draw() {
