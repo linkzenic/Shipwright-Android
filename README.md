@@ -4,13 +4,22 @@ Android ports of Ship of Harkinian, based on the HarbourMasters project.
 
 Original repository: https://github.com/HarbourMasters/Shipwright
 
-Current Android release: **v9.2.3-android.5**
+Current Android release: **v9.2.3-android.13**
 
-This repository provides three forks that can be installed together:
+## Which port should I use?
 
-- **Ship of Harkinian** — the standard Android port that most closely follows upstream from Harbour Masters.
-- **SOHCS** — the Android port of Roborich's cel-shading fork.
-- **SOHNEI** - the Android port of Skijer's Not Enough Items Fork.
+**For most people, regular Ship of Harkinian is the recommended choice.** It
+most closely follows the standard Harbour Masters experience. Choose one of the
+other ports only when you specifically want that fork's changes.
+
+| Port | What it is for | Recommendation |
+| --- | --- | --- |
+| **Ship of Harkinian** | The regular Android port, closest to upstream | **Recommended for most players** |
+| **Fusion Fork** | The combined experimental fork | Use when you specifically want the Fusion feature set |
+| **SOHCS** | Roborich's cel-shaded fork | Use when you specifically want the cel-shaded presentation |
+| **SOHNEI** | Skijer's Not Enough Items fork | Use when you specifically want the added NEI content |
+
+The ports use separate app IDs and can be installed together.
 
 Supported: Android 7+ with OpenGL ES 3.0+
 
@@ -27,7 +36,7 @@ Official Discord: https://discord.com/invite/shipofharkinian
 ## Installation
 
 1. Verify that you have a supported, legally obtained Ocarina of Time ROM. You can use the compatibility checker at https://ship.equipment/ or compare your ROM's `sha1` hash against [docs/supportedHashes.json](docs/supportedHashes.json).
-2. Install the Standard SOH APK, the SOHCS cel-shaded APK, or both from the releases page: https://github.com/linkzenic/Shipwright-Android/releases
+2. Install regular SOH (recommended), Fusion, SOHCS, or SOHNEI from the releases page: https://github.com/linkzenic/Shipwright-Android/releases
 3. Open the app once so it can create the data folder and copy bundled support files.
 4. When prompted, allow setup and select your ROM so the app can generate the required `.otr` or `.o2r` game data.
 5. If you have a Master Quest ROM, choose to extract another ROM when prompted. Otherwise, continue into the game.
@@ -59,7 +68,7 @@ Open the menu and check Settings > Controls to confirm the controller is detecte
 
 **Can I hide the on-screen touch controls?**
 
-Yes. Use Settings > General > Disable Touch Controls.
+Yes. Use Settings > Touch Controls > Disable Touch Controls.
 
 **Can I resize the menu?**
 

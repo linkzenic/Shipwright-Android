@@ -71,6 +71,7 @@ public class MainActivity extends SDLActivity{
     // Legacy key name: true means the touch controls are hidden, not visible.
     private static final String PREF_TOUCH_CONTROLS_HIDDEN = "controlsVisible";
     private static final String PREF_TOUCH_FACE_BUTTON_LAYOUT = "touchFaceButtonLayout";
+    private static final String PREF_TOUCH_LEFT_STICK_FLOATING = "touchLeftStickFloating";
     private static final int TOUCH_FACE_BUTTON_LAYOUT_ABXY = 0;
     private static final int TOUCH_FACE_BUTTON_LAYOUT_BAYX = 1;
     private static final int TOUCH_FACE_BUTTON_LAYOUT_GAMECUBE = 2;
@@ -902,8 +903,11 @@ public class MainActivity extends SDLActivity{
     private int rightStickPointerId = MotionEvent.INVALID_POINTER_ID;
     private float leftStickStartX;
     private float leftStickStartY;
+    private float leftStickFixedX = Float.NaN;
+    private float leftStickFixedY = Float.NaN;
     private float rightStickStartX;
     private float rightStickStartY;
+    private boolean touchControlsMenuVisible = false;
 
     // Function to set up the controller overlay (inflate layout and initialize buttons)
     private void setupControllerOverlay() {
@@ -977,6 +981,7 @@ public class MainActivity extends SDLActivity{
         setupLookAround(rightScreenArea);
 
         setupToggleButton(buttonToggle,buttonGroup);
+        applyTouchLeftStickMode();
         applyTouchControlsVisibility();
 
         // Exclude Back/Start from gesture nav zones (they sit at screen edges in landscape).
@@ -1008,6 +1013,32 @@ public class MainActivity extends SDLActivity{
                 ? layout : TOUCH_FACE_BUTTON_LAYOUT_ABXY;
         preferences.edit().putInt(PREF_TOUCH_FACE_BUTTON_LAYOUT, normalizedLayout).apply();
         runOnUiThread(() -> applyTouchFaceButtonLayout(normalizedLayout));
+    }
+
+    public void setTouchLeftStickFloatingFromNative(boolean floating) {
+        preferences.edit().putBoolean(PREF_TOUCH_LEFT_STICK_FLOATING, floating).apply();
+        runOnUiThread(this::applyTouchLeftStickMode);
+    }
+
+    public void setTouchControlsMenuVisibleFromNative(boolean visible) {
+        runOnUiThread(() -> {
+            touchControlsMenuVisible = visible;
+            applyTouchControlsVisibility();
+        });
+    }
+
+    private void applyTouchLeftStickMode() {
+        if (leftJoystick == null) {
+            return;
+        }
+        boolean floating = preferences.getBoolean(PREF_TOUCH_LEFT_STICK_FLOATING, true);
+        if (!floating && !Float.isNaN(leftStickFixedX)) {
+            leftJoystick.setX(leftStickFixedX);
+            leftJoystick.setY(leftStickFixedY);
+            leftJoystickKnob.setX(leftJoystick.getWidth() / 2.0f - leftJoystickKnob.getWidth() / 2.0f);
+            leftJoystickKnob.setY(leftJoystick.getHeight() / 2.0f - leftJoystickKnob.getHeight() / 2.0f);
+        }
+        leftJoystick.setVisibility(floating ? View.INVISIBLE : View.VISIBLE);
     }
 
     private void applyTouchFaceButtonLayout(int layout) {
@@ -1095,7 +1126,7 @@ public class MainActivity extends SDLActivity{
         if (buttonGroup != null) {
             boolean controlsHidden = preferences.getBoolean(PREF_TOUCH_CONTROLS_HIDDEN, false);
             buttonGroup.setVisibility(controlsHidden ? View.INVISIBLE : View.VISIBLE);
-            if (controlsHidden || touchControlsDisabled) {
+            if (controlsHidden || touchControlsDisabled || touchControlsMenuVisible) {
                 DisableTouchArea();
                 overlayView.setOnTouchListener(null);
             } else {
@@ -1178,9 +1209,12 @@ public class MainActivity extends SDLActivity{
 
     void DisableTouchArea(){
         TouchAreaEnabled = false;
+        resetLeftStick();
+        resetRightTouch();
     }
     void EnableTouchArea(){
         TouchAreaEnabled = true;
+        applyTouchLeftStickMode();
     }
 
     void SetToggleButtonVisible(boolean visible) {
@@ -1192,14 +1226,27 @@ public class MainActivity extends SDLActivity{
 
     private void setupFloatingJoystick(FrameLayout touchArea) {
         final float maxRadius = dpToPixels(51);
-        leftJoystick.setVisibility(View.INVISIBLE);
+        leftJoystick.post(() -> {
+            leftStickFixedX = leftJoystick.getX();
+            leftStickFixedY = leftJoystick.getY();
+            applyTouchLeftStickMode();
+        });
         touchArea.setOnTouchListener((view, event) -> {
+            if (!TouchAreaEnabled) {
+                return false;
+            }
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
-                    leftStickStartX = event.getX();
-                    leftStickStartY = event.getY();
-                    leftJoystick.setX(leftStickStartX - leftJoystick.getWidth() / 2.0f);
-                    leftJoystick.setY(leftStickStartY - leftJoystick.getHeight() / 2.0f);
+                    boolean floating = preferences.getBoolean(PREF_TOUCH_LEFT_STICK_FLOATING, true);
+                    if (floating) {
+                        leftStickStartX = event.getX();
+                        leftStickStartY = event.getY();
+                        leftJoystick.setX(leftStickStartX - leftJoystick.getWidth() / 2.0f);
+                        leftJoystick.setY(leftStickStartY - leftJoystick.getHeight() / 2.0f);
+                    } else {
+                        leftStickStartX = leftJoystick.getX() + leftJoystick.getWidth() / 2.0f;
+                        leftStickStartY = leftJoystick.getY() + leftJoystick.getHeight() / 2.0f;
+                    }
                     leftJoystickKnob.setX(leftJoystick.getWidth() / 2.0f - leftJoystickKnob.getWidth() / 2.0f);
                     leftJoystickKnob.setY(leftJoystick.getHeight() / 2.0f - leftJoystickKnob.getHeight() / 2.0f);
                     leftJoystick.setVisibility(View.VISIBLE);
@@ -1224,106 +1271,14 @@ public class MainActivity extends SDLActivity{
                 case MotionEvent.ACTION_CANCEL:
                     setAxis(ControllerButtons.AXIS_LX, (short) 0);
                     setAxis(ControllerButtons.AXIS_LY, (short) 0);
-                    leftJoystick.setVisibility(View.INVISIBLE);
+                    if (preferences.getBoolean(PREF_TOUCH_LEFT_STICK_FLOATING, true)) {
+                        leftJoystick.setVisibility(View.INVISIBLE);
+                    }
                     return true;
                 default:
                     return true;
             }
         });
-    }
-
-    private void setupTouchAreas(FrameLayout touchArea) {
-        final float leftMaxRadius = dpToPixels(51);
-        leftJoystick.setVisibility(View.INVISIBLE);
-        touchArea.setOnTouchListener((view, event) -> {
-            if (!TouchAreaEnabled) {
-                return false;
-            }
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                case MotionEvent.ACTION_POINTER_DOWN:
-                    return startTouchAreaPointer(view, event, event.getActionIndex());
-                case MotionEvent.ACTION_MOVE:
-                    updateTouchAreaPointers(event, leftMaxRadius);
-                    return leftStickPointerId != MotionEvent.INVALID_POINTER_ID ||
-                            rightStickPointerId != MotionEvent.INVALID_POINTER_ID;
-                case MotionEvent.ACTION_POINTER_UP:
-                case MotionEvent.ACTION_UP:
-                    releaseTouchAreaPointer(event.getPointerId(event.getActionIndex()));
-                    return true;
-                case MotionEvent.ACTION_CANCEL:
-                    resetLeftStick();
-                    resetRightTouch();
-                    return true;
-                default:
-                    return true;
-            }
-        });
-    }
-
-    private boolean startTouchAreaPointer(View view, MotionEvent event, int pointerIndex) {
-        float x = event.getX(pointerIndex);
-        float y = event.getY(pointerIndex);
-        int pointerId = event.getPointerId(pointerIndex);
-        if (x < view.getWidth() * 0.46f && leftStickPointerId == MotionEvent.INVALID_POINTER_ID) {
-            leftStickPointerId = pointerId;
-            leftStickStartX = x;
-            leftStickStartY = y;
-            leftJoystick.setX(x - leftJoystick.getWidth() / 2.0f);
-            leftJoystick.setY(y - leftJoystick.getHeight() / 2.0f);
-            leftJoystickKnob.setX(leftJoystick.getWidth() / 2.0f - leftJoystickKnob.getWidth() / 2.0f);
-            leftJoystickKnob.setY(leftJoystick.getHeight() / 2.0f - leftJoystickKnob.getHeight() / 2.0f);
-            leftJoystick.setVisibility(View.VISIBLE);
-            return true;
-        }
-        if (x > view.getWidth() * 0.52f && rightStickPointerId == MotionEvent.INVALID_POINTER_ID) {
-            rightStickPointerId = pointerId;
-            rightStickStartX = x;
-            rightStickStartY = y;
-            if (mIsAiming) {
-                setItemButtonPulse();
-                setItemButtonHeld(true);
-            }
-            return true;
-        }
-        return false;
-    }
-
-    private void updateTouchAreaPointers(MotionEvent event, float leftMaxRadius) {
-        int leftIndex = event.findPointerIndex(leftStickPointerId);
-        if (leftIndex >= 0) {
-            float deltaX = event.getX(leftIndex) - leftStickStartX;
-            float deltaY = event.getY(leftIndex) - leftStickStartY;
-            float distance = (float) Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-            if (distance > leftMaxRadius && distance > 0.0f) {
-                float scale = leftMaxRadius / distance;
-                deltaX *= scale;
-                deltaY *= scale;
-            }
-            leftJoystickKnob.setX(leftJoystick.getWidth() / 2.0f + deltaX -
-                    leftJoystickKnob.getWidth() / 2.0f);
-            leftJoystickKnob.setY(leftJoystick.getHeight() / 2.0f + deltaY -
-                    leftJoystickKnob.getHeight() / 2.0f);
-            setAxis(ControllerButtons.AXIS_LX, (short) (deltaX / leftMaxRadius * Short.MAX_VALUE));
-            setAxis(ControllerButtons.AXIS_LY, (short) (deltaY / leftMaxRadius * Short.MAX_VALUE));
-        }
-
-        int rightIndex = event.findPointerIndex(rightStickPointerId);
-        if (rightIndex >= 0) {
-            setCameraState(0, clampTouchCamera(
-                    (event.getX(rightIndex) - rightStickStartX) * 15.0f));
-            setCameraState(1, clampTouchCamera(
-                    (event.getY(rightIndex) - rightStickStartY) * 15.0f));
-        }
-    }
-
-    private void releaseTouchAreaPointer(int pointerId) {
-        if (pointerId == leftStickPointerId) {
-            resetLeftStick();
-        }
-        if (pointerId == rightStickPointerId) {
-            resetRightTouch();
-        }
     }
 
     private void resetLeftStick() {
@@ -1335,6 +1290,9 @@ public class MainActivity extends SDLActivity{
 
     private void resetRightTouch() {
         rightStickPointerId = MotionEvent.INVALID_POINTER_ID;
+        setAxis(ControllerButtons.AXIS_RX, (short) 0);
+        setAxis(ControllerButtons.AXIS_RY, (short) 0);
+        setCameraTouchActive(false);
         setCameraState(0, 0.0f);
         setCameraState(1, 0.0f);
         if (mIsAiming) {
@@ -1344,65 +1302,78 @@ public class MainActivity extends SDLActivity{
 
     private void setupLookAround(FrameLayout rightScreenArea) {
         rightScreenArea.setOnTouchListener(new View.OnTouchListener() {
-            private float startX = 0;
-            private float startY = 0;
-            private boolean isTouching = false;
-
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                switch (event.getAction()) {
+                if (!TouchAreaEnabled) {
+                    return false;
+                }
+
+                switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
-                        // Start tracking the finger's position
-                        startX = event.getX();
-                        startY = event.getY();
-                        isTouching = true;
-                        setCameraTouchActive(true);
-                        if (mIsAiming && TouchAreaEnabled) {
+                    case MotionEvent.ACTION_POINTER_DOWN: {
+                        if (rightStickPointerId == MotionEvent.INVALID_POINTER_ID) {
+                            int pointerIndex = event.getActionIndex();
+                            rightStickPointerId = event.getPointerId(pointerIndex);
+                            rightStickStartX = event.getX(pointerIndex);
+                            rightStickStartY = event.getY(pointerIndex);
+                        }
+                        if (mIsAiming) {
+                            setCameraTouchActive(true);
                             setItemButtonPulse();
                             setItemButtonHeld(true);
                         }
-                        break;
+                        return true;
+                    }
 
-                    case MotionEvent.ACTION_MOVE:
-                        if (isTouching) {
-                            // Displacement from the initial contact behaves like
-                            // a physical stick held away from center.
-                            float deltaX = event.getX() - startX;
-                            float deltaY = event.getY() - startY;
+                    case MotionEvent.ACTION_MOVE: {
+                        int pointerIndex = event.findPointerIndex(rightStickPointerId);
+                        if (pointerIndex >= 0) {
+                            float deltaX = event.getX(pointerIndex) - rightStickStartX;
+                            float deltaY = event.getY(pointerIndex) - rightStickStartY;
+                            float maxRadius = dpToPixels(51);
+                            float distance = (float) Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                            if (distance > maxRadius && distance > 0.0f) {
+                                float scale = maxRadius / distance;
+                                deltaX *= scale;
+                                deltaY *= scale;
+                            }
 
-                            // Increase sensitivity by using a larger multiplier
-                            // Adjust these multipliers to suit your needs
-                            float sensitivityMultiplier = 15; // Higher value for more sensitivity
-                            float rx = clampTouchCamera(deltaX * sensitivityMultiplier);
-                            float ry = clampTouchCamera(deltaY * sensitivityMultiplier);
-
-                            // Send the mapped values to the joystick axes
-                            setCameraState(0, rx); // Right stick X axis
-                            setCameraState(1, ry); // Right stick Y axis
+                            if (mIsAiming) {
+                                // SOH's item-aiming path also handles the touch-to-fire gesture.
+                                setAxis(ControllerButtons.AXIS_RX, (short) 0);
+                                setAxis(ControllerButtons.AXIS_RY, (short) 0);
+                                setCameraTouchActive(true);
+                                setCameraState(0, deltaX / maxRadius * 170.0f);
+                                setCameraState(1, deltaY / maxRadius * 170.0f);
+                            } else {
+                                // Match 2Ship: use the real virtual right-stick axes so
+                                // controller deadzone, sensitivity, and inversion are shared.
+                                setCameraTouchActive(false);
+                                setCameraState(0, 0.0f);
+                                setCameraState(1, 0.0f);
+                                setAxis(ControllerButtons.AXIS_RX,
+                                        (short) (deltaX / maxRadius * Short.MAX_VALUE));
+                                setAxis(ControllerButtons.AXIS_RY,
+                                        (short) (deltaY / maxRadius * Short.MAX_VALUE));
+                            }
                         }
-                        break;
+                        return true;
+                    }
 
+                    case MotionEvent.ACTION_POINTER_UP:
                     case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        // Stop tracking the finger's position and reset joystick input
-                        isTouching = false;
-                        setCameraTouchActive(false);
-                        setCameraState(0, 0.0f); // Reset right stick X axis
-                        setCameraState(1, 0.0f); // Reset right stick Y axis
-                        if (mIsAiming && TouchAreaEnabled) {
-                            setItemButtonHeld(false);
+                        if (event.getPointerId(event.getActionIndex()) == rightStickPointerId) {
+                            resetRightTouch();
                         }
-                        break;
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:
+                        resetRightTouch();
+                        return true;
+                    default:
+                        return true;
                 }
-                return TouchAreaEnabled; // Event full handled
             }
         });
-    }
-
-    private static float clampTouchCamera(float value) {
-        // SOH multiplies touch input by 5, so 170 matches the physical
-        // N64 stick's maximum free-camera contribution of roughly 850.
-        return Math.max(-170.0f, Math.min(170.0f, value));
     }
 
 
