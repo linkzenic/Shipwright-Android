@@ -311,8 +311,10 @@ OTRGlobals::OTRGlobals() {
     context->InitConsoleVariables();
 
 #ifdef __ANDROID__
-    Ship::Mobile::SetToggleButtonVisible(CVarGetInteger("gDroidHideToggleButton", 0) == 0);
-    Ship::Mobile::SetFreeLookTouchEnabled(CVarGetInteger("gDroidFreeLookTouch", 1) != 0);
+    Ship::Mobile::SetToggleButtonVisible(true);
+    // The custom touch-camera path is retained for first-person item aiming.
+    // Third-person free look uses the virtual controller's right-stick axes.
+    Ship::Mobile::SetFreeLookTouchEnabled(true);
 #endif
 
     auto controlDeck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>({
