@@ -93,7 +93,11 @@ jobs:
           printf 'Verify: `gh attestation verify soh-%s.apk --owner linkzenic`\n' "${TAG}" >> /tmp/release-notes.md
           printf 'Build: %s/%s/actions/runs/%s\n' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" >> /tmp/release-notes.md
 
-          gh release create "${TAG}" \
-            "soh-${TAG}.apk" \
-            --title "${TAG}" \
-            --notes-file /tmp/release-notes.md
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "soh-${TAG}.apk" --clobber
+          else
+            gh release create "${TAG}" \
+              "soh-${TAG}.apk" \
+              --title "${TAG}" \
+              --notes-file /tmp/release-notes.md
+          fi
