@@ -1921,20 +1921,12 @@ public class MainActivity extends SDLActivity{
             configureFaceButton(buttonX, 44, 44, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 0, 0, 0);
         }
 
-        // Controller mappings describe physical button positions (SDL A=south, B=east,
-        // X=west, Y=north). Nintendo ABXY changes the labels at those positions; it
-        // must not change which positional SDL input is emitted.
-        if (layout == TOUCH_FACE_BUTTON_LAYOUT_ABXY) {
-            addTouchListener(buttonB, ControllerButtons.BUTTON_A);
-            addTouchListener(buttonA, ControllerButtons.BUTTON_B);
-            addTouchListener(buttonY, ControllerButtons.BUTTON_X);
-            addTouchListener(buttonX, ControllerButtons.BUTTON_Y);
-        } else {
-            addTouchListener(buttonA, ControllerButtons.BUTTON_A);
-            addTouchListener(buttonB, ControllerButtons.BUTTON_B);
-            addTouchListener(buttonX, ControllerButtons.BUTTON_X);
-            addTouchListener(buttonY, ControllerButtons.BUTTON_Y);
-        }
+        // Layout selection only moves the buttons. A button displaying a letter must
+        // always emit that same logical SDL button, regardless of its screen position.
+        addTouchListener(buttonA, ControllerButtons.BUTTON_A);
+        addTouchListener(buttonB, ControllerButtons.BUTTON_B);
+        addTouchListener(buttonX, ControllerButtons.BUTTON_X);
+        addTouchListener(buttonY, ControllerButtons.BUTTON_Y);
     }
 
     private void configureFaceButton(Button button, int widthDp, int heightDp, int gravity,
