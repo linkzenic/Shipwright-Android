@@ -1,6 +1,6 @@
 def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
 def buildAsApplication = !buildAsLibrary
-def androidAppVersionName = "9.2.3-celshade0.5-android.5"
+def androidAppVersionName = "9.2.3-celshade0.5-android.6"
 def sohConfigFile = (project.findProperty('sohConfigFile') ?: "shipofharkinian.json").toString()
 if (buildAsApplication) {
     apply plugin: 'com.android.application'
@@ -22,7 +22,7 @@ android {
         }
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 4
+        versionCode 5
         versionName androidAppVersionName
     }
     signingConfigs {
