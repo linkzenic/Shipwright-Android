@@ -1005,7 +1005,7 @@ s32 AudioLoad_Dma(OSIoMesg* mesg, u32 priority, s32 direction, uintptr_t devAddr
         return -1;
     }
 
-    memcpy(ramAddr, devAddr, size);
+    memcpy((void*)ramAddr, (void*)devAddr, size);
 
     return 0;
 }

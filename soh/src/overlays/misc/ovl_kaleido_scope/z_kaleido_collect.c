@@ -1357,13 +1357,13 @@ void KaleidoScope_DrawMmQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
     // left column: quad 4 = strength (bracelet/gauntlets), quad 5 = swim (silver/golden scale).
     {
         static const char* sStrengthTexs[3] = {
-            dgItemIconGoronsBraceletTex,
-            dgItemIconSilverGauntletsTex,
-            dgItemIconGoldenGauntletsTex,
+            gItemIconGoronsBraceletTex,
+            gItemIconSilverGauntletsTex,
+            gItemIconGoldenGauntletsTex,
         };
         static const char* sScaleTexs[2] = {
-            dgItemIconScaleSilverTex,
-            dgItemIconScaleGoldenTex,
+            gItemIconScaleSilverTex,
+            gItemIconScaleGoldenTex,
         };
         s32 upg = CUR_UPG_VALUE(UPG_STRENGTH);
 
@@ -1392,8 +1392,8 @@ void KaleidoScope_DrawMmQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
         static const char* sQuiverTexs[3] = { "__OTR__icon_item_static_yar/gItemIconQuiver30Tex",
                                               "__OTR__icon_item_static_yar/gItemIconQuiver40Tex",
                                               "__OTR__icon_item_static_yar/gItemIconQuiver50Tex" };
-        static const char* sBulletBagTexs[3] = { dgItemIconBulletBag30Tex, dgItemIconBulletBag40Tex,
-                                                 dgItemIconBulletBag50Tex };
+        static const char* sBulletBagTexs[3] = { gItemIconBulletBag30Tex, gItemIconBulletBag40Tex,
+                                                 gItemIconBulletBag50Tex };
         static const char* sBombBagTexs[3] = { "__OTR__icon_item_static_yar/gItemIconBombBag20Tex",
                                                "__OTR__icon_item_static_yar/gItemIconBombBag30Tex",
                                                "__OTR__icon_item_static_yar/gItemIconBombBag40Tex" };
@@ -1420,7 +1420,7 @@ void KaleidoScope_DrawMmQuestStatus(PlayState* play, GraphicsContext* gfxCtx) {
     // ever drawn here, so the slot read as broken. OoT's token count lives in gsTokens; the icon is
     // OoT's own 24x24 quest icon (the count itself is shown by the name/counter box). Skijer 2026-07-29
     if (gSaveContext.inventory.gsTokens > 0) {
-        MmPage_DrawQuadTex(gfxCtx, 21, dgQuestIconGoldSkulltulaTex, 24, 24, 0, 0);
+        MmPage_DrawQuadTex(gfxCtx, 21, gQuestIconGoldSkulltulaTex, 24, 24, 0, 0);
     }
 
     // --- Heart piece count (MM 48x48 IA8 pie icons; OoT stores the count in questItems bits 28+) ---

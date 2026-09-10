@@ -83,6 +83,10 @@ std::filesystem::path SelfExeDir() {
 // 2ship lives at Ship/2ship/, so look in <shipDir>/2ship first, then <shipDir> as
 // a fallback (in case both exes share a folder during development).
 std::filesystem::path Locate2ShipExe() {
+#if defined(__ANDROID__)
+    // A separate Android APK is not a desktop executable in this directory.
+    return {};
+#endif
     std::filesystem::path selfDir = SelfExeDir();
     if (selfDir.empty()) {
         return {};
@@ -323,6 +327,11 @@ FscShared* MapShared(bool create) {
             sShared = (FscShared*)MapViewOfFile(sShmHandle, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(FscShared));
         }
     }
+#elif defined(__ANDROID__)
+    // Desktop combo mode launches a second executable and shares a named POSIX
+    // mapping. Android does not provide shm_open or that process model. Leave
+    // standalone NEI active; an Android combo needs its own explicit integration.
+    return nullptr;
 #else
     int flags = create ? (O_CREAT | O_RDWR) : O_RDWR;
     sShmFd = shm_open(sShmName.c_str(), flags, 0666);

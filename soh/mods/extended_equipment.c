@@ -1,3 +1,4 @@
+#include "mods/nei_aligned_ui_paths.h"
 /**
  * extended_equipment.c - Extended equipment system (cheat)
  *
@@ -608,10 +609,10 @@ void ExtEquip_TogglePendantEffect(void) {
 // Dedicated upgrade-column icons — the Cape/Pendant no longer live in the ext grid (the TUNIC-1 grid
 // slot is Champion now), so their kaleido icons come from here, NOT ExtEquip_GetIcon(grid).
 void* ExtEquip_GetCapeIcon(void) {
-    return (void*)dgItemIconMagicCapeTex;
+    return (void*)gItemIconMagicCapeTex;
 }
 void* ExtEquip_GetPendantIcon(void) {
-    return (void*)"__OTR__icon_item_static_yar/gItemIconPendantOfMemoriesTex";
+    return (void*)sNeiAligned_gItemIconPendantOfMemoriesTex_45;
 }
 
 u8 ExtEquip_IsChampionTunic(void) {
@@ -850,16 +851,18 @@ u8 ExtEquip_GetCurrent(s16 equipType) {
 //   shields Goddess Shield / Kite Shield / Shield of Ikana (MM mirror shield)
 //   tunics  Champion's (blue) / Magic Tunic (orange) / Sage's (white) — recolor tunics
 //   boots   Pegasus Boots / Climb Boots / Roc Boots (all three are REAL boots)
-static const char* sExtEquipIconPaths[4][3] = {
+// Use the aligned generated arrays (g...), not raw string macros (dg...).
+// The renderer's resource signature check requires an aligned address.
+static const char* const sExtEquipIconPaths[4][3] = {
     // Swords
-    { dgItemIconCaneOfByrnaTex, dgItemIconFourSwordTex, dgItemIconTridentTex },
+    { gItemIconCaneOfByrnaTex, gItemIconFourSwordTex, gItemIconTridentTex },
     // Shields
-    { dgItemIconGoddessShieldTex, dgItemIconKiteShieldTex,
-      "__OTR__icon_item_static_yar/gItemIconMirrorShieldTex" }, // Shield of Ikana (MM mirror shield)
+    { gItemIconGoddessShieldTex, gItemIconKiteShieldTex,
+      sNeiAligned_gItemIconMirrorShieldTex_40 }, // Shield of Ikana (MM mirror shield)
     // Tunics
-    { dgItemIconChampionsTunicTex, dgItemIconMagicTunicTex, dgItemIconSagesTunicTex },
+    { gItemIconChampionsTunicTex, gItemIconMagicTunicTex, gItemIconSagesTunicTex },
     // Boots
-    { dgItemIconPegasusBootsTex, dgItemIconClimbBootsTex, dgItemIconRocBootsTex },
+    { gItemIconPegasusBootsTex, gItemIconClimbBootsTex, gItemIconRocBootsTex },
 };
 
 void* ExtEquip_GetIcon(s16 equipType, u8 index) {

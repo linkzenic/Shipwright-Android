@@ -1,3 +1,4 @@
+#include "mods/nei_aligned_ui_paths.h"
 /**
  * mm_asset_loader.cpp - MM Asset Detection and Loading
  *
@@ -281,6 +282,20 @@ static bool LoadMmO2r() {
 // C API Implementation
 // =============================================================================
 
+// This archive is produced by Android's filtered MM icon importer: it contains
+// only alternate mask/equipment icons, not the source pack's D-pad or HUD files.
+static void LoadMmIconArchive() {
+    std::string iconPath = Ship::Context::LocateFileAcrossAppDirs("mm-icons.o2r", appShortName);
+    if ((iconPath.empty() || !std::filesystem::exists(iconPath)) && !sMmO2rPath.empty()) {
+        iconPath = (std::filesystem::path(sMmO2rPath).parent_path() / "mm-icons.o2r").string();
+    }
+    if (iconPath.empty() || !std::filesystem::exists(iconPath)) return;
+    auto manager = OTRGlobals::Instance->context->GetResourceManager()->GetArchiveManager();
+    if (manager && manager->AddArchive(iconPath)) {
+        MMASSETS_LOG("[MM Assets] Registered filtered HD icon archive: %s", iconPath.c_str());
+    }
+}
+
 extern "C" {
 
 void MmAssets_Init(void) {
@@ -300,6 +315,7 @@ void MmAssets_Init(void) {
         // Load base MM archive FIRST (lower priority)
         if (sMmO2rDetected) {
             LoadMmO2r();
+            LoadMmIconArchive();
         }
 
         // Load mod archive LAST (higher priority - overrides mm.o2r)
@@ -850,14 +866,14 @@ char** MmAssets_ListMmArchiveFiles(const char* searchMask, int* resultSize) {
 
 // MM asset paths for replacements (from mm_sources/archives/)
 // Icons (32x32 RGBA from icon_item_static_yar)
-#define MM_DEKU_MASK_ICON_PATH "__OTR__icon_item_static_yar/gItemIconDekuMaskTex"
-#define MM_STONE_MASK_ICON_PATH "__OTR__icon_item_static_yar/gItemIconStoneMaskTex"
-#define MM_FIERCE_MASK_ICON_PATH "__OTR__icon_item_static_yar/gItemIconFierceDeityMaskTex"
+#define MM_DEKU_MASK_ICON_PATH sNeiAligned_gItemIconDekuMaskTex_16
+#define MM_STONE_MASK_ICON_PATH sNeiAligned_gItemIconStoneMaskTex_53
+#define MM_FIERCE_MASK_ICON_PATH sNeiAligned_gItemIconFierceDeityMaskTex_19
 
 // Name textures (from item_name_static)
-#define MM_DEKU_MASK_NAME_PATH "__OTR__item_name_static/gItemNameDekuMaskENGTex"
-#define MM_STONE_MASK_NAME_PATH "__OTR__item_name_static/gItemNameStoneMaskENGTex"
-#define MM_FIERCE_MASK_NAME_PATH "__OTR__item_name_static/gItemNameFierceDeitysMaskENGTex"
+#define MM_DEKU_MASK_NAME_PATH sNeiAligned_gItemNameDekuMaskENGTex_77
+#define MM_STONE_MASK_NAME_PATH sNeiAligned_gItemNameStoneMaskENGTex_111
+#define MM_FIERCE_MASK_NAME_PATH sNeiAligned_gItemNameFierceDeitysMaskENGTex_80
 
 // Get Item DLs (3D models from object_gi_*)
 // Each mask has TWO DLs drawn with specific render modes (from 2Ship z_draw.c):
@@ -5061,58 +5077,58 @@ void MmSfx_FlushCache(void) {
 
 // Icon paths (32x32 RGBA textures from icon_item_static_yar)
 static const char* sMmMaskIconPaths[24] = {
-    "__OTR__icon_item_static_yar/gItemIconPostmansHatTex",      // 0: Postman's Hat
-    "__OTR__icon_item_static_yar/gItemIconAllNightMaskTex",     // 1: All-Night Mask
-    "__OTR__icon_item_static_yar/gItemIconBlastMaskTex",        // 2: Blast Mask
-    "__OTR__icon_item_static_yar/gItemIconStoneMaskTex",        // 3: Stone Mask
-    "__OTR__icon_item_static_yar/gItemIconGreatFairyMaskTex",   // 4: Great Fairy Mask
-    "__OTR__icon_item_static_yar/gItemIconDekuMaskTex",         // 5: Deku Mask
-    "__OTR__icon_item_static_yar/gItemIconKeatonMaskTex",       // 6: Keaton Mask
-    "__OTR__icon_item_static_yar/gItemIconBremenMaskTex",       // 7: Bremen Mask
-    "__OTR__icon_item_static_yar/gItemIconBunnyHoodTex",        // 8: Bunny Hood
-    "__OTR__icon_item_static_yar/gItemIconDonGeroMaskTex",      // 9: Don Gero's Mask
-    "__OTR__icon_item_static_yar/gItemIconMaskOfScentsTex",     // 10: Mask of Scents
-    "__OTR__icon_item_static_yar/gItemIconGoronMaskTex",        // 11: Goron Mask
-    "__OTR__icon_item_static_yar/gItemIconRomaniMaskTex",       // 12: Romani's Mask
-    "__OTR__icon_item_static_yar/gItemIconCircusLeaderMaskTex", // 13: Circus Leader's Mask
-    "__OTR__icon_item_static_yar/gItemIconKafeisMaskTex",       // 14: Kafei's Mask
-    "__OTR__icon_item_static_yar/gItemIconCouplesMaskTex",      // 15: Couple's Mask
-    "__OTR__icon_item_static_yar/gItemIconMaskOfTruthTex",      // 16: Mask of Truth
-    "__OTR__icon_item_static_yar/gItemIconZoraMaskTex",         // 17: Zora Mask
-    "__OTR__icon_item_static_yar/gItemIconKamaroMaskTex",       // 18: Kamaro's Mask
-    "__OTR__icon_item_static_yar/gItemIconGibdoMaskTex",        // 19: Gibdo Mask
-    "__OTR__icon_item_static_yar/gItemIconGaroMaskTex",         // 20: Garo Mask
-    "__OTR__icon_item_static_yar/gItemIconCaptainsHatTex",      // 21: Captain's Hat
-    "__OTR__icon_item_static_yar/gItemIconGiantsMaskTex",       // 22: Giant's Mask
-    "__OTR__icon_item_static_yar/gItemIconFierceDeityMaskTex",  // 23: Fierce Deity Mask
+    sNeiAligned_gItemIconPostmansHatTex_47,      // 0: Postman's Hat
+    sNeiAligned_gItemIconAllNightMaskTex_3,     // 1: All-Night Mask
+    sNeiAligned_gItemIconBlastMaskTex_4,        // 2: Blast Mask
+    sNeiAligned_gItemIconStoneMaskTex_53,        // 3: Stone Mask
+    sNeiAligned_gItemIconGreatFairyMaskTex_27,   // 4: Great Fairy Mask
+    sNeiAligned_gItemIconDekuMaskTex_16,         // 5: Deku Mask
+    sNeiAligned_gItemIconKeatonMaskTex_34,       // 6: Keaton Mask
+    sNeiAligned_gItemIconBremenMaskTex_10,       // 7: Bremen Mask
+    sNeiAligned_gItemIconBunnyHoodTex_11,        // 8: Bunny Hood
+    sNeiAligned_gItemIconDonGeroMaskTex_17,      // 9: Don Gero's Mask
+    sNeiAligned_gItemIconMaskOfScentsTex_38,     // 10: Mask of Scents
+    sNeiAligned_gItemIconGoronMaskTex_26,        // 11: Goron Mask
+    sNeiAligned_gItemIconRomaniMaskTex_50,       // 12: Romani's Mask
+    sNeiAligned_gItemIconCircusLeaderMaskTex_14, // 13: Circus Leader's Mask
+    sNeiAligned_gItemIconKafeisMaskTex_32,       // 14: Kafei's Mask
+    sNeiAligned_gItemIconCouplesMaskTex_15,      // 15: Couple's Mask
+    sNeiAligned_gItemIconMaskOfTruthTex_39,      // 16: Mask of Truth
+    sNeiAligned_gItemIconZoraMaskTex_56,         // 17: Zora Mask
+    sNeiAligned_gItemIconKamaroMaskTex_33,       // 18: Kamaro's Mask
+    sNeiAligned_gItemIconGibdoMaskTex_23,        // 19: Gibdo Mask
+    sNeiAligned_gItemIconGaroMaskTex_21,         // 20: Garo Mask
+    sNeiAligned_gItemIconCaptainsHatTex_12,      // 21: Captain's Hat
+    sNeiAligned_gItemIconGiantsMaskTex_22,       // 22: Giant's Mask
+    sNeiAligned_gItemIconFierceDeityMaskTex_19,  // 23: Fierce Deity Mask
 };
 
 // Name texture paths (from item_name_static)
 static const char* sMmMaskNamePaths[24] = {
-    "__OTR__item_name_static/gItemNamePostmansHatENGTex",
-    "__OTR__item_name_static/gItemNameAllNightMaskENGTex",
-    "__OTR__item_name_static/gItemNameBlastMaskENGTex",
-    "__OTR__item_name_static/gItemNameStoneMaskENGTex",
-    "__OTR__item_name_static/gItemNameGreatFairysMaskENGTex",
-    "__OTR__item_name_static/gItemNameDekuMaskENGTex",
-    "__OTR__item_name_static/gItemNameKeatonMaskENGTex",
-    "__OTR__item_name_static/gItemNameBremenMaskENGTex",
-    "__OTR__item_name_static/gItemNameBunnyHoodENGTex",
-    "__OTR__item_name_static/gItemNameDonGerosMaskENGTex",
-    "__OTR__item_name_static/gItemNameMaskOfScentsENGTex",
-    "__OTR__item_name_static/gItemNameGoronMaskENGTex",
-    "__OTR__item_name_static/gItemNameRomanisMaskENGTex",
-    "__OTR__item_name_static/gItemNameCircusLeadersMaskENGTex",
-    "__OTR__item_name_static/gItemNameKafeisMaskENGTex",
-    "__OTR__item_name_static/gItemNameCouplesMaskENGTex",
-    "__OTR__item_name_static/gItemNameMaskOfTruthENGTex",
-    "__OTR__item_name_static/gItemNameZoraMaskENGTex",
-    "__OTR__item_name_static/gItemNameKamarosMaskENGTex",
-    "__OTR__item_name_static/gItemNameGibdoMaskENGTex",
-    "__OTR__item_name_static/gItemNameGarosMaskENGTex",
-    "__OTR__item_name_static/gItemNameCaptainsHatENGTex",
-    "__OTR__item_name_static/gItemNameGiantsMaskENGTex",
-    "__OTR__item_name_static/gItemNameFierceDeitysMaskENGTex",
+    sNeiAligned_gItemNamePostmansHatENGTex_104,
+    sNeiAligned_gItemNameAllNightMaskENGTex_69,
+    sNeiAligned_gItemNameBlastMaskENGTex_70,
+    sNeiAligned_gItemNameStoneMaskENGTex_111,
+    sNeiAligned_gItemNameGreatFairysMaskENGTex_87,
+    sNeiAligned_gItemNameDekuMaskENGTex_77,
+    sNeiAligned_gItemNameKeatonMaskENGTex_93,
+    sNeiAligned_gItemNameBremenMaskENGTex_71,
+    sNeiAligned_gItemNameBunnyHoodENGTex_72,
+    sNeiAligned_gItemNameDonGerosMaskENGTex_79,
+    sNeiAligned_gItemNameMaskOfScentsENGTex_97,
+    sNeiAligned_gItemNameGoronMaskENGTex_86,
+    sNeiAligned_gItemNameRomanisMaskENGTex_106,
+    sNeiAligned_gItemNameCircusLeadersMaskENGTex_75,
+    sNeiAligned_gItemNameKafeisMaskENGTex_91,
+    sNeiAligned_gItemNameCouplesMaskENGTex_76,
+    sNeiAligned_gItemNameMaskOfTruthENGTex_98,
+    sNeiAligned_gItemNameZoraMaskENGTex_114,
+    sNeiAligned_gItemNameKamarosMaskENGTex_92,
+    sNeiAligned_gItemNameGibdoMaskENGTex_83,
+    sNeiAligned_gItemNameGarosMaskENGTex_81,
+    sNeiAligned_gItemNameCaptainsHatENGTex_73,
+    sNeiAligned_gItemNameGiantsMaskENGTex_82,
+    sNeiAligned_gItemNameFierceDeitysMaskENGTex_80,
 };
 
 // Cached icon pointers (NULL = not yet loaded)
@@ -5174,7 +5190,34 @@ const char* MmMasks_GetIconPath(uint16_t itemId) {
 const char* MmMasks_GetNamePath(uint16_t itemId) {
     if (itemId < MM_MASK_ITEM_BASE || itemId >= MM_MASK_ITEM_BASE + 24)
         return nullptr;
-    return sMmMaskNamePaths[itemId - MM_MASK_ITEM_BASE];
+    // Keep raw MM-name loading unchanged; pause labels use our 2x assets.
+    static const ALIGN_ASSET(2) char hdNames[24][96] = {
+        "__OTR__textures/item_name_custom/gPostmansHatNameTex",
+        "__OTR__textures/item_name_custom/gAllNightMaskNameTex",
+        "__OTR__textures/item_name_custom/gBlastMaskNameTex",
+        "__OTR__textures/item_name_custom/gStoneMaskNameTex",
+        "__OTR__textures/item_name_custom/gGreatFairysMaskNameTex",
+        "__OTR__textures/item_name_custom/gDekuMaskNameTex",
+        "__OTR__textures/item_name_custom/gKeatonMaskNameTex",
+        "__OTR__textures/item_name_custom/gBremenMaskNameTex",
+        "__OTR__textures/item_name_custom/gBunnyHoodNameTex",
+        "__OTR__textures/item_name_custom/gDonGerosMaskNameTex",
+        "__OTR__textures/item_name_custom/gMaskOfScentsNameTex",
+        "__OTR__textures/item_name_custom/gGoronMaskNameTex",
+        "__OTR__textures/item_name_custom/gRomanisMaskNameTex",
+        "__OTR__textures/item_name_custom/gCircusLeadersMaskNameTex",
+        "__OTR__textures/item_name_custom/gKafeisMaskNameTex",
+        "__OTR__textures/item_name_custom/gCouplesMaskNameTex",
+        "__OTR__textures/item_name_custom/gMaskOfTruthNameTex",
+        "__OTR__textures/item_name_custom/gZoraMaskNameTex",
+        "__OTR__textures/item_name_custom/gKamarosMaskNameTex",
+        "__OTR__textures/item_name_custom/gGibdoMaskNameTex",
+        "__OTR__textures/item_name_custom/gGarosMaskNameTex",
+        "__OTR__textures/item_name_custom/gCaptainsHatNameTex",
+        "__OTR__textures/item_name_custom/gGiantsMaskNameTex",
+        "__OTR__textures/item_name_custom/gFierceDeitysMaskNameTex",
+    };
+    return hdNames[itemId - MM_MASK_ITEM_BASE];
 }
 
 // =============================================================================
@@ -5191,7 +5234,7 @@ void* MmAssets_LoadFDSwordIcon(void) {
         return sCachedFDSwordIcon;
 
     sFDSwordIconLoaded = true;
-    sCachedFDSwordIcon = MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconFierceDeitySwordTex");
+    sCachedFDSwordIcon = MmAssets_LoadResource(sNeiAligned_gItemIconFierceDeitySwordTex_20);
     if (sCachedFDSwordIcon) {
         MMASSETS_LOG("[MM Assets] Loaded FD sword icon");
     }
@@ -5218,7 +5261,7 @@ void* MmAssets_LoadHookshotIcon(void) {
         return sCachedMmHookshotIcon;
 
     sMmHookshotIconLoaded = true;
-    sCachedMmHookshotIcon = MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconHookshotTex");
+    sCachedMmHookshotIcon = MmAssets_LoadResource(sNeiAligned_gItemIconHookshotTex_30);
     if (sCachedMmHookshotIcon) {
         MMASSETS_LOG("[MM Assets] Loaded MM hookshot icon (Clawshot)");
     }
@@ -5318,10 +5361,10 @@ void* MmAssets_LoadHookshotReticleDL(void) {
 // =============================================================================
 
 static const char* sFormBIconPaths[] = {
-    "__OTR__icon_item_static_yar/gItemIconFierceDeitySwordTex", // MM_PLAYER_FORM_FIERCE_DEITY = 0
-    "__OTR__icon_item_static_yar/gItemIconGoronMaskTex",        // MM_PLAYER_FORM_GORON = 1
-    "__OTR__icon_item_static_yar/gItemIconZoraMaskTex",         // MM_PLAYER_FORM_ZORA = 2
-    "__OTR__icon_item_static_yar/gItemIconDekuMaskTex",         // MM_PLAYER_FORM_DEKU = 3
+    sNeiAligned_gItemIconFierceDeitySwordTex_20, // MM_PLAYER_FORM_FIERCE_DEITY = 0
+    sNeiAligned_gItemIconGoronMaskTex_26,        // MM_PLAYER_FORM_GORON = 1
+    sNeiAligned_gItemIconZoraMaskTex_56,         // MM_PLAYER_FORM_ZORA = 2
+    sNeiAligned_gItemIconDekuMaskTex_16,         // MM_PLAYER_FORM_DEKU = 3
 };
 
 static void* sCachedFormBIcons[4] = { nullptr, nullptr, nullptr, nullptr };
@@ -5348,7 +5391,7 @@ void* MmAssets_LoadFormBIcon(u8 form) {
 const char* MmAssets_GetChateauIconPath(void) {
     if (!MmAssets_IsAvailable())
         return nullptr;
-    return "__OTR__icon_item_static_yar/gItemIconChateauRomaniTex";
+    return sNeiAligned_gItemIconChateauRomaniTex_13;
 }
 
 } // extern "C"

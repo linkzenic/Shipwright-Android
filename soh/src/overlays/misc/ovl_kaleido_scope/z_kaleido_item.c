@@ -1,3 +1,4 @@
+#include "mods/nei_aligned_ui_paths.h"
 #include "z_kaleido_scope.h"
 #include "textures/parameter_static/parameter_static.h"
 #include "textures/icon_item_static/icon_item_static.h"
@@ -1171,7 +1172,7 @@ static void Picto_DrawKaleidoSelector(PlayState* play) {
 
     extern void* gItemIcons[];
     void* lensTex = gItemIcons[ITEM_LENS];
-    static const char sPictoIconPath[] = "__OTR__icon_item_static_yar/gItemIconPictographBoxTex";
+    static const char* const sPictoIconPath = sNeiAligned_gItemIconPictographBoxTex_46;
     void* pictoTex = (void*)sPictoIconPath;
     if (lensTex == NULL) {
         return;
@@ -1214,7 +1215,7 @@ static void PowerKeg_DrawKaleidoSelector(PlayState* play) {
 
     extern void* gItemIcons[];
     void* bombTex = gItemIcons[ITEM_BOMB];
-    static const char sKegIconPath[] = "__OTR__icon_item_static_yar/gItemIconPowderKegTex";
+    static const char* const sKegIconPath = sNeiAligned_gItemIconPowderKegTex_48;
     void* kegTex = (void*)sKegIconPath;
     if (bombTex == NULL) {
         return;
@@ -2645,7 +2646,7 @@ void KaleidoScope_DrawItemSelect(PlayState* play) {
                 gDPSetPrimColor(POLY_OPA_DISP++, 0, 0, 255, 255, 255, pauseCtx->alpha);
                 gSPVertex(POLY_OPA_DISP++, mv, 4, 0);
                 KaleidoScope_DrawQuadTextureRGBA32(
-                    play->state.gfxCtx, (u8*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionLightTex", 24, 24,
+                    play->state.gfxCtx, (u8*)sNeiAligned_gQuestIconMedallionLightTex_117, 24, 24,
                     0);
             }
         }

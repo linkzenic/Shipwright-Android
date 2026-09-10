@@ -1,3 +1,4 @@
+#include "mods/nei_aligned_ui_paths.h"
 /**
  * extended_inventory.c - Extended inventory system implementation
  *
@@ -347,13 +348,13 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     // generate_names.py pipeline. Path strings, resolved by the RSP like every custom name.
     switch (itemId) {
         case EXT_ITEM_SHEIKAH_SLATE:
-            return (void*)"__OTR__textures/item_name_custom/gSheikahSlateNameTex";
+            return (void*)sNeiAligned_gSheikahSlateNameTex_153;
         case EXT_ITEM_PHANTOM_HOURGLASS:
-            return (void*)"__OTR__textures/item_name_custom/gPhantomHourglassNameTex";
+            return (void*)sNeiAligned_gPhantomHourglassNameTex_149;
         case EXT_ITEM_SHADOW_CRYSTAL:
-            return (void*)"__OTR__textures/item_name_custom/gShadowCrystalNameTex";
+            return (void*)sNeiAligned_gShadowCrystalNameTex_152;
         case EXT_ITEM_ROD_OF_SEASONS:
-            return (void*)"__OTR__textures/item_name_custom/gRodOfSeasonsNameTex";
+            return (void*)sNeiAligned_gRodOfSeasonsNameTex_151;
         default:
             break;
     }
@@ -361,7 +362,7 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     // Quartz of Motion is Stone of Agony level 2 and shares its quest cell. The quest page's own
     // name index for that cell happens to BE ITEM_STONE_OF_AGONY, so this renames it. Skijer's NEI
     if (itemId == ITEM_STONE_OF_AGONY && Nei_Save()->quartzOwned) {
-        return (void*)"__OTR__textures/item_name_custom/gQuartzOfMotionNameTex";
+        return (void*)sNeiAligned_gQuartzOfMotionNameTex_150;
     }
 
     // Elemental Wand: one item id, six names — the name follows the active rod.
@@ -372,11 +373,11 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     if (itemId == ITEM_CANE_OF_SOMARIA && Nei_CaneOwned()) {
         switch (Nei_CaneGetType()) {
             case 1:
-                return (void*)"__OTR__textures/item_name_custom/gTrirodNameTex";
+                return (void*)sNeiAligned_gTrirodNameTex_154;
             case 2:
-                return (void*)"__OTR__textures/item_name_custom/gCaneOfPacciNameTex";
+                return (void*)sNeiAligned_gCaneOfPacciNameTex_145;
             case 3:
-                return (void*)"__OTR__textures/item_name_custom/gUltrahandNameTex";
+                return (void*)sNeiAligned_gUltrahandNameTex_155;
             default:
                 break;
         }
@@ -392,47 +393,47 @@ void* ExtInv_GetCustomItemNameTex(uint16_t itemId, uint8_t language) {
     // Chateau Romani: name texture from mm.o2r
     if (itemId == ITEM_CHATEAU_ROMANI) {
         if (MmAssets_GetChateauIconPath()) // checks availability
-            return (void*)"__OTR__item_name_static/gItemNameChateauRomaniENGTex";
+            return (void*)sNeiAligned_gItemNameChateauRomaniENGTex_74;
         return NULL;
     }
     // MM bottle-content custom items: name textures from mm.o2r (item_name_static), like Chateau.
     // Hylian Loach + Obaba's Drink only exist as JPN textures in MM. Skijer's NEI
     switch (itemId) {
         case ITEM_GOLD_DUST:
-            return (void*)"__OTR__item_name_static/gItemNameGoldDustENGTex";
+            return (void*)sNeiAligned_gItemNameGoldDustENGTex_85;
         case ITEM_HOT_SPRING_WATER:
-            return (void*)"__OTR__item_name_static/gItemNameHotSpringWaterENGTex";
+            return (void*)sNeiAligned_gItemNameHotSpringWaterENGTex_89;
         case ITEM_DEKU_PRINCESS:
-            return (void*)"__OTR__item_name_static/gItemNameDekuPrincessENGTex";
+            return (void*)sNeiAligned_gItemNameDekuPrincessENGTex_78;
         case ITEM_SEAHORSE:
-            return (void*)"__OTR__item_name_static/gItemNameSeaHorseENGTex";
+            return (void*)sNeiAligned_gItemNameSeaHorseENGTex_108;
         case ITEM_SPRING_WATER:
-            return (void*)"__OTR__item_name_static/gItemNameSpringWaterENGTex";
+            return (void*)sNeiAligned_gItemNameSpringWaterENGTex_110;
         case ITEM_ZORA_EGG:
-            return (void*)"__OTR__item_name_static/gItemNameZoraEggENGTex";
+            return (void*)sNeiAligned_gItemNameZoraEggENGTex_113;
         case ITEM_HYLIAN_LOACH:
-            return (void*)"__OTR__item_name_static/gItemNameHylianLoachJPNTex";
+            return (void*)sNeiAligned_gItemNameHylianLoachJPNTex_90;
         case ITEM_OBABA_DRINK:
-            return (void*)"__OTR__item_name_static/gItemNameObabasDrinkJPNTex";
+            return (void*)sNeiAligned_gItemNameObabasDrinkJPNTex_101;
         case ITEM_MAGIC_MUSHROOM:
-            return (void*)"__OTR__item_name_static/gItemNameMagicalMushroomENGTex";
+            return (void*)sNeiAligned_gItemNameMagicalMushroomENGTex_96;
         // MM adult trade-quest items (Skijer's NEI) — names from mm.o2r item_name_static.
         case ITEM_MM_MOONS_TEAR:
-            return (void*)"__OTR__item_name_static/gItemNameMoonsTearENGTex";
+            return (void*)sNeiAligned_gItemNameMoonsTearENGTex_99;
         case ITEM_MM_DEED_LAND:
-            return (void*)"__OTR__item_name_static/gItemNameLandTitleDeedENGTex";
+            return (void*)sNeiAligned_gItemNameLandTitleDeedENGTex_94;
         case ITEM_MM_DEED_SWAMP:
-            return (void*)"__OTR__item_name_static/gItemNameSwampTitleDeedENGTex";
+            return (void*)sNeiAligned_gItemNameSwampTitleDeedENGTex_112;
         case ITEM_MM_DEED_MOUNTAIN:
-            return (void*)"__OTR__item_name_static/gItemNameMountainTitleDeedENGTex";
+            return (void*)sNeiAligned_gItemNameMountainTitleDeedENGTex_100;
         case ITEM_MM_DEED_OCEAN:
-            return (void*)"__OTR__item_name_static/gItemNameOceanTitleDeedENGTex";
+            return (void*)sNeiAligned_gItemNameOceanTitleDeedENGTex_102;
         case ITEM_MM_ROOM_KEY:
-            return (void*)"__OTR__item_name_static/gItemNameRoomKeyENGTex";
+            return (void*)sNeiAligned_gItemNameRoomKeyENGTex_107;
         case ITEM_MM_LETTER_KAFEI:
-            return (void*)"__OTR__item_name_static/gItemNameLetterToKafeiENGTex";
+            return (void*)sNeiAligned_gItemNameLetterToKafeiENGTex_95;
         case ITEM_MM_SPECIAL_DELIVERY:
-            return (void*)"__OTR__item_name_static/gItemNameSpecialDeliveryToMamaENGTex";
+            return (void*)sNeiAligned_gItemNameSpecialDeliveryToMamaENGTex_109;
         default:
             break;
     }
@@ -476,7 +477,7 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     // Kafei lays SW97 landmines rather than throwing homing mice, so the slot has to read as one
     // while he is transformed and go back to the mouse the moment he is not. Skijer's NEI
     if (itemId == ITEM_BOMBCHU && KafeiForm_ReplacesBombchu()) {
-        return (void*)"__OTR__textures/icon_item_custom/gItemIconLandmineTex";
+        return (void*)sNeiAligned_gItemIconLandmineTex_123;
     }
 
     // 2026-08-06 page-2 additions — EXT (u16) inventory ids. Resolved FIRST: any generic fallback
@@ -488,13 +489,13 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             if (Nei_Save()->slateRunesOwned != 0) {
                 return Slate_RuneIcon(Slate_GetRune());
             }
-            return (void*)"__OTR__textures/icon_item_custom/gItemIconSheikahSlateTex";
+            return (void*)sNeiAligned_gItemIconSheikahSlateTex_137;
         case EXT_ITEM_PHANTOM_HOURGLASS:
-            return (void*)"__OTR__textures/icon_item_custom/gItemIconPhantomHourglassTex";
+            return (void*)sNeiAligned_gItemIconPhantomHourglassTex_124;
         case EXT_ITEM_SHADOW_CRYSTAL:
-            return (void*)"__OTR__textures/icon_item_custom/gItemIconShadowCrystalTex";
+            return (void*)sNeiAligned_gItemIconShadowCrystalTex_131;
         case EXT_ITEM_ROD_OF_SEASONS:
-            return (void*)"__OTR__textures/icon_item_custom/gItemIconRodOfSeasonsTex";
+            return (void*)sNeiAligned_gItemIconRodOfSeasonsTex_125;
         default:
             break;
     }
@@ -502,7 +503,7 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     // Quartz of Motion — the same cell swap as its name above. 24x24, because the quest page draws
     // that cell at the quest-icon size and not at the item page's 32x32. Skijer's NEI
     if (itemId == ITEM_STONE_OF_AGONY && Nei_Save()->quartzOwned) {
-        return (void*)"__OTR__textures/icon_item_custom/gQuestIconQuartzOfMotionTex";
+        return (void*)sNeiAligned_gQuestIconQuartzOfMotionTex_144;
     }
 
     // ── Dual Cane: the cell's icon is simply which of the four is in hand ────
@@ -515,11 +516,11 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     if (itemId == ITEM_CANE_OF_SOMARIA && Nei_CaneOwned()) {
         switch (Nei_CaneGetType()) {
             case 1: // Trirod
-                return (void*)"__OTR__textures/icon_item_custom/gItemIconTrirodTex";
+                return (void*)sNeiAligned_gItemIconTrirodTex_142;
             case 2: // Cane of Pacci
-                return (void*)"__OTR__textures/icon_item_custom/gItemIconCaneOfPacciTex";
+                return (void*)sNeiAligned_gItemIconCaneOfPacciTex_121;
             case 3: // Ultrahand
-                return (void*)"__OTR__textures/icon_item_custom/gItemIconUltrahandTex";
+                return (void*)sNeiAligned_gItemIconUltrahandTex_143;
             default:
                 break; // Cane of Somaria keeps the cell's own icon
         }
@@ -542,7 +543,7 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
                                           itemId == ITEM_SWORD_BGS || itemId == ITEM_SWORD_KNIFE)) {
         // Return the OTR PATH (HD-mod-aware); the loader call is just the mm.o2r existence probe.
         if (MmAssets_LoadFDSwordIcon())
-            return (void*)"__OTR__icon_item_static_yar/gItemIconFierceDeitySwordTex";
+            return (void*)sNeiAligned_gItemIconFierceDeitySwordTex_20;
     }
 
     // NEI weapon upgrades — show the MM upgrade icon when the upgrade is owned and the matching
@@ -552,15 +553,15 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     // applied at render time, not here).
     if (itemId == ITEM_SWORD_KOKIRI && WeaponUpgrade_KokiriLevel() >= 1) {
         u8 showGilded = WeaponUpgrade_HasGilded() && CVarGetInteger("gEnhancements.SkijerNEI.GildedUsesGildedLook", 1);
-        const char* p = showGilded ? "__OTR__icon_item_static_yar/gItemIconGildedSwordTex"
-                                   : "__OTR__icon_item_static_yar/gItemIconRazorSwordTex";
+        const char* p = showGilded ? sNeiAligned_gItemIconGildedSwordTex_24
+                                   : sNeiAligned_gItemIconRazorSwordTex_49;
         if (MmAssets_LoadResource(p)) // probe; return the PATH so the HD pack applies
             return (void*)p;
     }
     if (itemId == ITEM_SWORD_BGS && WeaponUpgrade_HasGreatFairy() &&
         CVarGetInteger("gEnhancements.SkijerNEI.BgsUsesGfsLook", 1)) {
-        if (MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconGreatFairysSwordTex"))
-            return (void*)"__OTR__icon_item_static_yar/gItemIconGreatFairysSwordTex";
+        if (MmAssets_LoadResource(sNeiAligned_gItemIconGreatFairysSwordTex_28))
+            return (void*)sNeiAligned_gItemIconGreatFairysSwordTex_28;
     }
     // Hammer → Iron Knuckle's Axe: show the axe icon while the upgrade is owned.
     if (itemId == ITEM_HAMMER && WeaponUpgrade_HasHammerAxe()) {
@@ -594,7 +595,7 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
         extern unsigned char TwilightUpgrade_IsGaleBoomerangActive(void);
         if ((itemId == ITEM_HOOKSHOT || itemId == ITEM_LONGSHOT) && TwilightUpgrade_IsClawshotActive()) {
             if (MmAssets_LoadHookshotIcon())
-                return (void*)"__OTR__icon_item_static_yar/gItemIconHookshotTex";
+                return (void*)sNeiAligned_gItemIconHookshotTex_30;
             return (void*)gItemIconClawshotTex;
         }
         if (itemId == ITEM_BOOMERANG && TwilightUpgrade_IsGaleBoomerangActive()) {
@@ -613,8 +614,8 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
             // gets the name and Fast3D can substitute an MM HD texture pack (MM_Reloaded etc.) — a
             // resolved pointer draws base data at the wrong size and went blank under an HD pack. The
             // MmAssets_LoadResource call stays as the mm.o2r existence probe (falls through if absent).
-            if (MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconPictographBoxTex")) {
-                return (void*)"__OTR__icon_item_static_yar/gItemIconPictographBoxTex";
+            if (MmAssets_LoadResource(sNeiAligned_gItemIconPictographBoxTex_46)) {
+                return (void*)sNeiAligned_gItemIconPictographBoxTex_46;
             }
         }
     }
@@ -626,8 +627,8 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
         extern unsigned char PowerKeg_IsOnBombActive(void);
         if (itemId == ITEM_BOMB && PowerKeg_IsOwned() && PowerKeg_IsOnBombActive()) {
             // Return the OTR PATH (see the pictobox note above) so the MM HD texture pack applies.
-            if (MmAssets_LoadResource("__OTR__icon_item_static_yar/gItemIconPowderKegTex")) {
-                return (void*)"__OTR__icon_item_static_yar/gItemIconPowderKegTex";
+            if (MmAssets_LoadResource(sNeiAligned_gItemIconPowderKegTex_48)) {
+                return (void*)sNeiAligned_gItemIconPowderKegTex_48;
             }
         }
     }
@@ -639,21 +640,21 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     {
         const char* p = NULL;
         if (itemId == ITEM_GOLD_DUST)
-            p = "__OTR__icon_item_static_yar/gItemIconBottledGoldDustTex";
+            p = sNeiAligned_gItemIconBottledGoldDustTex_6;
         else if (itemId == ITEM_HOT_SPRING_WATER)
-            p = "__OTR__icon_item_static_yar/gItemIconHotSpringWaterTex";
+            p = sNeiAligned_gItemIconHotSpringWaterTex_31;
         else if (itemId == ITEM_DEKU_PRINCESS)
-            p = "__OTR__icon_item_static_yar/gItemIconBottledDekuPrincessTex";
+            p = sNeiAligned_gItemIconBottledDekuPrincessTex_5;
         else if (itemId == ITEM_SEAHORSE)
-            p = "__OTR__icon_item_static_yar/gItemIconBottledSeahorseTex";
+            p = sNeiAligned_gItemIconBottledSeahorseTex_8;
         else if (itemId == ITEM_SPRING_WATER)
-            p = "__OTR__icon_item_static_yar/gItemIconSpringWaterTex";
+            p = sNeiAligned_gItemIconSpringWaterTex_52;
         else if (itemId == ITEM_ZORA_EGG)
-            p = "__OTR__icon_item_static_yar/gItemIconBottledZoraEggTex";
+            p = sNeiAligned_gItemIconBottledZoraEggTex_9;
         else if (itemId == ITEM_HYLIAN_LOACH)
-            p = "__OTR__icon_item_static_yar/gItemIconBottledHylianLoachTex";
+            p = sNeiAligned_gItemIconBottledHylianLoachTex_7;
         else if (itemId == ITEM_OBABA_DRINK)
-            p = "__OTR__icon_item_static_yar/gItemIconEmptyBottle2Tex";
+            p = sNeiAligned_gItemIconEmptyBottle2Tex_18;
         if (p && MmAssets_LoadResource(p))
             return (void*)p; // PATH -> HD-pack aware
     }
@@ -664,21 +665,21 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     {
         const char* p = NULL;
         if (itemId == ITEM_MM_MOONS_TEAR)
-            p = "__OTR__icon_item_static_yar/gItemIconMoonsTearTex";
+            p = sNeiAligned_gItemIconMoonsTearTex_41;
         else if (itemId == ITEM_MM_DEED_LAND)
-            p = "__OTR__icon_item_static_yar/gItemIconLandDeedTex";
+            p = sNeiAligned_gItemIconLandDeedTex_35;
         else if (itemId == ITEM_MM_DEED_SWAMP)
-            p = "__OTR__icon_item_static_yar/gItemIconSwampDeedTex";
+            p = sNeiAligned_gItemIconSwampDeedTex_54;
         else if (itemId == ITEM_MM_DEED_MOUNTAIN)
-            p = "__OTR__icon_item_static_yar/gItemIconMountainDeedTex";
+            p = sNeiAligned_gItemIconMountainDeedTex_42;
         else if (itemId == ITEM_MM_DEED_OCEAN)
-            p = "__OTR__icon_item_static_yar/gItemIconOceanDeedTex";
+            p = sNeiAligned_gItemIconOceanDeedTex_43;
         else if (itemId == ITEM_MM_ROOM_KEY)
-            p = "__OTR__icon_item_static_yar/gItemIconRoomKeyTex";
+            p = sNeiAligned_gItemIconRoomKeyTex_51;
         else if (itemId == ITEM_MM_LETTER_KAFEI)
-            p = "__OTR__icon_item_static_yar/gItemIconLetterToKafeiTex";
+            p = sNeiAligned_gItemIconLetterToKafeiTex_36;
         else if (itemId == ITEM_MM_SPECIAL_DELIVERY)
-            p = "__OTR__icon_item_static_yar/gItemIconLetterToMamaTex";
+            p = sNeiAligned_gItemIconLetterToMamaTex_37;
         if (p && MmAssets_LoadResource(p))
             return (void*)p; // PATH -> HD-pack aware
     }
@@ -690,13 +691,13 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
     // Their art exists only in mm.o2r; returning the PATH keeps HD packs working.
     switch (itemId) {
         case ITEM_MM_REMAINS_ODOLWA:
-            return (void*)"__OTR__icon_item_static_yar/gItemIconOdolwasRemainsTex";
+            return (void*)sNeiAligned_gItemIconOdolwasRemainsTex_44;
         case ITEM_MM_REMAINS_GOHT:
-            return (void*)"__OTR__icon_item_static_yar/gItemIconGohtsRemainsTex";
+            return (void*)sNeiAligned_gItemIconGohtsRemainsTex_25;
         case ITEM_MM_REMAINS_GYORG:
-            return (void*)"__OTR__icon_item_static_yar/gItemIconGyorgsRemainsTex";
+            return (void*)sNeiAligned_gItemIconGyorgsRemainsTex_29;
         case ITEM_MM_REMAINS_TWINMOLD:
-            return (void*)"__OTR__icon_item_static_yar/gItemIconTwinmoldsRemainsTex";
+            return (void*)sNeiAligned_gItemIconTwinmoldsRemainsTex_55;
         default:
             break;
     }
@@ -789,17 +790,17 @@ void* ExtInv_GetItemIcon(uint16_t itemId) {
 
         // SW97 Medallion items (spell mode — show medallion quest icons)
         case ITEM_MEDALLION_FOREST:
-            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionForestTex";
+            return (void*)sNeiAligned_gQuestIconMedallionForestTex_116;
         case ITEM_MEDALLION_FIRE:
-            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionFireTex";
+            return (void*)sNeiAligned_gQuestIconMedallionFireTex_115;
         case ITEM_MEDALLION_WATER:
-            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionWaterTex";
+            return (void*)sNeiAligned_gQuestIconMedallionWaterTex_120;
         case ITEM_MEDALLION_SPIRIT:
-            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionSpiritTex";
+            return (void*)sNeiAligned_gQuestIconMedallionSpiritTex_119;
         case ITEM_MEDALLION_SHADOW:
-            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionShadowTex";
+            return (void*)sNeiAligned_gQuestIconMedallionShadowTex_118;
         case ITEM_MEDALLION_LIGHT:
-            return (void*)"__OTR__textures/icon_item_24_static/gQuestIconMedallionLightTex";
+            return (void*)sNeiAligned_gQuestIconMedallionLightTex_117;
 
         // SW97 elemental shots no longer have item ids — the element is a flag and the medallion
         // icon is fetched directly via Sw97_ElementIcon(), which lands on the ITEM_MEDALLION_*
@@ -1235,18 +1236,18 @@ uint8_t Wand_ModeNeighbor(uint8_t mode, int32_t dir) {
 // ── Sheikah Slate — five runes in one page-2 cell (wand idiom, no rando-mode split: each rune is
 // always its own sibling item, "random" order comes from where the seed hides them) ──────────────
 static void* const sSlateRuneMiniIcon[SLATE_RUNE_COUNT] = {
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSlateRuneBombTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSlateRuneStasisTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSlateRuneCryonisTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSlateRuneMasterCycleTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconDesireSensorTex",
+    (void*)sNeiAligned_gItemIconSlateRuneBombTex_138,
+    (void*)sNeiAligned_gItemIconSlateRuneStasisTex_141,
+    (void*)sNeiAligned_gItemIconSlateRuneCryonisTex_139,
+    (void*)sNeiAligned_gItemIconSlateRuneMasterCycleTex_140,
+    (void*)sNeiAligned_gItemIconDesireSensorTex_122,
 };
 static void* const sSlateRuneIcon[SLATE_RUNE_COUNT] = {
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSheikahSlateBombTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSheikahSlateStasisTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSheikahSlateCryonisTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSheikahSlateMasterCycleTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSheikahSlateSensorTex",
+    (void*)sNeiAligned_gItemIconSheikahSlateBombTex_132,
+    (void*)sNeiAligned_gItemIconSheikahSlateStasisTex_136,
+    (void*)sNeiAligned_gItemIconSheikahSlateCryonisTex_133,
+    (void*)sNeiAligned_gItemIconSheikahSlateMasterCycleTex_134,
+    (void*)sNeiAligned_gItemIconSheikahSlateSensorTex_135,
 };
 
 void* Slate_RuneMiniIcon(uint8_t rune) {
@@ -1329,11 +1330,11 @@ uint8_t Slate_RuneNeighbor(uint8_t rune, int32_t dir) {
 // ── Rod of Seasons — four seasons in one page-2 cell (slate idiom: each season is its own sibling
 // item, "random" order comes from where the seed hides them) ─────────────────────────────────────
 static void* const sSeasonIcon[SEASON_SLOTS] = {
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSeasonSpringTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSeasonSummerTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSeasonAutumnTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSeasonWinterTex",
-    (void*)"__OTR__textures/icon_item_custom/gItemIconSeasonOffTex",
+    (void*)sNeiAligned_gItemIconSeasonSpringTex_128,
+    (void*)sNeiAligned_gItemIconSeasonSummerTex_129,
+    (void*)sNeiAligned_gItemIconSeasonAutumnTex_126,
+    (void*)sNeiAligned_gItemIconSeasonWinterTex_130,
+    (void*)sNeiAligned_gItemIconSeasonOffTex_127,
 };
 
 // The emblem colour of each coin on the staff, lifted to flame brightness — the raw texture values

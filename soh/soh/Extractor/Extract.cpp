@@ -17,6 +17,11 @@
 #include <unistd.h>
 #endif
 
+#ifdef __ANDROID__
+#include <jni.h>
+#include <SDL2/SDL.h>
+#endif
+
 #ifdef _MSC_VER
 #define BSWAP32 _byteswap_ulong
 #define BSWAP16 _byteswap_ushort
@@ -108,6 +113,29 @@ enum class ButtonId : int {
     NO,
     FIND,
 };
+
+#ifdef __ANDROID__
+static const char* javaRomPath = NULL;
+static bool fileDialogOpen = false;
+
+static void openFilePickerFromC(JNIEnv* env, jobject javaObject) {
+    fileDialogOpen = true;
+    jclass javaClass = env->GetObjectClass(javaObject);
+    jmethodID openFilePickerMethod = env->GetMethodID(javaClass, "openFilePicker", "()V");
+    env->CallVoidMethod(javaObject, openFilePickerMethod);
+}
+
+extern "C" void JNICALL Java_com_dishii_soh_MainActivity_nativeHandleSelectedFile(JNIEnv* env, jobject obj, jstring filePath) {
+    if (filePath == nullptr) {
+        fileDialogOpen = false;
+        return;
+    }
+    const char* filePathStr = env->GetStringUTFChars(filePath, 0);
+    javaRomPath = strdup(filePathStr);
+    fileDialogOpen = false;
+    env->ReleaseStringUTFChars(filePath, filePathStr);
+}
+#endif
 
 void Extractor::ShowErrorBox(const char* title, const char* text) {
 #ifdef _WIN32
@@ -244,6 +272,20 @@ void Extractor::GetRoms(std::vector<std::string>& roms) {
     // if (h != nullptr) {
     //    CloseHandle(h);
     //}
+#elif defined(__ANDROID__)
+    DIR* adir;
+    struct dirent* aentry;
+    if ((adir = opendir(mSearchPath.c_str())) != NULL) {
+        while ((aentry = readdir(adir)) != NULL) {
+            if (aentry->d_type == DT_REG) {
+                char* filename = aentry->d_name;
+                if (strstr(filename, ".n64") || strstr(filename, ".z64") || strstr(filename, ".v64")) {
+                    roms.push_back(mSearchPath + "/" + filename);
+                }
+            }
+        }
+        closedir(adir);
+    }
 #elif unix
     // Open the directory of the app.
     DIR* d = opendir(mSearchPath.c_str());
@@ -317,6 +359,19 @@ bool Extractor::GetRomPathFromBox() {
         return false;
     }
     mCurrentRomPath = nameBuffer;
+#elif defined(__ANDROID__)
+    JNIEnv* javaEnv = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject javaObject = (jobject)SDL_AndroidGetActivity();
+    openFilePickerFromC(javaEnv, javaObject);
+    while (fileDialogOpen) {
+        SDL_Delay(250);
+    }
+    if (javaRomPath == NULL) {
+        return false;
+    }
+    mCurrentRomPath = javaRomPath;
+    free((void*)javaRomPath);
+    javaRomPath = NULL;
 #else
     auto selection = pfd::open_file("Select a file", mSearchPath, { "N64 Roms", "*.z64 *.n64 *.v64" }).result();
 
@@ -619,7 +674,11 @@ const char* Extractor::GetZapdVerStr() const {
 }
 
 std::string Extractor::Mkdtemp() {
+#ifdef __ANDROID__
+    std::string temp_dir = SDL_AndroidGetExternalStoragePath();
+#else
     std::string temp_dir = std::filesystem::temp_directory_path().string();
+#endif
 
     // create 6 random alphanumeric characters
     static const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -654,7 +713,7 @@ bool Extractor::CallZapd(std::string installPath, std::string exportdir, std::at
     // Work this out in the temporary folder
     std::string tempdir = Mkdtemp();
     std::string curdir = std::filesystem::current_path().string();
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__ANDROID__)
     std::filesystem::copy(installPath + "/assets", tempdir + "/assets",
                           std::filesystem::copy_options::recursive | std::filesystem::copy_options::update_existing);
 #else
@@ -663,8 +722,13 @@ bool Extractor::CallZapd(std::string installPath, std::string exportdir, std::at
 
     std::filesystem::current_path(tempdir);
 
+#ifdef __ANDROID__
+    snprintf(xmlPath, 1024, "assets/extractor/xmls/%s", version);
+    snprintf(confPath, 1024, "assets/extractor/Config_%s.xml", version);
+#else
     snprintf(xmlPath, 1024, "assets/xml/%s", version);
     snprintf(confPath, 1024, "assets/Config_%s.xml", version);
+#endif
     snprintf(portVersion, 18, "%d.%d.%d", gBuildVersionMajor, gBuildVersionMinor, gBuildVersionPatch);
 
     argv[0] = "ZAPD";
@@ -674,7 +738,11 @@ bool Extractor::CallZapd(std::string installPath, std::string exportdir, std::at
     argv[4] = "-b";
     argv[5] = romPath.c_str();
     argv[6] = "-fl";
+#ifdef __ANDROID__
+    argv[7] = "assets/extractor/filelists";
+#else
     argv[7] = "assets/filelists";
+#endif
     argv[8] = "-gsf";
     argv[9] = "0";
     argv[10] = "-rconf";

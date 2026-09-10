@@ -729,10 +729,11 @@ const std::string& SohUtils::GetItemName(int32_t item) {
             break;
     }
 
-    if (item >= currentItemNames->size()) {
-        SPDLOG_WARN("Passed invalid item id to SohUtils::GetItemName: ({})", item);
-        assert(false);
-        return invalidString;
+    if (item < 0 || static_cast<size_t>(item) >= currentItemNames->size()) {
+        // NEI extends the item IDs beyond the vanilla localized name tables.
+        // A missing display name must never terminate the game (including debug builds).
+        static const std::string unknownItemName = "Unknown item";
+        return unknownItemName;
     }
 
     return (*currentItemNames)[item];

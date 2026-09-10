@@ -1,0 +1,58 @@
+name: Android NEI 2.0 Release APK
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nei-2-release
+  cancel-in-progress: false
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    container:
+      image: djvdw7f2ro/android-builder-soh:v1.0.4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Configure Android SDK
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          printf 'sdk.dir=%s\nndk.dir=%s\n' "$ANDROID_SDK_ROOT" "$ANDROID_NDK_HOME" > Android/local.properties
+      - name: Install host dependencies
+        run: |
+          apt-get update
+          apt-get install -y $(cat linux-build-deps/apt.txt)
+      - name: Prepare extractor dependencies
+        working-directory: Android
+        run: ./gradlew applyZapdtrAndroidPatch applyOtrExporterAndroidPatch
+      - name: Generate matching resources
+        run: |
+          cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-linux --target GenerateSohOtr --parallel 4
+          cp build-linux/soh/soh.o2r Android/app/src/main/assets/soh.o2r
+          tools/ci/inject_android_renderer_shaders.sh
+      - name: Build signed Android APK
+        env:
+          KEYSTORE_DATA: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          GIT_TAG: v2.0
+        working-directory: Android
+        run: |
+          printf '%s' "$KEYSTORE_DATA" | base64 -d > app/release.jks
+          trap 'rm -f app/release.jks' EXIT
+          ./gradlew assembleRelease -PstoreFile=release.jks -PstorePassword="$STORE_PASSWORD" -PkeyAlias="$KEY_ALIAS" -PkeyPassword="$KEY_PASSWORD"
+      - name: Prepare release candidate
+        run: |
+          mkdir -p release-apk
+          cp Android/app/build/outputs/apk/release/sohnei_release_v2.0.apk release-apk/sohnei-2.0.apk
+          cd release-apk
+          sha256sum sohnei-2.0.apk > sohnei-2.0.apk.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sohnei-2.0-android
+          path: release-apk/*
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,165 @@
+# Randomizer (cooperative, no PvP) — players share save flags, items, dungeon
+# keys, entrances. Anchor-style coop. PvP off.
+
+gamemode_id: randomizer-no-pvp
+name: "Rando — No PvP"
+version: "1.0.0"
+description: "Shared randomizer save (items / flags / keys / entrances). PvP off."
+author: "Skijer"
+license: "MIT"
+
+min_players: 1
+max_players: 8
+recommended_players: 2
+
+save_preset: null
+
+default_config:
+  sync_items: true
+  pvp_enabled: false
+  share_dungeon_keys: true
+  share_entrance_discovery: true
+
+permissions:
+  player:
+    - primitive: PLAYER.UPDATE_FULL_STATE
+      scope: self
+      rate_limit: 60/sec
+    - primitive: PLAYER.UPDATE_TRANSFORM
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_SKELETON
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_LIMB_ROTATIONS
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_ANIMATION_FLAGS
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_MOTION_VARS
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_BOW_STATE
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_HAND_TYPES
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.UPDATE_VISUAL_STATE
+      scope: self
+      rate_limit: 5/sec
+    - primitive: PLAYER.UPDATE_EQUIP_VISIBLE
+      scope: self
+      rate_limit: 10/sec
+    - primitive: PLAYER.UPDATE_FACE
+      scope: self
+      rate_limit: 10/sec
+    - primitive: PLAYER.UPDATE_SCALE
+      scope: self
+      rate_limit: 5/sec
+    - primitive: PLAYER.UPDATE_CUSTOM_ITEM_STATE
+      scope: self
+      rate_limit: 30/sec
+    - primitive: PLAYER.SET_TRANSFORMATION
+      scope: self
+      rate_limit: 5/sec
+    - primitive: PLAYER.UPDATE_GORON_STATE
+      scope: self
+      rate_limit: 30/sec
+    - primitive: SAVE.SET_FLAG
+      scope: room
+      rate_limit: 200/sec
+    - primitive: SAVE.UNSET_FLAG
+      scope: room
+      rate_limit: 200/sec
+    - primitive: SAVE.SET_QUEST_STATE
+      scope: room
+      rate_limit: 200/sec
+    - primitive: SAVE.UPDATE_TEAM_STATE
+      scope: room
+      rate_limit: 1/10sec
+    - primitive: SAVE.REQUEST_TEAM_STATE
+      scope: room
+      rate_limit: 1/sec
+    - primitive: SAVE.GAME_COMPLETE
+      scope: room
+      rate_limit: 1/sec
+    - primitive: AUDIO.OCARINA_SFX
+      scope: room
+      rate_limit: 60/sec
+    - primitive: INVENTORY.GIVE_ITEM
+      scope: room
+      rate_limit: 200/sec
+    - primitive: INVENTORY.SET_DUNGEON_ITEMS
+      scope: room
+      rate_limit: 10/sec
+    - primitive: INVENTORY.SET_AMMO
+      scope: room
+      rate_limit: 10/sec
+    - primitive: MAP.ENTRANCE_DISCOVERED
+      scope: room
+      rate_limit: 200/sec
+    - primitive: WORLD.TRANSPORT_SCENE
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: APPEARANCE.SKIN_SYNC.ANNOUNCE_CATALOG
+      scope: room
+      rate_limit: 1/10sec
+    - primitive: APPEARANCE.SKIN_SYNC.UPDATE_SLOTS
+      scope: room
+      rate_limit: 5/sec
+    - primitive: AUDIO.PLAY_SFX
+      scope: self
+      rate_limit: 30/sec
+    - primitive: ROOM.BROADCAST_EVENT
+      scope: room
+      rate_limit: 5/sec
+    - primitive: CHAT.MESSAGE
+      scope: room
+      rate_limit: 5/sec
+    - primitive: CHAT.EMOTE
+      scope: room
+      rate_limit: 2/sec
+    - primitive: CHAT.PING
+      scope: room
+      rate_limit: 5/sec
+    - primitive: CHAT.MARK_LOCATION
+      scope: room
+      rate_limit: 1/sec
+    - primitive: VOTING.CAST_VOTE
+      scope: room
+      rate_limit: 5/sec
+
+  admin:
+    - inherits: player
+    - primitive: ROOM.SET_GAMEMODE_CONFIG
+      scope: room
+      rate_limit: 1/sec
+    - primitive: UI.SHOW_MESSAGE
+      scope: any_in_room
+      rate_limit: 2/sec
+    - primitive: UI.SHOW_BANNER
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: ADMIN.PROMOTE
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: ADMIN.DEMOTE
+      scope: any_in_room
+      rate_limit: 1/sec
+
+  host:
+    - inherits: admin
+    - primitive: ROOM.START_GAME
+      scope: room
+      rate_limit: 1/sec
+    - primitive: ROOM.SET_GAMEMODE_ID
+      scope: room
+      rate_limit: 1/sec
+    - primitive: ADMIN.SET_HOST
+      scope: any_in_room
+      rate_limit: 1/sec
+    - primitive: ADMIN.KICK
+      scope: any_in_room
+      rate_limit: 1/sec

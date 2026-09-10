@@ -1,3 +1,4 @@
+#include "mods/nei_aligned_ui_paths.h"
 /**
  * ext_equip_names.c - Name textures for extended equipment
  *
@@ -44,7 +45,7 @@ static void* ExtEquip_LookupNameTex(u16 itemId, u8 language) {
             // Shared id: the grid slot is the Climb Boots, the inventory/trade-wheel item with this id
             // is still the Pendant of Memories (mm.o2r name texture). Skijer 2026-07-29
             return gExtEquipGridNameContext ? (void*)gClimbBootsNameTex
-                                            : (void*)"__OTR__item_name_static/gItemNamePendantOfMemoriesENGTex";
+                                            : (void*)sNeiAligned_gItemNamePendantOfMemoriesENGTex_103;
         case ITEM_EXT_BOOTS_3:
             return (void*)gRocBootsNameTex;
 

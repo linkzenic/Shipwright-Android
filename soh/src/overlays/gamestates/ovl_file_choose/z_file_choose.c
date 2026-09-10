@@ -1106,7 +1106,7 @@ void FileChoose_ConfigModeUpdate(GameState* thisx) {
     // #region SOH [NTSC] Reload Fonts If Language Has Changed
     static s32 previousLanguage = LANGUAGE_ENG;
     if (previousLanguage != gSaveContext.language) {
-        if (ResourceMgr_GetGameRegion(0) == GAME_REGION_PAL && gSaveContext.language != LANGUAGE_JPN) {
+        if (ResourceMgr_IsPalLoaded() && gSaveContext.language != LANGUAGE_JPN) {
             Font_LoadOrderedFont(&this->font);
         } else {
             Font_LoadOrderedFontNTSC(&this->font);
@@ -1115,7 +1115,7 @@ void FileChoose_ConfigModeUpdate(GameState* thisx) {
     }
     // #endregion
 
-    if (ResourceMgr_GetGameRegion(0) == GAME_REGION_PAL && gSaveContext.language != LANGUAGE_JPN) {
+    if (ResourceMgr_IsPalLoaded() && gSaveContext.language != LANGUAGE_JPN) {
         gConfigModeUpdateFuncs[this->configMode](&this->state);
     } else { // GAME_REGION_NTSC
         gConfigModeUpdateFuncsNES[this->configMode](&this->state);

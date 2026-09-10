@@ -24,6 +24,7 @@ void SohMenu::AddMenuNetwork() {
 
     // Harpoon sidebar is registered by HarpoonMenu.cpp via RegisterMenuInitFunc
 
+#ifndef __ANDROID__
     // Sail
     path = { "Network", "Sail", SECTION_COLUMN_1 };
     AddSidebarEntry("Network", path.sidebarName, 3);
@@ -99,6 +100,7 @@ void SohMenu::AddMenuNetwork() {
             info.name = "Connecting...##Sail";
         }
     });
+#endif
 
     path.sidebarName = "Crowd Control";
     AddSidebarEntry("Network", path.sidebarName, 3);

@@ -561,6 +561,21 @@ void DrawBGSItemFlag(uint8_t itemID) {
 // Skijer's NEI — Bottle Randomizer dev editor (drawn to the right of the page-1 inventory grid as a
 // 4x2 grid: Bottle A = slots 0-3, Bottle B = slots 4-7). Each cell edits NeiSaveData.bottleSlots[i]
 // via a content picker (Empty / Empty Bottle / any content). The kaleido Wheel A/B cycle their half.
+static std::string SaveEditorItemName(int32_t item) {
+    const auto custom = customItemMapping.find(static_cast<uint32_t>(item));
+    if (custom != customItemMapping.end()) {
+        std::string name = custom->second.name;
+        if (name.rfind("ITEM_", 0) == 0) {
+            name.erase(0, 5);
+        }
+        for (char& ch : name) {
+            if (ch == '_') ch = ' ';
+        }
+        return name;
+    }
+    return SohUtils::GetItemName(item);
+}
+
 static const char* sBottleContentNames[BOTTLE_C_COUNT] = {
     "Ruto's Letter", "Big Poe",      "Blue Fire", "Blue Potion",  "Red Potion",    "Green Potion",     "Fairy",
     "Fish",          "Bug",          "Poe",       "Milk",         "Gold Dust",     "Hot Spring Water", "Deku Princess",
@@ -937,10 +952,16 @@ void DrawInventoryTab() {
                 }
 
                 for (size_t pickerIndex = 0; pickerIndex < possibleItems.size(); pickerIndex++) {
+                    const ItemMapEntry& slotEntry = possibleItems[pickerIndex];
+                    // Other editor paths can default-insert unregistered map entries.
+                    // They are not selectable items and have neither a texture nor a name.
+                    if (slotEntry.name.empty()) {
+                        continue;
+                    }
                     if (((pickerIndex + 1) % 8) != 0) {
                         ImGui::SameLine();
                     }
-                    const ItemMapEntry& slotEntry = possibleItems[pickerIndex];
+                    ImGui::PushID(static_cast<int>(pickerIndex));
                     PushStyleButton(Colors::DarkGray);
                     auto ret = ImGui::ImageButton(slotEntry.name.c_str(),
                                                   std::dynamic_pointer_cast<Fast::Fast3dGui>(
@@ -959,7 +980,8 @@ void DrawInventoryTab() {
                         gSaveContext.inventory.items[selectedIndex] = slotEntry.id;
                         ImGui::CloseCurrentPopup();
                     }
-                    UIWidgets::Tooltip(SohUtils::GetItemName(slotEntry.id).c_str());
+                    UIWidgets::Tooltip(SaveEditorItemName(slotEntry.id).c_str());
+                    ImGui::PopID();
                 }
 
                 ImGui::EndPopup();
@@ -2210,7 +2232,7 @@ void DrawUpgradeIcon(const std::string& categoryName, int32_t categoryId, const 
                     Inventory_ChangeUpgrade(categoryId, static_cast<s16>(pickerIndex));
                     ImGui::CloseCurrentPopup();
                 }
-                Tooltip(SohUtils::GetItemName(slotEntry.id).c_str());
+                Tooltip(SaveEditorItemName(slotEntry.id).c_str());
             }
             PopStyleButton();
         }
@@ -2253,7 +2275,7 @@ void DrawEquipmentTab() {
             }
         }
         PopStyleButton();
-        Tooltip(SohUtils::GetItemName(entry.id).c_str());
+        Tooltip(SaveEditorItemName(entry.id).c_str());
         ImGui::PopID();
     }
 
@@ -2676,7 +2698,7 @@ void DrawDungeonItemButton(uint32_t item, uint32_t scene) {
         }
     }
     PopStyleButton();
-    Tooltip(SohUtils::GetItemName(entry.id).c_str());
+    Tooltip(SaveEditorItemName(entry.id).c_str());
 }
 
 void DrawQuestStatusTab() {

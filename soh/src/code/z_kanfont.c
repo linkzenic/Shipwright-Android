@@ -1,11 +1,13 @@
 #include "global.h"
 
 #include <string.h>
+#include <stdio.h>
 
 #include "message_data_static.h"
 #include "textures/nes_font_static/nes_font_static.h"
 #include "textures/kanji/kanji.h"
 #include "textures/message_static/message_static.h"
+#include "soh/ResourceManagerHelpers.h"
 
 // SOH [NTSC]
 extern MessageTableEntry* sJpnMessageEntryTablePtr;
@@ -4257,7 +4259,25 @@ void Font_LoadOrderedFontNTSC(Font* font) {
         if (font->msgBufWide[codePointIndex] != 0xA) {
             offset = Kanji_OffsetFromShiftJIS(font->msgBufWide[codePointIndex]);
             offset /= FONT_CHAR_TEX_SIZE;
-            memcpy(&font->fontBuf[fontBufIndex * 8], kanjiFontTbl[offset], strlen(kanjiFontTbl[offset]) + 1);
+            const char* glyph = kanjiFontTbl[offset];
+            // Latin filenames in NTSC saves use Shift-JIS glyphs. Most HD packs
+            // supply only the equivalent PAL font assets. Preserve the save's
+            // character ordering while using those replacements when available.
+            u16 code = font->msgBufWide[codePointIndex];
+            s32 ascii = -1;
+            if (code >= 0x824F && code <= 0x8258) ascii = '0' + code - 0x824F;
+            if (code >= 0x8260 && code <= 0x8279) ascii = 'A' + code - 0x8260;
+            if (code >= 0x8281 && code <= 0x829A) ascii = 'a' + code - 0x8281;
+            if (code == 0x8140) ascii = ' ';
+            if (ascii >= ' ' && gSaveContext.language != LANGUAGE_JPN && ResourceMgr_IsAltAssetsEnabled()) {
+                const char* candidate = fontTbl[ascii - ' '];
+                char alternatePath[128];
+                snprintf(alternatePath, sizeof(alternatePath), "alt/%s", candidate + 7);
+                if (ResourceMgr_FileExists(alternatePath)) {
+                    glyph = candidate;
+                }
+            }
+            memcpy(&font->fontBuf[fontBufIndex * 8], glyph, strlen(glyph) + 1);
             // DmaMgr_RequestSync(&font->fontBuf[fontBufIndex * 8], (uintptr_t)_kanjiSegmentStart + offset,
             // FONT_CHAR_TEX_SIZE);
             fontBufIndex += FONT_CHAR_TEX_SIZE / 8;

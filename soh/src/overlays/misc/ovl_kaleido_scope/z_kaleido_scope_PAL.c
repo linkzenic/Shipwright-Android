@@ -1,3 +1,4 @@
+#include "mods/nei_aligned_ui_paths.h"
 #include "z_kaleido_scope.h"
 #include <stdlib.h>
 #include <string.h>
@@ -252,14 +253,14 @@ static void* sQuestStatusTexs[] = {
 // The paths resolve through the resource manager, so texture packs can retexture them (mod support).
 // Mirror of 2ship's sNeiOotQuestPageBgTextures/KaleidoNei_GetQuestPageBgTextures.
 static void* sNeiMmQuestPageBgTexs[] = {
-    "__OTR__icon_item_jpn_static/gPauseQuestStatus00ENGTex", "__OTR__icon_item_static_yar/gPauseQuestStatus01Tex",
-    "__OTR__icon_item_static_yar/gPauseQuestStatus02Tex",    "__OTR__icon_item_static_yar/gPauseQuestStatus03Tex",
-    "__OTR__icon_item_static_yar/gPauseQuestStatus04Tex",    "__OTR__icon_item_jpn_static/gPauseQuestStatus10ENGTex",
-    "__OTR__icon_item_static_yar/gPauseQuestStatus11Tex",    "__OTR__icon_item_static_yar/gPauseQuestStatus12Tex",
-    "__OTR__icon_item_static_yar/gPauseQuestStatus13Tex",    "__OTR__icon_item_static_yar/gPauseQuestStatus14Tex",
-    "__OTR__icon_item_jpn_static/gPauseQuestStatus20ENGTex", "__OTR__icon_item_static_yar/gPauseQuestStatus21Tex",
-    "__OTR__icon_item_static_yar/gPauseQuestStatus22Tex",    "__OTR__icon_item_static_yar/gPauseQuestStatus23Tex",
-    "__OTR__icon_item_static_yar/gPauseQuestStatus24Tex",
+    sNeiAligned_gPauseQuestStatus00ENGTex_0, sNeiAligned_gPauseQuestStatus01Tex_57,
+    sNeiAligned_gPauseQuestStatus02Tex_58,    sNeiAligned_gPauseQuestStatus03Tex_59,
+    sNeiAligned_gPauseQuestStatus04Tex_60,    sNeiAligned_gPauseQuestStatus10ENGTex_1,
+    sNeiAligned_gPauseQuestStatus11Tex_61,    sNeiAligned_gPauseQuestStatus12Tex_62,
+    sNeiAligned_gPauseQuestStatus13Tex_63,    sNeiAligned_gPauseQuestStatus14Tex_64,
+    sNeiAligned_gPauseQuestStatus20ENGTex_2, sNeiAligned_gPauseQuestStatus21Tex_65,
+    sNeiAligned_gPauseQuestStatus22Tex_66,    sNeiAligned_gPauseQuestStatus23Tex_67,
+    sNeiAligned_gPauseQuestStatus24Tex_68,
 };
 
 // Picks MM's quest-page background when the MM quest page is flipped on (L) and mm.o2r provides it
@@ -1583,12 +1584,12 @@ void KaleidoScope_DrawPages(PlayState* play, GraphicsContext* gfxCtx) {
 static const char* KaleidoScope_GetTwilightNameOverride(s32 namedItem) {
     extern u8 TwilightUpgrade_IsClawshotActive(void);
     extern u8 TwilightUpgrade_IsGaleBoomerangActive(void);
-    static const char sClawshotName[] = "__OTR__textures/item_name_custom/gClawshotNameTex";
-    static const char sGaleName[] = "__OTR__textures/item_name_custom/gGaleBoomerangNameTex";
+    static const char* const sClawshotName = sNeiAligned_gClawshotNameTex_146;
+    static const char* const sGaleName = sNeiAligned_gGaleBoomerangNameTex_147;
     // Skijer's NEI — Ultrashot: while owned, the Longshot keeps its ICON but the name reads
     // "Ultrashot" (the Light-medallion corner marker is drawn at the icon sites). The Twilight
     // clawshot MODE toggle still wins while active (the item shows the claw then).
-    static const char sUltrashotName[] = "__OTR__textures/item_name_custom/gUltrashotNameTex";
+    static const char* const sUltrashotName = sNeiAligned_gUltrashotNameTex_156;
     if ((namedItem == ITEM_HOOKSHOT || namedItem == ITEM_LONGSHOT) && TwilightUpgrade_IsClawshotActive()) {
         return sClawshotName;
     } else if (namedItem == ITEM_LONGSHOT && Nei_Save()->ultrashotOwned) { // Skijer's NEI hookshot overhaul
@@ -1608,10 +1609,10 @@ static const char* KaleidoScope_GetWeaponUpgradeNameOverride(s32 namedItem) {
     extern u8 WeaponUpgrade_HasGilded(void);
     extern u8 WeaponUpgrade_HasGreatFairy(void);
     extern u8 WeaponUpgrade_HasHammerAxe(void);
-    static const char sRazorName[] = "__OTR__item_name_static/gItemNameRazorSwordENGTex";
-    static const char sGildedName[] = "__OTR__item_name_static/gItemNameGildedSwordENGTex";
-    static const char sGfsName[] = "__OTR__item_name_static/gItemNameGreatFairysSwordENGTex";
-    static const char sAxeName[] = "__OTR__textures/item_name_custom/gIronKnuckleAxeNameTex";
+    static const char* const sRazorName = sNeiAligned_gItemNameRazorSwordENGTex_105;
+    static const char* const sGildedName = sNeiAligned_gItemNameGildedSwordENGTex_84;
+    static const char* const sGfsName = sNeiAligned_gItemNameGreatFairysSwordENGTex_88;
+    static const char* const sAxeName = sNeiAligned_gIronKnuckleAxeNameTex_148;
     if (namedItem == ITEM_SWORD_KOKIRI && WeaponUpgrade_KokiriLevel() >= 1) {
         u8 showGilded = WeaponUpgrade_HasGilded() && CVarGetInteger("gEnhancements.SkijerNEI.GildedUsesGildedLook", 1);
         return showGilded ? sGildedName : sRazorName;
@@ -1944,7 +1945,18 @@ void KaleidoScope_DrawInfoPanel(PlayState* play) {
                 }
             }
 
-            POLY_OPA_DISP = KaleidoScope_QuadTextureIA4(POLY_OPA_DISP, pauseCtx->nameSegment, 128, 16, 0);
+            // Keep the vanilla panel size, but sample the full 2x custom label.
+            // A 256x32 IA4 texture fits the 4 KiB texture-memory budget.
+            static const char sHdCustomNamePrefix[] = "__OTR__textures/item_name_custom/";
+            const bool useHdCustomName = strncmp((const char*)pauseCtx->nameSegment,
+                sHdCustomNamePrefix, sizeof(sHdCustomNamePrefix) - 1) == 0;
+            const s16 nameTextureWidth = useHdCustomName ? 256 : 128;
+            const s16 nameTextureHeight = useHdCustomName ? 32 : 16;
+            pauseCtx->infoPanelVtx[17].v.tc[0] = pauseCtx->infoPanelVtx[19].v.tc[0] = nameTextureWidth << 5;
+            pauseCtx->infoPanelVtx[18].v.tc[1] = pauseCtx->infoPanelVtx[19].v.tc[1] = nameTextureHeight << 5;
+            gSPVertex(POLY_OPA_DISP++, &pauseCtx->infoPanelVtx[16], 4, 0);
+            POLY_OPA_DISP = KaleidoScope_QuadTextureIA4(POLY_OPA_DISP, pauseCtx->nameSegment,
+                                                      nameTextureWidth, nameTextureHeight, 0);
         }
 
         if (pauseCtx->pageIndex == PAUSE_MAP && CVarGetInteger(CVAR_DEVELOPER_TOOLS("SkulltulaDebugEnabled"), 0) != 0) {

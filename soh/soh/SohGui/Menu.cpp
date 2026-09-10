@@ -696,6 +696,7 @@ static void FleetMenu_DrawSwitchGameButton(UIWidgets::Colors themeIndex) {
 }
 
 void Menu::DrawElement() {
+    OTRGlobals::Instance->ScaleImGui();
     if (OTRGlobals::Instance->fontStandardLargest == nullptr) {
         return;
     }
