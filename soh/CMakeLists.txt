@@ -226,7 +226,14 @@ set(ALL_FILES
 ################################################################################
 # Target
 ################################################################################
-add_executable(${PROJECT_NAME} ${ALL_FILES})
+if(ANDROID)
+    add_library(${PROJECT_NAME} SHARED ${ALL_FILES})
+    if(DEFINED ANDROID_APP_VERSION_NAME)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE ANDROID_APP_VERSION_NAME="${ANDROID_APP_VERSION_NAME}")
+    endif()
+else()
+    add_executable(${PROJECT_NAME} ${ALL_FILES})
+endif()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
 use_props(${PROJECT_NAME} "${CMAKE_CONFIGURATION_TYPES}" "${DEFAULT_CXX_PROPS}")
@@ -297,6 +304,9 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dr_libs)
 
+if(ANDROID)
+    include(${CMAKE_SOURCE_DIR}/CMake/AndroidAudio.cmake)
+else()
 find_package(SDL2)
 set(SDL2-INCLUDE ${SDL2_INCLUDE_DIRS})
 
@@ -306,6 +316,7 @@ if(NOT SDL2_net_FOUND)
     message(STATUS "SDL2_net not found (it's possible the version installed is too old).")
 else()
     set(SDL2-NET-INCLUDE ${SDL_NET_INCLUDE_DIRS})
+endif()
 endif()
 
 if (ESPEAK)
@@ -685,6 +696,11 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "CafeOS")
     target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE
         ${DEVKITPRO}/portlibs/wiiu/include/
     )
+elseif(ANDROID)
+    find_package(Threads REQUIRED)
+    set(ADDITIONAL_LIBRARY_DEPENDENCIES
+        libultraship torch SDL2::SDL2 ogg opus vorbis vorbisenc vorbisfile opusfile
+        SDL2_net Threads::Threads ${CMAKE_DL_LIBS} m)
 else()
     find_package(SDL2)
     set(THREADS_PREFER_PTHREAD_FLAG ON)

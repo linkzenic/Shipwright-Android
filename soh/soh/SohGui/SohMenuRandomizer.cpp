@@ -1,4 +1,5 @@
 #include <unordered_set>
+#include <sstream>
 
 #include <ship/Context.h>
 

@@ -1,0 +1,781 @@
+diff --git a/include/ship/Context.h b/include/ship/Context.h
+index f47af27f..4d08b442 100644
+--- a/include/ship/Context.h
++++ b/include/ship/Context.h
+@@ -95,6 +95,9 @@ class Context {
+      * @return Absolute path string, or an empty string on platforms without the concept of a bundle.
+      */
+     static std::string GetAppBundlePath();
++#if defined(__ANDROID__)
++    static void SetAndroidDataRootPath(const std::string& path);
++#endif
+ 
+     /**
+      * @brief Returns the platform-specific directory where the application stores its data.
+diff --git a/include/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.h b/include/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.h
+index 6404c137..dddda299 100644
+--- a/include/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.h
++++ b/include/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.h
+@@ -44,6 +44,10 @@ class SDLGyroMapping final : public ControllerGyroMapping {
+     std::string GetPhysicalDeviceName() override;
+ 
+   private:
++#ifdef __ANDROID__
++    SDL_Sensor* gyroSensor = nullptr;
++    void GetAndroidGyroData(float gyroData[3]);
++#endif
+     float mNeutralPitch;
+     float mNeutralYaw;
+     float mNeutralRoll;
+diff --git a/include/ship/port/mobile/MobileImpl.h b/include/ship/port/mobile/MobileImpl.h
+index de38dd2f..e244e95e 100644
+--- a/include/ship/port/mobile/MobileImpl.h
++++ b/include/ship/port/mobile/MobileImpl.h
+@@ -10,5 +10,16 @@ namespace Ship {
+ class Mobile {
+   public:
+     static void ImGuiProcessEvent(bool wantsTextInput);
++#ifdef __ANDROID__
++    static void SetToggleButtonVisible(bool visible);
++    static bool ConsumeGamepadBackPress();
++    static void InjectMenuNavKeys();
++    static bool HasTouchCameraInput();
++    static void HandleTouchCamera(float* camX, float* camY);
++    static void SetFreeLookTouchEnabled(bool enabled);
++    static void SetFirstPersonAimingActive(bool active);
++    static bool IsTouchItemButtonPulse();
++    static bool IsTouchItemButtonHeld();
++#endif
+ };
+ }; // namespace Ship
+diff --git a/src/fast/Fast3dGui.cpp b/src/fast/Fast3dGui.cpp
+index 237a502a..c6666909 100644
+--- a/src/fast/Fast3dGui.cpp
++++ b/src/fast/Fast3dGui.cpp
+@@ -48,6 +48,9 @@ Fast3dGui::Fast3dGui(std::vector<std::shared_ptr<Ship::GuiWindow>> guiWindows) :
+ void Fast3dGui::Init(GuiWindowInitData windowImpl) {
+     mImpl = windowImpl;
+     Gui::Init();
++#ifdef __ANDROID__
++    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
++#endif
+ }
+ 
+ bool Fast3dGui::SupportsViewports() {
+@@ -70,6 +73,14 @@ void Fast3dGui::HandleWindowEvents(Fast::WindowEvent event) {
+         case WindowBackend::FAST3D_SDL_OPENGL:
+         case WindowBackend::FAST3D_SDL_METAL:
+             ImGui_ImplSDL2_ProcessEvent(static_cast<const SDL_Event*>(event.Sdl.Event));
++#ifdef __ANDROID__
++            {
++                const auto* sdlEvent = static_cast<const SDL_Event*>(event.Sdl.Event);
++                if (sdlEvent->type == SDL_WINDOWEVENT && sdlEvent->window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
++                    RefreshImGuiGamepads();
++                }
++            }
++#endif
+ #if defined(__ANDROID__) || defined(__IOS__)
+             Ship::Mobile::ImGuiProcessEvent(ImGui::GetIO().WantTextInput);
+ #endif
+diff --git a/src/fast/interpreter.cpp b/src/fast/interpreter.cpp
+index 2b51ad7f..90a118c2 100644
+--- a/src/fast/interpreter.cpp
++++ b/src/fast/interpreter.cpp
+@@ -7,6 +7,24 @@
+ #include <stdbool.h>
+ #include <assert.h>
+ #include <stdio.h>
++
++// Android arm64 may tag heap pointers in their top byte. Ignore that tag only
++// for address-range classification; retain the original pointer for all reads
++// so tagged-memory access semantics and resource-cache identity stay intact.
++static constexpr uintptr_t gfx_address_for_range_check(uintptr_t address) {
++#if defined(__ANDROID__) && defined(__aarch64__)
++    return address & UINT64_C(0x00FFFFFFFFFFFFFF);
++#else
++    return address;
++#endif
++}
++
++#if defined(__ANDROID__) && defined(__aarch64__)
++static_assert(gfx_address_for_range_check(UINT64_C(0xB400007123456780)) == UINT64_C(0x0000007123456780));
++static_assert(gfx_address_for_range_check(UINT64_C(0x0000007123456780)) == UINT64_C(0x0000007123456780));
++static_assert(gfx_address_for_range_check(UINT64_C(0xFFFFFFFFFFFFFFFF)) > UINT64_C(0x0000FFFFFFFFFFFF));
++static_assert(gfx_address_for_range_check(UINT64_C(0xB400000000000000)) < 0x10000);
++#endif
+ #ifndef _WIN32
+ #include <dlfcn.h>
+ #endif
+@@ -4891,7 +4909,7 @@ static void gfx_step() {
+         // Guard against null or N64-segment addresses that would crash in strlen/strncmp.
+         if (opcode == OTR_G_VTX_OTR_FILEPATH || opcode == OTR_G_SETTIMG_OTR_FILEPATH ||
+             opcode == OTR_G_DL_OTR_FILEPATH || opcode == OTR_G_PUSHCD || opcode == OTR_G_MTX_OTR_FILEPATH) {
+-            uintptr_t w1 = (uintptr_t)cmd->words.w1;
++            uintptr_t w1 = gfx_address_for_range_check((uintptr_t)cmd->words.w1);
+             if (w1 < 0x10000
+ #if UINTPTR_MAX > 0xFFFFFFFFu
+                 // On 64-bit: filter kernel/sentinel addresses.
+@@ -5324,7 +5342,7 @@ void gfx_push_current_dir(char* path) {
+ }
+ 
+ int32_t gfx_check_image_signature(const char* imgData) {
+-    uintptr_t i = (uintptr_t)(imgData);
++    uintptr_t i = gfx_address_for_range_check((uintptr_t)imgData);
+ 
+     if ((i & 1) == 1) {
+         return 0;
+@@ -5499,4 +5517,4 @@ extern "C" void gfx_register_fb_texture(const void* cpuAddr, int fbId) {
+ 
+ extern "C" void gfx_unregister_fb_texture(const void* cpuAddr) {
+     Fast::mInstance.lock().get()->UnregisterFbTexture(cpuAddr);
+-}
+\ No newline at end of file
++}
+diff --git a/src/ship/CMakeLists.txt b/src/ship/CMakeLists.txt
+index e37a3a1d..67ba7c33 100644
+--- a/src/ship/CMakeLists.txt
++++ b/src/ship/CMakeLists.txt
+@@ -97,6 +97,7 @@ endif()
+ if (CMAKE_SYSTEM_NAME STREQUAL "Android" OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+     set(Source_Files__Port
+         ${CMAKE_CURRENT_SOURCE_DIR}/port/mobile/MobileImpl.cpp
++        ${CMAKE_CURRENT_SOURCE_DIR}/port/mobile/AndroidInput.cpp
+     )
+ endif()
+ 
+diff --git a/src/ship/Context.cpp b/src/ship/Context.cpp
+index 361a1f75..41c27731 100644
+--- a/src/ship/Context.cpp
++++ b/src/ship/Context.cpp
+@@ -282,7 +282,11 @@ bool Context::InitControlDeck(std::shared_ptr<ControlDeck> controlDeck) {
+         SPDLOG_WARN("Failed to add SDL game controller mappings from \"{}\" ({})", controllerDb, SDL_GetError());
+     }
+     SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+-    if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0) {
++    if (SDL_Init(SDL_INIT_GAMECONTROLLER
++#ifdef __ANDROID__
++                 | SDL_INIT_SENSOR
++#endif
++                 ) != 0) {
+         SPDLOG_WARN("Failed to initialize SDL game controllers ({})", SDL_GetError());
+     }
+ 
+@@ -473,8 +477,21 @@ std::string Context::GetShortName() const {
+     return mShortName;
+ }
+ 
++#if defined(__ANDROID__)
++static std::string sAndroidDataRootPath;
++
++void Context::SetAndroidDataRootPath(const std::string& path) {
++    if (!path.empty()) {
++        sAndroidDataRootPath = path;
++    }
++}
++#endif
++
+ std::string Context::GetAppBundlePath() {
+ #if defined(__ANDROID__)
++    if (!sAndroidDataRootPath.empty()) {
++        return sAndroidDataRootPath;
++    }
+     const char* externaldir = SDL_AndroidGetExternalStoragePath();
+     if (externaldir != NULL) {
+         return externaldir;
+@@ -538,6 +555,9 @@ std::string Context::GetAppBundlePath() {
+ 
+ std::string Context::GetAppDirectoryPath(const std::string& appName) {
+ #if defined(__ANDROID__)
++    if (!sAndroidDataRootPath.empty()) {
++        return sAndroidDataRootPath;
++    }
+     const char* externaldir = SDL_AndroidGetExternalStoragePath();
+     if (externaldir != NULL) {
+         return externaldir;
+diff --git a/src/ship/controller/controldevice/controller/mapping/ControllerDefaultMappings.cpp b/src/ship/controller/controldevice/controller/mapping/ControllerDefaultMappings.cpp
+index 0477afbc..35747b81 100644
+--- a/src/ship/controller/controldevice/controller/mapping/ControllerDefaultMappings.cpp
++++ b/src/ship/controller/controldevice/controller/mapping/ControllerDefaultMappings.cpp
+@@ -1,4 +1,5 @@
+ #include "ship/controller/controldevice/controller/mapping/ControllerDefaultMappings.h"
++#include "libultraship/libultra/controller.h"
+ 
+ namespace Ship {
+ ControllerDefaultMappings::ControllerDefaultMappings(
+@@ -44,7 +45,25 @@ ControllerDefaultMappings::GetDefaultKeyboardKeyToButtonMappings() {
+ 
+ void ControllerDefaultMappings::SetDefaultKeyboardKeyToButtonMappings(
+     std::unordered_map<CONTROLLERBUTTONS_T, std::unordered_set<KbScancode>> defaultKeyboardKeyToButtonMappings) {
+-    mDefaultKeyboardKeyToButtonMappings = defaultKeyboardKeyToButtonMappings;
++    if (!defaultKeyboardKeyToButtonMappings.empty()) {
++        mDefaultKeyboardKeyToButtonMappings = defaultKeyboardKeyToButtonMappings;
++        return;
++    }
++
++    mDefaultKeyboardKeyToButtonMappings[BTN_A] = { KbScancode::LUS_KB_X };
++    mDefaultKeyboardKeyToButtonMappings[BTN_B] = { KbScancode::LUS_KB_C };
++    mDefaultKeyboardKeyToButtonMappings[BTN_L] = { KbScancode::LUS_KB_E };
++    mDefaultKeyboardKeyToButtonMappings[BTN_R] = { KbScancode::LUS_KB_R };
++    mDefaultKeyboardKeyToButtonMappings[BTN_Z] = { KbScancode::LUS_KB_Z };
++    mDefaultKeyboardKeyToButtonMappings[BTN_START] = { KbScancode::LUS_KB_SPACE };
++    mDefaultKeyboardKeyToButtonMappings[BTN_CUP] = { KbScancode::LUS_KB_ARROWKEY_UP };
++    mDefaultKeyboardKeyToButtonMappings[BTN_CDOWN] = { KbScancode::LUS_KB_ARROWKEY_DOWN };
++    mDefaultKeyboardKeyToButtonMappings[BTN_CLEFT] = { KbScancode::LUS_KB_ARROWKEY_LEFT };
++    mDefaultKeyboardKeyToButtonMappings[BTN_CRIGHT] = { KbScancode::LUS_KB_ARROWKEY_RIGHT };
++    mDefaultKeyboardKeyToButtonMappings[BTN_DUP] = { KbScancode::LUS_KB_T };
++    mDefaultKeyboardKeyToButtonMappings[BTN_DDOWN] = { KbScancode::LUS_KB_G };
++    mDefaultKeyboardKeyToButtonMappings[BTN_DLEFT] = { KbScancode::LUS_KB_F };
++    mDefaultKeyboardKeyToButtonMappings[BTN_DRIGHT] = { KbScancode::LUS_KB_H };
+ }
+ 
+ std::unordered_map<StickIndex, std::vector<std::pair<Direction, KbScancode>>>
+@@ -74,7 +93,19 @@ ControllerDefaultMappings::GetDefaultSDLButtonToButtonMappings() {
+ void ControllerDefaultMappings::SetDefaultSDLButtonToButtonMappings(
+     std::unordered_map<CONTROLLERBUTTONS_T, std::unordered_set<SDL_GameControllerButton>>
+         defaultSDLButtonToButtonMappings) {
+-    mDefaultSDLButtonToButtonMappings = defaultSDLButtonToButtonMappings;
++    if (!defaultSDLButtonToButtonMappings.empty()) {
++        mDefaultSDLButtonToButtonMappings = defaultSDLButtonToButtonMappings;
++        return;
++    }
++
++    mDefaultSDLButtonToButtonMappings[BTN_A] = { SDL_CONTROLLER_BUTTON_A };
++    mDefaultSDLButtonToButtonMappings[BTN_B] = { SDL_CONTROLLER_BUTTON_B };
++    mDefaultSDLButtonToButtonMappings[BTN_L] = { SDL_CONTROLLER_BUTTON_LEFTSHOULDER };
++    mDefaultSDLButtonToButtonMappings[BTN_START] = { SDL_CONTROLLER_BUTTON_START };
++    mDefaultSDLButtonToButtonMappings[BTN_DUP] = { SDL_CONTROLLER_BUTTON_DPAD_UP };
++    mDefaultSDLButtonToButtonMappings[BTN_DDOWN] = { SDL_CONTROLLER_BUTTON_DPAD_DOWN };
++    mDefaultSDLButtonToButtonMappings[BTN_DLEFT] = { SDL_CONTROLLER_BUTTON_DPAD_LEFT };
++    mDefaultSDLButtonToButtonMappings[BTN_DRIGHT] = { SDL_CONTROLLER_BUTTON_DPAD_RIGHT };
+ }
+ 
+ std::unordered_map<StickIndex, std::vector<std::pair<Direction, SDL_GameControllerButton>>>
+@@ -99,7 +130,17 @@ ControllerDefaultMappings::GetDefaultSDLAxisDirectionToButtonMappings() {
+ void ControllerDefaultMappings::SetDefaultSDLAxisDirectionToButtonMappings(
+     std::unordered_map<CONTROLLERBUTTONS_T, std::vector<std::pair<SDL_GameControllerAxis, int32_t>>>
+         defaultSDLAxisDirectionToButtonMappings) {
+-    mDefaultSDLAxisDirectionToButtonMappings = defaultSDLAxisDirectionToButtonMappings;
++    if (!defaultSDLAxisDirectionToButtonMappings.empty()) {
++        mDefaultSDLAxisDirectionToButtonMappings = defaultSDLAxisDirectionToButtonMappings;
++        return;
++    }
++
++    mDefaultSDLAxisDirectionToButtonMappings[BTN_R] = { { SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 1 } };
++    mDefaultSDLAxisDirectionToButtonMappings[BTN_Z] = { { SDL_CONTROLLER_AXIS_TRIGGERLEFT, 1 } };
++    mDefaultSDLAxisDirectionToButtonMappings[BTN_CUP] = { { SDL_CONTROLLER_AXIS_RIGHTY, -1 } };
++    mDefaultSDLAxisDirectionToButtonMappings[BTN_CDOWN] = { { SDL_CONTROLLER_AXIS_RIGHTY, 1 } };
++    mDefaultSDLAxisDirectionToButtonMappings[BTN_CLEFT] = { { SDL_CONTROLLER_AXIS_RIGHTX, -1 } };
++    mDefaultSDLAxisDirectionToButtonMappings[BTN_CRIGHT] = { { SDL_CONTROLLER_AXIS_RIGHTX, 1 } };
+ }
+ 
+ std::unordered_map<StickIndex, std::vector<std::pair<Direction, std::pair<SDL_GameControllerAxis, int32_t>>>>
+diff --git a/src/ship/controller/controldevice/controller/mapping/factories/GyroMappingFactory.cpp b/src/ship/controller/controldevice/controller/mapping/factories/GyroMappingFactory.cpp
+index f19f3974..1c1f2ba8 100644
+--- a/src/ship/controller/controldevice/controller/mapping/factories/GyroMappingFactory.cpp
++++ b/src/ship/controller/controldevice/controller/mapping/factories/GyroMappingFactory.cpp
+@@ -42,9 +42,11 @@ std::shared_ptr<ControllerGyroMapping> GyroMappingFactory::CreateGyroMappingFrom
+                                           ->GetControlDeck()
+                                           ->GetConnectedPhysicalDeviceManager()
+                                           ->GetConnectedSDLGamepadsForPort(portIndex)) {
++#ifndef __ANDROID__
+         if (!SDL_GameControllerHasSensor(gamepad, SDL_SENSOR_GYRO)) {
+             continue;
+         }
++#endif
+ 
+         for (int32_t button = SDL_CONTROLLER_BUTTON_A; button < SDL_CONTROLLER_BUTTON_MAX; button++) {
+             if (SDL_GameControllerGetButton(gamepad, static_cast<SDL_GameControllerButton>(button))) {
+diff --git a/src/ship/controller/controldevice/controller/mapping/factories/RumbleMappingFactory.cpp b/src/ship/controller/controldevice/controller/mapping/factories/RumbleMappingFactory.cpp
+index c57e9d1a..909a54f8 100644
+--- a/src/ship/controller/controldevice/controller/mapping/factories/RumbleMappingFactory.cpp
++++ b/src/ship/controller/controldevice/controller/mapping/factories/RumbleMappingFactory.cpp
+@@ -48,9 +48,11 @@ std::shared_ptr<ControllerRumbleMapping> RumbleMappingFactory::CreateRumbleMappi
+                                           ->GetControlDeck()
+                                           ->GetConnectedPhysicalDeviceManager()
+                                           ->GetConnectedSDLGamepadsForPort(portIndex)) {
++#ifndef __ANDROID__
+         if (!SDL_GameControllerHasRumble(gamepad)) {
+             continue;
+         }
++#endif
+ 
+         for (int32_t button = SDL_CONTROLLER_BUTTON_A; button < SDL_CONTROLLER_BUTTON_MAX; button++) {
+             if (SDL_GameControllerGetButton(gamepad, static_cast<SDL_GameControllerButton>(button))) {
+diff --git a/src/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.cpp b/src/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.cpp
+index 751e68b4..0f40ccf9 100644
+--- a/src/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.cpp
++++ b/src/ship/controller/controldevice/controller/mapping/sdl/SDLGyroMapping.cpp
+@@ -21,13 +21,19 @@ void SDLGyroMapping::Recalibrate() {
+                                                  ->GetConnectedPhysicalDeviceManager()
+                                                  ->GetConnectedSDLGamepadsForPort(mPortIndex)) {
+         if (!SDL_GameControllerHasSensor(gamepad, SDL_SENSOR_GYRO)) {
++#ifndef __ANDROID__
+             continue;
++#endif
+         }
+ 
+         // just use gyro on the first gyro supported device we find
+-        float gyroData[3];
++        float gyroData[3] = {};
++#ifdef __ANDROID__
++        GetAndroidGyroData(gyroData);
++#else
+         SDL_GameControllerSetSensorEnabled(gamepad, SDL_SENSOR_GYRO, SDL_TRUE);
+         SDL_GameControllerGetSensorData(gamepad, SDL_SENSOR_GYRO, gyroData, 3);
++#endif
+ 
+         mNeutralPitch = gyroData[0];
+         mNeutralYaw = gyroData[1];
+@@ -53,13 +59,19 @@ void SDLGyroMapping::UpdatePad(float& x, float& y) {
+                                                  ->GetConnectedPhysicalDeviceManager()
+                                                  ->GetConnectedSDLGamepadsForPort(mPortIndex)) {
+         if (!SDL_GameControllerHasSensor(gamepad, SDL_SENSOR_GYRO)) {
++#ifndef __ANDROID__
+             continue;
++#endif
+         }
+ 
+         // just use gyro on the first gyro supported device we find
+-        float gyroData[3];
++        float gyroData[3] = {};
++#ifdef __ANDROID__
++        GetAndroidGyroData(gyroData);
++#else
+         SDL_GameControllerSetSensorEnabled(gamepad, SDL_SENSOR_GYRO, SDL_TRUE);
+         SDL_GameControllerGetSensorData(gamepad, SDL_SENSOR_GYRO, gyroData, 3);
++#endif
+ 
+         x = (gyroData[0] - mNeutralPitch) * mSensitivity;
+         y = (gyroData[1] - mNeutralYaw) * mSensitivity;
+@@ -112,4 +124,59 @@ void SDLGyroMapping::EraseFromConfig() {
+ std::string SDLGyroMapping::GetPhysicalDeviceName() {
+     return "SDL Gamepad";
+ }
++#ifdef __ANDROID__
++void SDLGyroMapping::GetAndroidGyroData(float gyroData[3]) {
++    for (const auto& [instanceId, gamepad] :
++         Context::GetRawInstance()->GetControlDeck()->GetConnectedPhysicalDeviceManager()->GetConnectedSDLGamepadsForPort(
++             mPortIndex)) {
++        if (!SDL_GameControllerHasSensor(gamepad, SDL_SENSOR_GYRO)) {
++            continue;
++        }
++        SDL_GameControllerSetSensorEnabled(gamepad, SDL_SENSOR_GYRO, SDL_TRUE);
++        SDL_GameControllerGetSensorData(gamepad, SDL_SENSOR_GYRO, gyroData, 3);
++        return;
++    }
++
++    if (gyroSensor == nullptr) {
++        for (int i = 0; i < SDL_NumSensors(); i++) {
++            if (SDL_SensorGetDeviceType(i) == SDL_SENSOR_GYRO) {
++                gyroSensor = SDL_SensorOpen(i);
++                break;
++            }
++        }
++    }
++
++    if (gyroSensor == nullptr) {
++        gyroData[0] = 0;
++        gyroData[1] = 0;
++        gyroData[2] = 0;
++        return;
++    }
++
++    SDL_SensorUpdate();
++    SDL_SensorGetData(gyroSensor, gyroData, 3);
++
++    float gyroX = gyroData[0];
++    float gyroY = gyroData[1];
++    switch (SDL_GetDisplayOrientation(0)) {
++        case SDL_ORIENTATION_PORTRAIT:
++            break;
++        case SDL_ORIENTATION_PORTRAIT_FLIPPED:
++            gyroData[0] = -gyroX;
++            gyroData[1] = -gyroY;
++            break;
++        case SDL_ORIENTATION_LANDSCAPE:
++            gyroData[0] = -gyroY;
++            gyroData[1] = gyroX;
++            break;
++        case SDL_ORIENTATION_LANDSCAPE_FLIPPED:
++            gyroData[0] = gyroY;
++            gyroData[1] = -gyroX;
++            break;
++        case SDL_ORIENTATION_UNKNOWN:
++            break;
++    }
++}
++#endif
++
+ } // namespace Ship
+diff --git a/src/ship/controller/controldevice/controller/mapping/sdl/SDLRumbleMapping.cpp b/src/ship/controller/controldevice/controller/mapping/sdl/SDLRumbleMapping.cpp
+index 83b25451..321f4aed 100644
+--- a/src/ship/controller/controldevice/controller/mapping/sdl/SDLRumbleMapping.cpp
++++ b/src/ship/controller/controldevice/controller/mapping/sdl/SDLRumbleMapping.cpp
+@@ -3,6 +3,10 @@
+ #include "ship/config/ConsoleVariable.h"
+ #include "ship/utils/StringHelper.h"
+ #include "ship/Context.h"
++#ifdef __ANDROID__
++#include <SDL2/SDL.h>
++#include <jni.h>
++#endif
+ #include "ship/controller/controldeck/ControlDeck.h"
+ 
+ namespace Ship {
+@@ -15,21 +19,51 @@ SDLRumbleMapping::SDLRumbleMapping(uint8_t portIndex, uint8_t lowFrequencyIntens
+ }
+ 
+ void SDLRumbleMapping::StartRumble() {
+-    for (const auto& [instanceId, gamepad] : Context::GetRawInstance()
+-                                                 ->GetControlDeck()
+-                                                 ->GetConnectedPhysicalDeviceManager()
+-                                                 ->GetConnectedSDLGamepadsForPort(mPortIndex)) {
++#ifdef __ANDROID__
++    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
++    jobject activity = (jobject)SDL_AndroidGetActivity();
++    if (!env || !activity) { return; }
++    jclass cls = env->GetObjectClass(activity);
++    jmethodID m = env->GetMethodID(cls, "startRumble", "(II)V");
++    if (m == nullptr) {
++        env->DeleteLocalRef(cls);
++        env->DeleteLocalRef(activity);
++        return;
++    }
++    env->CallVoidMethod(activity, m, (jint)mLowFrequencyIntensityPercentage, (jint)mHighFrequencyIntensityPercentage);
++    env->DeleteLocalRef(cls);
++    env->DeleteLocalRef(activity);
++#else
++    for (const auto& [instanceId, gamepad] :
++         Context::GetRawInstance()->GetControlDeck()->GetConnectedPhysicalDeviceManager()->GetConnectedSDLGamepadsForPort(
++             mPortIndex)) {
+         SDL_GameControllerRumble(gamepad, mLowFrequencyIntensity, mHighFrequencyIntensity, 0);
+     }
++#endif
+ }
+ 
+ void SDLRumbleMapping::StopRumble() {
+-    for (const auto& [instanceId, gamepad] : Context::GetRawInstance()
+-                                                 ->GetControlDeck()
+-                                                 ->GetConnectedPhysicalDeviceManager()
+-                                                 ->GetConnectedSDLGamepadsForPort(mPortIndex)) {
++#ifdef __ANDROID__
++    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
++    jobject activity = (jobject)SDL_AndroidGetActivity();
++    if (!env || !activity) { return; }
++    jclass cls = env->GetObjectClass(activity);
++    jmethodID m = env->GetMethodID(cls, "stopRumble", "()V");
++    if (m == nullptr) {
++        env->DeleteLocalRef(cls);
++        env->DeleteLocalRef(activity);
++        return;
++    }
++    env->CallVoidMethod(activity, m);
++    env->DeleteLocalRef(cls);
++    env->DeleteLocalRef(activity);
++#else
++    for (const auto& [instanceId, gamepad] :
++         Context::GetRawInstance()->GetControlDeck()->GetConnectedPhysicalDeviceManager()->GetConnectedSDLGamepadsForPort(
++             mPortIndex)) {
+         SDL_GameControllerRumble(gamepad, 0, 0, 0);
+     }
++#endif
+ }
+ 
+ void SDLRumbleMapping::SetLowFrequencyIntensity(uint8_t intensityPercentage) {
+diff --git a/src/ship/resource/archive/O2rArchive.cpp b/src/ship/resource/archive/O2rArchive.cpp
+index 13d97506..bd4b55a4 100644
+--- a/src/ship/resource/archive/O2rArchive.cpp
++++ b/src/ship/resource/archive/O2rArchive.cpp
+@@ -95,9 +95,17 @@ std::shared_ptr<File> O2rArchive::LoadFile(const std::string& filePath) {
+ }
+ 
+ bool O2rArchive::Open() {
+-    mZipArchive = zip_open(GetPath().c_str(), ZIP_CREATE, nullptr);
++    int zipError = 0;
++    mZipArchive = zip_open(GetPath().c_str(), 0, &zipError);
++#ifdef __ANDROID__
++    // Mod archives on removable storage may be readable but not writable.
++    // Preserve the newer write API when possible, without creating missing files.
++    if (mZipArchive == nullptr) {
++        mZipArchive = zip_open(GetPath().c_str(), ZIP_RDONLY, &zipError);
++    }
++#endif
+     if (mZipArchive == nullptr) {
+-        SPDLOG_ERROR("Failed to load zip file \"{}\"", GetPath());
++        SPDLOG_ERROR("Failed to load zip file \"{}\" (error: {})", GetPath(), zipError);
+         return false;
+     }
+ 
+diff --git a/src/ship/window/gui/Gui.cpp b/src/ship/window/gui/Gui.cpp
+index 1f9279bd..9f4ef172 100644
+--- a/src/ship/window/gui/Gui.cpp
++++ b/src/ship/window/gui/Gui.cpp
+@@ -15,6 +15,9 @@
+ #include "ship/window/gui/Fonts.h"
+ #include "ship/window/gui/resource/GuiTextureFactory.h"
+ #include "ship/window/gui/resource/GuiTexture.h"
++#ifdef __ANDROID__
++#include "ship/port/mobile/MobileImpl.h"
++#endif
+ 
+ namespace Ship {
+ #define TOGGLE_BTN ImGuiKey_F1
+@@ -226,17 +229,24 @@ void Gui::DrawMenu() {
+ 
+     ImGui::DockSpace(dockId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None | ImGuiDockNodeFlags_NoDockingInCentralNode);
+ 
+-    if (ImGui::IsKeyPressed(TOGGLE_BTN, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
++    bool androidBackPressed = false;
++#ifdef __ANDROID__
++    androidBackPressed = Mobile::ConsumeGamepadBackPress();
++#endif
++    if (androidBackPressed || ImGui::IsKeyPressed(TOGGLE_BTN, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+         (ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false) &&
+          Ship::Context::GetRawInstance()->GetConsoleVariables()->GetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0))) {
+-        if ((ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)) && GetMenu()) {
++        if ((androidBackPressed || ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)) && GetMenu()) {
+             GetMenu()->ToggleVisibility();
+-        } else if ((ImGui::IsKeyPressed(TOGGLE_BTN, false) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)) &&
++        } else if ((androidBackPressed || ImGui::IsKeyPressed(TOGGLE_BTN, false) || ImGui::IsKeyPressed(TOGGLE_PAD_BTN, false)) &&
+                    GetMenuBar()) {
+             GetMenuBar()->ToggleVisibility();
+         }
+         Ship::Context::GetRawInstance()->GetWindow()->GetMouseStateManager()->UpdateMouseCapture();
+-        if (Ship::Context::GetRawInstance()->GetConsoleVariables()->GetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) &&
++        if (
++#ifndef __ANDROID__
++            Ship::Context::GetRawInstance()->GetConsoleVariables()->GetInteger(CVAR_IMGUI_CONTROLLER_NAV, 0) &&
++#endif
+             GetMenuOrMenubarVisible()) {
+             mImGuiIo->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+         } else {
+@@ -288,6 +298,11 @@ void Gui::StartFrame() {
+     HandleMouseCapture();
+     ImGuiBackendNewFrame();
+     ImGuiWMNewFrame();
++#ifdef __ANDROID__
++    Mobile::InjectMenuNavKeys();
++    // Java navigation remains available when SDL has no physical gamepad open.
++    mImGuiIo->BackendFlags |= ImGuiBackendFlags_HasGamepad;
++#endif
+     ImGui::NewFrame();
+ }
+ 
+diff --git a/src/ship/port/mobile/AndroidInput.cpp b/src/ship/port/mobile/AndroidInput.cpp
+new file mode 100644
+index 00000000..09f119d0
+--- /dev/null
++++ b/src/ship/port/mobile/AndroidInput.cpp
+@@ -0,0 +1,212 @@
++#ifdef __ANDROID__
++#include "ship/port/mobile/MobileImpl.h"
++#include <SDL2/SDL.h>
++#endif
++#ifdef __ANDROID__
++#include <SDL_gamecontroller.h>
++#include <jni.h>
++#include <atomic>
++
++static bool isUsingTouchscreenControls = false;
++static std::atomic<bool> sGamepadBackPressed{false};
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_nativeGamepadBackPressed(JNIEnv* env, jclass clazz) {
++    sGamepadBackPressed = true;
++}
++
++bool Ship::Mobile::ConsumeGamepadBackPress() {
++    return sGamepadBackPressed.exchange(false);
++}
++static int virtual_joystick_id = -1;
++static SDL_Joystick* virtual_joystick = nullptr;
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_attachController(JNIEnv* env, jobject obj) {
++    if (virtual_joystick != nullptr) {
++        return;
++    }
++    virtual_joystick_id = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 6, 18, 0);
++    if (virtual_joystick_id == -1) {
++        SDL_Log("Could not create overlay virtual controller");
++        return;
++    }
++    // Register mapping before SDL_PumpEvents so SDL_IsGameController returns true as "Touch Overlay".
++    SDL_JoystickGUID guid = SDL_JoystickGetDeviceGUID(virtual_joystick_id);
++    char guidStr[33];
++    SDL_JoystickGetGUIDString(guid, guidStr, sizeof(guidStr));
++    char mappingStr[512];
++    int written = SDL_snprintf(mappingStr, sizeof(mappingStr),
++        "%s,Touch Overlay,"
++        "a:b0,b:b1,x:b2,y:b3,back:b4,guide:b5,start:b6,"
++        "leftstick:b7,rightstick:b8,leftshoulder:b9,rightshoulder:b10,"
++        "dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,"
++        "leftx:a0,lefty:a1,rightx:a2,righty:a3,lefttrigger:a4,righttrigger:a5,"
++        "platform:Android,",
++        guidStr);
++    if (written >= (int)sizeof(mappingStr)) {
++        SDL_Log("Touch Overlay mapping string truncated; skipping SDL_GameControllerAddMapping");
++        return;
++    }
++    SDL_GameControllerAddMapping(mappingStr);
++    virtual_joystick = SDL_JoystickOpen(virtual_joystick_id);
++    if (virtual_joystick == nullptr)
++        SDL_Log("Could not create virtual joystick");
++    isUsingTouchscreenControls = true;
++}
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_detachController(JNIEnv* env, jobject obj) {
++    if (virtual_joystick == nullptr) {
++        return;
++    }
++    SDL_JoystickClose(virtual_joystick);
++    SDL_JoystickDetachVirtual(virtual_joystick_id);
++    virtual_joystick = nullptr;
++    virtual_joystick_id = -1;
++    isUsingTouchscreenControls = false;
++}
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_setButton(JNIEnv* env, jobject obj, jint button, jboolean value) {
++    if (virtual_joystick == nullptr || button < -5 || button >= 18) {
++        return;
++    }
++    if (button < 0) {
++        SDL_JoystickSetVirtualAxis(virtual_joystick, -button, value ? SDL_MAX_SINT16 : -SDL_MAX_SINT16);
++    } else {
++        SDL_JoystickSetVirtualButton(virtual_joystick, button, value);
++    }
++}
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_setAxis(JNIEnv* env, jobject obj, jint axis, jshort value) {
++    if (virtual_joystick == nullptr || axis < 0 || axis >= 6) {
++        return;
++    }
++    SDL_JoystickSetVirtualAxis(virtual_joystick, axis, value);
++}
++
++// D-pad bits set from UI thread, consumed by InjectMenuNavKeys() on the game thread.
++static std::atomic<uint8_t> sDpadPressedBits{0};
++static std::atomic<uint8_t> sDpadReleasedBits{0};
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_nativeMenuNavKey(JNIEnv* env, jobject obj, jint dir, jboolean pressed) {
++    if (dir >= 0 && dir < 6) {
++        if (pressed) {
++            sDpadPressedBits.fetch_or(1 << dir, std::memory_order_relaxed);
++        } else {
++            sDpadReleasedBits.fetch_or(1 << dir, std::memory_order_relaxed);
++        }
++    }
++}
++
++void Ship::Mobile::InjectMenuNavKeys() {
++    static const ImGuiKey kDirKeys[] = {
++        ImGuiKey_GamepadDpadUp, ImGuiKey_GamepadDpadDown,
++        ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadDpadRight,
++        ImGuiKey_GamepadFaceDown,  // A / select
++        ImGuiKey_GamepadFaceRight, // B / back
++    };
++    uint8_t pressed  = sDpadPressedBits.exchange(0, std::memory_order_relaxed);
++    uint8_t released = sDpadReleasedBits.exchange(0, std::memory_order_relaxed);
++    for (int i = 0; i < 6; i++) {
++        if (pressed  & (1 << i)) ImGui::GetIO().AddKeyEvent(kDirKeys[i], true);
++        if (released & (1 << i)) ImGui::GetIO().AddKeyEvent(kDirKeys[i], false);
++    }
++}
++
++static std::atomic<float> sTouchCamX{0.0f};
++static std::atomic<float> sTouchCamY{0.0f};
++static std::atomic<bool> sTouchCamActive{false};
++static std::atomic<bool> sFreeLookTouchEnabled{false};
++static std::atomic<bool> sTouchItemButtonPulse{false};
++static std::atomic<bool> sTouchItemButtonHeld{false};
++
++extern "C" void JNICALL Java_com_dishii_soh_MainActivity_setCameraState(JNIEnv* env, jobject obj, jint axis, jfloat value) {
++    if (axis == 0) {
++        sTouchCamX.store(value);
++    } else if (axis == 1) {
++        sTouchCamY.store(value);
++    }
++}
++
++extern "C" JNIEXPORT void JNICALL Java_com_dishii_soh_MainActivity_setCameraTouchActive(JNIEnv*, jobject, jboolean active) {
++    sTouchCamActive.store(active == JNI_TRUE);
++    if (active != JNI_TRUE) {
++        sTouchCamX.store(0.0f);
++        sTouchCamY.store(0.0f);
++    }
++}
++
++bool Ship::Mobile::HasTouchCameraInput() {
++    if (!sFreeLookTouchEnabled.load() || !sTouchCamActive.load()) {
++        return false;
++    }
++    return sTouchCamX.load() != 0.0f || sTouchCamY.load() != 0.0f;
++}
++
++void Ship::Mobile::HandleTouchCamera(float* camX, float* camY) {
++    if (!sFreeLookTouchEnabled.load() || !sTouchCamActive.load()) {
++        return;
++    }
++    *camX += sTouchCamX.load();
++    *camY += sTouchCamY.load();
++}
++
++extern "C" bool Ship_Mobile_HasTouchCameraInput(void) {
++    return Ship::Mobile::HasTouchCameraInput();
++}
++
++extern "C" void Ship_Mobile_HandleTouchCamera(float* camX, float* camY) {
++    Ship::Mobile::HandleTouchCamera(camX, camY);
++}
++
++void Ship::Mobile::SetFreeLookTouchEnabled(bool enabled) {
++    SDL_Log("[SoH_Touch] SetFreeLookTouchEnabled=%d", (int)enabled);
++    sFreeLookTouchEnabled.store(enabled);
++}
++
++bool Ship::Mobile::IsTouchItemButtonPulse() {
++    if (!sFreeLookTouchEnabled.load()) {
++        sTouchItemButtonPulse.store(false);
++        return false;
++    }
++    return sTouchItemButtonPulse.exchange(false);
++}
++
++bool Ship::Mobile::IsTouchItemButtonHeld() {
++    if (!sFreeLookTouchEnabled.load()) {
++        return false;
++    }
++    return sTouchItemButtonHeld.load();
++}
++
++extern "C" bool Ship_Mobile_IsTouchItemButtonPulse(void) {
++    return Ship::Mobile::IsTouchItemButtonPulse();
++}
++
++extern "C" bool Ship_Mobile_IsItemButtonHeld(void) {
++    return Ship::Mobile::IsTouchItemButtonHeld();
++}
++
++extern "C" JNIEXPORT void JNICALL Java_com_dishii_soh_MainActivity_setItemButtonPulse(JNIEnv*, jobject) {
++    sTouchItemButtonPulse.store(true);
++}
++
++extern "C" JNIEXPORT void JNICALL Java_com_dishii_soh_MainActivity_setItemButtonHeld(JNIEnv*, jobject, jboolean held) {
++    sTouchItemButtonHeld.store((bool)held);
++}
++
++void Ship::Mobile::SetToggleButtonVisible(bool visible) {
++    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
++    jobject javaObject = (jobject)SDL_AndroidGetActivity();
++    jclass javaClass = env->GetObjectClass(javaObject);
++    jmethodID method = env->GetMethodID(javaClass, "SetToggleButtonVisible", "(Z)V");
++    env->CallVoidMethod(javaObject, method, (jboolean)visible);
++}
++
++void Ship::Mobile::SetFirstPersonAimingActive(bool active) {
++    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
++    jobject javaObject = (jobject)SDL_AndroidGetActivity();
++    jclass javaClass = env->GetObjectClass(javaObject);
++    jmethodID method = env->GetMethodID(javaClass, "SetFirstPersonAimingActive", "(Z)V");
++    env->CallVoidMethod(javaObject, method, (jboolean)active);
++}
++
++#endif

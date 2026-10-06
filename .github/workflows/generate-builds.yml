@@ -1,6 +1,8 @@
 name: generate-builds
 on:
   push:
+    branches-ignore:
+      - 'android-*'
   pull_request:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

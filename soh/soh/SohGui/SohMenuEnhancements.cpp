@@ -1061,6 +1061,9 @@ void SohMenu::AddMenuEnhancements() {
             "NOTE: This will disable the behavior of the 'Equip Dupe' glitch."));
     AddWidget(path, "Skip Magic Arrow Equip Animation", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("SkipArrowAnimation"));
+    AddWidget(path, "Bomb Arrows", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_ENHANCEMENT("BombArrows"))
+        .Options(CheckboxOptions().Tooltip("Press A on the bomb slot to select bomb arrows. Each shot uses one arrow and one bomb."));
     // TODO: See if a Callback could be registered to avoid the need to reload scenes for the next two options.
     AddWidget(path, "Blue Fire Arrows##Enhancement", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_ENHANCEMENT("BlueFireArrows"))

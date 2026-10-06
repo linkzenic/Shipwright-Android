@@ -55,6 +55,12 @@ int SDL_main(int argc, char* argv[]) {
     // Allow non-ascii characters for Windows
     setlocale(LC_ALL, ".UTF8");
 
+#elif defined(__ANDROID__)
+extern int Android_WaitForSetup(void);
+int SDL_main(int argc, char* argv[]) {
+    if (!Android_WaitForSetup()) {
+        return 1;
+    }
 #else //_WIN32
 int main(int argc, char* argv[]) {
 #endif

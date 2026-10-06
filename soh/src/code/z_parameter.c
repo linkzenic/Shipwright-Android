@@ -29,6 +29,9 @@ extern MessageTableEntry* sNesMessageEntryTablePtr;
 extern MessageTableEntry* sGerMessageEntryTablePtr;
 extern MessageTableEntry* sFraMessageEntryTablePtr;
 extern MessageTableEntry* sJpnMessageEntryTablePtr;
+extern u8 BombArrows_IsButtonBombArrow(s16 button);
+extern s16 BombArrows_GetEffectiveAmmo(void);
+extern s16 BombArrows_GetEffectiveMaxAmmo(void);
 
 #define DO_ACTION_TEX_WIDTH() 48
 #define DO_ACTION_TEX_HEIGHT() 16
@@ -4431,6 +4434,7 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
     OPEN_DISPS(play->state.gfxCtx);
     GraphicsContext* gfxCtx = play->state.gfxCtx;
     InterfaceContext* interfaceCtx = &play->interfaceCtx;
+    u8 isBombArrow = BombArrows_IsButtonBombArrow(button);
     s16 X_Margins_CL;
     s16 X_Margins_CR;
     s16 X_Margins_CD;
@@ -4656,6 +4660,10 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
         ItemIconPos[3][1] = ItemIconPos_ori[3][1];
     }
 
+    if (isBombArrow) {
+        texture = (void*)gItemIcons[ITEM_BOW];
+    }
+
     gDPLoadTextureBlock(OVERLAY_DISP++, texture, G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0, G_TX_NOMIRROR | G_TX_WRAP,
                         G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK, G_TX_NOLOD, G_TX_NOLOD);
 
@@ -4663,6 +4671,21 @@ void Interface_DrawItemIconTexture(PlayState* play, void* texture, s16 button) {
                             (ItemIconPos[button][0] + gItemIconWidth[button]) << 2,
                             (ItemIconPos[button][1] + gItemIconWidth[button]) << 2, G_TX_RENDERTILE, 0, 0,
                             gItemIconDD[button] << 1, gItemIconDD[button] << 1);
+
+    if (isBombArrow) {
+        s16 overlaySize = (button >= 4) ? 8 : 12;
+        s16 overlayLeft = ItemIconPos[button][0] + ((gItemIconWidth[button] - overlaySize) / 2) + 2;
+        s16 overlayTop = ItemIconPos[button][1] + ((gItemIconWidth[button] - overlaySize) / 2) - 2;
+        s16 overlayStep = ((32 << 10) / overlaySize);
+
+        gDPPipeSync(OVERLAY_DISP++);
+        gDPLoadTextureBlock(OVERLAY_DISP++, gItemIcons[ITEM_BOMB], G_IM_FMT_RGBA, G_IM_SIZ_32b, 32, 32, 0,
+                            G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMIRROR | G_TX_WRAP, G_TX_NOMASK, G_TX_NOMASK,
+                            G_TX_NOLOD, G_TX_NOLOD);
+        gSPWideTextureRectangle(OVERLAY_DISP++, overlayLeft << 2, overlayTop << 2,
+                                (overlayLeft + overlaySize) << 2, (overlayTop + overlaySize) << 2, G_TX_RENDERTILE, 0,
+                                0, overlayStep, overlayStep);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
@@ -4909,11 +4932,35 @@ void Interface_DrawAmmoCount(PlayState* play, s16 button, s16 alpha) {
 
     i = gSaveContext.equips.buttonItems[button];
 
-    if (GameInteractor_Should(VB_DRAW_AMMO_COUNT,
-                              ((i == ITEM_STICK) || (i == ITEM_NUT) || (i == ITEM_BOMB) || (i == ITEM_BOW) ||
-                               ((i >= ITEM_BOW_ARROW_FIRE) && (i <= ITEM_BOW_ARROW_LIGHT)) || (i == ITEM_SLINGSHOT) ||
-                               (i == ITEM_BOMBCHU) || (i == ITEM_BEAN)),
-                              &i)) {
+    if (BombArrows_IsButtonBombArrow(button)) {
+        ammo = BombArrows_GetEffectiveAmmo();
+
+        gDPPipeSync(OVERLAY_DISP++);
+
+        if (ammo == BombArrows_GetEffectiveMaxAmmo()) {
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 120, 255, 0, alpha);
+        }
+
+        if (ammo == 0) {
+            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 100, 100, 100, alpha);
+        }
+
+        for (i = 0; ammo >= 10; i++) {
+            ammo -= 10;
+        }
+
+        if (i != 0) {
+            OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, (u8*)_gAmmoDigit0Tex[i], 8, 8, ItemIconPos[button][0],
+                                          ItemIconPos[button][1], 8, 8, 1 << 10, 1 << 10);
+        }
+
+        OVERLAY_DISP = Gfx_TextureIA8(OVERLAY_DISP, (u8*)_gAmmoDigit0Tex[ammo], 8, 8, ItemIconPos[button][0] + 6,
+                                      ItemIconPos[button][1], 8, 8, 1 << 10, 1 << 10);
+    } else if (GameInteractor_Should(VB_DRAW_AMMO_COUNT,
+                                     ((i == ITEM_STICK) || (i == ITEM_NUT) || (i == ITEM_BOMB) || (i == ITEM_BOW) ||
+                                      ((i >= ITEM_BOW_ARROW_FIRE) && (i <= ITEM_BOW_ARROW_LIGHT)) ||
+                                      (i == ITEM_SLINGSHOT) || (i == ITEM_BOMBCHU) || (i == ITEM_BEAN)),
+                                     &i)) {
         if ((i >= ITEM_BOW_ARROW_FIRE) && (i <= ITEM_BOW_ARROW_LIGHT)) {
             i = ITEM_BOW;
         }

@@ -139,6 +139,12 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 set(CMAKE_OBJCXX_FLAGS_RELEASE "-O2 -DNDEBUG")
 endif()
 
+if(ANDROID)
+    # Keep local APKs usable on-device while retaining file/line crash symbols.
+    set(CMAKE_C_FLAGS_DEBUG "-O2 -gline-tables-only")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O2 -gline-tables-only")
+endif()
+
 # Enforce strict, deterministic IEEE-754 floating-point to match N64 (MIPS) semantics.
 # Never enable fast-math, and disable FMA contraction: the R4300 CPU and RSP have no
 # fused multiply-add, so contracting mul+add into an FMA produces extra precision.
@@ -287,6 +293,7 @@ target_compile_definitions(torch INTERFACE YAML_CPP_STATIC_DEFINE)
 
 # Build-time ROM extraction. soh links torch as a static library, which compiles out torch's
 # own CLI, so this supplies an entry point around the same code the game runs.
+if(NOT ANDROID)
 add_executable(soh-torch EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/soh/assets/tools/torch-cli/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/soh/soh/Extractor/TorchExtract.cpp
@@ -366,6 +373,7 @@ if(SOH_TOOLS_ONLY)
     file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/soh)
     return()
 endif()
+endif() # Host-only tools; Android packages their output and links Torch in-process.
 
 ################################################################################
 # Sub-projects
@@ -443,5 +451,7 @@ elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set(CPACK_GENERATOR "Bundle")
 endif()
 
-set(CPACK_PROJECT_CONFIG_FILE ${CMAKE_SOURCE_DIR}/CMake/Packaging-2.cmake)
-include(CMake/Packaging.cmake)
+if(NOT ANDROID)
+    set(CPACK_PROJECT_CONFIG_FILE ${CMAKE_SOURCE_DIR}/CMake/Packaging-2.cmake)
+    include(CMake/Packaging.cmake)
+endif()

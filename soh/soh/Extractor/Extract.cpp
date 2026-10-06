@@ -12,6 +12,33 @@
 #include "soh/ShipUtils.h"
 #include "variables.h"
 
+#ifdef __ANDROID__
+#include <SDL2/SDL.h>
+#include <jni.h>
+#include <condition_variable>
+#include <mutex>
+
+static std::mutex androidPickerMutex;
+static std::condition_variable androidPickerReady;
+static bool androidPickerPending = false;
+static std::string androidPickedPath;
+
+extern "C" JNIEXPORT void JNICALL Java_com_dishii_soh_MainActivity_nativeHandleSelectedFile(
+    JNIEnv* env, jobject, jstring path) {
+    std::lock_guard<std::mutex> lock(androidPickerMutex);
+    androidPickedPath.clear();
+    if (path) {
+        const char* utf = env->GetStringUTFChars(path, nullptr);
+        if (utf) {
+            androidPickedPath = utf;
+            env->ReleaseStringUTFChars(path, utf);
+        }
+    }
+    androidPickerPending = false;
+    androidPickerReady.notify_one();
+}
+#endif
+
 #ifdef unix
 #include <dirent.h>
 #include <sys/types.h>
@@ -317,6 +344,39 @@ bool Extractor::GetRomPathFromBox() {
         return false;
     }
     mCurrentRomPath = nameBuffer;
+#elif defined(__ANDROID__)
+    auto* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+    auto activity = static_cast<jobject>(SDL_AndroidGetActivity());
+    if (!env || !activity) {
+        return false;
+    }
+    jclass cls = env->GetObjectClass(activity);
+    jmethodID picker = env->GetMethodID(cls, "openFilePicker", "()V");
+    {
+        std::lock_guard<std::mutex> lock(androidPickerMutex);
+        androidPickedPath.clear();
+        androidPickerPending = true;
+    }
+    if (picker && !env->ExceptionCheck()) {
+        env->CallVoidMethod(activity, picker);
+    }
+    bool failed = !picker || env->ExceptionCheck();
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(activity);
+    if (failed) {
+        std::lock_guard<std::mutex> lock(androidPickerMutex);
+        androidPickerPending = false;
+        return false;
+    }
+    std::unique_lock<std::mutex> lock(androidPickerMutex);
+    androidPickerReady.wait(lock, [] { return !androidPickerPending; });
+    if (androidPickedPath.empty()) {
+        return false;
+    }
+    mCurrentRomPath = androidPickedPath;
 #else
     auto selection = pfd::open_file("Select a file", mSearchPath, { "N64 Roms", "*.z64 *.n64 *.v64" }).result();
 
@@ -623,14 +683,22 @@ const char* Extractor::GetTorchVersionDir() const {
 }
 
 std::string Extractor::Mkdtemp() {
+#ifdef __ANDROID__
+    const char* internalStorage = SDL_AndroidGetInternalStoragePath();
+    if (!internalStorage) {
+        throw std::runtime_error("Android extraction storage is unavailable");
+    }
+    std::string temp_dir = internalStorage;
+#else
     std::string temp_dir = std::filesystem::temp_directory_path().string();
+#endif
 
     // create 6 random alphanumeric characters
     static const char charset[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
     char randchr[7];
     for (int i = 0; i < 6; i++) {
-        randchr[i] = charset[ShipUtils::Random(0, sizeof(charset))];
+        randchr[i] = charset[ShipUtils::Random(0, sizeof(charset) - 1)];
     }
     randchr[6] = '\0';
 

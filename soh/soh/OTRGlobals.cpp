@@ -17,6 +17,12 @@
 #include <libultraship/bridge/gfxdebuggerbridge.h>
 #include <libultraship/bridge/windowbridge.h>
 #include <ship/Context.h>
+#ifdef __ANDROID__
+#include <ship/port/mobile/MobileImpl.h>
+static bool sAimingThisFrame = false;
+static bool sWasAimingLastFrame = false;
+static int sAimingGraceFrames = 0;
+#endif
 #include <ship/resource/File.h>
 #include <ship/window/Window.h>
 #include <soh/GameVersions.h>
@@ -151,8 +157,9 @@ Color_RGB8 kokiriColor = { 0x1E, 0x69, 0x1B };
 Color_RGB8 goronColor = { 0x64, 0x14, 0x00 };
 Color_RGB8 zoraColor = { 0x00, 0xEC, 0x64 };
 
-int32_t previousImGuiScaleIndex;
 float previousImGuiScale;
+ImGuiStyle baseImGuiStyle;
+bool hasBaseImGuiStyle = false;
 
 bool prevAltAssets = false;
 
@@ -286,6 +293,10 @@ OTRGlobals::OTRGlobals() {
 
     context->InitConfiguration();
     context->InitConsoleVariables();
+#ifdef __ANDROID__
+    Ship::Mobile::SetToggleButtonVisible(true);
+    Ship::Mobile::SetFreeLookTouchEnabled(true);
+#endif
 
     auto controlDeck = std::make_shared<LUS::ControlDeck>(std::vector<CONTROLLERBUTTONS_T>({
         BTN_CUSTOM_MODIFIER1,
@@ -329,8 +340,7 @@ OTRGlobals::OTRGlobals() {
         ImGui::GetIO().FontDefault = fontStandardLarger;
     }
 
-    previousImGuiScaleIndex = -1;
-    previousImGuiScale = defaultImGuiScale;
+    previousImGuiScale = -1.0f;
     ScaleImGui();
 }
 
@@ -672,11 +682,19 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                         continue;
                     }
                     case PS_FIRST: {
+#ifndef __ANDROID__
                         if (!extract.ManuallySearchForRomMatchingType(RomSearchMode::Both)) {
                             promptStep = PS_FILE_CHECK;
                             continue;
                         }
+#endif
                         extractionTask = threadPool->submit_task([&]() -> void {
+#ifdef __ANDROID__
+                            if (!extract.ManuallySearchForRomMatchingType(RomSearchMode::Both)) {
+                                promptStep = PS_FILE_CHECK;
+                                return;
+                            }
+#endif
                             extract.CallTorch(installPath, Ship::Context::GetAppDirectoryPath(appShortName),
                                               &extractCount, &totalExtract);
                             generatedIsMQ = extract.IsMasterQuest();
@@ -690,6 +708,18 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                         SohGui::RegisterPopup(
                             "Extraction Complete", "ROM Extracted. Extract another?", "Yes", "No",
                             [&]() {
+#ifdef __ANDROID__
+                                extractionTask = threadPool->submit_task([&]() -> void {
+                                    if (extract.ManuallySearchForRomMatchingType(generatedIsMQ ? RomSearchMode::Vanilla
+                                                                                             : RomSearchMode::MQ)) {
+                                        extract.CallTorch(installPath, Ship::Context::GetAppDirectoryPath(appShortName),
+                                                          &extractCount, &totalExtract);
+                                    }
+                                    extractStep = ES_VERIFY;
+                                    extractCount = 0;
+                                    totalExtract = 0;
+                                });
+#else
                                 if (!extract.ManuallySearchForRomMatchingType(generatedIsMQ ? RomSearchMode::Vanilla
                                                                                             : RomSearchMode::MQ)) {
                                     extractStep = ES_VERIFY;
@@ -702,6 +732,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                                         totalExtract = 0;
                                     });
                                 }
+#endif
                             },
                             [&]() { extractStep = ES_VERIFY; });
                         continue;
@@ -759,6 +790,7 @@ void OTRGlobals::RunExtract(int argc, char* argv[]) {
                 if (!ImGui::IsPopupOpen("ROM Extraction")) {
                     ImGui::OpenPopup("ROM Extraction");
                 }
+                ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.0f, 8.0f));
                 auto color = UIWidgets::ColorValues.at(THEME_COLOR);
@@ -999,17 +1031,36 @@ OTRGlobals::~OTRGlobals() {
 }
 
 void OTRGlobals::ScaleImGui() {
-    int32_t imGuiScaleIndex = CVarGetInteger(CVAR_SETTING("ImGuiScale"), defaultImGuiScale);
-    if (imGuiScaleIndex == previousImGuiScaleIndex) {
+    if (!hasBaseImGuiStyle) {
+        baseImGuiStyle = ImGui::GetStyle();
+        hasBaseImGuiStyle = true;
+    }
+
+    float scale = CVarGetFloat(CVAR_SETTING("ImGuiScale.Value"), -1.0f);
+    if (scale < 0.0f) {
+        int32_t legacyScaleIndex = CVarGetInteger(CVAR_SETTING("ImGuiScale"), 1);
+        legacyScaleIndex = std::clamp<int32_t>(legacyScaleIndex, 0, 3);
+        scale = imguiScaleOptionToValue[legacyScaleIndex];
+        CVarSetFloat(CVAR_SETTING("ImGuiScale.Value"), scale);
+    }
+
+    scale = std::clamp(scale, 0.65f, 2.5f);
+    if (scale == previousImGuiScale) {
         return;
     }
 
-    float scale = imguiScaleOptionToValue[imGuiScaleIndex];
-    float newScale = scale / previousImGuiScale;
-    ImGui::GetStyle().ScaleAllSizes(newScale);
+    if (ImGui::IsAnyMouseDown()) {
+        return;
+    }
+
+    ImVec4 currentColors[ImGuiCol_COUNT];
+    std::copy(std::begin(ImGui::GetStyle().Colors), std::end(ImGui::GetStyle().Colors), std::begin(currentColors));
+
+    ImGui::GetStyle() = baseImGuiStyle;
+    std::copy(std::begin(currentColors), std::end(currentColors), std::begin(ImGui::GetStyle().Colors));
+    ImGui::GetStyle().ScaleAllSizes(scale);
     ImGui::GetIO().FontGlobalScale = scale;
     previousImGuiScale = scale;
-    previousImGuiScaleIndex = imGuiScaleIndex;
 }
 
 bool OTRGlobals::HasMasterQuest() {
@@ -1530,6 +1581,24 @@ extern "C" void InitOTR(int argc, char* argv[]) {
     CustomMessageManager::Instance = new CustomMessageManager();
     ItemTableManager::Instance = new ItemTableManager();
     GameInteractor::Instance = new GameInteractor();
+#ifdef __ANDROID__
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerFirstPersonControl>([](Player*) {
+        sAimingThisFrame = true;
+    });
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayerUpdate>([]() {
+        if (sAimingThisFrame) {
+            sAimingGraceFrames = 15;
+        } else if (sAimingGraceFrames > 0) {
+            --sAimingGraceFrames;
+            sAimingThisFrame = true;
+        }
+        if (sAimingThisFrame != sWasAimingLastFrame) {
+            Ship::Mobile::SetFirstPersonAimingActive(sAimingThisFrame);
+        }
+        sWasAimingLastFrame = sAimingThisFrame;
+        sAimingThisFrame = false;
+    });
+#endif
     SaveManager::Instance = new SaveManager();
 
     std::shared_ptr<Ship::Config> conf = OTRGlobals::Instance->context->GetConfig();
