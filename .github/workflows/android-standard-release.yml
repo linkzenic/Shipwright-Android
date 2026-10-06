@@ -1,4 +1,4 @@
-name: Standard Android 9.3 Test APK
+name: Standard Android 9.3 Release APK
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-standard-test-${{ github.ref }}
+  group: android-standard-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -80,7 +80,7 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | grep -F 'certificate SHA-256 digest: f608b8ed8a09fd6c8890dee105f3268ad5577638ec3aa2544ff4618f399efd3e'
       - uses: actions/upload-artifact@v4
         with:
-          name: SOH-9.3-Android-Test
+          name: SOH-9.3.0-Android
           path: Android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
