@@ -48,6 +48,9 @@ jobs:
           cmake -S . -B build-host-tools -G Ninja -DSOH_TOOLS_ONLY=ON -DCMAKE_BUILD_TYPE=Release
           cmake --build build-host-tools --target GenerateSohOtr --parallel 4
           test -s build-host-tools/soh/soh.o2r
+      - name: Validate generated assets and release lint before native compilation
+        working-directory: Android
+        run: ./gradlew :app:prepareAndroidSupportAssets :app:generateReleaseLintVitalReportModel :app:lintVitalRelease --console=plain --max-workers=4
       - name: Prepare release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

@@ -150,7 +150,8 @@ tasks.register("prepareAndroidSupportAssets", Sync) {
 // (including release lint models) inherit the generation dependency.
 android.sourceSets.main.assets.setSrcDirs([tasks.named("prepareAndroidSupportAssets")])
 tasks.configureEach { task ->
-    if (task.name.startsWith("merge") && task.name.endsWith("Assets")) {
+    if ((task.name.startsWith("merge") && task.name.endsWith("Assets")) ||
+            task.name.toLowerCase(java.util.Locale.ROOT).contains("lint")) {
         task.dependsOn("prepareAndroidSupportAssets")
     }
 }
