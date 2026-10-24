@@ -1,0 +1,935 @@
+--- a/Android/app/src/main/java/com/dishii/soh/MainActivity.java
++++ b/Android/app/src/main/java/com/dishii/soh/MainActivity.java
+@@ -42,6 +42,9 @@
+ import android.widget.FrameLayout;
+ import android.graphics.Rect;
+ import android.graphics.Color;
++import android.graphics.drawable.GradientDrawable;
++import android.widget.SeekBar;
++import java.util.HashMap;
+ import android.view.LayoutInflater;
+ import android.view.MotionEvent;
+ import android.view.View;
+@@ -961,23 +964,15 @@
+         FrameLayout leftScreenArea = overlayView.findViewById(R.id.left_screen_area);
+         FrameLayout rightScreenArea = overlayView.findViewById(R.id.right_screen_area);
+ 
+-        setupCButtons(buttonDpadUp, ControllerButtons.BUTTON_DPAD_UP);
+-        setupCButtons(buttonDpadDown, ControllerButtons.BUTTON_DPAD_DOWN);
+-        setupCButtons(buttonDpadLeft, ControllerButtons.BUTTON_DPAD_LEFT);
+-        setupCButtons(buttonDpadRight, ControllerButtons.BUTTON_DPAD_RIGHT);
+-
+-        addTouchListener(buttonLB, ControllerButtons.BUTTON_LB);
+-        addTouchListener(buttonRB, ControllerButtons.BUTTON_RB);
+-        addTouchListener(buttonZL, ControllerButtons.AXIS_LT);
+-        addTouchListener(buttonZR, ControllerButtons.AXIS_RT);
+-
+-        addTouchListener(buttonStart, ControllerButtons.BUTTON_START);
+-        // BACK uses nativeGamepadBackPressed directly; setButton(BUTTON_BACK) feeds ImGuiKey_GamepadBack, unreliable when SDL Gamepads list is empty.
+-        buttonBack.setOnTouchListener((v, event) -> {
+-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+-                nativeGamepadBackPressed();
++        installGameTouchListeners();
++        dpadCluster = overlayView.findViewById(R.id.dpad_cluster);
++        actionButtonCluster = overlayView.findViewById(R.id.action_button_cluster);
++        registerTouchLayoutElements();
++        applySavedTouchLayout();
++        leftJoystick.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
++            if (l != ol || t != ot || r != or || b != ob) {
++                updateLeftStickFixedPosition();
+             }
+-            return true;
+         });
+ 
+ 
+@@ -1006,6 +1001,34 @@
+ 
+     }
+ 
++    // Normal in-game listeners for every on-screen button. Also used to restore them
++    // after the layout editor replaces them with drag handlers.
++    private void installGameTouchListeners() {
++        setupCButtons(buttonDpadUp, ControllerButtons.BUTTON_DPAD_UP);
++        setupCButtons(buttonDpadDown, ControllerButtons.BUTTON_DPAD_DOWN);
++        setupCButtons(buttonDpadLeft, ControllerButtons.BUTTON_DPAD_LEFT);
++        setupCButtons(buttonDpadRight, ControllerButtons.BUTTON_DPAD_RIGHT);
++
++        addTouchListener(buttonLB, ControllerButtons.BUTTON_LB);
++        addTouchListener(buttonRB, ControllerButtons.BUTTON_RB);
++        addTouchListener(buttonZL, ControllerButtons.AXIS_LT);
++        addTouchListener(buttonZR, ControllerButtons.AXIS_RT);
++
++        addTouchListener(buttonStart, ControllerButtons.BUTTON_START);
++        // BACK uses nativeGamepadBackPressed directly; setButton(BUTTON_BACK) feeds ImGuiKey_GamepadBack, unreliable when SDL Gamepads list is empty.
++        buttonBack.setOnTouchListener((v, event) -> {
++            if (event.getAction() == MotionEvent.ACTION_DOWN) {
++                nativeGamepadBackPressed();
++            }
++            return true;
++        });
++
++        addTouchListener(buttonA, ControllerButtons.BUTTON_A);
++        addTouchListener(buttonB, ControllerButtons.BUTTON_B);
++        addTouchListener(buttonX, ControllerButtons.BUTTON_X);
++        addTouchListener(buttonY, ControllerButtons.BUTTON_Y);
++    }
++
+     public void setTouchControlsDisabledFromNative(boolean disabled) {
+         preferences.edit().putBoolean(PREF_TOUCH_CONTROLS_DISABLED, disabled).apply();
+         runOnUiThread(this::applyTouchControlsVisibility);
+@@ -1073,10 +1096,12 @@
+ 
+         // Layout selection only moves the buttons. A button displaying a letter must
+         // always emit that same logical SDL button, regardless of its screen position.
+-        addTouchListener(buttonA, ControllerButtons.BUTTON_A);
+-        addTouchListener(buttonB, ControllerButtons.BUTTON_B);
+-        addTouchListener(buttonX, ControllerButtons.BUTTON_X);
+-        addTouchListener(buttonY, ControllerButtons.BUTTON_Y);
++        if (!touchLayoutEditing) {
++            addTouchListener(buttonA, ControllerButtons.BUTTON_A);
++            addTouchListener(buttonB, ControllerButtons.BUTTON_B);
++            addTouchListener(buttonX, ControllerButtons.BUTTON_X);
++            addTouchListener(buttonY, ControllerButtons.BUTTON_Y);
++        }
+     }
+ 
+     private void configureFaceButton(Button button, int widthDp, int heightDp, int gravity,
+@@ -1107,12 +1132,14 @@
+ 
+     private void setTouchButtonPressed(Button button, boolean pressed) {
+         button.setPressed(pressed);
+-        float scale = pressed ? 0.92f : 1.0f;
++        Float userScale = touchUserScale.get(button);
++        float base = userScale != null ? userScale : 1.0f;
++        float scale = pressed ? base * 0.92f : base;
+         button.animate().scaleX(scale).scaleY(scale).setDuration(60).start();
+     }
+ 
+     private void applyTouchControlsVisibility() {
+-        if (overlayView == null) {
++        if (overlayView == null || touchLayoutEditing) {
+             return;
+         }
+ 
+@@ -1138,6 +1165,11 @@
+     }
+ 
+     private void setupToggleButton(Button button, ViewGroup uiGroup){
++        // Long-press the eye button as a shortcut to the touch layout editor.
++        button.setOnLongClickListener(v -> {
++            enterTouchLayoutEdit();
++            return true;
++        });
+         button.setOnClickListener(v -> {
+             boolean currentlyHidden = uiGroup.getVisibility() != View.VISIBLE;
+             preferences.edit().putBoolean(PREF_TOUCH_CONTROLS_HIDDEN, !currentlyHidden).apply();
+@@ -1221,16 +1253,12 @@
+     }
+ 
+     private void setupFloatingJoystick(FrameLayout touchArea) {
+-        final float maxRadius = dpToPixels(51);
+-        leftJoystick.post(() -> {
+-            leftStickFixedX = leftJoystick.getX();
+-            leftStickFixedY = leftJoystick.getY();
+-            applyTouchLeftStickMode();
+-        });
++        leftJoystick.post(this::updateLeftStickFixedPosition);
+         touchArea.setOnTouchListener((view, event) -> {
+             if (!TouchAreaEnabled) {
+                 return false;
+             }
++            final float maxRadius = dpToPixels(51) * leftStickScale;
+             switch (event.getActionMasked()) {
+                 case MotionEvent.ACTION_DOWN:
+                     boolean floating = preferences.getBoolean(PREF_TOUCH_LEFT_STICK_FLOATING, true);
+@@ -1433,6 +1461,422 @@
+ 
+     }
+ 
++    // ------------------------------------------------------------------
++    // Touch layout editor: move and resize the on-screen controls.
++    // Opened from the native menu (Settings > Touch Controls > Edit Touch Layout).
++    // Per-control offset (dp) and scale are stored in SharedPreferences.
++    // ------------------------------------------------------------------
++    private static final String PREF_TOUCH_LAYOUT_PREFIX = "touchLayout_";
++    private static final float TOUCH_SCALE_MIN = 0.5f;
++    private static final float TOUCH_SCALE_MAX = 2.0f;
++
++    private View dpadCluster;
++    private View actionButtonCluster;
++    private final LinkedHashMap<String, View> touchElements = new LinkedHashMap<>();
++    private final Map<String, View[]> touchEditTargets = new LinkedHashMap<>();
++    private final Map<View, Float> touchUserScale = new HashMap<>();
++    private boolean touchLayoutEditing = false;
++    private String selectedTouchElement = null;
++    private float leftStickScale = 1.0f;
++    private float dragLastRawX;
++    private float dragLastRawY;
++    private boolean updatingTouchSeek = false;
++    private LinearLayout touchEditPanel;
++    private TextView touchEditLabel;
++    private SeekBar touchEditSeek;
++
++    private void registerTouchElement(String key, View main, View... targets) {
++        if (main == null) {
++            return;
++        }
++        touchElements.put(key, main);
++        touchEditTargets.put(key, targets);
++    }
++
++    private void registerTouchLayoutElements() {
++        touchElements.clear();
++        touchEditTargets.clear();
++        registerTouchElement("stick", leftJoystick, leftJoystick);
++        registerTouchElement("dpad", dpadCluster, dpadCluster,
++                buttonDpadUp, buttonDpadDown, buttonDpadLeft, buttonDpadRight);
++        registerTouchElement("face", actionButtonCluster, actionButtonCluster,
++                buttonA, buttonB, buttonX, buttonY);
++        registerTouchElement("zl", buttonZL, buttonZL);
++        registerTouchElement("lb", buttonLB, buttonLB);
++        registerTouchElement("zr", buttonZR, buttonZR);
++        registerTouchElement("rb", buttonRB, buttonRB);
++        registerTouchElement("start", buttonStart, buttonStart);
++        registerTouchElement("back", buttonBack, buttonBack);
++    }
++
++    private String touchElementLabel(String key) {
++        switch (key) {
++            case "stick": return "Left Stick (fixed mode)";
++            case "dpad": return "D-Pad";
++            case "face": return "Face Buttons";
++            case "zl": return "ZL";
++            case "lb": return "L";
++            case "zr": return "ZR";
++            case "rb": return "R";
++            case "start": return "Start";
++            case "back": return "Back";
++            default: return key;
++        }
++    }
++
++    private float getTouchElementDx(String key) {
++        return preferences.getFloat(PREF_TOUCH_LAYOUT_PREFIX + key + "_dx", 0.0f);
++    }
++
++    private float getTouchElementDy(String key) {
++        return preferences.getFloat(PREF_TOUCH_LAYOUT_PREFIX + key + "_dy", 0.0f);
++    }
++
++    private float getTouchElementScale(String key) {
++        return clampTouchScale(preferences.getFloat(PREF_TOUCH_LAYOUT_PREFIX + key + "_scale", 1.0f));
++    }
++
++    private float clampTouchScale(float scale) {
++        return Math.max(TOUCH_SCALE_MIN, Math.min(TOUCH_SCALE_MAX, scale));
++    }
++
++    private float density() {
++        return getResources().getDisplayMetrics().density;
++    }
++
++    private void applySavedTouchLayout() {
++        for (String key : touchElements.keySet()) {
++            applyTouchElementLayout(key);
++        }
++    }
++
++    private void applyTouchElementLayout(String key) {
++        View v = touchElements.get(key);
++        if (v == null) {
++            return;
++        }
++        float scale = getTouchElementScale(key);
++        v.setTranslationX(getTouchElementDx(key) * density());
++        v.setTranslationY(getTouchElementDy(key) * density());
++        if (v == leftJoystick) {
++            // The stick is resized through its layout params so the knob keeps working in
++            // real pixels; the travel radius is scaled to match (see setupFloatingJoystick).
++            leftStickScale = scale;
++            ViewGroup.LayoutParams lp = leftJoystick.getLayoutParams();
++            lp.width = dpToPixels(150 * scale);
++            lp.height = dpToPixels(150 * scale);
++            leftJoystick.setLayoutParams(lp);
++            ViewGroup.LayoutParams kp = leftJoystickKnob.getLayoutParams();
++            kp.width = dpToPixels(48 * scale);
++            kp.height = dpToPixels(48 * scale);
++            leftJoystickKnob.setLayoutParams(kp);
++        } else {
++            v.setScaleX(scale);
++            v.setScaleY(scale);
++            touchUserScale.put(v, scale);
++        }
++    }
++
++    // Where the fixed (non-floating) left stick sits: its layout position plus the saved offset.
++    private void updateLeftStickFixedPosition() {
++        if (leftJoystick == null || leftJoystick.getWidth() == 0) {
++            return;
++        }
++        leftStickFixedX = leftJoystick.getLeft() + getTouchElementDx("stick") * density();
++        leftStickFixedY = leftJoystick.getTop() + getTouchElementDy("stick") * density();
++        if (!touchLayoutEditing) {
++            applyTouchLeftStickMode();
++        }
++    }
++
++    public void startTouchLayoutEditFromNative() {
++        runOnUiThread(this::enterTouchLayoutEdit);
++    }
++
++    private void enterTouchLayoutEdit() {
++        if (overlayView == null || touchLayoutEditing) {
++            return;
++        }
++        touchLayoutEditing = true;
++        selectedTouchElement = null;
++
++        overlayView.setVisibility(View.VISIBLE);
++        buttonGroup.setVisibility(View.VISIBLE);
++        DisableTouchArea();
++        overlayView.setOnTouchListener((view, e) -> true);
++        overlayView.setBackgroundColor(0xAA000000);
++        buttonToggle.setVisibility(View.GONE);
++        applySavedTouchLayout();
++        leftJoystick.setVisibility(View.VISIBLE);
++
++        for (Map.Entry<String, View[]> entry : touchEditTargets.entrySet()) {
++            View.OnTouchListener listener = makeTouchEditListener(entry.getKey());
++            for (View target : entry.getValue()) {
++                if (target != null) {
++                    target.setOnTouchListener(listener);
++                }
++            }
++        }
++
++        buildTouchEditPanel();
++        refreshTouchEditOutlines();
++    }
++
++    private void exitTouchLayoutEdit() {
++        if (!touchLayoutEditing) {
++            return;
++        }
++        touchLayoutEditing = false;
++        selectedTouchElement = null;
++        clearTouchEditOutlines();
++
++        ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
++        if (touchEditPanel != null) {
++            content.removeView(touchEditPanel);
++            touchEditPanel = null;
++        }
++        overlayView.setBackgroundColor(Color.TRANSPARENT);
++
++        for (View[] targets : touchEditTargets.values()) {
++            for (View target : targets) {
++                if (target != null) {
++                    target.setOnTouchListener(null);
++                }
++            }
++        }
++        installGameTouchListeners();
++        updateLeftStickFixedPosition();
++        applyTouchControlsVisibility();
++        applyTouchLeftStickMode();
++    }
++
++    private View.OnTouchListener makeTouchEditListener(final String key) {
++        return (v, event) -> {
++            View target = touchElements.get(key);
++            if (target == null) {
++                return false;
++            }
++            switch (event.getActionMasked()) {
++                case MotionEvent.ACTION_DOWN:
++                    selectTouchElement(key);
++                    dragLastRawX = event.getRawX();
++                    dragLastRawY = event.getRawY();
++                    return true;
++                case MotionEvent.ACTION_MOVE: {
++                    float dx = event.getRawX() - dragLastRawX;
++                    float dy = event.getRawY() - dragLastRawY;
++                    float oldX = target.getTranslationX();
++                    float oldY = target.getTranslationY();
++                    target.setTranslationX(oldX + dx);
++                    target.setTranslationY(oldY + dy);
++                    if (isTouchElementMostlyOnScreen(target)) {
++                        dragLastRawX = event.getRawX();
++                        dragLastRawY = event.getRawY();
++                    } else {
++                        // Don't let a control be dragged off-screen where it can't be grabbed.
++                        target.setTranslationX(oldX);
++                        target.setTranslationY(oldY);
++                    }
++                    return true;
++                }
++                case MotionEvent.ACTION_UP:
++                case MotionEvent.ACTION_CANCEL:
++                    saveTouchElementPosition(key);
++                    return true;
++                default:
++                    return true;
++            }
++        };
++    }
++
++    private boolean isTouchElementMostlyOnScreen(View target) {
++        Rect visible = new Rect();
++        if (!target.getGlobalVisibleRect(visible)) {
++            return false;
++        }
++        Float scale = touchUserScale.get(target);
++        float s = scale != null ? scale : 1.0f;
++        float fullArea = (float) target.getWidth() * s * target.getHeight() * s;
++        if (fullArea <= 0.0f) {
++            return true;
++        }
++        return (float) visible.width() * visible.height() >= fullArea * 0.6f;
++    }
++
++    private void saveTouchElementPosition(String key) {
++        View v = touchElements.get(key);
++        if (v == null) {
++            return;
++        }
++        preferences.edit()
++                .putFloat(PREF_TOUCH_LAYOUT_PREFIX + key + "_dx", v.getTranslationX() / density())
++                .putFloat(PREF_TOUCH_LAYOUT_PREFIX + key + "_dy", v.getTranslationY() / density())
++                .apply();
++        if (key.equals("stick")) {
++            updateLeftStickFixedPosition();
++        }
++    }
++
++    private void setTouchElementScale(String key, float scale) {
++        preferences.edit()
++                .putFloat(PREF_TOUCH_LAYOUT_PREFIX + key + "_scale", clampTouchScale(scale))
++                .apply();
++        applyTouchElementLayout(key);
++    }
++
++    private void resetTouchElement(String key) {
++        preferences.edit()
++                .remove(PREF_TOUCH_LAYOUT_PREFIX + key + "_dx")
++                .remove(PREF_TOUCH_LAYOUT_PREFIX + key + "_dy")
++                .remove(PREF_TOUCH_LAYOUT_PREFIX + key + "_scale")
++                .apply();
++        applyTouchElementLayout(key);
++        if (key.equals("stick")) {
++            leftJoystick.post(this::updateLeftStickFixedPosition);
++        }
++    }
++
++    private void selectTouchElement(String key) {
++        selectedTouchElement = key;
++        if (touchEditSeek != null) {
++            updatingTouchSeek = true;
++            touchEditSeek.setEnabled(true);
++            touchEditSeek.setProgress(Math.round((getTouchElementScale(key) - TOUCH_SCALE_MIN) * 100f));
++            updatingTouchSeek = false;
++        }
++        updateTouchEditLabel();
++        refreshTouchEditOutlines();
++    }
++
++    private void updateTouchEditLabel() {
++        if (touchEditLabel == null) {
++            return;
++        }
++        if (selectedTouchElement == null) {
++            touchEditLabel.setText("Drag a control to move it, then use the slider to resize");
++        } else {
++            touchEditLabel.setText(touchElementLabel(selectedTouchElement) + "  -  size "
++                    + Math.round(getTouchElementScale(selectedTouchElement) * 100f) + "%");
++        }
++    }
++
++    private void refreshTouchEditOutlines() {
++        for (Map.Entry<String, View> entry : touchElements.entrySet()) {
++            boolean selected = entry.getKey().equals(selectedTouchElement);
++            GradientDrawable outline = new GradientDrawable();
++            outline.setColor(Color.TRANSPARENT);
++            outline.setStroke(dpToPixels(selected ? 3 : 1), selected ? 0xFFFFD54F : 0x99FFFFFF);
++            outline.setCornerRadius(dpToPixels(6));
++            entry.getValue().setForeground(outline);
++        }
++    }
++
++    private void clearTouchEditOutlines() {
++        for (View v : touchElements.values()) {
++            v.setForeground(null);
++        }
++    }
++
++    private Button makeTouchEditButton(String text, View.OnClickListener onClick) {
++        Button b = new Button(this);
++        b.setAllCaps(false);
++        b.setText(text);
++        b.setTextColor(Color.WHITE);
++        b.setMinWidth(0);
++        b.setMinimumWidth(0);
++        b.setMinHeight(0);
++        b.setMinimumHeight(0);
++        int padH = dpToPixels(12);
++        int padV = dpToPixels(6);
++        b.setPadding(padH, padV, padH, padV);
++        GradientDrawable bg = new GradientDrawable();
++        bg.setColor(0xFF454545);
++        bg.setCornerRadius(dpToPixels(8));
++        b.setBackground(bg);
++        b.setOnClickListener(onClick);
++        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
++                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
++        lp.setMargins(dpToPixels(4), 0, dpToPixels(4), 0);
++        b.setLayoutParams(lp);
++        return b;
++    }
++
++    private void buildTouchEditPanel() {
++        ViewGroup content = (ViewGroup) findViewById(android.R.id.content);
++
++        LinearLayout panel = new LinearLayout(this);
++        panel.setOrientation(LinearLayout.VERTICAL);
++        panel.setGravity(Gravity.CENTER_HORIZONTAL);
++        int pad = dpToPixels(10);
++        panel.setPadding(pad, pad, pad, pad);
++        GradientDrawable bg = new GradientDrawable();
++        bg.setColor(0xE6202020);
++        bg.setCornerRadius(dpToPixels(12));
++        panel.setBackground(bg);
++        panel.setClickable(true);
++
++        touchEditLabel = new TextView(this);
++        touchEditLabel.setTextColor(Color.WHITE);
++        touchEditLabel.setTextSize(13);
++        touchEditLabel.setGravity(Gravity.CENTER);
++        panel.addView(touchEditLabel, new LinearLayout.LayoutParams(
++                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
++
++        touchEditSeek = new SeekBar(this);
++        touchEditSeek.setMax(Math.round((TOUCH_SCALE_MAX - TOUCH_SCALE_MIN) * 100f));
++        touchEditSeek.setEnabled(false);
++        touchEditSeek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
++            @Override
++            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
++                if (updatingTouchSeek || selectedTouchElement == null) {
++                    return;
++                }
++                setTouchElementScale(selectedTouchElement, TOUCH_SCALE_MIN + progress / 100f);
++                updateTouchEditLabel();
++            }
++
++            @Override
++            public void onStartTrackingTouch(SeekBar seekBar) {
++            }
++
++            @Override
++            public void onStopTrackingTouch(SeekBar seekBar) {
++            }
++        });
++        LinearLayout.LayoutParams seekParams = new LinearLayout.LayoutParams(
++                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
++        seekParams.setMargins(0, dpToPixels(4), 0, dpToPixels(4));
++        panel.addView(touchEditSeek, seekParams);
++
++        LinearLayout row = new LinearLayout(this);
++        row.setOrientation(LinearLayout.HORIZONTAL);
++        row.setGravity(Gravity.CENTER);
++        row.addView(makeTouchEditButton("Reset", v -> {
++            if (selectedTouchElement != null) {
++                resetTouchElement(selectedTouchElement);
++                selectTouchElement(selectedTouchElement);
++            }
++        }));
++        row.addView(makeTouchEditButton("Reset All", v -> {
++            for (String key : touchElements.keySet()) {
++                resetTouchElement(key);
++            }
++            if (selectedTouchElement != null) {
++                selectTouchElement(selectedTouchElement);
++            }
++        }));
++        row.addView(makeTouchEditButton("Done", v -> exitTouchLayoutEdit()));
++        panel.addView(row);
++
++        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
++                dpToPixels(320), FrameLayout.LayoutParams.WRAP_CONTENT);
++        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
++        lp.topMargin = dpToPixels(8);
++        content.addView(panel, lp);
++        touchEditPanel = panel;
++        updateTouchEditLabel();
++    }
++
+     public void startRumble(int lowIntensity, int highIntensity) {
+         int amplitude = Math.max(lowIntensity, highIntensity);
+         for (int id : InputDevice.getDeviceIds()) {
+--- a/Android/app/src/main/res/layout/touchcontrol_overlay.xml
++++ b/Android/app/src/main/res/layout/touchcontrol_overlay.xml
+@@ -69,57 +69,57 @@
+     </FrameLayout>
+ 
+ 
+-    <ImageView
+-        android:id="@+id/imageView"
++    <!-- D-Pad (grouped so it can be moved and resized as one piece) -->
++    <FrameLayout
++        android:id="@+id/dpad_cluster"
+         android:layout_width="96dp"
+         android:layout_height="96dp"
+-        android:src="@drawable/ic_cross"
+-        android:alpha="0.45"
+         android:layout_marginStart="16dp"
+         android:layout_marginTop="140dp"
+         app:layout_constraintStart_toStartOf="parent"
+-        app:layout_constraintTop_toTopOf="parent" />
+-
+-    <!-- D-Pad -->
+-    <Button
+-        android:id="@+id/buttonDpadUp"
+-        android:layout_width="42dp"
+-        android:layout_height="42dp"
+-        android:layout_marginStart="43dp"
+-        android:layout_marginTop="140dp"
+-        app:layout_constraintStart_toStartOf="parent"
+-        app:layout_constraintTop_toTopOf="parent"
+-        android:background="@android:color/transparent"/>
+-
+-    <Button
+-        android:id="@+id/buttonDpadDown"
+-        android:layout_width="42dp"
+-        android:layout_height="42dp"
+-        android:layout_marginStart="43dp"
+-        android:layout_marginTop="194dp"
+-        app:layout_constraintStart_toStartOf="parent"
+-        app:layout_constraintTop_toTopOf="parent"
+-        android:background="@android:color/transparent" />
++        app:layout_constraintTop_toTopOf="parent">
+ 
+-    <Button
+-        android:id="@+id/buttonDpadLeft"
+-        android:layout_width="42dp"
+-        android:layout_height="42dp"
+-        android:layout_marginStart="16dp"
+-        android:layout_marginTop="167dp"
+-        app:layout_constraintStart_toStartOf="parent"
+-        app:layout_constraintTop_toTopOf="parent"
+-        android:background="@android:color/transparent"/>
+-
+-    <Button
+-        android:id="@+id/buttonDpadRight"
+-        android:layout_width="42dp"
+-        android:layout_height="42dp"
+-        android:layout_marginStart="70dp"
+-        android:layout_marginTop="167dp"
+-        app:layout_constraintStart_toStartOf="parent"
+-        app:layout_constraintTop_toTopOf="parent"
+-        android:background="@android:color/transparent"/>
++        <ImageView
++            android:id="@+id/imageView"
++            android:layout_width="96dp"
++            android:layout_height="96dp"
++            android:src="@drawable/ic_cross"
++            android:alpha="0.45" />
++
++        <Button
++            android:id="@+id/buttonDpadUp"
++            android:layout_width="42dp"
++            android:layout_height="42dp"
++            android:layout_gravity="top|start"
++            android:layout_marginStart="27dp"
++            android:background="@android:color/transparent"/>
++
++        <Button
++            android:id="@+id/buttonDpadDown"
++            android:layout_width="42dp"
++            android:layout_height="42dp"
++            android:layout_gravity="top|start"
++            android:layout_marginStart="27dp"
++            android:layout_marginTop="54dp"
++            android:background="@android:color/transparent" />
++
++        <Button
++            android:id="@+id/buttonDpadLeft"
++            android:layout_width="42dp"
++            android:layout_height="42dp"
++            android:layout_gravity="top|start"
++            android:layout_marginTop="27dp"
++            android:background="@android:color/transparent"/>
++
++        <Button
++            android:id="@+id/buttonDpadRight"
++            android:layout_width="42dp"
++            android:layout_height="42dp"
++            android:layout_gravity="top|start"
++            android:layout_marginStart="54dp"
++            android:layout_marginTop="27dp"
++            android:background="@android:color/transparent"/>
++    </FrameLayout>
+ 
+     <!-- Face buttons. MainActivity can switch this cluster between ABXY and BAYX. -->
+     <FrameLayout
+--- a/Android/app/build.gradle
++++ b/Android/app/build.gradle
+@@ -10,7 +10,8 @@
+ }
+ 
+ android {
+-    ndkVersion "26.0.10792818"
++    // Overridable so the build also works with a community aarch64 NDK (e.g. on Termux).
++    ndkVersion (project.findProperty('sohNdkVersion') ?: "26.0.10792818")
+     namespace 'com.dishii.soh'
+     compileSdkVersion 31
+     buildFeatures {
+@@ -85,7 +86,7 @@
+             //}
+             cmake {
+                  path '../../CMakeLists.txt'
+-                 version "3.31.5"
++                 version (project.findProperty('sohCmakeVersion') ?: "3.31.5")
+             }
+         }
+     }
+--- a/soh/soh/SohGui/SohMenuSettings.cpp
++++ b/soh/soh/SohGui/SohMenuSettings.cpp
+@@ -131,6 +131,24 @@
+     env->DeleteLocalRef(activity);
+ }
+ 
++static void StartAndroidTouchLayoutEditor() {
++    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
++    jobject activity = (jobject)SDL_AndroidGetActivity();
++    if (env == nullptr || activity == nullptr) {
++        return;
++    }
++
++    jclass activityClass = env->GetObjectClass(activity);
++    if (activityClass != nullptr) {
++        jmethodID method = env->GetMethodID(activityClass, "startTouchLayoutEditFromNative", "()V");
++        if (method != nullptr) {
++            env->CallVoidMethod(activity, method);
++        }
++        env->DeleteLocalRef(activityClass);
++    }
++    env->DeleteLocalRef(activity);
++}
++
+ static void OpenAndroidDataFolderChooser() {
+     JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+     jobject activity = (jobject)SDL_AndroidGetActivity();
+@@ -618,6 +636,12 @@
+         })
+         .Options(CheckboxOptions().DefaultValue(true).Tooltip(
+             "When disabled, the left touch stick stays fixed in the lower-left corner."));
++    AddWidget(path, "Edit Touch Layout", WIDGET_BUTTON)
++        .RaceDisable(false)
++        .Callback([](WidgetInfo& info) { StartAndroidTouchLayoutEditor(); })
++        .Options(ButtonOptions().Tooltip(
++            "Drag the on-screen buttons to move them and use the slider to resize them. "
++            "Changes are saved automatically."));
+     AddWidget(path, "Disable Touch Controls", WIDGET_CVAR_CHECKBOX)
+         .CVar(CVAR_SETTING("TouchControls.Disabled"))
+         .RaceDisable(false)
+--- a/termux/build-termux.sh
++++ b/termux/build-termux.sh
+@@ -0,0 +1,160 @@
++#!/data/data/com.termux/files/usr/bin/bash
++# Build Ship of Harkinian (Android) directly inside Termux (aarch64).
++# Mirrors .github/workflows/android-standard-release.yml, with Termux substitutions:
++#   - NDK: a community aarch64 NDK (the official one only ships x86_64 binaries)
++#   - aapt2: Termux's own aapt2 (the Maven one is x86_64)
++#   - cmake/ninja: Termux's own
++#
++# Usage:   bash termux/build-termux.sh [release|debug]
++# Useful env overrides (all optional):
++#   NDK_URL, NDK_DIR_NAME, ANDROID_HOME, JOBS, LUS_REF, TORCH_REF, KEYSTORE
++#
++# Needs roughly: 8 GB RAM (or plenty of swap), ~25 GB free storage, and a LOT of time.
++set -euo pipefail
++
++VARIANT="${1:-release}"
++case "$VARIANT" in release|debug) ;; *) echo "variant must be release or debug"; exit 1;; esac
++
++ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++cd "$ROOT"
++
++ANDROID_HOME="${ANDROID_HOME:-$HOME/android-sdk}"
++JOBS="${JOBS:-4}"
++# Community aarch64 NDK builds (https://github.com/Lzhiyong/termux-ndk). Verify the URL if it 404s.
++NDK_URL="${NDK_URL:-https://github.com/Lzhiyong/termux-ndk/releases/download/ndk-r26/android-ndk-r26b-aarch64.zip}"
++CMDLINE_URL="${CMDLINE_URL:-https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip}"
++KEYSTORE="${KEYSTORE:-$HOME/.soh-local-release.jks}"
++export ANDROID_HOME ANDROID_SDK_ROOT="$ANDROID_HOME"
++
++log() { printf '\n\033[1;32m==> %s\033[0m\n' "$*"; }
++die() { printf '\n\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
++
++[ "$(uname -m)" = "aarch64" ] || die "This script expects an aarch64 device (found $(uname -m))."
++
++# ---------------------------------------------------------------- packages
++log "Installing Termux packages"
++pkg update -y
++pkg install -y git cmake ninja clang python openjdk-17 aapt2 libzip libpng zlib \
++    wget unzip zip patch pkg-config binutils
++export JAVA_HOME="${JAVA_HOME:-$PREFIX/lib/jvm/java-17-openjdk}"
++[ -x "$JAVA_HOME/bin/java" ] || die "JAVA_HOME ($JAVA_HOME) is wrong; set it to your JDK 17 directory."
++
++# ---------------------------------------------------------------- submodules
++need_clone() { [ -z "$(ls -A "$1" 2>/dev/null)" ]; }
++if need_clone libultraship || need_clone torch; then
++    if [ -d .git ]; then
++        log "Fetching submodules (pinned commits)"
++        git submodule update --init --recursive
++    else
++        log "No .git directory: cloning submodules from .gitmodules (UNPINNED)"
++        echo "WARNING: the commits pinned by the original repo are unknown here."
++        echo "         If the libultraship patch fails to apply, set LUS_REF=<commit>."
++        if need_clone libultraship; then
++            git clone --branch port-maintenance https://github.com/kenix3/libultraship.git libultraship
++            [ -z "${LUS_REF:-}" ] || git -C libultraship checkout "$LUS_REF"
++        fi
++        if need_clone torch; then
++            git clone https://github.com/HarbourMasters/Torch.git torch
++            [ -z "${TORCH_REF:-}" ] || git -C torch checkout "$TORCH_REF"
++        fi
++        # Torch has its own submodules.
++        git -C torch submodule update --init --recursive 2>/dev/null || true
++    fi
++fi
++
++# ---------------------------------------------------------------- libultraship Android patch
++PATCH="$ROOT/CMake/patches/libultraship-android.patch"
++if git -C libultraship apply --reverse --check "$PATCH" 2>/dev/null; then
++    log "libultraship Android patch already applied"
++else
++    log "Applying libultraship Android patch"
++    git -C libultraship apply --check "$PATCH" \
++        || die "libultraship-android.patch does not apply. Check out the libultraship commit this version was made for (LUS_REF)."
++    git -C libultraship apply "$PATCH"
++fi
++
++# ---------------------------------------------------------------- Android SDK
++SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
++if [ ! -x "$SDKMANAGER" ]; then
++    log "Installing Android command-line tools"
++    mkdir -p "$ANDROID_HOME/cmdline-tools"
++    wget -q --show-progress -O /tmp/cmdline-tools.zip "$CMDLINE_URL"
++    unzip -q -o /tmp/cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools"
++    rm -rf "$ANDROID_HOME/cmdline-tools/latest"
++    mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
++fi
++log "Installing SDK platform and build-tools"
++yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
++"$SDKMANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-31" "build-tools;35.0.0"
++
++# ---------------------------------------------------------------- aarch64 NDK
++NDK_REV=""
++if ls "$ANDROID_HOME"/ndk/*/source.properties >/dev/null 2>&1; then
++    NDK_PROPS="$(ls "$ANDROID_HOME"/ndk/*/source.properties | head -n1)"
++else
++    log "Downloading aarch64 NDK"
++    mkdir -p "$ANDROID_HOME/ndk" /tmp/ndk-extract
++    wget -q --show-progress -O /tmp/ndk.zip "$NDK_URL" || die "Could not download the NDK from $NDK_URL (set NDK_URL)."
++    unzip -q -o /tmp/ndk.zip -d /tmp/ndk-extract
++    SRC="$(dirname "$(find /tmp/ndk-extract -maxdepth 2 -name source.properties | head -n1)")"
++    [ -n "$SRC" ] || die "Downloaded NDK archive has no source.properties."
++    REV="$(sed -n 's/^Pkg.Revision *= *//p' "$SRC/source.properties" | tr -d '\r')"
++    mkdir -p "$ANDROID_HOME/ndk/$REV"
++    cp -a "$SRC/." "$ANDROID_HOME/ndk/$REV/"
++    rm -rf /tmp/ndk-extract /tmp/ndk.zip
++    NDK_PROPS="$ANDROID_HOME/ndk/$REV/source.properties"
++fi
++NDK_REV="$(sed -n 's/^Pkg.Revision *= *//p' "$NDK_PROPS" | tr -d '\r')"
++log "Using NDK $NDK_REV"
++
++CMAKE_VER="$(cmake --version | head -n1 | sed 's/[^0-9.]*\([0-9.]*\).*/\1/')"
++log "Using Termux CMake $CMAKE_VER"
++
++cat > Android/local.properties <<LP
++sdk.dir=$ANDROID_HOME
++cmake.dir=$PREFIX
++LP
++
++# ---------------------------------------------------------------- host tools (soh.o2r)
++if [ ! -s build-host-tools/soh/soh.o2r ]; then
++    log "Building host tools and generating soh.o2r"
++    cmake -S . -B build-host-tools -G Ninja -DSOH_TOOLS_ONLY=ON -DCMAKE_BUILD_TYPE=Release
++    cmake --build build-host-tools --target GenerateSohOtr --parallel "$JOBS"
++    [ -s build-host-tools/soh/soh.o2r ] || die "soh.o2r was not generated."
++else
++    log "soh.o2r already exists, skipping host tools"
++fi
++
++# ---------------------------------------------------------------- signing (release)
++GRADLE_ARGS=(
++    "-Pandroid.aapt2FromMavenOverride=$PREFIX/bin/aapt2"
++    "-PsohNdkVersion=$NDK_REV"
++    "-PsohCmakeVersion=$CMAKE_VER"
++    "--console=plain" "--max-workers=$JOBS"
++)
++if [ "$VARIANT" = "release" ]; then
++    if [ ! -f "$KEYSTORE" ]; then
++        log "Creating a local signing key at $KEYSTORE"
++        keytool -genkeypair -v -keystore "$KEYSTORE" -alias soh -keyalg RSA -keysize 2048 \
++            -validity 10000 -storepass sohlocal -keypass sohlocal -dname "CN=SoH local build"
++    fi
++    GRADLE_ARGS+=("-PstoreFile=$KEYSTORE" "-PstorePassword=sohlocal" "-PkeyAlias=soh" "-PkeyPassword=sohlocal")
++fi
++
++# ---------------------------------------------------------------- gradle
++log "Building ($VARIANT). This takes a very long time on a phone."
++export CMAKE_BUILD_PARALLEL_LEVEL="$JOBS"
++export GRADLE_OPTS="-Dorg.gradle.native=false -Xmx3g"
++cd Android
++chmod +x gradlew
++TASK=":app:assemble$(echo "${VARIANT:0:1}" | tr a-z A-Z)${VARIANT:1}"
++./gradlew "$TASK" "${GRADLE_ARGS[@]}"
++
++APK="$(find app/build/outputs/apk/"$VARIANT" -maxdepth 1 -name '*.apk' | head -n1)"
++[ -n "$APK" ] || die "Build finished but no APK was found."
++log "APK: $ROOT/Android/$APK"
++if [ -d "$HOME/storage/downloads" ]; then
++    cp "$APK" "$HOME/storage/downloads/" && log "Copied to ~/storage/downloads (Download folder)"
++else
++    echo "Tip: run 'termux-setup-storage' to be able to copy the APK to your Download folder."
++fi
+--- a/termux/LEEME-TERMUX.md
++++ b/termux/LEEME-TERMUX.md
+@@ -0,0 +1,36 @@
++# Editor de layout táctil + build en Termux
++
++## Qué se agregó
++**Settings → Touch Controls → Edit Touch Layout** abre el editor:
++- Arrastra cualquier control (stick izquierdo en modo fijo, D-Pad, botones A/B/X/Y, ZL, L, ZR, R, Start, Back) para moverlo.
++- Toca un control para seleccionarlo (se marca en amarillo) y usa el slider para cambiar su tamaño (50 %–200 %).
++- **Reset** restablece el control seleccionado, **Reset All** todos, **Done** sale.
++- Atajo: mantener presionado el botón del ojito también abre el editor.
++- Todo se guarda solo (SharedPreferences) y se aplica al volver a abrir el juego.
++
++## Archivos modificados
++- `Android/app/src/main/java/com/dishii/soh/MainActivity.java` – lógica del editor.
++- `Android/app/src/main/res/layout/touchcontrol_overlay.xml` – el D-Pad ahora es un grupo (`dpad_cluster`) para moverlo/escalarlo como una pieza.
++- `soh/soh/SohGui/SohMenuSettings.cpp` – botón "Edit Touch Layout" + llamada JNI.
++- `Android/app/build.gradle` – `sohNdkVersion` / `sohCmakeVersion` configurables (por defecto igual que antes).
++- `termux/build-termux.sh` – script de build.
++
++## Compilar en Termux
++```
++pkg install git
++cd Shipwright-Android-9.3.0-android.1
++bash termux/build-termux.sh release     # o: debug
++```
++El script sigue la receta de `.github/workflows/android-standard-release.yml` con estas sustituciones:
++NDK aarch64 de la comunidad (el oficial solo trae binarios x86_64), `aapt2`/`cmake`/`ninja` de Termux,
++y keystore local para firmar.
++
++## Cosas a tener en cuenta (importante)
++1. **Los submódulos `libultraship` y `torch` venían vacíos en el zip.** Si tienes el repo con `.git`, el script usa los commits fijados.
++   Si no, clona las ramas actuales y puede que `libultraship-android.patch` no aplique; en ese caso usa `LUS_REF=<commit>`.
++2. **No pude compilar ni probar nada aquí** (sin Android SDK/NDK ni internet en mi entorno). El Java lo revisé por sintaxis y el script con `bash -n`,
++   pero el build completo y el editor en pantalla no están probados en un dispositivo.
++3. Compilar SoH completo en un teléfono necesita ~8 GB de RAM (o swap), ~25 GB libres y varias horas.
++4. El APK `release` se firma con tu keystore local, así que no se instala encima del APK oficial: desinstala primero
++   (tus saves están en `/storage/emulated/0/SOH`, no se pierden). `debug` usa otro id (`.localtest`) y otra carpeta (`SOH93-Test`).
++5. Si la URL del NDK falla, pasa otra: `NDK_URL=https://... bash termux/build-termux.sh`.
